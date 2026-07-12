@@ -134,7 +134,7 @@ space under `K` deliberately empty. Every rule, drawn and explained:
 
 ## Testing and evidence
 
-Every push runs 123 tests on Linux and Windows, plus the full pipeline (apply,
+Every push runs 125 tests on Linux and Windows, plus the full pipeline (apply,
 lifecycle soak, stale-tab adversary, fault injection) against real Superset
 4.1.4, 5.0.0, and 6.1.0 containers. Chart options are checked against
 Superset's own source for every supported version, so a Superset change is

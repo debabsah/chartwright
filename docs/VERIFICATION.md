@@ -34,7 +34,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (123 tests, 15 modules) | Contract, determinism, round-trips, credentials | every push, Linux + Windows |
+| Offline suite (125 tests, 16 modules) | Contract, determinism, round-trips, credentials | every push, Linux + Windows |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every push |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every push, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every push |
@@ -42,7 +42,7 @@ injection.
 | Fault injection | A typed failure at every stage boundary; complete restore | every push, all 3 versions |
 | Real-instance use | Production 4.1.x on Windows, real datasets, real users | ongoing |
 
-## 1. Offline suite: 123 tests
+## 1. Offline suite: 125 tests
 
 - **Spec contract** (`test_spec.py`, `test_spec_v2.py`): validation
   semantics. A layout is rows or tabs, never both; row widths must fit the
@@ -175,7 +175,7 @@ second-writer scenarios, and fault injection.
 
 ## Defect ledger: what each layer caught
 
-Twenty real defects found by these layers, none of which the original
+Twenty-one real defects found by these layers, none of which the original
 unit suite could see. The layer that caught each one is the reason that
 layer exists.
 
@@ -201,12 +201,13 @@ layer exists.
 | 18 | Charts without their own time column ignored the dashboard time filter entirely, while the filter bar still counted them as filtered | live check of the time filter default: a one-week filter left a full-month total |
 | 19 | `plan` crashed on any sketch-layout spec; every prior fixture and soak used rows or tabs | running `plan` against the demo dashboard |
 | 20 | A labeled `COUNT(*)` metric lost its label on decompile, so `plan` reported drift forever on clean dashboards | the same `plan` run, after #19 was fixed |
+| 21 | The client treated a rate-limited response (HTTP 429) as fatal instead of backing off, and PUT requests skipped the typed-error wrapper entirely | live CI: Superset rate-limited a burst of decompile lookups |
 
 ## Reproduce everything
 
 ```bash
 # offline (any machine, no Superset needed)
-python -m pytest tests/ -q                 # 123 tests
+python -m pytest tests/ -q                 # 125 tests
 python tools/params_drift.py --all         # chart options vs plugin source, 3 versions
 
 # live (any sandbox; sandbox/up.sh --tag <v> boots one)

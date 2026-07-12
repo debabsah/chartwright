@@ -10,6 +10,7 @@ token triggers exactly one re-login + retry (long applies on big estates).
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -42,8 +43,11 @@ class SupersetClient:
 
     # -- transport ------------------------------------------------------------
 
-    def _send(self, fn: Callable[[], requests.Response], relogin_on_401: bool = True) -> requests.Response:
-        """Run one request with typed network errors and a single 401 retry."""
+    def _send(self, fn: Callable[[], requests.Response], relogin_on_401: bool = True,
+              tries_429: int = 3) -> requests.Response:
+        """Run one request with typed network errors, a single 401 retry, and
+        polite 429 backoff (Superset ships a rate limiter; corporate gateways
+        add their own)."""
         try:
             r = fn()
         except requests.exceptions.SSLError as e:
@@ -64,6 +68,13 @@ class SupersetClient:
             # Access token expired mid-run (default TTLs are short); one refresh.
             self.login()
             r = self._send(fn, relogin_on_401=False)
+        if r.status_code == 429 and tries_429 > 0:
+            try:
+                delay = min(float(r.headers.get("Retry-After") or 2), 30)
+            except (TypeError, ValueError):
+                delay = 2.0
+            time.sleep(delay)
+            r = self._send(fn, relogin_on_401=relogin_on_401, tries_429=tries_429 - 1)
         return r
 
     # -- auth ---------------------------------------------------------------
@@ -114,7 +125,7 @@ class SupersetClient:
         return self._send(lambda: self.session.post(f"{self.base_url}{path}", json=payload, timeout=120))
 
     def put_json(self, path: str, payload: dict) -> requests.Response:
-        return self.session.put(f"{self.base_url}{path}", json=payload, timeout=120)
+        return self._send(lambda: self.session.put(f"{self.base_url}{path}", json=payload, timeout=120))
 
     # -- datasets / databases -----------------------------------------------
 
