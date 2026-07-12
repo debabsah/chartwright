@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 52" width="480" height="52">
+<rect x="0" y="0" width="480" height="52" fill="#f8fafc" rx="8"/>
+<rect x="3.0" y="3.0" width="234" height="46" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="120.0" y="25.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#1e3a5f">Total Sales</text>
+<text x="120.0" y="40.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">1/2 wide</text>
+<rect x="243.0" y="3.0" width="234" height="46" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="360.0" y="25.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#1e3a5f">Sales Over Time</text>
+<text x="360.0" y="40.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">1/2 wide</text>
+</svg>

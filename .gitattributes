@@ -1,0 +1,10 @@
+# Keep byte-sensitive artifacts stable across Windows/mac/linux checkouts.
+* text=auto
+*.zip binary
+*.png binary
+*.sh text eol=lf
+*.py text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.toml text eol=lf

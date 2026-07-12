@@ -1,0 +1,26 @@
+[project]
+name = "chartwright"
+version = "0.1.0"
+description = "Build, verify, and maintain Apache Superset dashboards from small spec files."
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+    "requests>=2.31",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+mcp = ["mcp>=1.0"]
+
+[project.scripts]
+chartwright = "chartwright.cli:main"
+chartwright-mcp = "chartwright.mcp_server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["chartwright"]

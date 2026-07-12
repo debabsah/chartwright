@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  offline:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev,mcp]"
+      - run: pytest tests/ -q
+      - run: python tools/params_drift.py --all
+
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        superset: ["4.1.4", "5.0.0", "6.1.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - name: Boot Superset ${{ matrix.superset }} sandbox
+        run: bash sandbox/up.sh --tag "${{ matrix.superset }}" 8098
+      - name: Kitchen-sink apply + slice-id stability
+        run: python tools/ci_live_check.py --base-url http://localhost:8098
+      - name: Lifecycle soak (25 cycles)
+        run: python tools/soak.py --base-url http://localhost:8098 --cycles 25 --seed 7
+      - name: Second-writer adversary
+        run: python tools/adversary.py --base-url http://localhost:8098
+      - name: Fault injection
+        run: python tools/faultline.py --base-url http://localhost:8098

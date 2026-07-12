@@ -1,0 +1,39 @@
+name: Bug report
+description: Something the tool did wrong, or a correctness claim that did not hold
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what did the tool do instead?
+    validations:
+      required: true
+  - type: textarea
+    id: spec
+    attributes:
+      label: The spec
+      description: The smallest spec that reproduces it. Remove anything private; keep the shape.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: command-output
+    attributes:
+      label: The command and its full output
+      description: The exact command you ran and everything it printed.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: superset-version
+    attributes:
+      label: Superset version
+      placeholder: "6.1.0"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Your environment
+      placeholder: "Windows 11, Python 3.12"

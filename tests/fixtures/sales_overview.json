@@ -1,0 +1,61 @@
+{
+  "spec_version": "1",
+  "dashboard": {
+    "title": "Sales Overview",
+    "slug": "sdc-sales-overview"
+  },
+  "charts": [
+    {
+      "name": "Total Orders",
+      "type": "big_number_total",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "COUNT(*)"
+    },
+    {
+      "name": "Total Sales",
+      "type": "big_number_total",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "SUM(sales)",
+      "number_format": ",.0f"
+    },
+    {
+      "name": "Average Order Value",
+      "type": "big_number_total",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "AVG(sales)",
+      "number_format": ",.2f"
+    },
+    {
+      "name": "Sales Over Time",
+      "type": "timeseries_line",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metrics": ["SUM(sales)"],
+      "time_column": "order_date",
+      "time_grain": "P1M",
+      "width": 8
+    },
+    {
+      "name": "Sales by Deal Size",
+      "type": "pie",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "SUM(sales)",
+      "groupby": "deal_size",
+      "width": 4
+    },
+    {
+      "name": "Sales by Product Line",
+      "type": "table",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "groupby": ["product_line"],
+      "metrics": ["SUM(sales)", "COUNT(*)"],
+      "row_limit": 50
+    }
+  ],
+  "layout": {
+    "rows": [
+      ["Total Orders", "Total Sales", "Average Order Value"],
+      ["Sales Over Time", "Sales by Deal Size"],
+      ["Sales by Product Line"]
+    ]
+  }
+}

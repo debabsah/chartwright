@@ -1,0 +1,291 @@
+{
+  "spec_version": "1",
+  "dashboard": {
+    "title": "Sales Command Center",
+    "slug": "sdc-sales-command-center"
+  },
+  "filters": [
+    {
+      "type": "select",
+      "name": "Country",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "column": "country"
+    },
+    {
+      "type": "select",
+      "name": "Deal Size",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "column": "deal_size",
+      "multi": false
+    },
+    {
+      "type": "time_range",
+      "name": "Time Range"
+    }
+  ],
+  "charts": [
+    {
+      "name": "Total Orders",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metric": "COUNT(*)"
+    },
+    {
+      "name": "Revenue Trend KPI",
+      "type": "big_number_trend",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metric": "SUM(sales)",
+      "time_column": "order_date",
+      "time_grain": "P1M",
+      "number_format": ",.0f"
+    },
+    {
+      "name": "Large Deals Only",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metric": "SUM(sales)",
+      "filters": [
+        {
+          "column": "deal_size",
+          "op": "==",
+          "value": "Large"
+        }
+      ]
+    },
+    {
+      "name": "Sales Over Time",
+      "type": "timeseries_line",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metrics": [
+        "SUM(sales)"
+      ],
+      "time_column": "order_date",
+      "time_grain": "P1M"
+    },
+    {
+      "name": "Quantity Area",
+      "type": "timeseries_area",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metrics": [
+        "SUM(quantity_ordered)"
+      ],
+      "time_column": "order_date",
+      "time_grain": "P1M"
+    },
+    {
+      "name": "Monthly Order Count",
+      "type": "timeseries_bar",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metrics": [
+        "COUNT(*)"
+      ],
+      "time_column": "order_date",
+      "time_grain": "P1M",
+      "groupby": "deal_size"
+    },
+    {
+      "name": "Order Scatter",
+      "type": "timeseries_scatter",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metrics": [
+        "AVG(sales)"
+      ],
+      "time_column": "order_date",
+      "time_grain": "P1W"
+    },
+    {
+      "name": "Sales by Country",
+      "type": "bar",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "x_column": "country",
+      "metrics": [
+        "SUM(sales)"
+      ],
+      "row_limit": 20,
+      "filters": [
+        {
+          "column": "country",
+          "op": "IN",
+          "value": [
+            "USA",
+            "France",
+            "Norway",
+            "Australia",
+            "UK"
+          ]
+        }
+      ],
+      "orientation": "horizontal"
+    },
+    {
+      "name": "Deal Size Split",
+      "type": "pie",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metric": "SUM(sales)",
+      "groupby": "deal_size",
+      "donut": true
+    },
+    {
+      "name": "Sales Pivot",
+      "type": "pivot_table",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "rows": [
+        "country"
+      ],
+      "columns": [
+        "deal_size"
+      ],
+      "metrics": [
+        "SUM(sales)"
+      ],
+      "row_limit": 500
+    },
+    {
+      "name": "Product Line Heat",
+      "type": "heatmap",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "x_column": "product_line",
+      "y_column": "deal_size",
+      "metric": "SUM(sales)"
+    },
+    {
+      "name": "Quantity Distribution",
+      "type": "histogram",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "column": "quantity_ordered",
+      "bins": 12
+    },
+    {
+      "name": "Status Funnel",
+      "type": "funnel",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metric": "COUNT(*)",
+      "groupby": "status"
+    },
+    {
+      "name": "Sales Treemap",
+      "type": "treemap",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metric": "SUM(sales)",
+      "groupby": [
+        "product_line"
+      ]
+    },
+    {
+      "name": "Order Detail",
+      "type": "table",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "groupby": [
+        "product_line",
+        "deal_size"
+      ],
+      "metrics": [
+        "SUM(sales)",
+        "COUNT(*)"
+      ],
+      "row_limit": 100
+    }
+  ],
+  "layout": {
+    "tabs": [
+      {
+        "title": "Overview",
+        "rows": [
+          [
+            {
+              "markdown": "# Sales Command Center\nBuilt from a spec; every chart verified against live metadata.",
+              "height": 2
+            }
+          ],
+          [
+            "Total Orders",
+            "Revenue Trend KPI",
+            "Large Deals Only"
+          ],
+          [
+            "Sales Over Time",
+            "Deal Size Split"
+          ],
+          [
+            "Sales by Country",
+            "Quantity Area"
+          ]
+        ]
+      },
+      {
+        "title": "Deep Dive",
+        "rows": [
+          [
+            "Sales Pivot"
+          ],
+          [
+            "Product Line Heat",
+            "Quantity Distribution"
+          ],
+          [
+            "Status Funnel",
+            "Order Scatter"
+          ],
+          [
+            "Sales Treemap",
+            "Monthly Order Count"
+          ],
+          [
+            "Order Detail"
+          ]
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,2218 @@
+{
+  "$defs": {
+    "BarChart": {
+      "additionalProperties": false,
+      "description": "Categorical bar: any column on the x axis.\n\n``orientation: \"horizontal\"`` draws ranked lists with long labels the\nreadable way (bars run left to right, labels get a full line each).",
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "bar",
+          "title": "Type",
+          "type": "string"
+        },
+        "x_column": {
+          "title": "X Column",
+          "type": "string"
+        },
+        "metrics": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "groupby": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Groupby"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        },
+        "orientation": {
+          "default": "vertical",
+          "enum": [
+            "vertical",
+            "horizontal"
+          ],
+          "title": "Orientation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "x_column",
+        "metrics"
+      ],
+      "title": "BarChart",
+      "type": "object"
+    },
+    "BigNumberChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "big_number_total",
+          "title": "Type",
+          "type": "string"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string"
+        },
+        "subtitle": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subtitle"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format string, e.g. ',.0f'",
+          "title": "Number Format"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "metric"
+      ],
+      "title": "BigNumberChart",
+      "type": "object"
+    },
+    "BigNumberTrendChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "big_number_trend",
+          "title": "Type",
+          "type": "string"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string"
+        },
+        "time_column": {
+          "title": "Time Column",
+          "type": "string"
+        },
+        "time_grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time Grain"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Number Format"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "metric",
+        "time_column"
+      ],
+      "title": "BigNumberTrendChart",
+      "type": "object"
+    },
+    "ChartFilter": {
+      "additionalProperties": false,
+      "description": "A WHERE-clause condition on the chart's dataset.",
+      "properties": {
+        "column": {
+          "title": "Column",
+          "type": "string"
+        },
+        "op": {
+          "default": "==",
+          "enum": [
+            "==",
+            "!=",
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "IN",
+            "NOT IN",
+            "LIKE",
+            "IS NULL",
+            "IS NOT NULL"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "column"
+      ],
+      "title": "ChartFilter",
+      "type": "object"
+    },
+    "DashboardMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "slug": {
+          "description": "uuid seed input; lowercase kebab-case",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "title": "Slug",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "slug"
+      ],
+      "title": "DashboardMeta",
+      "type": "object"
+    },
+    "DatasetRef": {
+      "additionalProperties": false,
+      "description": "A dataset is referenced, never created. Names alone are not unique\nacross databases/schemas, so the reference is a triple.",
+      "properties": {
+        "database": {
+          "description": "Superset database connection name",
+          "title": "Database",
+          "type": "string"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Schema name; omit if unambiguous",
+          "title": "Schema"
+        },
+        "table": {
+          "description": "Dataset (table) name as registered in Superset",
+          "title": "Table",
+          "type": "string"
+        }
+      },
+      "required": [
+        "database",
+        "table"
+      ],
+      "title": "DatasetRef",
+      "type": "object"
+    },
+    "FormatRule": {
+      "additionalProperties": false,
+      "description": "One RAG band on one pivot metric. Superset colors by FIXED value bands;\nit cannot compare a cell to another column, so band a normalized metric\n(e.g. a %-of-goal ratio) when thresholds differ per row.",
+      "properties": {
+        "metric": {
+          "description": "Display label of one of the chart's metrics",
+          "title": "Metric",
+          "type": "string"
+        },
+        "operator": {
+          "enum": [
+            "<",
+            ">",
+            "between"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Threshold for < or >",
+          "title": "Target"
+        },
+        "target_left": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Lower bound for 'between'",
+          "title": "Target Left"
+        },
+        "target_right": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Upper bound for 'between'",
+          "title": "Target Right"
+        },
+        "color": {
+          "enum": [
+            "green",
+            "amber",
+            "red"
+          ],
+          "title": "Color",
+          "type": "string"
+        }
+      },
+      "required": [
+        "metric",
+        "operator",
+        "color"
+      ],
+      "title": "FormatRule",
+      "type": "object"
+    },
+    "FunnelChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "funnel",
+          "title": "Type",
+          "type": "string"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string"
+        },
+        "groupby": {
+          "title": "Groupby",
+          "type": "string"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "metric",
+        "groupby"
+      ],
+      "title": "FunnelChart",
+      "type": "object"
+    },
+    "HeatmapChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "heatmap",
+          "title": "Type",
+          "type": "string"
+        },
+        "x_column": {
+          "title": "X Column",
+          "type": "string"
+        },
+        "y_column": {
+          "title": "Y Column",
+          "type": "string"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "x_column",
+        "y_column",
+        "metric"
+      ],
+      "title": "HeatmapChart",
+      "type": "object"
+    },
+    "HistogramChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "histogram",
+          "title": "Type",
+          "type": "string"
+        },
+        "column": {
+          "title": "Column",
+          "type": "string"
+        },
+        "bins": {
+          "default": 10,
+          "maximum": 200,
+          "minimum": 1,
+          "title": "Bins",
+          "type": "integer"
+        },
+        "groupby": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Groupby"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "column"
+      ],
+      "title": "HistogramChart",
+      "type": "object"
+    },
+    "Layout": {
+      "additionalProperties": false,
+      "description": "Flat rows, tabs, or an ASCII sketch; exactly one.",
+      "properties": {
+        "sketch": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ASCII layout: one string per grid line; spaces are cosmetic",
+          "title": "Sketch"
+        },
+        "legend": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sketch symbol -> chart name",
+          "title": "Legend"
+        },
+        "line": {
+          "default": 2,
+          "description": "Height units per sketch line (1 unit = 40 px)",
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Line",
+          "type": "integer"
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/$defs/MarkdownBlock"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rows"
+        },
+        "tabs": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Tab"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tabs"
+        }
+      },
+      "title": "Layout",
+      "type": "object"
+    },
+    "MarkdownBlock": {
+      "additionalProperties": false,
+      "description": "A text block in the layout (headers, notes).",
+      "properties": {
+        "markdown": {
+          "minLength": 1,
+          "title": "Markdown",
+          "type": "string"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        }
+      },
+      "required": [
+        "markdown"
+      ],
+      "title": "MarkdownBlock",
+      "type": "object"
+    },
+    "PieChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "pie",
+          "title": "Type",
+          "type": "string"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string"
+        },
+        "groupby": {
+          "title": "Groupby",
+          "type": "string"
+        },
+        "donut": {
+          "default": false,
+          "title": "Donut",
+          "type": "boolean"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "metric",
+        "groupby"
+      ],
+      "title": "PieChart",
+      "type": "object"
+    },
+    "PivotTableChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "pivot_table",
+          "title": "Type",
+          "type": "string"
+        },
+        "rows": {
+          "description": "Dimension columns on pivot rows",
+          "items": {
+            "type": "string"
+          },
+          "title": "Rows",
+          "type": "array"
+        },
+        "columns": {
+          "description": "Dimension columns on pivot columns",
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "metrics": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        },
+        "combine_metric": {
+          "default": false,
+          "description": "Nest metrics under each column-dimension group (column-outer layout)",
+          "title": "Combine Metric",
+          "type": "boolean"
+        },
+        "date_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "strftime for temporal pivot headers, e.g. '%m/%d/%y'",
+          "title": "Date Format"
+        },
+        "conditional_formatting": {
+          "items": {
+            "$ref": "#/$defs/FormatRule"
+          },
+          "title": "Conditional Formatting",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "metrics"
+      ],
+      "title": "PivotTableChart",
+      "type": "object"
+    },
+    "RangeFilter": {
+      "additionalProperties": false,
+      "description": "Native filter bar: numeric range on one dataset column (filter_range).\n\n``le``/``ge`` set the DEFAULT bound(s) users see on load. One bound gives a\nsingle-handle slider (Superset's single-value mode); both give a range;\nequal bounds give exact-match mode. ``charts`` scopes the filter to the\nnamed charts only (default: every chart), resolved to slice ids after\nimport, since ids don't exist at compile time.",
+      "properties": {
+        "type": {
+          "const": "range",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "column": {
+          "title": "Column",
+          "type": "string"
+        },
+        "le": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Default upper bound (x \u2264 N)",
+          "title": "Le"
+        },
+        "ge": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Default lower bound (x \u2265 N)",
+          "title": "Ge"
+        },
+        "charts": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Chart names this filter governs; omit for all charts",
+          "title": "Charts"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "dataset",
+        "column"
+      ],
+      "title": "RangeFilter",
+      "type": "object"
+    },
+    "SelectFilter": {
+      "additionalProperties": false,
+      "description": "Native filter bar: value picker over one dataset column.",
+      "properties": {
+        "type": {
+          "const": "select",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "column": {
+          "title": "Column",
+          "type": "string"
+        },
+        "multi": {
+          "default": true,
+          "title": "Multi",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "dataset",
+        "column"
+      ],
+      "title": "SelectFilter",
+      "type": "object"
+    },
+    "Tab": {
+      "additionalProperties": false,
+      "properties": {
+        "sketch": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ASCII layout: one string per grid line; spaces are cosmetic",
+          "title": "Sketch"
+        },
+        "legend": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sketch symbol -> chart name",
+          "title": "Legend"
+        },
+        "line": {
+          "default": 2,
+          "description": "Height units per sketch line (1 unit = 40 px)",
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Line",
+          "type": "integer"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/$defs/MarkdownBlock"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rows"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "title": "Tab",
+      "type": "object"
+    },
+    "TableChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "table",
+          "title": "Type",
+          "type": "string"
+        },
+        "columns": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Raw-records mode: plain columns",
+          "title": "Columns"
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metrics"
+        },
+        "groupby": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Groupby"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        },
+        "sort_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric or column to sort by (aggregate mode: metric)",
+          "title": "Sort By"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type"
+      ],
+      "title": "TableChart",
+      "type": "object"
+    },
+    "TimeRangeFilter": {
+      "additionalProperties": false,
+      "description": "Native filter bar: dashboard-wide time range picker.\n\n``default`` is a Superset time-range expression (``\"Last month\"``,\n``\"2026-05-01 : 2026-06-01\"``) that pre-fills the picker on load; viewers\ncan still change it. Omitted, the picker starts empty (Superset shows\n\"No filter\").",
+      "properties": {
+        "type": {
+          "const": "time_range",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        }
+      },
+      "required": [
+        "type",
+        "name"
+      ],
+      "title": "TimeRangeFilter",
+      "type": "object"
+    },
+    "TimeseriesAreaChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "metrics": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "time_column": {
+          "title": "Time Column",
+          "type": "string"
+        },
+        "time_grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO 8601 duration, e.g. P1D, P1W, P1M",
+          "title": "Time Grain"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range; defaults to \"No filter\"",
+          "title": "Time Range"
+        },
+        "groupby": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "At most one dimension column",
+          "title": "Groupby"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        },
+        "type": {
+          "const": "timeseries_area",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "metrics",
+        "time_column",
+        "type"
+      ],
+      "title": "TimeseriesAreaChart",
+      "type": "object"
+    },
+    "TimeseriesBarChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "metrics": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "time_column": {
+          "title": "Time Column",
+          "type": "string"
+        },
+        "time_grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO 8601 duration, e.g. P1D, P1W, P1M",
+          "title": "Time Grain"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range; defaults to \"No filter\"",
+          "title": "Time Range"
+        },
+        "groupby": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "At most one dimension column",
+          "title": "Groupby"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        },
+        "type": {
+          "const": "timeseries_bar",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "metrics",
+        "time_column",
+        "type"
+      ],
+      "title": "TimeseriesBarChart",
+      "type": "object"
+    },
+    "TimeseriesLineChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "metrics": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "time_column": {
+          "title": "Time Column",
+          "type": "string"
+        },
+        "time_grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO 8601 duration, e.g. P1D, P1W, P1M",
+          "title": "Time Grain"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range; defaults to \"No filter\"",
+          "title": "Time Range"
+        },
+        "groupby": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "At most one dimension column",
+          "title": "Groupby"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        },
+        "type": {
+          "const": "timeseries_line",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "metrics",
+        "time_column",
+        "type"
+      ],
+      "title": "TimeseriesLineChart",
+      "type": "object"
+    },
+    "TimeseriesScatterChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "metrics": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "time_column": {
+          "title": "Time Column",
+          "type": "string"
+        },
+        "time_grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO 8601 duration, e.g. P1D, P1W, P1M",
+          "title": "Time Grain"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range; defaults to \"No filter\"",
+          "title": "Time Range"
+        },
+        "groupby": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "At most one dimension column",
+          "title": "Groupby"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        },
+        "type": {
+          "const": "timeseries_scatter",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "metrics",
+        "time_column",
+        "type"
+      ],
+      "title": "TimeseriesScatterChart",
+      "type": "object"
+    },
+    "TreemapChart": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "type": {
+          "const": "treemap",
+          "title": "Type",
+          "type": "string"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string"
+        },
+        "groupby": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Groupby",
+          "type": "array"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "metric",
+        "groupby"
+      ],
+      "title": "TreemapChart",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "spec_version": {
+      "const": "1",
+      "title": "Spec Version",
+      "type": "string"
+    },
+    "dashboard": {
+      "$ref": "#/$defs/DashboardMeta"
+    },
+    "charts": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "bar": "#/$defs/BarChart",
+            "big_number_total": "#/$defs/BigNumberChart",
+            "big_number_trend": "#/$defs/BigNumberTrendChart",
+            "funnel": "#/$defs/FunnelChart",
+            "heatmap": "#/$defs/HeatmapChart",
+            "histogram": "#/$defs/HistogramChart",
+            "pie": "#/$defs/PieChart",
+            "pivot_table": "#/$defs/PivotTableChart",
+            "table": "#/$defs/TableChart",
+            "timeseries_area": "#/$defs/TimeseriesAreaChart",
+            "timeseries_bar": "#/$defs/TimeseriesBarChart",
+            "timeseries_line": "#/$defs/TimeseriesLineChart",
+            "timeseries_scatter": "#/$defs/TimeseriesScatterChart",
+            "treemap": "#/$defs/TreemapChart"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/BigNumberChart"
+          },
+          {
+            "$ref": "#/$defs/BigNumberTrendChart"
+          },
+          {
+            "$ref": "#/$defs/TimeseriesLineChart"
+          },
+          {
+            "$ref": "#/$defs/TimeseriesBarChart"
+          },
+          {
+            "$ref": "#/$defs/TimeseriesAreaChart"
+          },
+          {
+            "$ref": "#/$defs/TimeseriesScatterChart"
+          },
+          {
+            "$ref": "#/$defs/BarChart"
+          },
+          {
+            "$ref": "#/$defs/PieChart"
+          },
+          {
+            "$ref": "#/$defs/TableChart"
+          },
+          {
+            "$ref": "#/$defs/PivotTableChart"
+          },
+          {
+            "$ref": "#/$defs/HeatmapChart"
+          },
+          {
+            "$ref": "#/$defs/HistogramChart"
+          },
+          {
+            "$ref": "#/$defs/FunnelChart"
+          },
+          {
+            "$ref": "#/$defs/TreemapChart"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Charts",
+      "type": "array"
+    },
+    "filters": {
+      "description": "Native filter bar",
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "range": "#/$defs/RangeFilter",
+            "select": "#/$defs/SelectFilter",
+            "time_range": "#/$defs/TimeRangeFilter"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/SelectFilter"
+          },
+          {
+            "$ref": "#/$defs/TimeRangeFilter"
+          },
+          {
+            "$ref": "#/$defs/RangeFilter"
+          }
+        ]
+      },
+      "title": "Filters",
+      "type": "array"
+    },
+    "layout": {
+      "$ref": "#/$defs/Layout"
+    }
+  },
+  "required": [
+    "spec_version",
+    "dashboard",
+    "charts",
+    "layout"
+  ],
+  "title": "DashboardSpec",
+  "type": "object"
+}

@@ -1,0 +1,15 @@
+name: Question
+description: How do I do something, or is something supported?
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+    validations:
+      required: true
+  - type: textarea
+    id: looked
+    attributes:
+      label: Where you looked
+      description: If the docs should have answered this, say where you looked. That makes it a documentation bug too.
