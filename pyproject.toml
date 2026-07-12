@@ -3,7 +3,19 @@ name = "chartwright"
 version = "0.1.0"
 description = "Build, verify, and maintain Apache Superset dashboards from small spec files."
 license = "Apache-2.0"
+readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["superset", "apache-superset", "dashboards", "dashboards-as-code", "business-intelligence"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
 dependencies = [
     "pydantic>=2.7",
     "requests>=2.31",
@@ -17,6 +29,11 @@ mcp = ["mcp>=1.0"]
 [project.scripts]
 chartwright = "chartwright.cli:main"
 chartwright-mcp = "chartwright.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/debabsah/chartwright"
+Documentation = "https://github.com/debabsah/chartwright/tree/main/docs"
+Issues = "https://github.com/debabsah/chartwright/issues"
 
 [build-system]
 requires = ["setuptools>=68"]

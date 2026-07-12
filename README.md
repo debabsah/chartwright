@@ -4,12 +4,12 @@ A dashboard compiler for Apache Superset. Describe the dashboard once, in a
 small text file called a spec, and the `chartwright` command line creates it,
 verifies it, and keeps it that way.
 
-![An operations dashboard over NYC yellow-taxi data: KPI cards with unit subtitles, daily trend charts, an hour-by-weekday demand heatmap, a payment donut, borough and zone rankings, and a trip-distance histogram, behind a three-filter bar](docs/images/nyc-taxi-operations.png)
+![An operations dashboard over NYC yellow-taxi data: KPI cards with unit subtitles, daily trend charts, an hour-by-weekday demand heatmap, a payment donut, borough and zone rankings, and a trip-distance histogram, behind a three-filter bar](https://raw.githubusercontent.com/debabsah/chartwright/main/docs/images/nyc-taxi-operations.png)
 
 *3.9 million yellow-taxi trips (NYC TLC trip records, May 2026), 11 verified
 charts, three filters, one `chartwright apply`. An AI wrote
-[the spec](examples/nyc_taxi_operations.json) from a one-paragraph request:
-[the request and rebuild steps](examples/README.md).*
+[the spec](https://github.com/debabsah/chartwright/blob/main/examples/nyc_taxi_operations.json) from a one-paragraph request:
+[the request and rebuild steps](https://github.com/debabsah/chartwright/blob/main/examples/README.md).*
 
 A dashboard that lives in a file gets the workflow code already has: review it
 in a pull request, rebuild it identically, diff it against what is live, and
@@ -52,10 +52,7 @@ clear error naming the problem, before anything is created.
 ## Quick start
 
 ```bash
-git clone https://github.com/debabsah/chartwright.git
-cd chartwright
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install chartwright
 ```
 
 Python 3.11 or newer; three dependencies; Windows, macOS, and Linux.
@@ -77,9 +74,10 @@ chartwright check sales_overview.json --profile prod   # read-only: verify every
 chartwright apply sales_overview.json --profile prod   # build, import, verify
 ```
 
-No Superset to point at? `sandbox/up.sh` boots a disposable Superset 6.1.0
-with example data on `localhost:8098` (Docker required; sign-in is
-admin/admin), and `tests/fixtures/kitchen_sink.json` applies to it as-is.
+No Superset to point at? Clone this repo: `sandbox/up.sh` boots a disposable
+Superset 6.1.0 with example data on `localhost:8098` (Docker required;
+sign-in is admin/admin), and `tests/fixtures/kitchen_sink.json` applies to it
+as-is.
 
 ## What you get
 
@@ -102,14 +100,15 @@ admin/admin), and `tests/fixtures/kitchen_sink.json` applies to it as-is.
 - **Environment promotion**: specs name their data (connection, schema,
   table), so the same file applies to dev, staging, and production unchanged.
 
-Every capability, with the CLI verb reference: [docs/FEATURES.md](docs/FEATURES.md).
+Every capability, with the CLI verb reference: [docs/FEATURES.md](https://github.com/debabsah/chartwright/blob/main/docs/FEATURES.md).
 
 ## Creating dashboards with AI
 
-- **Claude Code skill**: `python install-skill.py`, then ask for a dashboard
-  in plain words; the AI writes the spec, and the tool verifies and builds it.
-- **MCP server**: `chartwright-mcp` (installed with `pip install -e ".[mcp]"`) exposes
-  six tools covering the whole lifecycle, usable from any MCP client.
+- **Claude Code skill**: from a clone of this repo, `python install-skill.py`,
+  then ask for a dashboard in plain words; the AI writes the spec, and the
+  tool verifies and builds it.
+- **MCP server**: `chartwright-mcp` (installed with `pip install "chartwright[mcp]"`)
+  exposes six tools covering the whole lifecycle, usable from any MCP client.
 - **Open contract**: `chartwright schema` prints the spec's JSON Schema, so any LLM or
   tool can generate valid specs.
 - **Guardrails**: the AI proposes; the tool verifies, using your own Superset
@@ -126,11 +125,11 @@ KKKK LLLLLLLL
 .... LLLLLLLL
 ```
 
-![A short chart beside one twice as tall](docs/images/sketches/taller.svg)
+![A short chart beside one twice as tall](https://raw.githubusercontent.com/debabsah/chartwright/main/docs/images/sketches/taller.svg)
 
 `L` spans both lines, so it renders twice as tall as `K`; the dots keep the
 space under `K` deliberately empty. Every rule, drawn and explained:
-[docs/LAYOUT-GUIDE.md](docs/LAYOUT-GUIDE.md).
+[docs/LAYOUT-GUIDE.md](https://github.com/debabsah/chartwright/blob/main/docs/LAYOUT-GUIDE.md).
 
 ## Testing and evidence
 
@@ -140,19 +139,19 @@ lifecycle soak, stale-tab adversary, fault injection) against real Superset
 Superset's own source for every supported version, so a Superset change is
 caught in our tests before it reaches your dashboards.
 
-Full evidence: [docs/VERIFICATION.md](docs/VERIFICATION.md). Source citations
+Full evidence: [docs/VERIFICATION.md](https://github.com/debabsah/chartwright/blob/main/docs/VERIFICATION.md). Source citations
 for every Superset behavior the tool relies on:
-[docs/CONTRACTS.md](docs/CONTRACTS.md).
+[docs/CONTRACTS.md](https://github.com/debabsah/chartwright/blob/main/docs/CONTRACTS.md).
 
 ## Documentation
 
-- [docs/FEATURES.md](docs/FEATURES.md): every capability, with the CLI verb
+- [docs/FEATURES.md](https://github.com/debabsah/chartwright/blob/main/docs/FEATURES.md): every capability, with the CLI verb
   reference
-- [docs/LAYOUT-GUIDE.md](docs/LAYOUT-GUIDE.md): drawing layouts as text,
+- [docs/LAYOUT-GUIDE.md](https://github.com/debabsah/chartwright/blob/main/docs/LAYOUT-GUIDE.md): drawing layouts as text,
   every rule illustrated
-- [docs/VERIFICATION.md](docs/VERIFICATION.md): what is tested, what it
+- [docs/VERIFICATION.md](https://github.com/debabsah/chartwright/blob/main/docs/VERIFICATION.md): what is tested, what it
   caught, and how to reproduce it
-- [docs/CONTRACTS.md](docs/CONTRACTS.md): the Superset behaviors the tool
+- [docs/CONTRACTS.md](https://github.com/debabsah/chartwright/blob/main/docs/CONTRACTS.md): the Superset behaviors the tool
   depends on, cited to source at each supported version
 
 ---
