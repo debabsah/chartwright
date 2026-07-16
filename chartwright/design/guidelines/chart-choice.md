@@ -1,0 +1,20 @@
+# Chart choice
+
+| The question | The chart |
+|---|---|
+| How much, right now | `big_number_total`; add `big_number_trend` when direction matters |
+| How it moves over time | `timeseries_line`; `_area` for cumulative volume; `_bar` for discrete periods (<= ~30) |
+| Ranking over a category | `bar` with `"orientation": "horizontal"`, `row_limit` ~10; long labels get a full line each |
+| Share of a whole | `pie`/donut only for <= 7 slices; else horizontal bar |
+| Several measures per item | `table` or `pivot_table`, not grouped bars |
+| Two dimensions, one measure | `heatmap` (keep the grid under ~400 cells) |
+| Distribution of one column | `histogram`, 20-30 bins; trim long tails with a WHERE filter and say so in the title |
+| Staged conversion | `funnel`, 3-8 ordered stages |
+| Hierarchical share | `treemap`, at most 2 levels |
+
+- Category axes sort alphabetically; if the dataset has an order-encoded
+  label column (labels prefixed with a sort index), chart that column.
+- One dominant category flattening its siblings is the data talking: note it
+  or filter it, don't hide it.
+- Every chart with a time axis should tolerate the dashboard time filter;
+  add a `time_range` filter to the bar so viewers pick their window.

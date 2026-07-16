@@ -23,6 +23,18 @@ class ResolvedDataset:
     columns: list[str]
     metrics: list[str]
     main_dttm_col: str | None = None
+    # Superset GenericDataType per column (0 numeric, 1 string, 2 temporal,
+    # 3 boolean); absent when the instance doesn't report it. Consumed by the
+    # design brain's type-aware rules; resolution itself only needs names.
+    column_types: dict[str, int] = field(default_factory=dict)
+    temporal_columns: list[str] = field(default_factory=list)
+
+    def is_temporal(self, column: str) -> bool | None:
+        """True/False when the instance reported a type, None when unknown."""
+        if column in self.temporal_columns:
+            return True
+        tg = self.column_types.get(column)
+        return None if tg is None else tg == 2
 
 
 @dataclass
@@ -106,15 +118,20 @@ def _resolve_dataset(ref: DatasetRef, client: SupersetClient, res: Resolution) -
         return None
     m = matches[0]
     detail = client.dataset_detail(m["id"])
+    cols = detail.get("columns", [])
     return ResolvedDataset(
         id=m["id"],
         uuid=str(m["uuid"]),
         table=m["table_name"],
         schema=m.get("schema") or None,
         database_name=(m.get("database") or {}).get("database_name"),
-        columns=[c["column_name"] for c in detail.get("columns", [])],
+        columns=[c["column_name"] for c in cols],
         metrics=[x["metric_name"] for x in detail.get("metrics", [])],
         main_dttm_col=detail.get("main_dttm_col") or None,
+        column_types={c["column_name"]: c["type_generic"] for c in cols
+                      if c.get("type_generic") is not None},
+        temporal_columns=[c["column_name"] for c in cols
+                          if c.get("is_dttm") or c.get("type_generic") == 2],
     )
 
 

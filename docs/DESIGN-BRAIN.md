@@ -1,10 +1,13 @@
 # The Design Brain
 
-> **Status: DESIGN — not yet shipped.** This document is the complete design
-> for chartwright's design-intelligence layer, targeted at the next minor
-> releases (phases below). Everything else in `docs/` describes shipped
-> behavior; this page describes intent. The decision log at the bottom
-> records every judgment call made without a review gate.
+> **Status: SHIPPED (0.2.0) — all three phases.** This page is both the
+> design and the reference for the implementation in `chartwright/design/`.
+> The decision log at the bottom records every judgment call made without a
+> review gate; §15 records where the implementation deliberately deviates
+> from the original design text. Rendering-quality verification against a
+> live Superset (UI eyeballing of advised-vs-unadvised dashboards) is still
+> pending — the rulebook's thresholds come from the skill's field notes and
+> BI literature, not yet from side-by-side screenshots.
 
 ## 1. Problem
 
@@ -366,3 +369,28 @@ reversible and none is load-bearing enough to block on:
 12. **Learning/calibration deferred to phase 3**; the architecture point is
     that rules-as-data + stable ids make it a parameter update, not a
     rewrite.
+
+## 15. Implementation deviations (recorded, not silent)
+
+Where the shipped code deliberately departs from the design text above:
+
+1. **Width autofixes are report-only everywhere**, not just under sketches.
+   A width change can overflow a row's 12-column sum and invalidate the
+   spec; the finding carries the suggested width (or redrawn sketch run)
+   instead. Heights remain fully autofixable.
+2. **`apply --design` advises offline** (no resolution, no probes) so
+   applies stay fast; `check --design` attaches type-aware advice for free
+   (it already resolved); full data-aware advice is `advise --profile`.
+3. **`size.axis-min-height` fixes to the audience minimum** (8/6/5 by
+   audience), not a blanket 8 — a dense operational board shouldn't be
+   inflated to analytical proportions.
+4. **Rule cards are the registry docstrings** (one line per rule, printed in
+   the brief) plus two Tier G guideline files; 27 separate markdown cards
+   would have been boilerplate.
+5. **Phase 3 concretely:** `absorb` appends to
+   `~/.config/chartwright/absorb-log.jsonl` (one vote per profile/slug/chart,
+   latest wins) and `chartwright calibrate [--write]` proposes/records
+   `recommended_heights` in the overlay, which the brief prints and height
+   autofixes target. `$CHARTWRIGHT_DESIGN_DIR` relocates both files.
+6. **`chart.dupe` proved itself in testing**: it flagged the test suite's own
+   lazily-copied KPIs. Working as intended.

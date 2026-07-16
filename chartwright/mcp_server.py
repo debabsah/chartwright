@@ -92,6 +92,43 @@ def plan_dashboard(spec_json: str, profile: str) -> str:
 
 
 @mcp.tool()
+def design_brief(audience: str = "analytical") -> str:
+    """The design brief to read BEFORE authoring a spec: audience budgets,
+    chart choice, composition, and what the critic enforces. Audiences:
+    executive | analytical | operational."""
+    from .design.brief import render_brief
+
+    try:
+        return render_brief(audience)
+    except ValueError as e:
+        return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
+
+
+@mcp.tool()
+def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
+    """Design review of a spec against the design-brain rulebook (offline;
+    pass a profile for data-aware rules: column types and cardinality)."""
+    spec, err = _parse_spec(spec_json)
+    if err:
+        return json.dumps(err)
+    from .design import advise
+
+    resolution = prober = None
+    if profile:
+        from .design.probe import CardinalityProber
+        from .resolver import resolve
+
+        client = _client(profile)
+        resolution = resolve(spec, client)
+        prober = CardinalityProber(client)
+    try:
+        report = advise(spec, audience=audience or None, resolution=resolution, prober=prober)
+    except ValueError as e:
+        return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
+    return json.dumps(report.payload())
+
+
+@mcp.tool()
 def decompile_dashboard(dashboard: str, profile: str) -> str:
     """Turn a live dashboard (slug or numeric id) into a spec + a named
     lossiness report. Use to pull UI-born dashboards under spec control."""

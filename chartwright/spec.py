@@ -418,6 +418,22 @@ class DashboardMeta(BaseModel):
     slug: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9-]*$", description="uuid seed input; lowercase kebab-case")
 
 
+class DesignConfig(BaseModel):
+    """Per-dashboard design-brain settings (see docs/DESIGN-BRAIN.md).
+
+    Additive and optional: a spec without this block behaves exactly as
+    before. `ignore` entries are rule ids ('size.pie-geometry'), optionally
+    scoped to one chart ('size.pie-geometry@Sales by Region'); suppressed
+    findings are still reported as ignored, so silence stays visible."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    audience: Literal["executive", "analytical", "operational"] | None = Field(
+        default=None, description="Design preset; CLI --audience overrides")
+    ignore: list[str] = Field(
+        default_factory=list, description="Design rule ids to suppress")
+
+
 class Layout(_SketchHolder):
     """Flat rows, tabs, or an ASCII sketch; exactly one."""
 
@@ -454,6 +470,7 @@ class DashboardSpec(BaseModel):
     charts: list[Chart] = Field(min_length=1)
     filters: list[DashboardFilter] = Field(default_factory=list, description="Native filter bar")
     layout: Layout
+    design: DesignConfig | None = Field(default=None, description="Design-brain settings (optional)")
 
     @field_validator("charts")
     @classmethod
