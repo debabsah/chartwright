@@ -449,6 +449,13 @@ class Layout(_SketchHolder):
             raise ValueError("layout: provide exactly one of rows / tabs / sketch")
         if self.sketch and not self.legend:
             raise ValueError("layout: a sketch needs a legend")
+        seen: set[str] = set()
+        for t in self.tabs or []:
+            if t.title in seen:
+                raise ValueError(
+                    f"duplicate tab title {t.title!r}: tab titles must be unique "
+                    "(they name tabs in diffs, advice, and the UI)")
+            seen.add(t.title)
         return self
 
     def all_rows(self) -> list[list[RowItem]]:

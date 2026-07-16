@@ -93,12 +93,20 @@ def test_kpi_height_out_of_band():
     assert "size.kpi-height" not in rules_fired(mk([kpi("A", height=4), kpi("B")]))
 
 
-def test_pie_geometry():
+def test_pie_geometry_splits_width_and_height():
     pie = {"type": "pie", "name": "P", "dataset": DS, "metric": "COUNT(*)",
            "groupby": "region", "row_limit": 5, "width": 3, "height": 4}
     rep = run(mk([pie], layout={"rows": [["P"]]}))
-    f = next(f for f in rep.findings if f.rule == "size.pie-geometry")
-    assert "width 3/12" in f.detail and f.fix["set"]["height"] == 8
+    fs = [f for f in rep.findings if f.rule == "size.pie-geometry"]
+    assert len(fs) == 2
+    width_f = next(f for f in fs if "width 3/12" in f.detail)
+    height_f = next(f for f in fs if "height 4" in f.detail)
+    assert width_f.fix is None and height_f.fix["set"]["height"] == 8
+    # a human-polished height silences ONLY the height complaint
+    pie["height"] = 4.2
+    fs = [f for f in run(mk([pie], layout={"rows": [["P"]]})).findings
+          if f.rule == "size.pie-geometry"]
+    assert len(fs) == 1 and "width 3/12" in fs[0].detail
 
 
 def test_heatmap_geometry_and_table_window_and_hbar_window():
@@ -325,3 +333,137 @@ def test_every_rule_registered_once_with_valid_severity():
     assert len(RULES) >= 25
     for r in RULES.values():
         assert r.severity in ("error", "warn", "info") and r.doc
+
+
+# -- v2 roadmap regressions ----------------------------------------------------
+
+
+def test_autofix_never_mints_fractional_heights():
+    """Echo-chamber guard: tool-written fixes must be integers, or they would
+    forge absorb's human-polish signature and silence the size rules."""
+    ov = Overlay(recommended_heights={"timeseries_line": 8.6})
+    data = mk([kpi("A"), kpi("B"), line("L", height=3)])
+    fixed, rep = advise_and_fix(data, overlay=ov)
+    heights = [c.get("height") for c in fixed["charts"] if c.get("height") is not None]
+    assert all(float(h).is_integer() for h in heights), heights
+
+
+def test_row_harmony_ceils_beside_polished_neighbor():
+    data = mk([line("L", height=8.6), hbar("R", height=5)],
+              layout={"rows": [["L", "R"]]})
+    fixed, rep = advise_and_fix(data, overlay=EMPTY)
+    by = {c["name"]: c.get("height") for c in fixed["charts"]}
+    assert by["R"] == 9 and by["L"] == 8.6  # raised to ceil(max); polish untouched
+
+
+def test_ignored_visible_even_on_polished_charts():
+    data = mk([kpi("A"), kpi("B"), line("L", height=3.4)],
+              design={"ignore": ["size.axis-min-height@L"]})
+    rep = run(data)
+    assert "size.axis-min-height@L" in rep.ignored
+
+
+def test_overlay_value_validation():
+    with pytest.raises(ValueError, match="must be a number"):
+        params_for("analytical", Overlay(params={"min_axis_height": "tall"}))
+    with pytest.raises(ValueError, match="1..100"):
+        params_for("analytical", Overlay(recommended_heights={"table": 400}))
+
+
+def test_overlay_file_validation(tmp_path, monkeypatch):
+    import yaml
+    monkeypatch.setenv("CHARTWRIGHT_DESIGN_DIR", str(tmp_path))
+    from chartwright.design.presets import load_overlay
+    (tmp_path / "design.yaml").write_text(yaml.safe_dump({"disable": "not-a-list"}))
+    with pytest.raises(ValueError, match="list of rule-id strings"):
+        load_overlay()
+    (tmp_path / "design.yaml").write_text(yaml.safe_dump({"audiences": {"board": {}}}))
+    with pytest.raises(ValueError, match="unknown audiences"):
+        load_overlay()
+
+
+def test_recommended_heights_merge_across_layers():
+    ov = Overlay(recommended_heights={"table": 11},
+                 audiences={"executive": {"recommended_heights": {"pie": 9}}})
+    p = params_for("executive", ov)
+    assert p.recommended_heights == {"table": 11, "pie": 9}  # merged, not replaced
+
+
+def test_min_width_rule():
+    charts = [line("L", width=2, height=8), hbar("T", width=3, height=8),
+              line("W", width=7, height=8)]
+    rep = run(mk(charts, layout={"rows": [["L", "T", "W"]]}))
+    by = {f.chart: f for f in rep.findings if f.rule == "size.min-width"}
+    assert by["L"].severity == "error" and by["T"].severity == "warn" and "W" not in by
+
+
+def test_slot_counting_allows_kpi_sidebar_and_stacks():
+    # The canonical sidebar: two KPIs stacked in a column beside a hero chart.
+    charts = [line("T"), kpi("S"), kpi("P")]
+    charts[0].pop("height")
+    layout = {"sketch": ["TTTTTTTT SSSS", "TTTTTTTT PPPP"],
+              "legend": {"T": "T", "S": "S", "P": "P"}, "line": 4}
+    rep = run(mk(charts, layout=layout))
+    assert not any(f.rule == "layout.kpi-band" for f in rep.findings)
+    # A stack occupies ONE slot: 3 slots (one a 2-chart stack) is not 4 charts.
+    charts = [line(f"L{i}") for i in range(4)]
+    for c in charts:
+        c.pop("height")
+    layout = {"sketch": ["AABBCCCCDDDD", "AABBCCCCDDDD", "AAEECCCCDDDD", "AAEECCCCDDDD"],
+              "legend": {"A": "L0", "B": "L1", "E": "extra", "C": "L2", "D": "L3"}}
+    charts.append(line("extra"))
+    charts[-1].pop("height")
+    # 5 axis charts but only 4 horizontal slots (B stacks over E): under
+    # analytical's max of 4 slots this is legal; flattened counting would fire.
+    rep = run(mk(charts, layout=layout))
+    assert not any(f.rule == "layout.row-density" for f in rep.findings)
+
+
+def test_grain_default_applies():
+    data = mk([line("Hist", time_range="last 5 years")])  # no time_grain
+    fs = [f for f in run(data).findings if f.rule == "data.grain-vs-range"]
+    assert len(fs) == 1 and "default when omitted" in fs[0].detail
+
+
+def test_acronym_titles_not_misclassified():
+    charts = [line("AOV by Region"), line("SLA Breaches Over Time"),
+              hbar("Top Products by GMV")]
+    assert not any(f.rule == "narrative.title-style" for f in run(mk(charts)).findings)
+
+
+def test_boolean_filter_values_ignored_by_filtered_title():
+    c = hbar("Active Products", filters=[{"column": "is_active", "op": "==", "value": True}])
+    assert not any(f.rule == "narrative.filtered-title" for f in run(mk([c])).findings)
+
+
+def test_axis_min_height_defers_to_owning_rules():
+    heat = {"type": "heatmap", "name": "H", "dataset": DS, "metric": "COUNT(*)",
+            "x_column": "a", "y_column": "b", "height": 4, "width": 6}
+    bar = hbar("B", row_limit=30, height=8)
+    rules = {f.rule for f in run(mk([heat, bar])).findings if f.chart in ("H", "B")}
+    assert "size.axis-min-height" not in rules
+    assert {"size.heatmap-geometry", "size.hbar-window"} <= rules
+
+
+def test_duplicate_tab_titles_rejected():
+    from pydantic import ValidationError as VE
+    data = mk([line("A"), line("B")],
+              layout={"tabs": [{"title": "T", "rows": [["A"]]},
+                               {"title": "T", "rows": [["B"]]}]})
+    with pytest.raises(VE, match="duplicate tab title"):
+        load_spec(data)
+
+
+def test_absorb_report_serializes():
+    from chartwright.absorb import AbsorbReport
+    assert '"stage": "absorb"' in AbsorbReport(ok=True).to_json()
+
+
+def test_kpi_clamp_converges_without_oscillation():
+    """Contract: size.kpi-height is the only rule that may LOWER a height;
+    nothing else targets KPI heights, so the clamp converges in one round."""
+    data = mk([kpi("A", height=10), kpi("B", height=10)])
+    fixed, rep = advise_and_fix(data, overlay=EMPTY)
+    heights = {c["name"]: c["height"] for c in fixed["charts"]}
+    assert heights == {"A": 4, "B": 4}
+    assert not any(f.rule == "design.fix-stalled" for f in rep.findings)

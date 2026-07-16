@@ -41,12 +41,16 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
         if r.data_aware and resolution is None:
             continue
         for f in r.fn(ctx):
-            # Fractional height = absorb's signature: a human already sized
-            # this chart in the UI; geometry opinions yield to that.
-            if f.rule.startswith("size.") and f.chart and ctx.human_polished(f.chart):
-                continue
+            # Explicit intent first: an ignore entry is ALWAYS visible in
+            # `ignored`, even when the polish skip below would also apply.
             if f.rule in suppressed or f.key in suppressed:
                 ignored.append(f.key)
+                continue
+            # Fractional height = absorb's signature: a human already sized
+            # this chart in the UI; HEIGHT opinions yield to that. Width and
+            # data complaints survive -- absorb cannot write widths, so a
+            # fractional height says nothing about them.
+            if f.height_driven and f.chart and ctx.human_polished(f.chart):
                 continue
             findings.append(f)
 
@@ -63,9 +67,12 @@ def advise_and_fix(spec_data: dict, *, audience: str | None = None,
                    prober=None, overlay: Overlay | None = None,
                    max_rounds: int = 5) -> tuple[dict, AdviceReport]:
     """Fix loop: advise -> apply safe fixes -> re-advise until no fixable
-    findings remain (heights only ever rise, so this converges; max_rounds is
-    a backstop, not a tuning knob). Returns (patched spec data, final report
-    with .fixed populated)."""
+    findings remain. Convergence invariant: KPI heights are clamped into 2..6
+    by exactly one rule (size.kpi-height); every OTHER height fix only raises,
+    and conflicting raises merge to max() -- so no two rules fight over one
+    chart's height and the loop terminates. max_rounds and the no-progress
+    check are backstops for invariant violations, not tuning knobs.
+    Returns (patched spec data, final report with .fixed populated)."""
     data = spec_data
     fixed_all: list[str] = []
     for _ in range(max_rounds):
@@ -75,7 +82,15 @@ def advise_and_fix(spec_data: dict, *, audience: str | None = None,
         if not fixable:
             report.fixed = fixed_all
             return data, report
-        data, applied = apply_fixes(data, fixable)
+        new_data, applied = apply_fixes(data, fixable)
+        if new_data == data:  # invariant violated: fixes made no progress
+            report.fixed = fixed_all
+            report.findings.append(Finding(
+                rule="design.fix-stalled", severity="warn", chart=None, where="fix loop",
+                detail=f"fixes {sorted(f.key for f in fixable)} made no progress; report a rule bug",
+            ))
+            return data, report
+        data = new_data
         fixed_all += applied
     report = advise(load_spec(data), audience=audience, ignore=ignore,
                     resolution=resolution, prober=prober, overlay=overlay)

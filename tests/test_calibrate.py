@@ -43,7 +43,11 @@ def test_record_and_latest_wins(monkeypatch, tmp_path):
 
 def test_below_min_samples_no_proposal(monkeypatch, tmp_path):
     seed(monkeypatch, tmp_path, [11, 11, 11])
-    assert calibrate(min_samples=5)["proposals"] == []
+    report = calibrate(min_samples=5)
+    assert report["proposals"] == []
+    # observed-but-not-actionable entries are reported, not thrown away
+    assert report["candidates"][0]["type"] == "table"
+    assert "needs >= 5 samples" in report["candidates"][0]["note"]
 
 
 def test_write_updates_overlay_and_downstream(monkeypatch, tmp_path):

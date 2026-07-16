@@ -98,6 +98,21 @@ def test_series_funnel_heatmap_probes():
     assert {"chart.series-limit", "chart.funnel-stages", "chart.heatmap-grid"} <= fired
 
 
+def test_heatmap_grid_saturated_side_reprobed():
+    # 6,000 x 10 must not pass because the first probe saturates at 31.
+    heat = {"type": "heatmap", "name": "H", "dataset": DS, "metric": "COUNT(*)",
+            "x_column": "a", "y_column": "b", "width": 7, "height": 8}
+    spec = mk([heat])
+    rep = advise(spec, resolution=resolution(ts=2),
+                 prober=FakeProber({"a": 6000, "b": 10}), overlay=EMPTY)
+    f = next(f for f in rep.findings if f.rule == "chart.heatmap-grid")
+    assert "at least" in f.detail
+    # 25 x 10 = 250 genuinely fits
+    rep = advise(spec, resolution=resolution(ts=2),
+                 prober=FakeProber({"a": 25, "b": 10}), overlay=EMPTY)
+    assert not any(f.rule == "chart.heatmap-grid" for f in rep.findings)
+
+
 def test_heatmap_width_requirement_rises_with_cardinality():
     heat = {"type": "heatmap", "name": "H", "dataset": DS, "metric": "COUNT(*)",
             "x_column": "a", "y_column": "b", "width": 6, "height": 8}
