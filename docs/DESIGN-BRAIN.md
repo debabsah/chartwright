@@ -7,7 +7,9 @@
 > from the original design text. Rendering-quality verification against a
 > live Superset (UI eyeballing of advised-vs-unadvised dashboards) is still
 > pending — the rulebook's thresholds come from the skill's field notes and
-> BI literature, not yet from side-by-side screenshots.
+> BI literature, not yet from side-by-side screenshots. A verified multi-lens
+> review of this implementation and the ranked v2 roadmap live in
+> [DESIGN-BRAIN-V2.md](DESIGN-BRAIN-V2.md).
 
 ## 1. Problem
 
