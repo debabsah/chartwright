@@ -29,6 +29,7 @@ class Params:
     vbar_max_categories: int
     pie_max_slices: int
     series_max: int              # lines per timeseries
+    max_filter_selects: int = 6  # select pickers in the native filter bar
     # chart type -> height (spec units); calibrate/overlay feed this,
     # size-rule autofixes target it.
     recommended_heights: dict[str, float] = field(default_factory=dict)
@@ -41,15 +42,15 @@ AUDIENCES: dict[str, Params] = {
     "executive": Params("executive", fold_units=22, max_row_charts=3, kpi_row_min=2,
                         kpi_row_max=5, kpi_height=5, min_axis_height=8,
                         table_visible_ratio=0.5, vbar_max_categories=6,
-                        pie_max_slices=5, series_max=5),
+                        pie_max_slices=5, series_max=5, max_filter_selects=5),
     "analytical": Params("analytical", fold_units=66, max_row_charts=4, kpi_row_min=2,
                          kpi_row_max=6, kpi_height=4, min_axis_height=6,
                          table_visible_ratio=0.25, vbar_max_categories=8,
-                         pie_max_slices=7, series_max=10),
+                         pie_max_slices=7, series_max=10, max_filter_selects=6),
     "operational": Params("operational", fold_units=22, max_row_charts=4, kpi_row_min=2,
                           kpi_row_max=8, kpi_height=3, min_axis_height=5,
                           table_visible_ratio=0.25, vbar_max_categories=8,
-                          pie_max_slices=7, series_max=8),
+                          pie_max_slices=7, series_max=8, max_filter_selects=7),
 }
 AUDIENCE_NAMES = tuple(AUDIENCES)
 

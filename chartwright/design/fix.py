@@ -11,15 +11,36 @@ import copy
 from .model import Finding
 
 
+def _md_block(data: dict, ti, ri, ii):
+    """The raw markdown-block dict at (tab, row, item), or None if the layout
+    changed under us (stale indices are skipped, never errors)."""
+    try:
+        rows = (data["layout"]["tabs"][ti]["rows"] if ti is not None
+                else data["layout"]["rows"])
+        item = rows[ri][ii]
+    except (KeyError, IndexError, TypeError):
+        return None
+    return item if isinstance(item, dict) and "markdown" in item else None
+
+
 def apply_fixes(spec_data: dict, findings: list[Finding]) -> tuple[dict, list[str]]:
     """Returns (patched deep copy, applied finding keys). Only findings that
-    carry a fix are touched; unknown chart names are skipped, not errors."""
+    carry a fix are touched; unknown chart names / stale markdown indices are
+    skipped, not errors."""
     out = copy.deepcopy(spec_data)
     by_name = {c.get("name"): c for c in out.get("charts", [])}
     merged: dict[str, dict] = {}
     applied: list[str] = []
     for f in findings:
-        if not f.fix or f.fix.get("chart") not in by_name:
+        if not f.fix:
+            continue
+        if "md" in f.fix:  # markdown blocks have no name; addressed by position
+            block = _md_block(out, *f.fix["md"])
+            if block is not None:
+                block.update(f.fix["set"])
+                applied.append(f.key)
+            continue
+        if f.fix.get("chart") not in by_name:
             continue
         tgt = merged.setdefault(f.fix["chart"], {})
         for k, v in f.fix["set"].items():

@@ -69,7 +69,7 @@ def clean_spec():
             ["Orders Over Time"],
             ["Top Products"],
         ]},
-        filters=[{"type": "time_range", "name": "Window"}],
+        filters=[{"type": "time_range", "name": "Window", "default": "Last quarter"}],
     )
 
 

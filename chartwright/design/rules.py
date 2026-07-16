@@ -164,6 +164,23 @@ def hbar_window(ctx: RuleContext):
         )
 
 
+@rule("size.pivot-window", "warn", "a pivot's height should show a meaningful share of its row_limit")
+def pivot_window(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type != "pivot_table" or c.row_limit is None:
+            continue
+        h = ctx.height(c.name)
+        header = 1 + len(c.columns)  # one header line per column dimension
+        visible = max(1, (h - header) / 0.8)
+        if visible < ctx.params.table_visible_ratio * c.row_limit:
+            yield Finding(
+                "size.pivot-window", "warn", c.name, ctx.where(c.name),
+                f"pivot shows ~{visible:.0f} of {c.row_limit} rows at {h:g} units "
+                f"({header} header line(s)); raise height or lower row_limit",
+                height_driven=True,
+            )
+
+
 @rule("size.row-harmony", "warn", "charts sharing a row should share a height (Superset sizes the row to its tallest child)", fixable=True)
 def row_harmony(ctx: RuleContext):
     for si, sec in enumerate(ctx.sections):
@@ -525,6 +542,117 @@ def heatmap_grid(ctx: RuleContext):
             )
 
 
+@rule("chart.pivot-dims", "warn", "a pivot past three total dimensions is unreadable nesting")
+def pivot_dims(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type == "pivot_table" and len(c.rows) + len(c.columns) > 3:
+            yield Finding(
+                "chart.pivot-dims", "warn", c.name, ctx.where(c.name),
+                f"{len(c.rows)} row + {len(c.columns)} column dimensions; keep the total "
+                f"to 3 or split the question across charts",
+            )
+
+
+@rule("chart.pivot-columns", "warn", "column-dim values x metrics = rendered columns; past ~15 the pivot scrolls sideways", data_aware=True)
+def pivot_columns(ctx: RuleContext):
+    if ctx.prober is None:
+        return
+    for c in ctx.spec.charts:
+        if c.type != "pivot_table" or not c.columns:
+            continue
+        ds = ctx.dataset_for(c)
+        if ds is None:
+            continue
+        rendered = len(c.metrics)
+        for col in c.columns:
+            n = ctx.prober.count_up_to(ds, col, 16)
+            if n is None:
+                rendered = None
+                break
+            rendered *= n
+        if rendered is not None and rendered > 15:
+            yield Finding(
+                "chart.pivot-columns", "warn", c.name, ctx.where(c.name),
+                f"~{rendered}+ rendered columns ({len(c.metrics)} metric(s) x column-dim "
+                f"values); the pivot scrolls sideways -- filter the column dimension or "
+                f"move it to rows",
+            )
+
+
+@rule("chart.format-bands", "warn", "conditional-formatting bands must tell one coherent story per metric")
+def format_bands(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type != "pivot_table" or not c.conditional_formatting:
+            continue
+        by_metric: dict[str, list] = {}
+        for r in c.conditional_formatting:
+            lo, hi = ((r.target_left, r.target_right) if r.operator == "between"
+                      else (float("-inf"), r.target) if r.operator == "<"
+                      else (r.target, float("inf")))
+            by_metric.setdefault(r.metric, []).append((lo, hi, r.color))
+        for metric, bands in by_metric.items():
+            for i in range(len(bands)):
+                for j in range(i + 1, len(bands)):
+                    (a0, a1, ca), (b0, b1, cb) = bands[i], bands[j]
+                    if a0 < b1 and b0 < a1 and ca != cb:
+                        yield Finding(
+                            "chart.format-bands", "warn", c.name, ctx.where(c.name),
+                            f"metric {metric!r}: {ca} and {cb} bands overlap "
+                            f"(cell color depends on rule order, not the value); "
+                            f"make the ranges disjoint",
+                        )
+            if len(bands) == 1:
+                yield Finding(
+                    "chart.format-bands", "info", c.name, ctx.where(c.name),
+                    f"metric {metric!r} has a single {bands[0][2]} band: one color is "
+                    f"decoration, not a signal; band the full green/amber/red story "
+                    f"or drop it",
+                )
+
+
+_ORDINAL_RE = re.compile(r"(^|_)(day|weekday|dow|month|quarter|hour)(_|$|name)", re.I)
+
+
+@rule("chart.ordinal-order", "info", "ordinal dimensions (weekday, month) sort alphabetically unless order-encoded")
+def ordinal_order(ctx: RuleContext):
+    def dims(c):
+        if c.type == "bar":
+            return [c.x_column]
+        if c.type == "heatmap":
+            return [c.x_column, c.y_column]
+        if c.type == "pivot_table":
+            return [*c.rows, *c.columns]
+        return []
+
+    for c in ctx.spec.charts:
+        hits = [d for d in dims(c) if d and _ORDINAL_RE.search(d)]
+        if hits:
+            yield Finding(
+                "chart.ordinal-order", "info", c.name, ctx.where(c.name),
+                f"{hits} look ordinal but Superset sorts categories alphabetically "
+                f"(Apr, Aug, Dec...); chart an order-encoded label column "
+                f"(e.g. '1-Mon') if the dataset has one",
+            )
+
+
+@rule("chart.treemap-vs-bar", "info", "a one-level treemap of few categories is a worse bar chart", data_aware=True)
+def treemap_vs_bar(ctx: RuleContext):
+    if ctx.prober is None:
+        return
+    for c in ctx.spec.charts:
+        if c.type != "treemap" or len(c.groupby) != 1:
+            continue
+        ds = ctx.dataset_for(c)
+        if ds is None:
+            continue
+        if ctx.prober.more_than(ds, c.groupby[0], 10) is False:
+            yield Finding(
+                "chart.treemap-vs-bar", "info", c.name, ctx.where(c.name),
+                f"one grouping level with <= 10 values: a horizontal bar shows the "
+                f"same data with readable labels and comparable lengths",
+            )
+
+
 @rule("chart.dupe", "info", "two charts answering the identical question is redundancy")
 def chart_dupe(ctx: RuleContext):
     seen: dict[str, str] = {}
@@ -556,10 +684,41 @@ def row_limit_intent(ctx: RuleContext):
                 "data.row-limit-intent", "info", c.name, ctx.where(c.name),
                 "horizontal bar with no row_limit (defaults to 10,000); a ranking wants ~10",
             )
+        elif c.type == "pivot_table" and c.row_limit is None:
+            yield Finding(
+                "data.row-limit-intent", "info", c.name, ctx.where(c.name),
+                "pivot riding the default row_limit (10,000); set it deliberately",
+            )
+
+
+@rule("data.top-n-sort", "warn", "a limit without an order is a sample, not a ranking")
+def top_n_sort(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if (c.type == "table" and (c.metrics or c.groupby) and c.sort_by is None
+                and c.row_limit is not None and c.row_limit <= 100):
+            yield Finding(
+                "data.top-n-sort", "warn", c.name, ctx.where(c.name),
+                f"row_limit {c.row_limit} with no sort_by shows {c.row_limit} ARBITRARY "
+                f"rows, not a top {c.row_limit}; set sort_by to the ranking metric",
+            )
 
 
 _RANGE_DAYS = {"day": 1, "week": 7, "month": 30.4, "quarter": 91, "year": 365}
-_GRAIN_DAYS = {"PT1H": 1 / 24, "P1D": 1, "P1W": 7, "P1M": 30.4, "P3M": 91, "P1Y": 365}
+_GRAIN_DAYS = {"PT1S": 1 / 86400, "PT1M": 1 / 1440, "PT1H": 1 / 24,
+               "P1D": 1, "P1W": 7, "P1M": 30.4, "P3M": 91, "P1Y": 365}
+# Points a chart type can render before it stops informing: bars must read as
+# discrete periods; lines/areas add nothing past a few hundred points at
+# dashboard width.
+_POINT_BUDGET = {"timeseries_bar": 40, "timeseries_line": 300,
+                 "timeseries_area": 300, "timeseries_scatter": 300}
+
+
+def _grain_days(grain: str) -> float | None:
+    if grain in _GRAIN_DAYS:
+        return _GRAIN_DAYS[grain]
+    if "P1W" in grain:  # Superset's week-anchor spellings (1969-12-28T.../P1W)
+        return 7
+    return None
 
 
 def _span_days(time_range: str) -> float | None:
@@ -589,22 +748,46 @@ def grain_vs_range(ctx: RuleContext):
         # An omitted grain compiles to the P1D default -- the most common
         # LLM-authored shape is exactly the one that needs this rule.
         eff = c.time_grain or DEFAULT_TIME_GRAIN
-        grain = _GRAIN_DAYS.get(eff)
+        grain = _grain_days(eff)
         if span is None or grain is None:
             continue
         label = eff if c.time_grain else f"{eff} (the default when omitted)"
         points = span / grain
-        if points < 2:
+        budget = _POINT_BUDGET.get(c.type, 300)
+        if span == 0:
+            yield Finding(
+                "data.grain-vs-range", "warn", c.name, ctx.where(c.name),
+                f"{c.time_range!r} spans 0 days; extend the time_range",
+            )
+        elif points < 2:
             yield Finding(
                 "data.grain-vs-range", "warn", c.name, ctx.where(c.name),
                 f"{c.time_range!r} at grain {label} yields ~{points:.1f} point(s); "
                 f"a line needs a finer grain or a longer range",
             )
-        elif points > 1000:
+        elif points > budget:
+            hint = ("bars stop reading as discrete periods; switch to a line or coarsen "
+                    "the grain" if c.type == "timeseries_bar" else "coarsen the grain")
             yield Finding(
                 "data.grain-vs-range", "warn", c.name, ctx.where(c.name),
-                f"{c.time_range!r} at grain {label} yields ~{points:,.0f} points; "
-                f"coarsen the grain",
+                f"{c.time_range!r} at grain {label} yields ~{points:,.0f} points "
+                f"(budget ~{budget} for {c.type}); {hint}",
+            )
+
+
+@rule("chart.trend-grain", "info", "trend tiles at a fine grain over full history draw thousands of points in a small card")
+def trend_grain(ctx: RuleContext):
+    fine = (None, "PT1S", "PT1M", "PT1H", "P1D")
+    windowed = any(f.type == "time_range" and f.default for f in ctx.spec.filters)
+    if windowed:
+        return
+    for c in ctx.spec.charts:
+        if c.type == "big_number_trend" and c.time_grain in fine:
+            yield Finding(
+                "chart.trend-grain", "info", c.name, ctx.where(c.name),
+                f"sparkline at grain {c.time_grain or 'P1D (default)'} with no defaulted "
+                f"dashboard time window draws full history daily; coarsen to P1W/P1M or "
+                f"give the time_range filter a default",
             )
 
 
@@ -687,3 +870,117 @@ def time_picker(ctx: RuleContext):
             "timeseries charts but no time_range filter in the native bar; "
             "viewers will want to change the window",
         )
+
+
+@rule("filters.count", "warn", "past ~6 select pickers a filter bar stops being navigable (and each costs a query on load)")
+def filters_count(ctx: RuleContext):
+    selects = [f.name for f in ctx.spec.filters if f.type == "select"]
+    if len(selects) > ctx.params.max_filter_selects:
+        yield Finding(
+            "filters.count", "warn", None, "filters",
+            f"{len(selects)} select filters (max {ctx.params.max_filter_selects} for this "
+            f"audience); each is a distinct-values query on every load -- keep the few "
+            f"viewers actually change, move the rest to per-chart WHERE filters",
+        )
+
+
+@rule("filters.duplicate-column", "info", "two filters on the same column fight each other")
+def filters_duplicate(ctx: RuleContext):
+    seen: dict[tuple, str] = {}
+    for f in ctx.spec.filters:
+        if f.type not in ("select", "range"):
+            continue
+        key = (f.dataset.key(), f.column)
+        if key in seen:
+            yield Finding(
+                "filters.duplicate-column", "info", None, "filters",
+                f"filters {seen[key]!r} and {f.name!r} both target "
+                f"{f.column!r}; viewers get two controls with one meaning",
+            )
+        else:
+            seen[key] = f.name
+
+
+@rule("filters.select-cardinality", "warn", "a select over hundreds of distinct values is an unusable picker", data_aware=True)
+def filters_select_cardinality(ctx: RuleContext):
+    if ctx.prober is None:
+        return
+    for f in ctx.spec.filters:
+        if f.type != "select":
+            continue
+        ds = (ctx.resolution.datasets.get(f.dataset.key())
+              if ctx.resolution is not None else None)
+        if ds is None:
+            continue
+        if ctx.prober.more_than(ds, f.column, 500):
+            yield Finding(
+                "filters.select-cardinality", "warn", None, "filters",
+                f"select {f.name!r} on {f.column!r} has more than 500 distinct values: "
+                f"an unusable picker and a heavy load-time query; use a numeric range "
+                f"filter or a coarser column",
+            )
+
+
+@rule("filters.time-default", "info", "an undefaulted time picker loads the dashboard over ALL history")
+def filters_time_default(ctx: RuleContext):
+    for f in ctx.spec.filters:
+        if f.type == "time_range" and not f.default:
+            yield Finding(
+                "filters.time-default", "info", None, "filters",
+                f"time_range filter {f.name!r} has no default: first load scans and "
+                f"draws full history; set a default window (e.g. 'Last quarter')",
+            )
+
+
+@rule("filters.range-default", "info", "a range slider with no default bounds spans the whole domain")
+def filters_range_default(ctx: RuleContext):
+    for f in ctx.spec.filters:
+        if f.type == "range" and f.le is None and f.ge is None:
+            yield Finding(
+                "filters.range-default", "info", None, "filters",
+                f"range filter {f.name!r} sets neither ge nor le; give it a default "
+                f"bound so the slider starts somewhere meaningful",
+            )
+
+
+@rule("narrative.format-consistency", "info", "one measure, one number format")
+def format_consistency(ctx: RuleContext):
+    by_metric: dict[str, dict] = {}
+    for c in ctx.spec.charts:
+        if c.type in KPI_TYPES:
+            by_metric.setdefault(c.metric, {})[c.name] = c.number_format
+    for metric, charts in by_metric.items():
+        if len(charts) > 1 and len(set(charts.values())) > 1:
+            yield Finding(
+                "narrative.format-consistency", "info", None, "charts",
+                f"metric {metric!r} renders with different number formats across "
+                f"{sorted(charts)}: {sorted(set(str(v) for v in charts.values()))}; "
+                f"pick one",
+            )
+
+
+@rule("layout.markdown-height", "info", "a one-line markdown header doesn't need a chart-sized block", fixable=True)
+def markdown_height(ctx: RuleContext):
+    def rows_of(container):
+        return container.get("rows") or []
+
+    # Operates on the raw layout indices so the fix can address the block
+    # (markdown has no name to key on).
+    lay = ctx.spec.layout
+    sources = ([(None, lay.rows)] if lay.rows
+               else [(ti, t.rows) for ti, t in enumerate(lay.tabs or []) if t.rows])
+    for ti, rows in sources:
+        for ri, row in enumerate(rows or []):
+            for ii, item in enumerate(row):
+                if isinstance(item, str):
+                    continue
+                lines = [l for l in item.markdown.splitlines() if l.strip()]
+                h = item.height or 4
+                if len(lines) <= 1 and h >= 3:
+                    where = (f"tab {(lay.tabs[ti].title if ti is not None else '')!r} row {ri}"
+                             if ti is not None else f"layout row {ri}")
+                    yield Finding(
+                        "layout.markdown-height", "info", None, where,
+                        f"one-line markdown block at {h} units; 2 is plenty for a header",
+                        fix={"md": [ti, ri, ii], "set": {"height": 2}},
+                    )

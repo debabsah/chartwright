@@ -15,6 +15,13 @@
 - Tabs when sections answer different questions; scrolling when one question
   deepens. Never a tab with a single lonely chart.
 - Whitespace is markdown's job, sparingly: a one-line section header beats an
-  empty band. Consistent number formats per measure across every chart.
+  empty band (2 units is plenty for a header). Consistent number formats per
+  measure across KPI cards (tables and pivots use Superset's smart default;
+  the spec cannot set per-column formats yet).
 - Color restraint: Superset's default palette, RAG only where a threshold has
   a real business meaning; never encode the same dimension with two palettes.
+- RAG polarity is a convention, not a choice: red = adverse, green = good
+  (IBCS). Bands on one metric must be disjoint and tell one story.
+- Heatmaps ship with a sequential scale normalized over the whole map: right
+  for magnitudes, wrong for signed deltas -- don't heatmap a metric that
+  crosses zero.
