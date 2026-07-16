@@ -71,7 +71,13 @@ approximate it with a different mechanism.
    Modify UI-born dashboards via
    `CW decompile <slug-or-id> --profile <profile> -o <abs-spec-path>`;
    show the user the lossiness report before editing. `CW advise` on a
-   decompiled spec is a design audit of a legacy dashboard.
+   decompiled spec is a design audit of a legacy dashboard. To redesign one
+   in one shot, `CW redesign <slug-or-id> --profile <profile> -o
+   <abs-spec-path>`: decompile + audit + safe geometry fixes; act on the
+   remaining structural findings by editing the spec (step 6 rules apply),
+   show the user the losses and the `next` line, then apply. A dashboard the
+   tool does not own comes back under a `-redesign` slug: apply builds it
+   side by side, never over the original.
 9. If drift is possible (someone edited in the UI), run
    `CW plan <abs-spec-path> --profile <profile>` first and surface what
    apply would change.

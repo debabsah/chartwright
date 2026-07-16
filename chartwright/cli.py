@@ -7,6 +7,7 @@
     chartwright apply spec.json --profile P     check -> compile -> import -> smoke
     chartwright brief                           the design brief to read BEFORE authoring a spec
     chartwright advise spec.json                design review (add --profile for data-aware rules)
+    chartwright redesign <slug> --profile P     decompile + audit + safe fixes -> redesigned spec
     chartwright calibrate                       learn recommended heights from absorb history
 """
 
@@ -117,6 +118,15 @@ def _main(argv: list[str] | None = None) -> None:
 
     br = sub.add_parser("brief", help="the design brief to read BEFORE authoring a spec")
     br.add_argument("--audience", choices=AUDIENCE_NAMES, default="analytical")
+
+    rd = sub.add_parser("redesign",
+                        help="decompile a live dashboard, audit it, apply safe fixes, write the redesigned spec")
+    rd.add_argument("dashboard", help="slug or numeric id of a live dashboard")
+    rd.add_argument("--profile", required=True)
+    rd.add_argument("--audience", choices=AUDIENCE_NAMES, default=None)
+    rd.add_argument("-o", "--output", default=None,
+                    help="write the redesigned spec here (default: <slug>.json)")
+    rd.add_argument("--no-probe", action="store_true", help="skip cardinality queries (metadata only)")
 
     cal = sub.add_parser("calibrate", help="propose recommended heights from absorb history")
     cal.add_argument("--write", action="store_true", help="record proposals in the design overlay")
@@ -234,6 +244,45 @@ def _main(argv: list[str] | None = None) -> None:
             payload["resolution_errors"] = [e.as_dict() for e in resolution.errors]
         print(json.dumps(payload, indent=2))
         sys.exit(1 if report.gate(args.strict) else 0)
+
+    if args.cmd == "redesign":
+        client = _client(args.profile)
+        from .decompile import decompile_live
+
+        try:
+            result = decompile_live(args.dashboard, client)
+        except ValueError as e:
+            _die({"stage": "redesign", "errors": [{"code": "decompile", "detail": str(e)}]})
+        try:
+            spec = load_spec(result.spec)
+        except ValidationError as e:
+            _die({"stage": "redesign", "losses": result.losses_json(), "errors": [
+                {"code": "decompiled_spec_invalid",
+                 "detail": "the decompiled spec does not load; redesign by hand from "
+                           "`chartwright decompile` output"},
+                *json.loads(e.json()),
+            ]})
+        from .apply import _ownership_guard
+        from .design.probe import CardinalityProber
+        from .design.redesign import redesign_spec
+        from .resolver import resolve
+
+        owned = _ownership_guard(spec, client) is None
+        resolution = resolve(spec, client)
+        prober = None if args.no_probe else CardinalityProber(client)
+        try:
+            new_data, payload = redesign_spec(
+                result.spec, result.losses_json(), owned=owned,
+                audience=args.audience, resolution=resolution, prober=prober)
+        except ValueError as e:
+            _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
+        out = Path(args.output or f"{new_data['dashboard']['slug']}.json")
+        out.write_text(json.dumps(new_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        payload["output"] = str(out)
+        if resolution.errors:
+            payload["resolution_errors"] = [e.as_dict() for e in resolution.errors]
+        print(json.dumps(payload, indent=2))
+        sys.exit(0 if payload["ok"] else 1)
 
     if args.cmd == "brief":
         from .design.brief import render_brief

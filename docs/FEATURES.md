@@ -38,6 +38,7 @@ that way. Everything below works from that one file.
 - **House Style**: A `design.yaml` overlay tunes thresholds, disables rules, and appends org guidance to the brief — no fork of the rulebook.
 - **It Learns From You**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.
 - **Design Audits of Legacy Dashboards**: `decompile` + `advise` grades any UI-built dashboard against the rulebook.
+- **One-Shot Redesign**: `chartwright redesign <dashboard>` decompiles a live dashboard, audits it, applies the safe geometry fixes, and writes the redesigned spec — side by side under a new slug when the original isn't tool-built, in place when it is.
 
 ## Dashboards as Code
 - **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, layout.
