@@ -216,5 +216,11 @@
       "J": "Top 10 Pickup Zones",
       "K": "Trip Distance Distribution (trips up to 20 mi)"
     }
+  },
+  "design": {
+    "ignore": [
+      "filters.time-default",
+      "chart.ordinal-order@Demand by Hour and Weekday"
+    ]
   }
 }

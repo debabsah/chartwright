@@ -42,7 +42,7 @@ def mk(charts, filters=None):
         "spec_version": "1",
         "dashboard": {"title": "T", "slug": "t"},
         "charts": charts,
-        "filters": filters or [{"type": "time_range", "name": "W"}],
+        "filters": filters or [{"type": "time_range", "name": "W", "default": "Last year"}],
         "layout": {"rows": [[c["name"]] for c in charts]},
     })
 

@@ -49,6 +49,42 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         rec = ", ".join(f"{t}: {h:g}" for t, h in sorted(p.recommended_heights.items()))
         lines.append(f"- Calibrated house heights (from real usage): {rec}.")
 
+    exemplar = {
+        "executive": [
+            '"KKK MMM NNN QQQ",   K/M/N/Q: four KPIs, one band, above everything',
+            '"LLLLLLLL SSSS",     L: the one trend that answers the question',
+            '"LLLLLLLL SSSS",     S: its single most useful breakdown',
+            '"LLLLLLLL SSSS",     (three lines at line: 2 = 6 units < the 22-unit budget)',
+        ],
+        "analytical": [
+            '"KKKK MMMM NNNN",    KPI band first',
+            '"LLLLLLLL SSSS",     L: trend (4-5 lines tall); S: breakdown stacked beside it',
+            '"LLLLLLLL SSSS",',
+            '"LLLLLLLL PPPP",     P: second breakdown completes the sidebar',
+            '"TTTTTTTTTTTT",      T: the detail table, full width, below the fold is fine',
+            '"TTTTTTTTTTTT",',
+        ],
+        "operational": [
+            '"KKK MMM NNN QQQ",   dense KPI band (up to 8 fit)',
+            '"LLLLLL SSSSSS",     two half-width monitors per band',
+            '"LLLLLL SSSSSS",',
+            '"AAAAAA BBBBBB",     everything visible, one screen, no scroll',
+            '"AAAAAA BBBBBB",',
+        ],
+    }[audience]
+    lines += ["", "## The canonical shape (a sketch to start from)", ""] + [f"  {l}" for l in exemplar]
+
+    lines += [
+        "",
+        "## Defaults the compiler fills in (the critic flags the ones that matter)",
+        "",
+        "- Omitted height -> 8 units (KPIs 4, markdown 4). Omitted width -> the row splits evenly.",
+        "- Omitted row_limit -> 10,000 (pie 100, table 1,000, funnel 10): set it deliberately on bar/pie/table/pivot.",
+        "- Omitted time_grain -> P1D. Grains: PT1H P1D P1W P1M P3M P1Y. Points ~= range/grain; budget ~40 for bars, ~300 for lines.",
+        "- number_format is d3: ',.0f' thousands, '.1%' percent, '.3s' SI units, '$,.2f' money. One measure, one format.",
+        "- Native filter bar: select pickers (few, they query on load), a time_range WITH a default, numeric range sliders.",
+    ]
+
     lines += ["", _guideline("chart-choice.md").strip(), "", _guideline("composition.md").strip()]
 
     lines += ["", "## What the critic enforces (`chartwright advise`)", ""]
