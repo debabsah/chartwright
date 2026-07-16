@@ -17,16 +17,43 @@ import math
 import re
 from datetime import date
 
+from ..spec import DEFAULT_TIME_GRAIN
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 
 # -- size: minimum readable geometry ------------------------------------------
 
 
+@rule("size.min-width", "warn", "below 3/12 width a chart is unreadable; KPIs need 2/12")
+def min_width(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type in ("pie", "heatmap"):
+            continue  # they own stricter geometry rules
+        w = ctx.width(c.name)
+        if c.type in KPI_TYPES:
+            if w < 2:
+                yield Finding(
+                    "size.min-width", "warn", c.name, ctx.where(c.name),
+                    f"big number at {w}/12: the value gets cropped; give it >= 2/12",
+                )
+        elif w < 3:
+            yield Finding(
+                "size.min-width", "error", c.name, ctx.where(c.name),
+                f"{c.type} at {w}/12 is unreadable at any height; 3/12 is the hard floor",
+            )
+        elif w < 4:
+            yield Finding(
+                "size.min-width", "warn", c.name, ctx.where(c.name),
+                f"{c.type} at {w}/12 is cramped; 4/12 or wider reads comfortably",
+            )
+
+
 @rule("size.axis-min-height", "warn", "axis charts below the audience minimum height flatten and drop labels", fixable=True)
 def axis_min_height(ctx: RuleContext):
     for c in ctx.spec.charts:
-        if c.type not in AXIS_TYPES:
-            continue
+        if c.type not in AXIS_TYPES or c.type == "heatmap":
+            continue  # heatmap-geometry owns the heatmap's stricter floor
+        if c.type == "bar" and c.orientation == "horizontal" and c.row_limit is not None:
+            continue  # hbar-window's per-bar formula binds instead
         h = ctx.height(c.name)
         if h < ctx.params.min_axis_height:
             yield Finding(
@@ -34,6 +61,7 @@ def axis_min_height(ctx: RuleContext):
                 f"{c.type} at {h:g} units renders flattened with axis labels dropped; "
                 f"needs >= {ctx.params.min_axis_height}",
                 fix=ctx.fix_height(c, ctx.params.min_axis_height),
+                height_driven=True,
             )
 
 
@@ -44,36 +72,38 @@ def kpi_height(ctx: RuleContext):
             continue
         h = ctx.height(c.name)
         if not 2 <= h <= 6:
-            target = min(6.0, max(2.0, ctx.params.kpi_height,
-                                  ctx.params.recommended_heights.get(c.type, 0)))
+            target = min(6, max(2, math.ceil(max(
+                ctx.params.kpi_height, ctx.params.recommended_heights.get(c.type, 0)))))
             yield Finding(
                 "size.kpi-height", "warn", c.name, ctx.where(c.name),
                 f"big number at {h:g} units ({'starved' if h < 2 else 'wastes hero space'}); "
                 f"2-6 reads best",
                 fix={"chart": c.name, "set": {"height": target}},
+                height_driven=True,
             )
 
 
 @rule("size.pie-geometry", "warn", "pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds", fixable=True)
 def pie_geometry(ctx: RuleContext):
+    # Width and height are SEPARATE findings: a human-polished (fractional)
+    # height silences only the height complaint; absorb can't write widths.
     for c in ctx.spec.charts:
         if c.type != "pie":
             continue
         w, h = ctx.width(c.name), ctx.height(c.name)
-        if w >= 5 and h >= 8:
-            continue
-        parts = []
         if w < 5:
             hint = ("widen its sketch run to >= 5 of 12 cells" if ctx.is_sketch(c.name)
                     else "widen it to >= 5 of 12")
-            parts.append(f"width {w}/12 ({hint})")
+            yield Finding(
+                "size.pie-geometry", "warn", c.name, ctx.where(c.name),
+                f"pie squeezed: width {w}/12 ({hint}); ring shrinks and legend crowds",
+            )
         if h < 8:
-            parts.append(f"height {h:g} < 8")
-        yield Finding(
-            "size.pie-geometry", "warn", c.name, ctx.where(c.name),
-            f"pie squeezed: {'; '.join(parts)}; ring shrinks and legend crowds",
-            fix=ctx.fix_height(c, 8) if h < 8 else None,
-        )
+            yield Finding(
+                "size.pie-geometry", "warn", c.name, ctx.where(c.name),
+                f"pie squeezed: height {h:g} < 8; ring shrinks and legend crowds",
+                fix=ctx.fix_height(c, 8), height_driven=True,
+            )
 
 
 @rule("size.heatmap-geometry", "warn", "heatmaps need >= 5/12 width (7/12 with many columns) and 6 height", fixable=True)
@@ -86,18 +116,18 @@ def heatmap_geometry(ctx: RuleContext):
         if ctx.prober is not None and (ds := ctx.dataset_for(c)):
             if ctx.prober.more_than(ds, c.x_column, 12):
                 min_w = 7
-        if w >= min_w and h >= 6:
-            continue
-        parts = []
         if w < min_w:
-            parts.append(f"width {w}/12 < {min_w}" + (" (x has > 12 columns)" if min_w == 7 else ""))
+            yield Finding(
+                "size.heatmap-geometry", "warn", c.name, ctx.where(c.name),
+                f"heatmap cramped: width {w}/12 < {min_w}"
+                + (" (x has > 12 columns)" if min_w == 7 else ""),
+            )
         if h < 6:
-            parts.append(f"height {h:g} < 6")
-        yield Finding(
-            "size.heatmap-geometry", "warn", c.name, ctx.where(c.name),
-            f"heatmap cramped: {'; '.join(parts)}",
-            fix=ctx.fix_height(c, 8) if h < 6 else None,
-        )
+            yield Finding(
+                "size.heatmap-geometry", "warn", c.name, ctx.where(c.name),
+                f"heatmap cramped: height {h:g} below the readable floor of 6 (8 recommended)",
+                fix=ctx.fix_height(c, 8), height_driven=True,
+            )
 
 
 @rule("size.table-window", "warn", "a table's height should show a meaningful share of its row_limit")
@@ -112,6 +142,7 @@ def table_window(ctx: RuleContext):
                 "size.table-window", "warn", c.name, ctx.where(c.name),
                 f"table shows ~{visible:.0f} of {c.row_limit} rows at {h:g} units "
                 f"(a scroll dungeon); raise height or lower row_limit",
+                height_driven=True,
             )
 
 
@@ -129,7 +160,7 @@ def hbar_window(ctx: RuleContext):
             "size.hbar-window", "warn", c.name, ctx.where(c.name),
             f"{c.row_limit} bars in {h:g} units squeezes each bar; needs ~{math.ceil(needed)}"
             + ("" if fix else f"; that exceeds a sane height, lower row_limit instead"),
-            fix=fix,
+            fix=fix, height_driven=True,
         )
 
 
@@ -144,13 +175,17 @@ def row_harmony(ctx: RuleContext):
                 continue
             heights = {n: ctx.height(n) for n in names}
             top = max(heights.values())
+            # ceil: a fractional band max is a human-polished neighbor, and a
+            # tool fix must never mint the fractional human-polish signature.
+            target = min(100, math.ceil(top))
             for n, h in heights.items():
                 if h < top:
                     yield Finding(
                         "size.row-harmony", "warn", n, ctx.where_band(si, bi),
                         f"{h:g} units beside a {top:g}-unit neighbor leaves a ragged hole; "
-                        f"equalize to {top:g}",
-                        fix={"chart": n, "set": {"height": top}},
+                        f"equalize to {target:g}",
+                        fix={"chart": n, "set": {"height": target}},
+                        height_driven=True,
                     )
 
 
@@ -178,17 +213,33 @@ def kpi_first(ctx: RuleContext):
 
 @rule("layout.kpi-band", "warn", "KPIs get their own band, in readable numbers")
 def kpi_band(ctx: RuleContext):
+    # Reasoning is per horizontal SLOT (a BandItem), not per flattened chart:
+    # a vertical stack of KPIs beside a hero chart is the canonical sidebar
+    # pattern the sketch grammar exists to express, not a mixed band.
     p = ctx.params
     for si, sec in enumerate(ctx.sections):
         for bi, band in enumerate(sec.bands):
             kpis = [n for n in band.chart_names if ctx.charts[n].type in KPI_TYPES]
             others = [n for n in band.chart_names if ctx.charts[n].type not in KPI_TYPES]
             if kpis and others:
-                yield Finding(
-                    "layout.kpi-band", "warn", None, ctx.where_band(si, bi),
-                    f"big numbers {kpis} share a row with detail charts {others}; "
-                    f"give KPIs their own band",
-                )
+                # Offenders are bare full-height KPI slots beside detail slots;
+                # KPI-only stacks (sidebars) are exempt.
+                bare = [i.charts[0] for i in band.items
+                        if len(i.charts) == 1 and ctx.charts[i.charts[0]].type in KPI_TYPES]
+                mixed_stacks = [i for i in band.items if len(i.charts) > 1
+                                and any(ctx.charts[n].type in KPI_TYPES for n in i.charts)
+                                and any(ctx.charts[n].type not in KPI_TYPES for n in i.charts)]
+                if bare:
+                    yield Finding(
+                        "layout.kpi-band", "warn", None, ctx.where_band(si, bi),
+                        f"big numbers {bare} sit full-height beside detail charts; give KPIs "
+                        f"their own band, or stack them in a column beside the tall chart",
+                    )
+                elif mixed_stacks:
+                    yield Finding(
+                        "layout.kpi-band", "warn", None, ctx.where_band(si, bi),
+                        "a stack mixes big numbers with detail charts; keep stacks homogeneous",
+                    )
             elif kpis:
                 has_md = any(i.is_markdown for i in band.items)
                 if len(kpis) > p.kpi_row_max:
@@ -204,17 +255,21 @@ def kpi_band(ctx: RuleContext):
                     )
 
 
-@rule("layout.row-density", "warn", "too many axis charts in one row starves each of width")
+@rule("layout.row-density", "warn", "too many axis charts side by side starves each of width")
 def row_density(ctx: RuleContext):
+    # Horizontal SLOTS, not flattened charts: a stack of three charts occupies
+    # one slot's width, so it counts once (the user already split vertically).
     for si, sec in enumerate(ctx.sections):
         for bi, band in enumerate(sec.bands):
-            axis = [(n, ctx.width(n)) for n in band.chart_names if ctx.charts[n].type in AXIS_TYPES]
-            if len(axis) <= ctx.params.max_row_charts:
+            slots = [i for i in band.items
+                     if any(ctx.charts[n].type in AXIS_TYPES for n in i.charts)]
+            if len(slots) <= ctx.params.max_row_charts:
                 continue
-            sev = "error" if any(w < 3 for _, w in axis) else "warn"
+            sev = "error" if any(i.width < 3 for i in slots) else "warn"
             yield Finding(
                 "layout.row-density", sev, None, ctx.where_band(si, bi),
-                f"{len(axis)} axis charts in one row (max {ctx.params.max_row_charts}); "
+                f"{len(slots)} side-by-side slots with axis charts "
+                f"(max {ctx.params.max_row_charts}); "
                 + ("some land under 3/12 wide, unreadable" if sev == "error"
                    else "split across rows"),
             )
@@ -340,8 +395,10 @@ def pie_slices(ctx: RuleContext):
             "chart.pie-slices", "warn", c.name, ctx.where(c.name),
             (f"pie with row_limit {rl}" if rl is not None
              else "pie with no row_limit (defaults to 100)")
-            + f": more than {p.pie_max_slices} slices is unreadable; set row_limit "
-              f"{p.pie_max_slices} or switch to a horizontal bar",
+            + f": more than {p.pie_max_slices} slices is unreadable. Prefer a horizontal "
+              f"bar (rankings don't claim to be a whole); if it must stay a pie, know that "
+              f"a row_limit redefines the whole -- the shown slices read as 100% -- so the "
+              f"title must disclose the truncation (e.g. 'top {p.pie_max_slices} ...')",
         )
 
 
@@ -449,10 +506,22 @@ def heatmap_grid(ctx: RuleContext):
             continue
         cx = ctx.prober.count_up_to(ds, c.x_column, 30)
         cy = ctx.prober.count_up_to(ds, c.y_column, 30)
-        if cx and cy and cx * cy > 400:
+        if not cx or not cy:
+            continue
+        # A saturated side (count == cap+1) hides the true product: a 6,000x10
+        # grid reads as 31x10 = 310 and would pass. Re-probe the saturated
+        # side at the cap the OTHER side implies before deciding.
+        if cx * cy <= 400 and (cx > 30 or cy > 30):
+            if cx > 30:
+                cx = ctx.prober.count_up_to(ds, c.x_column, math.ceil(400 / cy)) or cx
+            if cy > 30:
+                cy = ctx.prober.count_up_to(ds, c.y_column, math.ceil(400 / cx)) or cy
+        if cx * cy > 400:
+            at_least = "at least " if cx > 30 or cy > 30 else "~"
             yield Finding(
                 "chart.heatmap-grid", "warn", c.name, ctx.where(c.name),
-                f"~{cx}x{cy} = {cx * cy}+ cells; filter or coarsen one axis to stay under ~400",
+                f"{at_least}{cx}x{cy} = {cx * cy}+ cells; filter or coarsen one axis "
+                f"to stay under ~400",
             )
 
 
@@ -514,23 +583,27 @@ def _span_days(time_range: str) -> float | None:
 @rule("data.grain-vs-range", "warn", "the time grain should yield a sane number of points for the range")
 def grain_vs_range(ctx: RuleContext):
     for c in ctx.spec.charts:
-        if c.type not in TIMESERIES_TYPES or not c.time_range or not c.time_grain:
+        if c.type not in TIMESERIES_TYPES or not c.time_range:
             continue
         span = _span_days(c.time_range)
-        grain = _GRAIN_DAYS.get(c.time_grain)
+        # An omitted grain compiles to the P1D default -- the most common
+        # LLM-authored shape is exactly the one that needs this rule.
+        eff = c.time_grain or DEFAULT_TIME_GRAIN
+        grain = _GRAIN_DAYS.get(eff)
         if span is None or grain is None:
             continue
+        label = eff if c.time_grain else f"{eff} (the default when omitted)"
         points = span / grain
         if points < 2:
             yield Finding(
                 "data.grain-vs-range", "warn", c.name, ctx.where(c.name),
-                f"{c.time_range!r} at grain {c.time_grain} yields ~{points:.1f} point(s); "
+                f"{c.time_range!r} at grain {label} yields ~{points:.1f} point(s); "
                 f"a line needs a finer grain or a longer range",
             )
         elif points > 1000:
             yield Finding(
                 "data.grain-vs-range", "warn", c.name, ctx.where(c.name),
-                f"{c.time_range!r} at grain {c.time_grain} yields ~{points:,.0f} points; "
+                f"{c.time_range!r} at grain {label} yields ~{points:,.0f} points; "
                 f"coarsen the grain",
             )
 
@@ -543,7 +616,10 @@ _MINOR_WORDS = {"a", "an", "the", "of", "by", "vs", "and", "or", "in", "on",
 
 def _case_class(name: str) -> str | None:
     words = re.findall(r"[A-Za-z][A-Za-z']*", name)
-    significant = [w for w in words[1:] if w.lower() not in _MINOR_WORDS and len(w) > 1]
+    # All-uppercase words are acronyms (AOV, SLA, YoY has mixed...): they say
+    # nothing about the author's casing style, so they don't vote.
+    significant = [w for w in words[1:]
+                   if w.lower() not in _MINOR_WORDS and len(w) > 1 and not w.isupper()]
     if not significant:
         return None
     if all(w[0].isupper() for w in significant):
@@ -589,8 +665,10 @@ def filtered_title(ctx: RuleContext):
             if f.op not in ("==", "IN", "LIKE"):
                 continue
             values = f.value if isinstance(f.value, list) else [f.value]
-            fragments += [str(v).strip("%") for v in values
-                          if len(str(v).strip("%")) >= 3 and not str(v).replace(".", "").isdigit()]
+            # Strings only: booleans and numbers ("True", "42") are predicates,
+            # not names a human would echo in a title.
+            fragments += [v.strip("%") for v in values if isinstance(v, str)
+                          and len(v.strip("%")) >= 3 and not v.replace(".", "").isdigit()]
         if fragments and not any(frag.lower() in c.name.lower() for frag in fragments):
             yield Finding(
                 "narrative.filtered-title", "info", c.name, ctx.where(c.name),

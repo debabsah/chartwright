@@ -24,6 +24,10 @@ class Finding:
     where: str
     detail: str
     fix: dict | None = None  # {"chart": name, "set": {field: value}} -- presentation only
+    # True for complaints ABOUT a chart's height: only these yield to a
+    # human-polished (fractional, absorb-written) height. Width and data
+    # complaints survive polish -- absorb can never write widths.
+    height_driven: bool = False
 
     @property
     def key(self) -> str:
@@ -32,6 +36,7 @@ class Finding:
     def as_dict(self) -> dict:
         d = asdict(self)
         d.pop("fix")
+        d.pop("height_driven")
         d["fixable"] = self.fix is not None
         return d
 
@@ -158,9 +163,16 @@ class RuleContext:
         return self.resolution.datasets.get(chart.dataset.key())
 
     def fix_height(self, chart, floor: float) -> dict:
-        """A height-raise fix honoring calibrated recommended heights."""
+        """A height-raise fix honoring calibrated recommended heights.
+
+        Targets are ceiled to whole units and clamped to the spec's height cap:
+        fractional heights are absorb's human-polish signature, and a tool-
+        written fix must never mint it (or the fix would silence the very
+        rules that produced it -- the echo chamber)."""
+        import math
+
         target = max(floor, self.params.recommended_heights.get(chart.type, 0))
-        return {"chart": chart.name, "set": {"height": target}}
+        return {"chart": chart.name, "set": {"height": min(100, math.ceil(target))}}
 
 
 # -- registry -----------------------------------------------------------------

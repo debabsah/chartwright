@@ -19,6 +19,7 @@ polished geometry round-trips EXACTLY through the next apply.
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import asdict, dataclass, field
 
 from . import ids

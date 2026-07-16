@@ -53,17 +53,44 @@ def validate_spec(spec_json: str) -> str:
     return json.dumps(err or {"ok": True, "stage": "schema"})
 
 
+def _advice(spec, resolution=None, audience: str | None = None) -> dict:
+    """Advice riding along MCP responses degrades, never raises (mirrors the CLI)."""
+    from .design import advise
+
+    try:
+        return advise(spec, audience=audience, resolution=resolution).payload()
+    except Exception as e:  # noqa: BLE001
+        return {"stage": "design", "ok": True, "design_brain": "1",
+                "counts": {"error": 0, "warn": 0, "info": 0}, "findings": [],
+                "fixed": [], "ignored": [],
+                "errors": [{"code": "overlay" if isinstance(e, ValueError) else "advice",
+                            "detail": str(e)}]}
+
+
+def _bad_audience(audience: str) -> str | None:
+    from .design.presets import AUDIENCE_NAMES
+
+    if audience and audience not in AUDIENCE_NAMES:
+        return json.dumps({"ok": False, "stage": "design", "errors": [{
+            "code": "audience",
+            "detail": f"unknown audience {audience!r}; one of {sorted(AUDIENCE_NAMES)}"}]})
+    return None
+
+
 @mcp.tool()
 def check_spec(spec_json: str, profile: str) -> str:
     """Pre-flight referential resolution against the live Superset instance:
-    every dataset triple, column, and metric must exist. Returns typed errors."""
+    every dataset triple, column, and metric must exist. Returns typed errors
+    plus a design-brain advice block."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
     from .apply import check
 
     res = check(spec, _client(profile))
-    return json.dumps({"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]})
+    return json.dumps({"ok": res.ok, "stage": "resolve",
+                       "errors": [e.as_dict() for e in res.errors],
+                       "advice": _advice(spec, resolution=res if res.ok else None)})
 
 
 @mcp.tool()
@@ -96,6 +123,9 @@ def design_brief(audience: str = "analytical") -> str:
     """The design brief to read BEFORE authoring a spec: audience budgets,
     chart choice, composition, and what the critic enforces. Audiences:
     executive | analytical | operational."""
+    bad = _bad_audience(audience)
+    if bad:
+        return bad
     from .design.brief import render_brief
 
     try:
@@ -107,7 +137,11 @@ def design_brief(audience: str = "analytical") -> str:
 @mcp.tool()
 def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
     """Design review of a spec against the design-brain rulebook (offline;
-    pass a profile for data-aware rules: column types and cardinality)."""
+    pass a profile for data-aware rules: column types and cardinality).
+    Audiences: executive | analytical | operational."""
+    bad = _bad_audience(audience)
+    if bad:
+        return bad
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
@@ -125,7 +159,30 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
         report = advise(spec, audience=audience or None, resolution=resolution, prober=prober)
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
-    return json.dumps(report.payload())
+    payload = report.payload()
+    if resolution is not None and resolution.errors:
+        payload["resolution_errors"] = [e.as_dict() for e in resolution.errors]
+    return json.dumps(payload)
+
+
+@mcp.tool()
+def fix_spec(spec_json: str, audience: str = "") -> str:
+    """Apply the design brain's safe, presentation-only fixes (heights, bar
+    orientation) to a spec. Returns {spec, advice}: the patched spec JSON and
+    the advice report with .fixed listing what changed. Offline."""
+    bad = _bad_audience(audience)
+    if bad:
+        return bad
+    spec, err = _parse_spec(spec_json)
+    if err:
+        return json.dumps(err)
+    from .design import advise_and_fix
+
+    try:
+        new_data, report = advise_and_fix(json.loads(spec_json), audience=audience or None)
+    except ValueError as e:
+        return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
+    return json.dumps({"ok": True, "stage": "design", "spec": new_data, "advice": report.payload()})
 
 
 @mcp.tool()
@@ -148,6 +205,9 @@ def redesign_dashboard(dashboard: str, profile: str, audience: str = "") -> str:
     redesigned spec, the decompile losses, and the remaining findings. A
     dashboard the tool does not own gets a '-redesign' slug (applies side by
     side; the original is untouched)."""
+    bad = _bad_audience(audience)
+    if bad:
+        return bad
     from pydantic import ValidationError
 
     from .apply import _ownership_guard

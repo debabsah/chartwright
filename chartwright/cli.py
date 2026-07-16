@@ -48,11 +48,12 @@ def _advice_payload(spec, resolution=None) -> dict:
 
     try:
         return advise(spec, resolution=resolution).payload()
-    except ValueError as e:
+    except Exception as e:  # noqa: BLE001 - advice must NEVER break check/apply
         return {"stage": "design", "ok": True, "design_brain": "1",
                 "counts": {"error": 0, "warn": 0, "info": 0}, "findings": [],
                 "fixed": [], "ignored": [],
-                "errors": [{"code": "overlay", "detail": str(e)}]}
+                "errors": [{"code": "overlay" if isinstance(e, ValueError) else "advice",
+                            "detail": str(e)}]}
 
 
 def _client(profile_name: str):
@@ -328,6 +329,9 @@ def _main(argv: list[str] | None = None) -> None:
         live_position = json.loads(detail.get("position_json") or "{}")
         spec_data = json.loads(Path(args.spec).read_text(encoding="utf-8"))
         new_data, report = absorb_heights(spec, spec_data, live_position)
+        # Serialize BEFORE any file side effect: a reporting failure must never
+        # follow a silent mutation of the user's spec file.
+        payload = report.to_json()
         if report.absorbed and not args.dry_run:
             Path(args.spec).write_text(
                 json.dumps(new_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -336,7 +340,7 @@ def _main(argv: list[str] | None = None) -> None:
             from .design.calibrate import record_absorb
 
             record_absorb(args.profile, spec, report.absorbed)
-        print(report.to_json())
+        print(payload)
         sys.exit(0)
 
     if args.cmd == "decompile":

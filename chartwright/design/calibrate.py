@@ -76,6 +76,7 @@ def calibrate(min_samples: int = 5, write: bool = False) -> dict:
 
     overlay = load_overlay()
     proposals = []
+    candidates = []  # observed but not (yet) actionable: the report says why
     for t, heights in sorted(by_type.items()):
         current = _baseline(t, overlay.recommended_heights)
         median = round(statistics.median(heights), 1)
@@ -85,9 +86,11 @@ def calibrate(min_samples: int = 5, write: bool = False) -> dict:
         else:
             entry["note"] = (f"needs >= {min_samples} samples" if len(heights) < min_samples
                              else "within 1 unit of current; no change")
+            candidates.append(entry)
     report = {
         "stage": "calibrate", "ok": True, "events": len(events),
-        "proposals": proposals, "written": False, "overlay": str(overlay_path()),
+        "proposals": proposals, "candidates": candidates, "written": False,
+        "overlay": str(overlay_path()),
     }
     if write and proposals:
         import yaml

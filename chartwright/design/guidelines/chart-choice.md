@@ -12,6 +12,9 @@
 | Staged conversion | `funnel`, 3-8 ordered stages |
 | Hierarchical share | `treemap`, at most 2 levels |
 
+- A `row_limit` on a pie redefines the whole: the shown slices read as 100%,
+  so a truncated pie lies about share. Prefer a horizontal bar for top-N; a
+  truncated pie's title must say "top N".
 - Category axes sort alphabetically; if the dataset has an order-encoded
   label column (labels prefixed with a sort index), chart that column.
 - One dominant category flattening its siblings is the data talking: note it
