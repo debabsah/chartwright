@@ -96,6 +96,7 @@ chartwright/design/
 chartwright advise <spec> [--audience A] [--profile P] [--fix] [--strict]
                           [--ignore rule1,rule2] [--no-probe]
 chartwright brief [--audience A]
+chartwright redesign <slug-or-id> --profile P [-o spec.json] [--audience A] [--no-probe]
 ```
 
 - `advise` (offline by default): evaluates the spec, prints an
@@ -296,6 +297,13 @@ Under `apply --design warn`, this object is embedded in the apply report as
 - **`decompile`:** running `advise` on a decompiled spec is a **design audit
   of any legacy UI-built dashboard** — an emergent feature worth documenting:
   `chartwright decompile old-dash -o spec.json && chartwright advise spec.json`.
+- **`redesign`:** the one-shot form of the above: decompile → data-aware
+  audit → safe geometry fixes → redesigned spec + losses + remaining
+  structural findings. Ownership decides where it lands: tool-born
+  dashboards redesign in place; UI-born ones come back under a `-redesign`
+  slug (title suffixed too) so apply builds the redesign **side by side**
+  and the original is never overwritten. Structural findings stay findings —
+  the spec author (usually the skill-driven LLM) acts on them before apply.
 - **Chart identity:** no rule may ever autofix a chart `name` — names seed
   uuid5 identity; a rename is a delete+create on the live instance.
 - **`plan`/golden tests:** advise is pure spec-side analysis; compiled bytes

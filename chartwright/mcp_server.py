@@ -141,6 +141,46 @@ def decompile_dashboard(dashboard: str, profile: str) -> str:
     return json.dumps({"ok": True, "spec": result.spec, "losses": result.losses_json()})
 
 
+@mcp.tool()
+def redesign_dashboard(dashboard: str, profile: str, audience: str = "") -> str:
+    """One-shot redesign of a live dashboard (slug or numeric id): decompile,
+    design-audit with data-aware rules, apply safe geometry fixes. Returns the
+    redesigned spec, the decompile losses, and the remaining findings. A
+    dashboard the tool does not own gets a '-redesign' slug (applies side by
+    side; the original is untouched)."""
+    from pydantic import ValidationError
+
+    from .apply import _ownership_guard
+    from .decompile import decompile_live
+    from .design.probe import CardinalityProber
+    from .design.redesign import redesign_spec
+    from .resolver import resolve
+    from .spec import load_spec as _load_spec
+
+    client = _client(profile)
+    try:
+        result = decompile_live(dashboard, client)
+    except ValueError as e:
+        return json.dumps({"ok": False, "stage": "redesign",
+                           "errors": [{"code": "decompile", "detail": str(e)}]})
+    try:
+        spec = _load_spec(result.spec)
+    except ValidationError:
+        return json.dumps({"ok": False, "stage": "redesign", "losses": result.losses_json(),
+                           "errors": [{"code": "decompiled_spec_invalid",
+                                       "detail": "decompiled spec does not load; use decompile_dashboard"}]})
+    owned = _ownership_guard(spec, client) is None
+    try:
+        new_data, payload = redesign_spec(
+            result.spec, result.losses_json(), owned=owned, audience=audience or None,
+            resolution=resolve(spec, client), prober=CardinalityProber(client))
+    except ValueError as e:
+        return json.dumps({"ok": False, "stage": "design",
+                           "errors": [{"code": "overlay", "detail": str(e)}]})
+    payload["spec"] = new_data
+    return json.dumps(payload)
+
+
 def main() -> None:
     mcp.run()
 
