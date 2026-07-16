@@ -30,6 +30,15 @@ that way. Everything below works from that one file.
 - **Precise Sizing**: Set exact widths and heights per chart, or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
 - **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs, and markdown blocks for headers and notes.
 
+## The Design Brain
+- **A Visual Designer On Call**: An optional intelligence layer that knows BI/UX practice (Few, Tufte, IBCS) and Superset's rendering quirks, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).
+- **The Brief**: `chartwright brief` prints design guidance tuned to an audience preset (`executive` / `analytical` / `operational`) — budgets, chart choice, composition — for the AI (or you) to read before writing a spec.
+- **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices).
+- **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
+- **House Style**: A `design.yaml` overlay tunes thresholds, disables rules, and appends org guidance to the brief — no fork of the rulebook.
+- **It Learns From You**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.
+- **Design Audits of Legacy Dashboards**: `decompile` + `advise` grades any UI-built dashboard against the rulebook.
+
 ## Dashboards as Code
 - **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, layout.
 - **Adopt Existing Dashboards**: Turn any dashboard built in the UI into a spec with `chartwright decompile`; anything it cannot carry over is listed, so you know exactly what stayed in the UI.

@@ -40,51 +40,54 @@ approximate it with a different mechanism.
    pivot_table, heatmap, histogram, funnel, treemap), per-chart `filters`
    (WHERE), dashboard-level `filters` (select + time_range native filter bar,
    time_range with an optional `default`), layout as `rows`, `tabs`, or an
-   ASCII `sketch` with a `legend`, markdown blocks in rows.
-2. Write the spec to the specs dir (absolute path). Slug lowercase-kebab;
+   ASCII `sketch` with a `legend`, markdown blocks in rows, an optional
+   `design` block (audience + rule suppressions).
+2. Design brain, ON by default: run `CW brief --audience <a>` and follow it
+   while authoring. Infer the audience from the request: executive
+   scorecard/leadership review -> `executive`; ops monitor/wall display ->
+   `operational`; anything else -> `analytical`. Record the audience in the
+   spec's `design.audience`. Brain OFF (user said "no design opinions" /
+   "exactly as I specify"): skip the brief, skip step 6, and pass
+   `--design off` to check and apply.
+3. Write the spec to the specs dir (absolute path). Slug lowercase-kebab;
    chart names unique.
-3. `CW validate <abs-spec-path>`: fix schema errors (max 3 attempts).
-4. `CW check <abs-spec-path> --profile <profile>`: fix referential errors
-   (max 3 attempts total across 3+4; errors name the exact dataset/column/
-   metric at fault).
-5. `CW apply <abs-spec-path> --profile <profile>`: on success give the user
+4. `CW validate <abs-spec-path>`: fix schema errors (max 3 attempts).
+5. `CW check <abs-spec-path> --profile <profile>`: fix referential errors
+   (max 3 attempts total across 4+5; errors name the exact dataset/column/
+   metric at fault). The payload carries an `advice` block (design findings);
+   act on it in step 6.
+6. `CW advise <abs-spec-path> --profile <profile>`: the design critic, with
+   data-aware rules (column types, cardinality). Apply what it suggests:
+   `CW advise <abs-spec-path> --fix` applies the safe geometry subset in
+   place; the rest you edit in the spec. A finding that is a deliberate
+   exception goes in the spec's `design.ignore` as `"rule.id@Chart Name"`,
+   and you tell the user. At most 2 design iterations, then surface the
+   remaining findings verbatim.
+7. `CW apply <abs-spec-path> --profile <profile>`: on success give the user
    the dashboard_url and any smoke warnings verbatim. Apply backs up the
    previous state under `~/.config/chartwright/backups/<profile>/<slug>/` (restore with
    `CW restore <zip> --profile <profile>`).
-6. Modify tool-born dashboards by editing their spec and re-running 4-5.
+8. Modify tool-born dashboards by editing their spec and re-running 5-7.
    Modify UI-born dashboards via
    `CW decompile <slug-or-id> --profile <profile> -o <abs-spec-path>`;
-   show the user the lossiness report before editing.
-7. If drift is possible (someone edited in the UI), run
+   show the user the lossiness report before editing. `CW advise` on a
+   decompiled spec is a design audit of a legacy dashboard.
+9. If drift is possible (someone edited in the UI), run
    `CW plan <abs-spec-path> --profile <profile>` first and surface what
    apply would change.
 
-## Design rules (the dashboard must read well as generated)
+## Sketch heights (while drawing)
 
-Sketch heights: each sketch line adds `line` height units (default `line: 2`,
-one unit = 40 px). Draw:
+Each sketch line adds `line` height units (default `line: 2`, one unit =
+40 px). KPI rows: 2 sketch lines. Axis charts (timeseries, bar, heatmap,
+histogram): 4-5 lines; fewer renders flattened with labels dropped.
+Pie/donut: 4+ lines and >= 5 of 12 width. The brief carries the full sizing
+table; `CW advise` checks the result.
 
-- Big-number (KPI) rows: 2 sketch lines.
-- Every chart with axes (timeseries, bar, heatmap, histogram): 4 to 5 sketch
-  lines. Fewer than 4 renders flattened, with axis labels dropped.
-- Pie/donut: 4+ lines and at least 5 of 12 row width, or the ring shrinks
-  and the legend crowds it.
-- A heatmap with many columns: 7 of 12 width or more, 5 lines.
-
-Chart choice:
-
-- A ranking over a dimension with many or long values: `bar` with
-  `"orientation": "horizontal"` and a `row_limit` near 10; vertical bars fit
-  at most ~8 category labels before Superset starts dropping them. When the
-  user wants several measures per item, use a `table` instead.
-- A histogram over a long-tailed column: trim the tail with a chart-level
-  WHERE filter and name the trim in the chart title so the chart says what
-  it shows; 20 to 30 bins.
-- Category axes sort alphabetically. When the dataset carries an
-  order-encoded label column (labels prefixed with their sort index), chart
-  that column instead of the natural-name column.
-- One dominant category flattens its siblings in a vertical bar; that is the
-  data talking, not a defect; note it or filter it, don't hide it.
+Heights the user polished by hand in the UI come back via
+`CW absorb <abs-spec-path> --profile <profile>` as fractional units; the
+design brain respects them (sizing rules go silent on those charts) and
+learns from them over time (`CW calibrate`).
 
 ## Anti-evasion
 
@@ -94,5 +97,6 @@ Chart choice:
 | Column doesn't resolve; guess a similar name | Show the user the resolver error and the dataset's actual columns |
 | User wants a chart type outside the 14 | Say it's out of surface; offer the nearest supported type |
 | Retry apply a 4th time with random changes | Stop; surface all errors verbatim |
+| Advice finding seems wrong; hand-tune to dodge it | Record it in the spec's `design.ignore` and tell the user, or report a rule bug |
 | "Quick" dashboard via POST /api/v1/dashboard/ | Never; the guarantee only exists through chartwright |
 | Auth fails; hunt for password variables or files | Show the ProfileError; the user names their env var or password_cmd |

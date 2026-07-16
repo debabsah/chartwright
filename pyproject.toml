@@ -1,6 +1,6 @@
 [project]
 name = "chartwright"
-version = "0.1.0"
+version = "0.2.0"
 description = "Build, verify, and maintain Apache Superset dashboards from small spec files."
 license = "Apache-2.0"
 readme = "README.md"
@@ -40,4 +40,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["chartwright"]
+packages = ["chartwright", "chartwright.design"]
+
+[tool.setuptools.package-data]
+"chartwright.design" = ["guidelines/*.md"]

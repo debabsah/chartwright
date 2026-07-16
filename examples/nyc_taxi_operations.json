@@ -8,7 +8,11 @@
     {
       "name": "Total Trips",
       "type": "big_number_total",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "metric": "COUNT(*)",
       "subtitle": "completed trips",
       "number_format": ",.0f"
@@ -16,7 +20,11 @@
     {
       "name": "Total Revenue",
       "type": "big_number_total",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "metric": "SUM(total_amount)",
       "subtitle": "all charges, USD",
       "number_format": "$,.0f"
@@ -24,7 +32,11 @@
     {
       "name": "Average Fare",
       "type": "big_number_total",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "metric": "AVG(fare_amount)",
       "subtitle": "per trip, USD",
       "number_format": "$,.2f"
@@ -32,7 +44,11 @@
     {
       "name": "Average Trip Distance",
       "type": "big_number_total",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "metric": "AVG(trip_distance)",
       "subtitle": "miles",
       "number_format": ",.2f"
@@ -40,23 +56,39 @@
     {
       "name": "Daily Trips",
       "type": "timeseries_line",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
-      "metrics": ["COUNT(*) AS Trips"],
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
+      "metrics": [
+        "COUNT(*) AS Trips"
+      ],
       "time_column": "pickup_time",
       "time_grain": "P1D"
     },
     {
       "name": "Daily Revenue",
       "type": "timeseries_area",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
-      "metrics": ["SUM(total_amount) AS Revenue"],
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
+      "metrics": [
+        "SUM(total_amount) AS Revenue"
+      ],
       "time_column": "pickup_time",
       "time_grain": "P1D"
     },
     {
       "name": "Demand by Hour and Weekday",
       "type": "heatmap",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "x_column": "pickup_hour",
       "y_column": "pickup_weekday",
       "metric": "COUNT(*)"
@@ -64,35 +96,61 @@
     {
       "name": "How Riders Pay",
       "type": "pie",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "metric": "COUNT(*)",
       "groupby": "payment_method",
-      "donut": true
+      "donut": true,
+      "row_limit": 7
     },
     {
       "name": "Trips by Pickup Borough",
       "type": "bar",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "x_column": "pickup_borough",
-      "metrics": ["COUNT(*) AS Trips"]
+      "metrics": [
+        "COUNT(*) AS Trips"
+      ],
+      "row_limit": 8
     },
     {
       "name": "Top 10 Pickup Zones",
       "type": "bar",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "x_column": "pickup_zone",
-      "metrics": ["COUNT(*) AS Trips"],
+      "metrics": [
+        "COUNT(*) AS Trips"
+      ],
       "orientation": "horizontal",
       "row_limit": 10
     },
     {
       "name": "Trip Distance Distribution (trips up to 20 mi)",
       "type": "histogram",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "column": "trip_distance",
       "bins": 25,
       "filters": [
-        {"column": "trip_distance", "op": "<=", "value": 20}
+        {
+          "column": "trip_distance",
+          "op": "<=",
+          "value": 20
+        }
       ]
     }
   ],
@@ -104,13 +162,21 @@
     {
       "type": "select",
       "name": "Pickup Borough",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "column": "pickup_borough"
     },
     {
       "type": "select",
       "name": "Payment Method",
-      "dataset": {"database": "examples", "schema": "main", "table": "nyc_yellow_taxi"},
+      "dataset": {
+        "database": "examples",
+        "schema": "main",
+        "table": "nyc_yellow_taxi"
+      },
       "column": "payment_method"
     }
   ],
