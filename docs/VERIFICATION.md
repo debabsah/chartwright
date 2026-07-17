@@ -71,10 +71,17 @@ injection.
   in both shell-string and argument-list form, home-directory expansion,
   TLS options, and a named error when no credential source exists.
 - **Drift and plan normalization** (`test_dashdiff.py`), **MCP parity**
-  (`test_mcp_server.py`: the six MCP tools mirror the CLI one to one),
+  (`test_mcp_server.py`: the MCP tools mirror the CLI one to one),
   **backup layout** (`test_backup_layout.py`: backups are separated per
   profile and the location override is honored), plus dedicated suites for
   pivot formatting, range filters, layout sketches, and absorb.
+- **The design brain** (`test_design*.py`, `test_calibrate.py`,
+  `test_redesign.py`): every rule table-driven against violating and clean
+  specs; fix-loop convergence, idempotence, and the no-fractional-heights
+  invariant; a seeded advise-never-raises fuzz; the chart-type taxonomy
+  contract; design.yaml trust-boundary validation; the golden dogfood
+  (the shipped example advises clean); calibration grouping, decay, and
+  overlay round-trips.
 
 ## 2. Chart options, checked against plugin source
 

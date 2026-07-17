@@ -108,11 +108,32 @@ Every capability, with the CLI verb reference: [docs/FEATURES.md](https://github
   then ask for a dashboard in plain words; the AI writes the spec, and the
   tool verifies and builds it.
 - **MCP server**: `chartwright-mcp` (installed with `pip install "chartwright[mcp]"`)
-  exposes six tools covering the whole lifecycle, usable from any MCP client.
+  exposes ten tools covering the whole lifecycle, usable from any MCP client.
 - **Open contract**: `chartwright schema` prints the spec's JSON Schema, so any LLM or
   tool can generate valid specs.
 - **Guardrails**: the AI proposes; the tool verifies, using your own Superset
   login. Verification reads names (datasets, columns, metrics), not rows.
+
+## The design brain
+
+Correct-by-construction is table stakes; the design brain makes dashboards
+*read well*. A toggleable BI/UX intelligence layer — audience-aware size and
+scroll budgets, chart-choice limits, layout composition — split into a brief
+the AI reads before authoring and a deterministic critic that reviews the
+result:
+
+```bash
+chartwright brief --audience executive        # the guidance, before writing a spec
+chartwright advise spec.json --fix            # the critique, with safe auto-repairs
+chartwright redesign old-dash --profile prod  # audit + repair a live dashboard
+```
+
+Rules key on stable ids you can suppress per chart in the spec, thresholds
+tune per audience or per deployment (`design.yaml`), and the brain learns
+your house heights from the sizes you polish by hand (`chartwright
+calibrate`). Off is really off: `--design off` restores byte-identical
+behavior. The full rulebook and architecture:
+[docs/DESIGN-BRAIN.md](https://github.com/debabsah/chartwright/blob/main/docs/DESIGN-BRAIN.md).
 
 ## Drawing layouts as text
 
