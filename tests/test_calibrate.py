@@ -66,3 +66,43 @@ def test_junk_lines_ignored(monkeypatch, tmp_path):
     with log_path().open("a", encoding="utf-8") as f:
         f.write("not json\n" + json.dumps({"chart": "X"}) + "\n")
     assert calibrate(min_samples=1)["events"] == 1
+
+
+def mk_spec_with_audience(slug, audience):
+    data = {
+        "spec_version": "1",
+        "dashboard": {"title": "T", "slug": slug},
+        "charts": [{"type": "table", "name": "Rows", "dataset": DS,
+                    "columns": ["a"], "height": 8}],
+        "layout": {"rows": [["Rows"]]},
+        "design": {"audience": audience},
+    }
+    return load_spec(data)
+
+
+def test_audience_grouping_and_write(monkeypatch, tmp_path):
+    monkeypatch.setenv("CHARTWRIGHT_DESIGN_DIR", str(tmp_path))
+    for i in range(5):
+        record_absorb("prod", mk_spec_with_audience(f"e{i}", "executive"),
+                      [{"chart": "Rows", "height": 12}])
+    for i in range(5):
+        record_absorb("prod", mk_spec(f"f{i}"), [{"chart": "Rows", "height": 10}])
+    report = calibrate(min_samples=5, write=True)
+    groups = {(p["audience"], p["type"]): p["median"] for p in report["proposals"]}
+    assert groups == {("executive", "table"): 12, (None, "table"): 10}
+    overlay = load_overlay()
+    assert overlay.recommended_heights["table"] == 10
+    assert params_for("executive", overlay).recommended_heights["table"] == 12
+    assert params_for("analytical", overlay).recommended_heights["table"] == 10
+
+
+def test_since_decay(monkeypatch, tmp_path):
+    seed(monkeypatch, tmp_path, [11, 11, 11, 11, 11])
+    import json as _json
+    from pathlib import Path
+    old = [_json.loads(x) for x in log_path().read_text().splitlines()]
+    for e in old:
+        e["ts"] = "2020-01-01T00:00:00"
+    log_path().write_text("\n".join(_json.dumps(e) for e in old) + "\n", encoding="utf-8")
+    assert calibrate(min_samples=1, since="90d")["events"] == 0
+    assert calibrate(min_samples=1)["events"] == 5

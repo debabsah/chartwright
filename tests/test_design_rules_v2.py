@@ -180,6 +180,7 @@ def test_markdown_height_fix():
     data = mk([line("L")],
               layout={"rows": [[{"markdown": "## Section", "height": 6}], ["L"]]})
     fixed, rep = advise_and_fix(data, overlay=EMPTY)
-    assert "layout.markdown-height" in " ".join(rep.fixed)
+    entry = next(e for e in rep.fixed if e["rule"] == "layout.markdown-height")
+    assert entry["set"] == {"height": 2} and entry["was"] == {"height": 6}
     assert fixed["layout"]["rows"][0][0]["height"] == 2
     load_spec(fixed)

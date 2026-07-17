@@ -391,9 +391,10 @@ class _SketchHolder(BaseModel):
     )
 
     def parsed_sketch(self):
-        from .sketch import parse_sketch
+        from .sketch import parse_sketch_cached
 
-        return parse_sketch(self.sketch or [], self.legend or {}, self.line)
+        return parse_sketch_cached(
+            tuple(self.sketch or ()), tuple(sorted((self.legend or {}).items())), self.line)
 
 
 class Tab(_SketchHolder):
@@ -601,7 +602,12 @@ class DashboardSpec(BaseModel):
         own = self._item_width(item)
         if own is not None:
             return own
-        return max(1, (GRID_WIDTH - explicit_total) // len(implicit))
+        # Largest-remainder: implicit widths must SUM to the full remainder or
+        # every 5-implicit row renders with a phantom 2-column hole at the
+        # right (floor division used to drop it). Earlier items get the +1.
+        base, rem = divmod(GRID_WIDTH - explicit_total, len(implicit))
+        pos = next(i for i, x in enumerate(implicit) if x is item or x == item)
+        return max(1, base + (1 if pos < rem else 0))
 
     def resolved_height(self, name: str) -> float:
         chart = next(c for c in self.charts if c.name == name)

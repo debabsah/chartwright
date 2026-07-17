@@ -32,6 +32,7 @@ def record_absorb(profile: str, spec: DashboardSpec, absorbed: list[dict]) -> No
     if not absorbed:
         return
     types = {c.name: c.type for c in spec.charts}
+    audience = spec.design.audience if spec.design else None
     try:
         path = log_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -41,7 +42,7 @@ def record_absorb(profile: str, spec: DashboardSpec, absorbed: list[dict]) -> No
                 f.write(json.dumps({
                     "ts": ts, "profile": profile, "slug": spec.dashboard.slug,
                     "chart": row["chart"], "type": types.get(row["chart"]),
-                    "height": row["height"],
+                    "height": row["height"], "audience": audience,
                 }) + "\n")
     except OSError:
         pass
@@ -53,10 +54,25 @@ def _baseline(chart_type: str, recommended: dict) -> float:
     return float(DEFAULT_HEIGHT.get(chart_type, DEFAULT_HEIGHT["default"]))
 
 
-def calibrate(min_samples: int = 5, write: bool = False) -> dict:
-    """Group logged heights by chart type; where the median drifts >= 1 unit
-    from the current baseline with enough samples, propose it. --write merges
-    proposals into the overlay's recommended_heights."""
+def _parse_since(since: str | None) -> datetime.datetime | None:
+    if not since:
+        return None
+    import re
+
+    m = re.fullmatch(r"(\d+)d", since.strip())
+    if not m:
+        raise ValueError(f"--since must look like '90d', got {since!r}")
+    return datetime.datetime.now() - datetime.timedelta(days=int(m.group(1)))
+
+
+def calibrate(min_samples: int = 5, write: bool = False, since: str | None = None) -> dict:
+    """Group logged heights by (audience, chart type); where the median drifts
+    >= 1 unit from the current baseline with enough samples, propose it.
+    Events logged without an audience calibrate the flat (all-audience)
+    recommendation. --since 90d is the decay knob: older habits age out.
+    --write merges proposals into the overlay (flat recommended_heights, or
+    audiences.<aud>.recommended_heights for audience-tagged proposals)."""
+    cutoff = _parse_since(since)
     events: dict[tuple, dict] = {}
     path = log_path()
     if path.exists():
@@ -67,20 +83,30 @@ def calibrate(min_samples: int = 5, write: bool = False) -> dict:
                 e = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if e.get("type") and isinstance(e.get("height"), (int, float)):
-                events[(e.get("profile"), e.get("slug"), e.get("chart"))] = e
+            if not e.get("type") or not isinstance(e.get("height"), (int, float)):
+                continue
+            if cutoff is not None:
+                try:
+                    if datetime.datetime.fromisoformat(e.get("ts", "")) < cutoff:
+                        continue
+                except ValueError:
+                    continue
+            events[(e.get("profile"), e.get("slug"), e.get("chart"))] = e
 
-    by_type: dict[str, list[float]] = {}
+    by_group: dict[tuple, list[float]] = {}  # (audience|None, type) -> heights
     for e in events.values():
-        by_type.setdefault(e["type"], []).append(float(e["height"]))
+        by_group.setdefault((e.get("audience"), e["type"]), []).append(float(e["height"]))
 
     overlay = load_overlay()
     proposals = []
     candidates = []  # observed but not (yet) actionable: the report says why
-    for t, heights in sorted(by_type.items()):
-        current = _baseline(t, overlay.recommended_heights)
+    for (aud, t), heights in sorted(by_group.items(), key=lambda kv: (kv[0][0] or "", kv[0][1])):
+        rec = ((overlay.audiences.get(aud) or {}).get("recommended_heights")
+               if aud else None) or overlay.recommended_heights
+        current = _baseline(t, rec)
         median = round(statistics.median(heights), 1)
-        entry = {"type": t, "samples": len(heights), "median": median, "current": current}
+        entry = {"type": t, "audience": aud, "samples": len(heights),
+                 "median": median, "current": current}
         if len(heights) >= min_samples and abs(median - current) >= 1:
             proposals.append(entry)
         else:
@@ -88,7 +114,7 @@ def calibrate(min_samples: int = 5, write: bool = False) -> dict:
                              else "within 1 unit of current; no change")
             candidates.append(entry)
     report = {
-        "stage": "calibrate", "ok": True, "events": len(events),
+        "stage": "calibrate", "ok": True, "events": len(events), "since": since,
         "proposals": proposals, "candidates": candidates, "written": False,
         "overlay": str(overlay_path()),
     }
@@ -99,9 +125,14 @@ def calibrate(min_samples: int = 5, write: bool = False) -> dict:
         data = {}
         if p.exists():
             data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        rec = data.setdefault("recommended_heights", {})
         for prop in proposals:
-            rec[prop["type"]] = prop["median"]
+            if prop["audience"]:
+                tgt = (data.setdefault("audiences", {})
+                       .setdefault(prop["audience"], {})
+                       .setdefault("recommended_heights", {}))
+            else:
+                tgt = data.setdefault("recommended_heights", {})
+            tgt[prop["type"]] = prop["median"]
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(yaml.safe_dump(data, sort_keys=True), encoding="utf-8")
         report["written"] = True

@@ -64,6 +64,7 @@ class Overlay:
     disable: list[str] = field(default_factory=list)      # rule ids to suppress
     brief_extra: str = ""                                 # appended to the brief
     recommended_heights: dict = field(default_factory=dict)  # chart type -> units
+    severity: dict = field(default_factory=dict)          # rule id -> error|warn|info
 
 
 def design_dir() -> Path:
@@ -137,6 +138,17 @@ def load_overlay(path: Path | None = None) -> Overlay:
             f"design overlay {p}: unknown audiences {bad_aud} (known: {sorted(AUDIENCES)})")
     for aud, block in ov.audiences.items():
         _check_param_block(block, f"audiences.{aud}")
+    if not isinstance(ov.severity, dict):
+        raise ValueError(f"design overlay {p}: severity must be a mapping of rule id -> level")
+    from .model import known_rule_ids  # function-level: no import cycle
+
+    known = known_rule_ids()
+    for rule_id, level in ov.severity.items():
+        if rule_id not in known:
+            raise ValueError(f"design overlay {p}: severity for unknown rule {rule_id!r}")
+        if level not in ("error", "warn", "info"):
+            raise ValueError(
+                f"design overlay {p}: severity[{rule_id!r}] must be error|warn|info, got {level!r}")
     return ov
 
 

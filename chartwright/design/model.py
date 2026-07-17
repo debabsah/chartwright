@@ -5,15 +5,25 @@ rules are written once, not per layout mode.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Callable, Iterator
 
 from ..resolver import ResolvedDataset, Resolution
 from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock
 
+DESIGN_BRAIN_VERSION = "2"
+
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
 AXIS_TYPES = TIMESERIES_TYPES | {"bar", "heatmap", "histogram"}
+# Charts that are neither KPI nor axis-bearing; a contract test asserts the
+# three sets exactly cover CHART_TYPES, so a 15th chart type fails CI until
+# someone consciously classifies it (and reviews which rules apply).
+STANDALONE_TYPES = {"pie", "table", "pivot_table", "funnel", "treemap"}
+
+# Renamed rule ids keep working in ignore/disable lists forever.
+RULE_ALIASES: dict[str, str] = {}
 
 
 @dataclass
@@ -32,6 +42,14 @@ class Finding:
     @property
     def key(self) -> str:
         return f"{self.rule}@{self.chart}" if self.chart else self.rule
+
+    @property
+    def scope_key(self) -> str:
+        """Positional key for band findings (no chart to name):
+        'layout.kpi-band@tab-Ops-row-1'. Accepted in ignore lists alongside
+        the rule id and rule@Chart forms."""
+        slug = re.sub(r"[^A-Za-z0-9]+", "-", self.where).strip("-")
+        return f"{self.rule}@{slug}"
 
     def as_dict(self) -> dict:
         d = asdict(self)
@@ -61,17 +79,22 @@ class AdviceReport:
         c = self.counts
         return c["error"] > 0 or (strict and c["warn"] > 0)
 
+    unmatched_ignores: list[str] = field(default_factory=list)
+
     def payload(self) -> dict:
-        return {
+        out = {
             "stage": "design",
             "ok": self.ok,
-            "design_brain": "1",
+            "design_brain": DESIGN_BRAIN_VERSION,
             "audience": self.audience,
             "counts": self.counts,
             "findings": [f.as_dict() for f in self.findings],
             "fixed": self.fixed,
             "ignored": self.ignored,
         }
+        if self.unmatched_ignores:
+            out["unmatched_ignores"] = self.unmatched_ignores
+        return out
 
 
 # -- normalized layout --------------------------------------------------------
@@ -121,6 +144,7 @@ class RuleContext:
         self.resolution = resolution
         self.prober = prober
         self.charts = {c.name: c for c in spec.charts}
+        self._heights: dict[str, float] = {}
         self.sections: list[Section] = _normalize(spec)
         self.geo: dict[str, Geo] = {}
         for si, sec in enumerate(self.sections):
@@ -132,7 +156,10 @@ class RuleContext:
     # -- lookups ---------------------------------------------------------------
 
     def height(self, name: str) -> float:
-        return self.spec.resolved_height(name)
+        h = self._heights.get(name)
+        if h is None:
+            h = self._heights[name] = self.spec.resolved_height(name)
+        return h
 
     def width(self, name: str) -> int:
         return self.geo[name].width
@@ -181,21 +208,34 @@ class RuleContext:
 @dataclass
 class Rule:
     id: str
-    severity: str
+    severity: str            # the rule's DEFAULT level; individual findings may
+    #                          vary it (e.g. row-density escalates to error when
+    #                          a chart is starved), and the overlay's `severity`
+    #                          map overrides it per deployment.
     doc: str                 # one line; the brief prints these
     fixable: bool
     data_aware: bool         # needs a live resolution (skipped offline)
     fn: Callable[[RuleContext], Iterator[Finding]]
+    since: str = "1"         # design_brain version that introduced the rule
 
 
 RULES: dict[str, Rule] = {}
 
 
-def rule(id: str, severity: str, doc: str, fixable: bool = False, data_aware: bool = False):
+def rule(id: str, severity: str, doc: str, fixable: bool = False, data_aware: bool = False,
+         since: str = "1"):
     def deco(fn):
-        RULES[id] = Rule(id, severity, doc, fixable, data_aware, fn)
+        RULES[id] = Rule(id, severity, doc, fixable, data_aware, fn, since)
         return fn
     return deco
+
+
+def known_rule_ids() -> set[str]:
+    return set(RULES) | set(RULE_ALIASES)
+
+
+def canonical_rule_id(rule_id: str) -> str:
+    return RULE_ALIASES.get(rule_id, rule_id)
 
 
 # -- layout normalization -----------------------------------------------------
