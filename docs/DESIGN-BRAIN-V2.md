@@ -1,6 +1,12 @@
 # Design Brain v2: Review Findings and Roadmap
 
-> **Status: REVIEW OUTPUT — the kickoff for v2.** Produced 2026-07-16 by a
+> **Status: EXECUTED.** All 37 roadmap items below landed in the four
+> `design brain v2 batch A-D` commits (design_brain version "2"); §15 of
+> [DESIGN-BRAIN.md](DESIGN-BRAIN.md) records the few places execution
+> deliberately deviated from a proposal. This page remains the review
+> record.
+>
+> Originally produced 2026-07-16 by a
 > multi-lens agent review of the shipped design brain (docs/DESIGN-BRAIN.md).
 > Method: seven independent review lenses (core machinery, per-rule logic,
 > adversarial spec fuzzing, BI/UX domain expertise, tool ergonomics,

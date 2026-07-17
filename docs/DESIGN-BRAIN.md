@@ -1,15 +1,16 @@
 # The Design Brain
 
-> **Status: SHIPPED (0.2.0) — all three phases.** This page is both the
-> design and the reference for the implementation in `chartwright/design/`.
-> The decision log at the bottom records every judgment call made without a
-> review gate; §15 records where the implementation deliberately deviates
-> from the original design text. Rendering-quality verification against a
-> live Superset (UI eyeballing of advised-vs-unadvised dashboards) is still
-> pending — the rulebook's thresholds come from the skill's field notes and
-> BI literature, not yet from side-by-side screenshots. A verified multi-lens
-> review of this implementation and the ranked v2 roadmap live in
-> [DESIGN-BRAIN-V2.md](DESIGN-BRAIN-V2.md).
+> **Status: SHIPPED — design brain 2.** This page is both the design and the
+> reference for the implementation in `chartwright/design/`. The decision log
+> at the bottom records every judgment call made without a review gate; §15
+> records where the implementation deliberately deviates from the design
+> text. A verified multi-lens review of the first implementation produced the
+> ranked roadmap in [DESIGN-BRAIN-V2.md](DESIGN-BRAIN-V2.md); all 37 items
+> are executed, and §7's rule table is generated from the live registry so it
+> cannot rot. Rendering-quality verification against a live Superset (UI
+> eyeballing of advised-vs-unadvised dashboards) is still pending — the
+> thresholds come from the skill's field notes and BI literature, not yet
+> from side-by-side screenshots.
 
 ## 1. Problem
 
@@ -83,13 +84,16 @@ critic will later enforce (the LLM pre-complies instead of iterating).
 
 ```
 chartwright/design/
-  __init__.py      advise() entry point
-  model.py         Finding, AdviceReport, RuleContext, @rule registry
+  __init__.py      advise() / advise_and_fix() entry points
+  model.py         Finding, AdviceReport, RuleContext, @rule registry, taxonomy
   rules.py         all Tier L rule implementations (split when it outgrows one file)
-  presets.py       audience parameter tables
+  presets.py       audience parameter tables + design.yaml overlay
   fix.py           apply_fixes(spec_data, findings) -> (new_data, applied)
   brief.py         render_brief(audience) -> markdown
-  guidelines/      rule cards (packaged data, shipped in the wheel)
+  probe.py         bounded cardinality probes (data-aware rules)
+  calibrate.py     the absorb-log learning loop
+  redesign.py      decompile -> audit -> fix, in one shot
+  guidelines/      Tier G knowledge (packaged data, shipped in the wheel)
 ```
 
 ## 4. CLI surface
@@ -99,6 +103,7 @@ chartwright advise <spec> [--audience A] [--profile P] [--fix] [--strict]
                           [--ignore rule1,rule2] [--no-probe]
 chartwright brief [--audience A]
 chartwright redesign <slug-or-id> --profile P [-o spec.json] [--audience A] [--no-probe]
+chartwright calibrate [--write] [--min-samples N] [--since 90d]
 ```
 
 - `advise` (offline by default): evaluates the spec, prints an
@@ -108,17 +113,23 @@ chartwright redesign <slug-or-id> --profile P [-o spec.json] [--audience A] [--n
   bounded cardinality probes against the live instance (§8). `--no-probe`
   keeps it to metadata already fetched by resolution (no queries).
 - `advise --fix`: applies the safe-fix subset in place (same file-rewrite
-  mechanics as `absorb`), re-validates, reports what changed. Idempotent: a
-  second `--fix` run is a no-op.
+  mechanics as `absorb`; formatting normalizes), re-validates, and reports
+  each change as `{rule, chart, set: {field: new}, was: {field: old}}` plus
+  the `written` path. Idempotent: a second `--fix` run is a no-op.
 - `brief`: prints the Tier G design brief for the audience — the document the
-  skill reads before authoring. Compact by contract (≤ ~150 lines), because
-  it lands in an LLM context window.
+  skill reads before authoring. Compact by contract (a test caps the line
+  count), because it lands in an LLM context window.
 - `check`/`apply` gain `--design off|warn|strict` (default `warn`):
   - `warn`: advice rides along in the payload under `"advice"`, never blocks.
-  - `strict`: `error`/`warn` findings block before import (same pre-flight
-    position as referential resolution).
-  - `off`: byte-identical to today, advice machinery never runs.
-- MCP server: two new tools, `advise` and `brief`, thin wrappers as usual.
+  - `strict`: `error`/`warn` findings block (a `design_gate` entry lands in
+    `errors` and the exit code is 1); apply blocks BEFORE anything on the
+    instance is touched.
+  - `off`: byte-identical to the pre-brain behavior, advice machinery never
+    runs.
+- `calibrate`: the learning loop (§13 phase 3) — mines absorb history into
+  per-audience recommended heights; `--since` is the decay knob.
+- MCP server: `design_brief`, `advise_spec`, `fix_spec`, `redesign_dashboard`
+  mirror the CLI verbs; `check_spec` carries the advice block.
 
 ## 5. Spec surface
 
@@ -133,9 +144,12 @@ One additive optional block (models stay `extra="forbid"`):
 
 - `audience`: this dashboard's preset; CLI `--audience` overrides it, the
   built-in default (`analytical`) applies when both are absent.
-- `ignore`: rule ids to suppress, dashboard-wide (`rule.id`) or per chart
-  (`rule.id@Chart Name`). Suppressions are reported in every AdviceReport
-  (`"ignored"`), so silence is always visible.
+- `ignore`: rule ids to suppress, dashboard-wide (`rule.id`), per chart
+  (`rule.id@Chart Name`), or per band for findings that name no chart
+  (`rule.id@tab-Ops-row-1` — the finding's `where`, slugified). Suppressions
+  are reported in every AdviceReport (`"ignored"`), so silence is always
+  visible; entries whose rule id doesn't exist come back as
+  `unmatched_ignores` instead of silently suppressing nothing.
 
 Precedence everywhere: CLI flag > spec `design` block > built-in default.
 
@@ -149,11 +163,12 @@ minus Superset chrome is ≈ 22 units).
 | Parameter | `executive` | `analytical` (default) | `operational` |
 |---|---|---|---|
 | Intent | one screen, few numbers, big | scrolling analysis, depth | dense wall/monitor view |
-| `fold_units` (height budget, per tab) | 22 | 66 | 26 |
-| `max_row_charts` (axis charts per row) | 3 | 4 | 5 |
-| `kpi_per_row` (min–max) | 3–5 | 2–6 | 2–8 |
+| `fold_units` (height budget, per tab) | 22 | 66 | 22 |
+| `max_row_charts` (axis slots per row) | 3 | 4 | 4 |
+| `kpi_per_row` (min–max) | 2–5 | 2–6 | 2–8 |
 | `kpi_height` | 5 | 4 | 3 |
 | `min_axis_height` | 8 | 6 | 5 |
+| `max_filter_selects` | 5 | 6 | 7 |
 | `table_visible_ratio` (min visible/row_limit) | 0.5 | 0.25 | 0.25 |
 | `vbar_max_categories` | 6 | 8 | 8 |
 | `pie_max_slices` | 5 | 7 | 7 |
@@ -162,74 +177,98 @@ minus Superset chrome is ≈ 22 units).
 Presets are data (`presets.py`), not branches: rules never test the audience
 name, only parameters. Adding an audience is adding a row.
 
-## 7. The rulebook, v1
+### House style: design.yaml
 
-Stable ids (`category.slug`) are the public API — `ignore` lists key on
-them, so renames require aliases. Severity: **error** = unreadable for any
-audience; **warn** = below professional quality; **info** = polish nudge.
-"Fix" marks the safe-autofix subset (presentation-only, §9). ⚡ marks
-data-aware rules (only run with `--profile`, §8).
+`~/.config/chartwright/design.yaml` (or `$CHARTWRIGHT_DESIGN_DIR/design.yaml`)
+overlays the presets for a whole deployment — no fork of the rulebook. Five
+keys, all optional, all validated at load with typed errors:
 
-### size — minimum readable geometry
+```yaml
+params:                      # every audience
+  min_axis_height: 7
+audiences:                   # one audience
+  executive: {fold_units: 20, recommended_heights: {table: 12}}
+disable: [narrative.title-style]        # rule ids (aliases accepted)
+severity: {filters.time-default: warn}  # per-deployment level overrides
+recommended_heights: {table: 11}        # calibrate --write maintains these
+brief_extra: |
+  House style: fiscal weeks start Sunday; money is always '$,.0f'.
+```
 
-| id | sev | fix | rule |
-|---|---|---|---|
-| `size.axis-min-height` | warn | ✔ | timeseries/bar/heatmap/histogram below `min_axis_height` renders flattened, axis labels dropped → raise to 8 |
-| `size.kpi-height` | warn | ✔ | big_number outside 2–6 units (starved or wasteful) → `kpi_height` |
-| `size.pie-geometry` | warn | ✔h | pie/donut under 5/12 width or 8 height: ring shrinks, legend crowds → fix height; width fixable in rows mode, report-only under a sketch (finding includes a redrawn sketch suggestion) |
-| `size.heatmap-geometry` | warn | ✔h | heatmap under 5/12 width (⚡ under 7/12 when x-cardinality > 12) or 6 height |
-| `size.table-window` | warn | — | table height shows < `table_visible_ratio` of `row_limit` (~0.8 units/row + header): a 1,000-row list behind a 6-row window → raise height or lower row_limit (data-affecting: suggestion only) |
-| `size.hbar-window` | warn | ✔ | horizontal bar needs ≈ `row_limit × 0.5 + 2` units of height; fix height up to the fold budget, otherwise suggest a lower row_limit |
-| `size.row-harmony` | warn | ✔ | rows-mode heights differ within a row: Superset sizes the row to its tallest child, the rest get a ragged hole → equalize to the row max |
+`recommended_heights` merges per key across preset -> overlay -> per-audience
+layers; the brief prints the merged values and height autofixes target them.
 
-### layout — composition
+## 7. The rulebook
 
-| id | sev | fix | rule |
-|---|---|---|---|
-| `layout.kpi-first` | warn | — | big_numbers exist but appear after the first non-KPI row (summary precedes detail — inverted pyramid) |
-| `layout.kpi-band` | warn | — | a KPI row outside `kpi_per_row` (one lonely KPI looks unfinished; seven read as noise) |
-| `layout.row-density` | warn/error | — | more than `max_row_charts` axis charts in a row; **error** when any lands under 3/12 wide |
-| `layout.row-fill` | warn | — | rows-mode widths sum well short of 12 with no markdown filler (lopsided band; sketches express this deliberately with `.`) |
-| `layout.fold-budget` | warn | — | dashboard (or tab) height exceeds `fold_units` → suggest tabs or pruning; the finding names the row where the budget runs out |
-| `layout.tab-balance` | info | — | tab chart counts skew worse than 4:1 → rebalance or inline the thin tab |
-| `layout.orphan-chart` | info | — | a lone chart under 8/12 in its own row → widen to 12 or pair it |
-| `layout.section-headers` | info | — | more than 8 charts and no markdown headers → readers need signposts |
+Stable ids (`category.slug`) are the public API — `ignore`/`disable` lists
+and severity overrides key on them, and renames keep working through the
+alias table. Severity is the rule's DEFAULT level: **error** = unreadable
+for any audience; **warn** = below professional quality; **info** = polish
+nudge (a few rules vary it per finding, and the overlay can override it per
+deployment). "fix" marks the safe-autofix subset (presentation-only, §9).
+"data" marks rules that only run with a live resolution (`--profile`);
+several offline rules additionally sharpen or stand down when probes are
+available (noted in their text). "v2" marks rules added by the
+post-review batch (docs/DESIGN-BRAIN-V2.md).
 
-### chart — encoding choice
+The table below is GENERATED from the registry — do not hand-edit it;
+rerun the snippet in the comment and splice.
 
-| id | sev | fix | rule |
-|---|---|---|---|
-| `chart.vbar-categories` | warn | ✔o | vertical bar with `row_limit` absent (default 10,000) or > `vbar_max_categories`: Superset drops labels past ~8 → fix flips `orientation` to horizontal (presentation-safe); detail suggests `row_limit` ≈ 10 |
-| `chart.pie-slices` | warn | — | pie `row_limit` absent (default 100) or > `pie_max_slices` (⚡ true cardinality when available) → cap slices or switch to horizontal bar |
-| `chart.series-limit` | warn ⚡ | — | line/area/scatter `groupby` cardinality > `series_max` → spaghetti; suggest a top-N filter or a coarser dimension |
-| `chart.metrics-per-bar` | warn | — | bar with ≥ 4 metrics → grouped bars become unreadable; a table/pivot answers it better |
-| `chart.temporal-type` | error ⚡ | — | `time_column` resolves to a non-temporal column → chart renders broken or empty |
-| `chart.histogram-bins` | info | — | bins outside 10–50 |
-| `chart.treemap-depth` | warn | — | treemap `groupby` deeper than 2 levels → unreadable nesting |
-| `chart.funnel-stages` | warn ⚡ | — | funnel stage cardinality outside 3–8 |
-| `chart.heatmap-grid` | warn ⚡ | — | x-cardinality × y-cardinality > 400 cells → unreadable at any size |
-| `chart.dupe` | info | — | two charts share dataset + type + metrics + dimensions → redundancy |
+<!-- python -c "from chartwright.design.model import RULES; ..." -->
 
-### data — query intent
+| id | sev | fix | data | since | rule |
+|---|---|---|---|---|---|
+| `chart.dupe` | info | — | — | 1 | two charts answering the identical question is redundancy |
+| `chart.format-bands` | warn | — | — | 2 | conditional-formatting bands must tell one coherent story per metric |
+| `chart.funnel-stages` | warn | — | ⚡ | 1 | funnels need 3-8 ordered stages |
+| `chart.heatmap-grid` | warn | — | ⚡ | 1 | a heatmap past ~400 cells is unreadable at any size |
+| `chart.histogram-bins` | info | — | — | 1 | histograms read best at 10-50 bins |
+| `chart.metrics-per-bar` | warn | — | — | 1 | many metrics per category read better as a table |
+| `chart.ordinal-order` | info | — | — | 2 | ordinal dimensions (weekday, month) sort alphabetically unless order-encoded |
+| `chart.pie-slices` | warn | — | — | 1 | pies stop working past ~7 slices |
+| `chart.pivot-columns` | warn | — | ⚡ | 2 | column-dim values x metrics = rendered columns; past ~15 the pivot scrolls sideways |
+| `chart.pivot-dims` | warn | — | — | 2 | a pivot past three total dimensions is unreadable nesting |
+| `chart.series-limit` | warn | — | ⚡ | 1 | a timeseries with too many grouped series turns to spaghetti |
+| `chart.temporal-type` | error | — | ⚡ | 1 | a time axis must point at a temporal column |
+| `chart.treemap-depth` | warn | — | — | 1 | treemaps past two grouping levels become unreadable nesting |
+| `chart.treemap-vs-bar` | info | — | ⚡ | 2 | a one-level treemap of few categories is a worse bar chart |
+| `chart.trend-grain` | info | — | — | 2 | trend tiles at a fine grain over full history draw thousands of points in a small card |
+| `chart.vbar-categories` | warn | ✔ | — | 1 | vertical bars drop labels past ~8 categories; rank with horizontal bars |
+| `data.grain-vs-range` | warn | — | — | 1 | the time grain should yield a sane number of points for the range |
+| `data.row-limit-intent` | info | — | — | 1 | row limits doing design work should be deliberate, not defaults |
+| `data.top-n-sort` | warn | — | — | 2 | a limit without an order is a sample, not a ranking |
+| `filters.count` | warn | — | — | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
+| `filters.duplicate-column` | info | — | — | 2 | two filters on the same column fight each other |
+| `filters.range-default` | info | — | — | 2 | a range slider with no default bounds spans the whole domain |
+| `filters.select-cardinality` | warn | — | ⚡ | 2 | a select over hundreds of distinct values is an unusable picker |
+| `filters.time-default` | info | — | — | 2 | an undefaulted time picker loads the dashboard over ALL history |
+| `filters.time-picker` | info | — | — | 1 | time-based dashboards want a time range picker in the filter bar |
+| `layout.fold-budget` | warn | — | — | 1 | the dashboard should fit its audience's scroll budget |
+| `layout.kpi-band` | warn | — | — | 1 | KPIs get their own band, in readable numbers |
+| `layout.kpi-first` | warn | — | — | 1 | summary KPIs belong above detail charts (inverted pyramid) |
+| `layout.markdown-height` | info | ✔ | — | 2 | a one-line markdown header doesn't need a chart-sized block |
+| `layout.orphan-chart` | info | — | — | 1 | a lone narrow chart in its own row looks unfinished |
+| `layout.row-density` | warn | — | — | 1 | too many axis charts side by side starves each of width |
+| `layout.row-fill` | warn | — | — | 1 | a row should fill the 12-column grid |
+| `layout.section-headers` | info | — | — | 1 | large flat dashboards need markdown signposts |
+| `layout.tab-balance` | info | — | — | 1 | tabs should carry comparable weight |
+| `narrative.big-number-format` | info | — | — | 1 | hero numbers deserve a number format |
+| `narrative.filtered-title` | info | — | — | 1 | a filtered chart's title should say what it shows |
+| `narrative.format-consistency` | info | — | — | 2 | one measure, one number format |
+| `narrative.title-style` | info | — | — | 1 | chart titles should share one casing style |
+| `size.axis-min-height` | warn | ✔ | — | 1 | axis charts below the audience minimum height flatten and drop labels |
+| `size.hbar-window` | warn | ✔ | — | 1 | horizontal bars need ~0.5 units of height per bar |
+| `size.heatmap-geometry` | warn | ✔ | — | 1 | heatmaps need >= 5/12 width (7/12 with many columns) and 6 height |
+| `size.kpi-height` | warn | ✔ | — | 1 | big numbers read best at 2-6 units |
+| `size.min-width` | warn | — | — | 2 | below 3/12 width a chart is unreadable; KPIs need 2/12 |
+| `size.pie-geometry` | warn | ✔ | — | 1 | pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds |
+| `size.pivot-window` | warn | — | — | 2 | a pivot's height should show a meaningful share of its row_limit |
+| `size.row-harmony` | warn | ✔ | — | 1 | charts sharing a row should share a height (Superset sizes the row to its tallest child) |
+| `size.table-window` | warn | — | — | 1 | a table's height should show a meaningful share of its row_limit |
 
-| id | sev | fix | rule |
-|---|---|---|---|
-| `data.row-limit-intent` | info | — | bar/pie/table riding the large built-in default row_limit where the limit is doing design work → set it deliberately |
-| `data.grain-vs-range` | warn | — | chart-level `time_range` and `time_grain` that yield ≲ 2 points (e.g. "Last week" at P1M) or ≳ 1,000 points, when both are literal enough to compute offline |
-
-### narrative & filters — polish
-
-| id | sev | fix | rule |
-|---|---|---|---|
-| `narrative.title-style` | info | — | chart-name casing is inconsistent across the dashboard. **Never autofixed**: names seed chart uuids; renames churn chart identity (§11) |
-| `narrative.big-number-format` | info | — | big_number without `number_format` → raw float precision on a hero number; suggest `,.0f` / `.3s` |
-| `narrative.filtered-title` | info | — | chart carries WHERE filters but the title mentions none of the filter values ("the chart says what it shows") |
-| `filters.time-picker` | info | — | timeseries charts present but no `time_range` filter in the native bar |
-
-Anything fuzzier than this (reading order beyond KPI-first, grouping related
-metrics, matched granularity across a row, insight-stating titles) is Tier G:
-it goes in the brief, not the linter. The rulebook version (`design_brain:
-"1"`) is reported in every AdviceReport; rules carry a `since` marker.
+Anything fuzzier than this (reading order beyond KPI-first, grouping
+related metrics, matched granularity across a row, insight-stating titles)
+is Tier G: it goes in the brief, not the linter.
 
 ## 8. Data-aware mode
 
@@ -269,7 +308,7 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
 {
   "stage": "design",
   "ok": true,
-  "design_brain": "1",
+  "design_brain": "2",
   "audience": "analytical",
   "counts": {"error": 0, "warn": 2, "info": 1},
   "findings": [
@@ -278,18 +317,28 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
       "severity": "warn",
       "chart": "Sales by Region",
       "where": "layout row 2",
-      "detail": "pie at 3/12 x 4 units: ring shrinks and legend crowds; needs >= 5/12 x 8",
+      "detail": "pie squeezed: height 4 < 8; ring shrinks and legend crowds",
       "fixable": true
     }
   ],
-  "fixed": [],
-  "ignored": ["layout.fold-budget"]
+  "fixed": [
+    {"finding": "size.pie-geometry@Sales by Region", "rule": "size.pie-geometry",
+     "chart": "Sales by Region", "set": {"height": 8}, "was": {"height": 4}}
+  ],
+  "ignored": ["layout.fold-budget"],
+  "unmatched_ignores": ["size.pie-geometri"]
 }
 ```
 
-`ok` is false only at gate level (any `error`, or `warn` under `--strict`).
-Under `apply --design warn`, this object is embedded in the apply report as
-`"advice"` and never affects `apply`'s own `ok`.
+- `ok` is false iff a finding of severity `error` exists. The `--strict` gate
+  (and `--design strict` on check/apply) rides the exit code and appends a
+  `design_gate` entry to `errors`; it does not redefine `ok`'s meaning.
+- `fixed` entries disclose the full diff (`set` new values, `was` old);
+  `advise --fix` additionally reports the `written` file path.
+- `unmatched_ignores` lists ignore/disable entries whose rule id doesn't
+  exist — a typo'd suppression is surfaced, never a silent no-op.
+- Under `apply --design warn`, this object is embedded in the apply report
+  as `"advice"` and never affects `apply`'s own `ok`.
 
 ## 11. Interactions with the existing system
 
@@ -327,13 +376,21 @@ Under `apply --design warn`, this object is embedded in the apply report as
 
 ## 12. Testing
 
+What actually runs (tests/test_design*.py, test_calibrate.py, test_redesign.py):
+
 - **Per rule, table-driven:** a clean spec stays silent; a violating spec
   fires exactly the expected finding; the autofixed spec re-advises clean.
-- **Property tests** (existing hypothesis setup): advise never raises on any
-  valid spec; `--fix` output always re-validates; fix is idempotent.
-- **Golden:** AdviceReport JSON for `examples/nyc_taxi_operations.json`,
-  which must pass `analytical` clean — the example is the dogfood.
-- **Brief budget test:** rendered brief stays ≤ 150 lines per audience.
+- **Fix-loop invariants:** convergence and idempotence; autofixes never mint
+  fractional (human-signature) heights; the KPI clamp cannot oscillate.
+- **Seeded fuzz:** advise never raises across a grid of height/width/layout
+  mutations of a mixed-type spec.
+- **Golden dogfood:** `examples/nyc_taxi_operations.json` advises clean at
+  `analytical` (its two deliberate exceptions recorded in `design.ignore`).
+- **Contract tests:** the chart-type taxonomy exactly covers `CHART_TYPES`
+  (a 15th type fails CI until classified); one sketch parse per holder
+  (the geometry-cache bound); brief line budget per audience.
+- **Trust-boundary tests:** every design.yaml value class rejects with a
+  typed error; typo'd ignores surface as `unmatched_ignores`.
 
 ## 13. Phases
 
@@ -404,3 +461,20 @@ Where the shipped code deliberately departs from the design text above:
    autofixes target. `$CHARTWRIGHT_DESIGN_DIR` relocates both files.
 6. **`chart.dupe` proved itself in testing**: it flagged the test suite's own
    lazily-copied KPIs. Working as intended.
+
+Recorded during the v2 roadmap burn-down:
+
+7. **Row references stay 0-indexed** everywhere (`layout row 0`), matching
+   the spec validator's long-shipped messages; the review's 1-indexing
+   suggestion was declined for consistency.
+8. **`filters.time-default` ships as info for every audience**; deployments
+   that want it blocking for executives raise it via the overlay's
+   `severity` map rather than a boolean param.
+9. **Sketch WYSIWYG resolved as disclosure, not withholding**: height fixes
+   still apply to sketch-drawn charts (explicit heights legitimately override
+   the drawing — absorb's precedent), and the finding says the drawing goes
+   stale and how to redraw it.
+10. **A per-metric d3 format on table/pivot/timeseries is a spec v-next
+    candidate** (the compiler pins SMART_NUMBER today); the guideline was
+    softened to what the spec can express rather than promising the
+    inexpressible.

@@ -49,7 +49,11 @@ def _advice_payload(spec, resolution=None) -> dict:
     try:
         return advise(spec, resolution=resolution).payload()
     except Exception as e:  # noqa: BLE001 - advice must NEVER break check/apply
-        return {"stage": "design", "ok": True, "design_brain": "1",
+        from .design import DESIGN_BRAIN_VERSION
+        from .design.presets import DEFAULT_AUDIENCE
+
+        return {"stage": "design", "ok": True, "design_brain": DESIGN_BRAIN_VERSION,
+                "audience": DEFAULT_AUDIENCE,
                 "counts": {"error": 0, "warn": 0, "info": 0}, "findings": [],
                 "fixed": [], "ignored": [],
                 "errors": [{"code": "overlay" if isinstance(e, ValueError) else "advice",
@@ -86,20 +90,24 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(prog="chartwright", description=__doc__)
+    ap = argparse.ArgumentParser(prog="chartwright", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("schema")
+    sub.add_parser("schema", help="print the JSON Schema a spec must satisfy")
 
-    v = sub.add_parser("validate")
+    v = sub.add_parser("validate", help="schema-validate a spec (offline, no network)")
     v.add_argument("spec")
 
-    comp = sub.add_parser("compile")
+    comp = sub.add_parser("compile", help="compile an import bundle offline (stub dataset ids)")
     comp.add_argument("spec")
     comp.add_argument("-o", "--output", default=None)
 
+    subhelp = {"check": "pre-flight referential resolution against the live instance",
+               "apply": "check -> compile -> import -> verify -> smoke",
+               "plan": "diff the spec against the live dashboard (drift detection)"}
     for name in ("check", "apply", "plan"):
-        p = sub.add_parser(name)
+        p = sub.add_parser(name, help=subhelp[name])
         p.add_argument("spec")
         p.add_argument("--profile", required=True)
         if name != "plan":
@@ -291,6 +299,11 @@ def _main(argv: list[str] | None = None) -> None:
         except ValueError as e:
             _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
         out = Path(args.output or f"{new_data['dashboard']['slug']}.json")
+        if args.output is None and out.exists():
+            _die({"stage": "redesign", "errors": [{
+                "code": "output_exists",
+                "detail": f"{out} already exists (likely a previous redesign); "
+                          f"pass -o to choose where to write"}]})
         out.write_text(json.dumps(new_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         payload["output"] = str(out)
         if resolution.errors:
