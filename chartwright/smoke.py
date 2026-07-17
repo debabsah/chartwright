@@ -13,12 +13,52 @@ chart, not a silent pass.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from .client import SupersetClient
 from .compiler import _metric_payload
 from .resolver import Resolution
 from .spec import DashboardSpec
+
+# Issue #1 calibration: ~30 px per rendered grid row; 3 height units (120 px)
+# for the card title + column-header block, one more when a pivot nests
+# column-dimension headers.
+_ROW_PX = 30
+_HEADER_UNITS = 3
+
+
+def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
+    """Data-driven height fit for table/pivot_table (issue #1). The spec's
+    height is a fixed layout property while rendered rows grow with the data:
+    rows past the fold hide behind the chart's INNER scrollbar, the dashboard
+    looks complete, and nothing else would ever complain. Smoke already holds
+    the query result, so the comparison costs nothing extra."""
+    if chart.type not in ("table", "pivot_table"):
+        return None
+    data: list[dict] = []
+    for q in result:
+        data.extend(q.get("data") or [])
+    if not data:
+        return None
+    if chart.type == "pivot_table":
+        if not chart.rows:
+            return None  # columns-only pivot: a single metric band, height-safe
+        leaf = len({tuple(r.get(d) for d in chart.rows) for r in data})
+        header_units = _HEADER_UNITS + (1 if chart.columns else 0)
+        what = f"pivot renders ~{leaf} leaf rows"
+    else:
+        leaf = len(data)  # already capped by the query's row_limit
+        header_units = _HEADER_UNITS
+        what = f"table renders ~{leaf} rows"
+    height = spec.resolved_height(chart.name)
+    needed_px = leaf * _ROW_PX + header_units * 40
+    have_px = height * 40
+    if needed_px <= have_px:
+        return None
+    return (f"{what} (~{needed_px:.0f}px) but height={height:g} ({have_px:.0f}px): "
+            f"rows will hide behind an inner scrollbar; raise height to "
+            f"~{math.ceil(needed_px / 40)} units or cap row_limit")
 
 
 @dataclass
@@ -117,6 +157,9 @@ def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: Supe
         return SmokeResult(chart.name, False, False, f"unparseable chart/data response: {e}")
     if rows == 0:
         return SmokeResult(chart.name, True, True, "query succeeded but returned 0 rows")
+    fit = _fit_warning(chart, spec, result)
+    if fit:
+        return SmokeResult(chart.name, True, True, f"{rows} rows; {fit}")
     return SmokeResult(chart.name, True, False, f"{rows} rows")
 
 

@@ -15,6 +15,11 @@
 - A `row_limit` on a pie redefines the whole: the shown slices read as 100%,
   so a truncated pie lies about share. Prefer a horizontal bar for top-N; a
   truncated pie's title must say "top N".
+- Table and pivot height is a DATA-DEPENDENT property, not a one-time layout
+  choice: size from expected rows (~0.75 units per row + 3 for title/header,
+  +1 for pivot column headers) and re-check whenever a row dimension is
+  expected to gain members. Rows past the fold hide behind an inner
+  scrollbar; smoke warns at apply time when they do.
 - Sort order is per family: bars sort by their first metric (right for
   rankings, wrong for ordinals like weekday/month); heatmap and pivot
   categories sort alphabetically. For ordinal dimensions, chart an

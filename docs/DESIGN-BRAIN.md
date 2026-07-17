@@ -257,6 +257,7 @@ rerun the snippet in the comment and splice.
 | `narrative.format-consistency` | info | — | — | 2 | one measure, one number format |
 | `narrative.title-style` | info | — | — | 1 | chart titles should share one casing style |
 | `size.axis-min-height` | warn | ✔ | — | 1 | axis charts below the audience minimum height flatten and drop labels |
+| `size.grid-fit` | warn | ✔ | ⚡ | 2 | table/pivot heights must fit their data-driven row counts (they grow after authoring) |
 | `size.hbar-window` | warn | ✔ | — | 1 | horizontal bars need ~0.5 units of height per bar |
 | `size.heatmap-geometry` | warn | ✔ | — | 1 | heatmaps need >= 5/12 width (7/12 with many columns) and 6 height |
 | `size.kpi-height` | warn | ✔ | — | 1 | big numbers read best at 2-6 units |
@@ -355,6 +356,13 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   slug (title suffixed too) so apply builds the redesign **side by side**
   and the original is never overwritten. Structural findings stay findings —
   the spec author (usually the skill-driven LLM) acts on them before apply.
+- **`smoke` (issue #1):** table/pivot heights are fixed layout properties
+  while rendered rows are data-driven — data that grows after authoring hides
+  new rows behind the chart's inner scrollbar with everything looking green.
+  Smoke now compares the rows its query already fetched against the
+  configured height and warns on every apply (`~9 leaf rows (~420px) but
+  height=8 (320px)`); the data-aware `size.grid-fit` rule catches the same
+  class pre-apply for single-dimension grids.
 - **Chart identity:** no rule may ever autofix a chart `name` — names seed
   uuid5 identity; a rename is a delete+create on the live instance.
 - **`plan`/golden tests:** advise is pure spec-side analysis; compiled bytes
