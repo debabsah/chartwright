@@ -113,6 +113,22 @@ def test_heatmap_grid_saturated_side_reprobed():
     assert not any(f.rule == "chart.heatmap-grid" for f in rep.findings)
 
 
+def test_grid_fit_probes_row_dimension():
+    pivot = {"type": "pivot_table", "name": "P", "dataset": DS, "rows": ["region"],
+             "metrics": ["COUNT(*)"], "height": 8, "row_limit": 100}
+    spec = mk([pivot])
+    res = resolution(ts=2, region=1)
+    rep = advise(spec, resolution=res, prober=FakeProber({"region": 12}), overlay=EMPTY)
+    f = next(f for f in rep.findings if f.rule == "size.grid-fit")
+    assert "~12 rendered rows" in f.detail and f.fix["set"]["height"] == 12
+    rep = advise(spec, resolution=res, prober=FakeProber({"region": 5}), overlay=EMPTY)
+    assert not any(f.rule == "size.grid-fit" for f in rep.findings)
+    # multi-dim pivots are out of honest scope for per-column probes
+    pivot["rows"] = ["region", "store"]
+    rep = advise(mk([pivot]), resolution=res, prober=FakeProber({"region": 50}), overlay=EMPTY)
+    assert not any(f.rule == "size.grid-fit" for f in rep.findings)
+
+
 def test_heatmap_width_requirement_rises_with_cardinality():
     heat = {"type": "heatmap", "name": "H", "dataset": DS, "metric": "COUNT(*)",
             "x_column": "a", "y_column": "b", "width": 6, "height": 8}

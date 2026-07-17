@@ -181,6 +181,44 @@ def pivot_window(ctx: RuleContext):
             )
 
 
+@rule("size.grid-fit", "warn", "table/pivot heights must fit their data-driven row counts (they grow after authoring)",
+      fixable=True, data_aware=True, since="2")
+def grid_fit(ctx: RuleContext):
+    """Pre-apply half of issue #1 (the apply-time half lives in smoke): probe
+    the actual dimension cardinality and check the configured height fits.
+    Honest scope: single row-dimension pivots and single-groupby aggregate
+    tables -- multi-dim leaf counts aren't knowable from per-column probes."""
+    if ctx.prober is None:
+        return
+    for c in ctx.spec.charts:
+        if c.type == "pivot_table" and len(c.rows) == 1:
+            dim, extra_header = c.rows[0], (1 if c.columns else 0)
+        elif c.type == "table" and (c.groupby or []) and len(c.groupby) == 1 and not c.columns:
+            dim, extra_header = c.groupby[0], 0
+        else:
+            continue
+        ds = ctx.dataset_for(c)
+        if ds is None:
+            continue
+        cap = c.row_limit or 60
+        n = ctx.prober.count_up_to(ds, dim, min(cap, 60))
+        if n is None:
+            continue
+        n = min(n, cap)
+        needed = math.ceil(n * 0.75) + 3 + extra_header  # 30px/row + header block
+        h = ctx.height(c.name)
+        if needed <= h:
+            continue
+        yield Finding(
+            "size.grid-fit", "warn", c.name, ctx.where(c.name),
+            f"{dim!r} yields ~{n} rendered rows needing ~{needed} units; height {h:g} "
+            f"hides the tail behind an inner scrollbar -- and row counts grow with the "
+            f"data, so this only gets worse",
+            fix=ctx.fix_height(c, needed) if needed <= 20 else None,
+            height_driven=True,
+        )
+
+
 @rule("size.row-harmony", "warn", "charts sharing a row should share a height (Superset sizes the row to its tallest child)", fixable=True)
 def row_harmony(ctx: RuleContext):
     for si, sec in enumerate(ctx.sections):
