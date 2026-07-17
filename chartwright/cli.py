@@ -132,6 +132,8 @@ def _main(argv: list[str] | None = None) -> None:
     cal = sub.add_parser("calibrate", help="propose recommended heights from absorb history")
     cal.add_argument("--write", action="store_true", help="record proposals in the design overlay")
     cal.add_argument("--min-samples", type=int, default=5)
+    cal.add_argument("--since", default=None, metavar="90d",
+                     help="only consider absorb events newer than this (decay knob)")
 
     dec = sub.add_parser("decompile")
     dec.add_argument("dashboard", help="slug or numeric id of a live dashboard")
@@ -184,6 +186,11 @@ def _main(argv: list[str] | None = None) -> None:
             gate = args.design == "strict" and (advice["counts"]["error"] or advice["counts"]["warn"])
             if gate:
                 payload["ok"] = False
+                payload["errors"].append({
+                    "code": "design_gate",
+                    "detail": "design findings block under --design strict; fix them, "
+                              "run `chartwright advise --fix`, or record deliberate "
+                              "exceptions in the spec's design.ignore"})
         print(json.dumps(payload, indent=2))
         sys.exit(0 if res.ok and not gate else 1)
 
@@ -226,6 +233,7 @@ def _main(argv: list[str] | None = None) -> None:
         ignore = tuple(s.strip() for s in (args.ignore or "").split(",") if s.strip())
         from .design import advise, advise_and_fix
 
+        written = None
         try:
             if args.fix:
                 spec_data = json.loads(Path(args.spec).read_text(encoding="utf-8"))
@@ -233,14 +241,19 @@ def _main(argv: list[str] | None = None) -> None:
                     spec_data, audience=args.audience, ignore=ignore,
                     resolution=resolution, prober=prober)
                 if report.fixed:
+                    # --fix rewrites the whole file (normalized JSON formatting,
+                    # same as absorb); the payload discloses the path.
                     Path(args.spec).write_text(
                         json.dumps(new_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                    written = str(args.spec)
             else:
                 report = advise(spec, audience=args.audience, ignore=ignore,
                                 resolution=resolution, prober=prober)
         except ValueError as e:
             _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
         payload = report.payload()
+        if written:
+            payload["written"] = written
         if resolution is not None and resolution.errors:
             payload["resolution_errors"] = [e.as_dict() for e in resolution.errors]
         print(json.dumps(payload, indent=2))
@@ -298,7 +311,8 @@ def _main(argv: list[str] | None = None) -> None:
         from .design.calibrate import calibrate
 
         try:
-            print(json.dumps(calibrate(min_samples=args.min_samples, write=args.write), indent=2))
+            print(json.dumps(calibrate(min_samples=args.min_samples, write=args.write,
+                                       since=args.since), indent=2))
         except ValueError as e:
             _die({"stage": "calibrate", "errors": [{"code": "overlay", "detail": str(e)}]})
         return

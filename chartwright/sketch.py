@@ -19,6 +19,7 @@ Semantics:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 
 @dataclass
@@ -61,6 +62,15 @@ def _widths_to_twelfths(cell_counts: list[int], total_cells: int) -> list[int]:
             break
         floors[i] += 1
     return floors
+
+
+@lru_cache(maxsize=64)
+def parse_sketch_cached(lines: tuple[str, ...], legend_items: tuple[tuple[str, str], ...],
+                        line_units: int) -> list[SketchRow]:
+    """Memoized parse: geometry lookups hit parsed_sketch per chart per rule,
+    which measured ~cubic on sketch dashboards before caching. Callers treat
+    the returned rows as read-only (they are shared across calls)."""
+    return parse_sketch(list(lines), dict(legend_items), line_units)
 
 
 def parse_sketch(lines: list[str], legend: dict[str, str], line_units: int) -> list[SketchRow]:

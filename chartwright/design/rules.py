@@ -23,7 +23,7 @@ from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext
 # -- size: minimum readable geometry ------------------------------------------
 
 
-@rule("size.min-width", "warn", "below 3/12 width a chart is unreadable; KPIs need 2/12")
+@rule("size.min-width", "warn", "below 3/12 width a chart is unreadable; KPIs need 2/12", since="2")
 def min_width(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type in ("pie", "heatmap"):
@@ -164,7 +164,7 @@ def hbar_window(ctx: RuleContext):
         )
 
 
-@rule("size.pivot-window", "warn", "a pivot's height should show a meaningful share of its row_limit")
+@rule("size.pivot-window", "warn", "a pivot's height should show a meaningful share of its row_limit", since="2")
 def pivot_window(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type != "pivot_table" or c.row_limit is None:
@@ -542,7 +542,7 @@ def heatmap_grid(ctx: RuleContext):
             )
 
 
-@rule("chart.pivot-dims", "warn", "a pivot past three total dimensions is unreadable nesting")
+@rule("chart.pivot-dims", "warn", "a pivot past three total dimensions is unreadable nesting", since="2")
 def pivot_dims(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type == "pivot_table" and len(c.rows) + len(c.columns) > 3:
@@ -553,7 +553,7 @@ def pivot_dims(ctx: RuleContext):
             )
 
 
-@rule("chart.pivot-columns", "warn", "column-dim values x metrics = rendered columns; past ~15 the pivot scrolls sideways", data_aware=True)
+@rule("chart.pivot-columns", "warn", "column-dim values x metrics = rendered columns; past ~15 the pivot scrolls sideways", data_aware=True, since="2")
 def pivot_columns(ctx: RuleContext):
     if ctx.prober is None:
         return
@@ -579,7 +579,7 @@ def pivot_columns(ctx: RuleContext):
             )
 
 
-@rule("chart.format-bands", "warn", "conditional-formatting bands must tell one coherent story per metric")
+@rule("chart.format-bands", "warn", "conditional-formatting bands must tell one coherent story per metric", since="2")
 def format_bands(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type != "pivot_table" or not c.conditional_formatting:
@@ -613,7 +613,7 @@ def format_bands(ctx: RuleContext):
 _ORDINAL_RE = re.compile(r"(^|_)(day|weekday|dow|month|quarter|hour)(_|$|name)", re.I)
 
 
-@rule("chart.ordinal-order", "info", "ordinal dimensions (weekday, month) sort alphabetically unless order-encoded")
+@rule("chart.ordinal-order", "info", "ordinal dimensions (weekday, month) sort alphabetically unless order-encoded", since="2")
 def ordinal_order(ctx: RuleContext):
     def dims(c):
         if c.type == "bar":
@@ -635,7 +635,7 @@ def ordinal_order(ctx: RuleContext):
             )
 
 
-@rule("chart.treemap-vs-bar", "info", "a one-level treemap of few categories is a worse bar chart", data_aware=True)
+@rule("chart.treemap-vs-bar", "info", "a one-level treemap of few categories is a worse bar chart", data_aware=True, since="2")
 def treemap_vs_bar(ctx: RuleContext):
     if ctx.prober is None:
         return
@@ -691,7 +691,7 @@ def row_limit_intent(ctx: RuleContext):
             )
 
 
-@rule("data.top-n-sort", "warn", "a limit without an order is a sample, not a ranking")
+@rule("data.top-n-sort", "warn", "a limit without an order is a sample, not a ranking", since="2")
 def top_n_sort(ctx: RuleContext):
     for c in ctx.spec.charts:
         if (c.type == "table" and (c.metrics or c.groupby) and c.sort_by is None
@@ -775,7 +775,7 @@ def grain_vs_range(ctx: RuleContext):
             )
 
 
-@rule("chart.trend-grain", "info", "trend tiles at a fine grain over full history draw thousands of points in a small card")
+@rule("chart.trend-grain", "info", "trend tiles at a fine grain over full history draw thousands of points in a small card", since="2")
 def trend_grain(ctx: RuleContext):
     fine = (None, "PT1S", "PT1M", "PT1H", "P1D")
     windowed = any(f.type == "time_range" and f.default for f in ctx.spec.filters)
@@ -872,7 +872,7 @@ def time_picker(ctx: RuleContext):
         )
 
 
-@rule("filters.count", "warn", "past ~6 select pickers a filter bar stops being navigable (and each costs a query on load)")
+@rule("filters.count", "warn", "past ~6 select pickers a filter bar stops being navigable (and each costs a query on load)", since="2")
 def filters_count(ctx: RuleContext):
     selects = [f.name for f in ctx.spec.filters if f.type == "select"]
     if len(selects) > ctx.params.max_filter_selects:
@@ -884,7 +884,7 @@ def filters_count(ctx: RuleContext):
         )
 
 
-@rule("filters.duplicate-column", "info", "two filters on the same column fight each other")
+@rule("filters.duplicate-column", "info", "two filters on the same column fight each other", since="2")
 def filters_duplicate(ctx: RuleContext):
     seen: dict[tuple, str] = {}
     for f in ctx.spec.filters:
@@ -901,7 +901,7 @@ def filters_duplicate(ctx: RuleContext):
             seen[key] = f.name
 
 
-@rule("filters.select-cardinality", "warn", "a select over hundreds of distinct values is an unusable picker", data_aware=True)
+@rule("filters.select-cardinality", "warn", "a select over hundreds of distinct values is an unusable picker", data_aware=True, since="2")
 def filters_select_cardinality(ctx: RuleContext):
     if ctx.prober is None:
         return
@@ -921,7 +921,7 @@ def filters_select_cardinality(ctx: RuleContext):
             )
 
 
-@rule("filters.time-default", "info", "an undefaulted time picker loads the dashboard over ALL history")
+@rule("filters.time-default", "info", "an undefaulted time picker loads the dashboard over ALL history", since="2")
 def filters_time_default(ctx: RuleContext):
     for f in ctx.spec.filters:
         if f.type == "time_range" and not f.default:
@@ -932,7 +932,7 @@ def filters_time_default(ctx: RuleContext):
             )
 
 
-@rule("filters.range-default", "info", "a range slider with no default bounds spans the whole domain")
+@rule("filters.range-default", "info", "a range slider with no default bounds spans the whole domain", since="2")
 def filters_range_default(ctx: RuleContext):
     for f in ctx.spec.filters:
         if f.type == "range" and f.le is None and f.ge is None:
@@ -943,7 +943,7 @@ def filters_range_default(ctx: RuleContext):
             )
 
 
-@rule("narrative.format-consistency", "info", "one measure, one number format")
+@rule("narrative.format-consistency", "info", "one measure, one number format", since="2")
 def format_consistency(ctx: RuleContext):
     by_metric: dict[str, dict] = {}
     for c in ctx.spec.charts:
@@ -959,7 +959,7 @@ def format_consistency(ctx: RuleContext):
             )
 
 
-@rule("layout.markdown-height", "info", "a one-line markdown header doesn't need a chart-sized block", fixable=True)
+@rule("layout.markdown-height", "info", "a one-line markdown header doesn't need a chart-sized block", fixable=True, since="2")
 def markdown_height(ctx: RuleContext):
     def rows_of(container):
         return container.get("rows") or []

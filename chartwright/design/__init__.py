@@ -15,10 +15,9 @@ from __future__ import annotations
 from ..resolver import Resolution
 from ..spec import DashboardSpec, load_spec
 from .fix import apply_fixes
-from .model import RULES, AdviceReport, Finding, RuleContext
+from .model import (DESIGN_BRAIN_VERSION, RULES, AdviceReport, Finding, RuleContext,
+                    canonical_rule_id, known_rule_ids)
 from .presets import DEFAULT_AUDIENCE, Overlay, load_overlay, params_for
-
-DESIGN_BRAIN_VERSION = "1"
 
 
 def advise(spec: DashboardSpec, *, audience: str | None = None,
@@ -32,7 +31,19 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     design = spec.design
     aud = audience or (design.audience if design else None) or DEFAULT_AUDIENCE
     params = params_for(aud, overlay)
-    suppressed = set(ignore) | set(design.ignore if design else ()) | set(overlay.disable)
+
+    # Ignore entries are validated up front: a typo'd rule id would otherwise
+    # be a suppression that silently never suppresses.
+    raw_suppressed = set(ignore) | set(design.ignore if design else ()) | set(overlay.disable)
+    suppressed: set[str] = set()
+    unmatched: list[str] = []
+    for entry in raw_suppressed:
+        rule_id, _, scope = entry.partition("@")
+        canon = canonical_rule_id(rule_id)
+        if canon not in RULES:
+            unmatched.append(entry)
+            continue
+        suppressed.add(f"{canon}@{scope}" if scope else canon)
 
     ctx = RuleContext(spec, params, resolution, prober)
     findings: list[Finding] = []
@@ -41,10 +52,12 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
         if r.data_aware and resolution is None:
             continue
         for f in r.fn(ctx):
+            # Per-deployment severity override (single choke point).
+            f.severity = overlay.severity.get(f.rule, f.severity)
             # Explicit intent first: an ignore entry is ALWAYS visible in
             # `ignored`, even when the polish skip below would also apply.
-            if f.rule in suppressed or f.key in suppressed:
-                ignored.append(f.key)
+            if f.rule in suppressed or f.key in suppressed or f.scope_key in suppressed:
+                ignored.append(f.key if f.chart else f.scope_key)
                 continue
             # Fractional height = absorb's signature: a human already sized
             # this chart in the UI; HEIGHT opinions yield to that. Width and
@@ -52,6 +65,13 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
             # fractional height says nothing about them.
             if f.height_driven and f.chart and ctx.human_polished(f.chart):
                 continue
+            # A height fix on a sketch-drawn chart is real but leaves the
+            # drawing stale; say so instead of silently diverging (WYSIWYG).
+            if (f.fix and "height" in (f.fix.get("set") or {}) and f.chart
+                    and ctx.is_sketch(f.chart)):
+                f.detail += (" (the fix writes an explicit height that overrides the "
+                             "sketch; to keep the drawing true, repeat the band's "
+                             "line(s) instead)")
             findings.append(f)
 
     order = {"error": 0, "warn": 1, "info": 2}
@@ -59,6 +79,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     return AdviceReport(
         ok=not any(f.severity == "error" for f in findings),
         audience=aud, findings=findings, ignored=sorted(set(ignored)),
+        unmatched_ignores=sorted(unmatched),
     )
 
 

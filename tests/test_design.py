@@ -297,8 +297,10 @@ def test_fix_loop_converges_and_is_idempotent():
 def test_payload_shape_and_severity_order():
     charts = [line(f"L{i}", width=2, height=3) for i in range(6)]
     rep = run(mk(charts, layout={"rows": [[c["name"] for c in charts]]}))
+    from chartwright.design import DESIGN_BRAIN_VERSION
+
     p = rep.payload()
-    assert p["stage"] == "design" and p["design_brain"] == "1"
+    assert p["stage"] == "design" and p["design_brain"] == DESIGN_BRAIN_VERSION
     sev = [f["severity"] for f in p["findings"]]
     assert sev == sorted(sev, key=["error", "warn", "info"].index)
     assert p["ok"] is False and rep.gate(strict=False)
