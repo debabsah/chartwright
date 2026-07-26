@@ -1,8 +1,8 @@
 # Features
 
-Chartwright builds Apache Superset dashboards from a small text file called a spec:
-describe the dashboard once, and Chartwright creates it, verifies it, and keeps it
-that way. Everything below works from that one file.
+Chartwright builds Apache Superset dashboards from a small file called a spec,
+updates them from that same file later, and decompiles existing dashboards back
+into one. Everything below works from that one file.
 
 ## AI-Native Dashboard Creation
 - **Context to Dashboard**: Ask in plain words; the dashboard is built from what is in front of you.
@@ -11,7 +11,7 @@ that way. Everything below works from that one file.
     - A screenshot of a dashboard in another BI tool, pointed at the same underlying data.
 - **Reviewable Checkpoint**: The AI's output is a small spec file you can read, edit, and version like code.
 - **Open AI Contract**: `chartwright schema` prints the full JSON Schema so any LLM or tool can generate valid specs.
-- **MCP Server**: Six tools covering the whole lifecycle, usable from any MCP client.
+- **MCP Server**: Ten tools covering the whole lifecycle, usable from any MCP client.
 - **Guardrails**: The dashboard is new; the data behind it must be real. Every dataset, column, and metric the AI references is confirmed to exist before anything is built, so a made-up column becomes a clear error message, never a broken chart.
 
 ## Dashboard Design
@@ -32,13 +32,13 @@ that way. Everything below works from that one file.
 
 ## The Design Brain
 - **A Visual Designer On Call**: An optional intelligence layer that knows BI/UX practice (Few, Tufte, IBCS) and Superset's rendering quirks, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).
-- **The Brief**: `chartwright brief` prints design guidance tuned to an audience preset (`executive` / `analytical` / `operational`) — budgets, chart choice, composition — for the AI (or you) to read before writing a spec.
+- **The Brief**: `chartwright brief` prints design guidance for the AI (or you) to read before writing a spec: budgets, chart choice, and composition, tuned to an audience preset (`executive`, `analytical`, or `operational`).
 - **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices).
 - **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
-- **House Style**: A `design.yaml` overlay tunes thresholds, disables rules, and appends org guidance to the brief — no fork of the rulebook.
+- **House Style**: A `design.yaml` overlay tunes thresholds, disables rules, and appends org guidance to the brief, so a deployment can set its own standards without forking the rulebook.
 - **It Learns From You**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.
 - **Design Audits of Legacy Dashboards**: `decompile` + `advise` grades any UI-built dashboard against the rulebook.
-- **One-Shot Redesign**: `chartwright redesign <dashboard>` decompiles a live dashboard, audits it, applies the safe geometry fixes, and writes the redesigned spec — side by side under a new slug when the original isn't tool-built, in place when it is.
+- **One-Shot Redesign**: `chartwright redesign <dashboard>` decompiles a live dashboard, audits it, applies the safe geometry fixes, and writes the redesigned spec. A tool-built dashboard is redesigned in place; anything else comes back under a new slug and applies side by side, leaving the original untouched.
 
 ## Dashboards as Code
 - **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, layout.
@@ -83,19 +83,23 @@ that way. Everything below works from that one file.
 |---|---|
 | `chartwright schema` | Print the spec's JSON Schema, the contract for people and AIs |
 | `chartwright validate` | Check a spec against the schema, offline |
+| `chartwright brief` | Print the design guidance to read before writing a spec |
+| `chartwright advise` | Review a spec against the design rulebook; `--fix` applies the safe geometry repairs |
 | `chartwright compile` | Build the import bundle, no server needed |
 | `chartwright check` | Verify every dataset, column, and metric against a live instance, read-only |
 | `chartwright apply` | Build, import, and verify the dashboard end to end |
 | `chartwright plan` | Show what differs between the spec and the live dashboard |
 | `chartwright decompile` | Turn a live dashboard into a spec |
+| `chartwright redesign` | Decompile a live dashboard, audit it, and write the repaired spec |
 | `chartwright absorb` | Pull height polish made in the UI back into the spec |
+| `chartwright calibrate` | Propose recommended heights from your absorb history |
 | `chartwright restore` | Bring back a backed-up dashboard, completely |
 
 ## Testing and Evidence
 - **The full offline suite** on Linux and Windows on every push, and on every pull request ([exact counts](VERIFICATION.md)).
 - **Live CI against real Superset 4.1.4, 5.0.0, and 6.1.0** on every push: full apply, lifecycle soak, stale-tab adversary, fault injection.
 - **500-cycle soak** passed on the oldest and newest supported versions.
-- **Chart options verified against Superset's own source code** for every supported version, so a Superset change is caught in our tests before it reaches your dashboards.
+- **Chart options verified against Superset's own source code** for every supported version, so a Superset change surfaces here before it reaches your dashboards.
 - Full evidence: `docs/VERIFICATION.md`; source citations: `docs/CONTRACTS.md`.
 
 ## Deliberately Not Included

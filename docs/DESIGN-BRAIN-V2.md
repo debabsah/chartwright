@@ -1,18 +1,29 @@
 # Design Brain v2: Review Findings and Roadmap
 
-> **Status: EXECUTED, with one item re-opened.** 36 of the 37 roadmap items
+> **Status: EXECUTED, with two items re-opened.** 35 of the 37 roadmap items
 > below landed in the four `design brain v2 batch A-D` commits (design_brain
 > version "2"); §15 of [DESIGN-BRAIN.md](DESIGN-BRAIN.md) records the few
 > places execution deliberately deviated from a proposal. This page remains
 > the review record.
 >
-> **Item 20 (stale hard-coded counts) only half-landed** — 'six MCP tools'
-> was corrected, '125 tests' was not, and this page asserted completion while
-> incomplete. Closed afterwards by moving the counts into a single row in
-> [VERIFICATION.md](VERIFICATION.md) that `tests/test_docs.py` now enforces,
-> so the class of drift cannot recur. Recorded rather than quietly amended:
-> a status line that overstates is the same defect as a rule that passes
-> silently, which is what theme 1 below is about.
+> **Item 20 (stale hard-coded counts) half-landed.** '125 tests' survived in
+> five places, and 'six MCP tools' was corrected in the README but not in
+> FEATURES.md, where it stayed wrong while the server grew to ten.
+>
+> **Item 21 (FEATURES.md CLI Verbs table missing the design-brain verbs) did
+> not land at all.** `brief`, `advise`, `redesign` and `calibrate` were absent
+> from that table until the post-review sweep.
+>
+> Both are closed now, and closed in a way that cannot silently recur:
+> `tests/test_docs.py` asserts the documented test counts match what pytest
+> collects, that the CLI Verbs table covers every registered subcommand, and
+> that the MCP tool count in prose matches the number of registered tools.
+>
+> Recorded rather than quietly amended, and note the sequence: the first
+> correction to this line claimed 36 of 37 after finding item 20, and was
+> itself wrong because nobody had checked item 21. A status line that
+> overstates is the same defect as a rule that passes silently, which is what
+> theme 1 below is about.
 >
 > Originally produced 2026-07-16 by a
 > multi-lens agent review of the shipped design brain (docs/DESIGN-BRAIN.md).
