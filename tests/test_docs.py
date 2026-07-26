@@ -1,4 +1,4 @@
-"""Doc truth: the evidence page's hard numbers must match reality.
+"""Repo hygiene: claims that silently drift out of true.
 
 '125 tests' outlived four batches of new tests across five doc locations,
 which is what a hand-maintained count always does. The counts now live in
@@ -14,6 +14,17 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 VERIFICATION = REPO / "docs" / "VERIFICATION.md"
 _ROW = re.compile(r"Offline suite \((\d+) tests, (\d+) modules\)")
+
+
+def test_no_test_module_imports_through_the_tests_package():
+    """`tests` has no __init__.py, so pytest puts tests/ on sys.path, not the
+    repo root. `from tests.x import ...` resolves only under `python -m pytest`
+    (which adds the CWD) and dies under the bare `pytest` console script CI
+    runs -- a module that imports that way is uncollectable in CI while
+    passing locally."""
+    bad = [p.name for p in (REPO / "tests").glob("test_*.py")
+           if re.search(r"^\s*(from|import)\s+tests\b", p.read_text(encoding="utf-8"), re.M)]
+    assert not bad, f"import siblings directly (`from test_x import ...`), not via `tests.`: {bad}"
 
 
 def test_verification_is_the_only_place_with_a_test_count():

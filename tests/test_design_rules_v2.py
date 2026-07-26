@@ -6,7 +6,11 @@ from chartwright.design import advise, advise_and_fix
 from chartwright.design.presets import Overlay
 from chartwright.spec import load_spec
 
-from tests.test_design_data import FakeProber, resolution
+# `tests` is not a package (no __init__.py), so pytest puts THIS directory on
+# sys.path, not the repo root. `from tests.x import ...` only resolved under
+# `python -m pytest` (which adds the CWD); the bare `pytest` console script CI
+# runs could never import it.
+from test_design_data import FakeProber, resolution
 
 DS = {"database": "db", "table": "orders"}
 EMPTY = Overlay()
