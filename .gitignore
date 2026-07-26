@@ -8,3 +8,6 @@ profiles.toml
 
 .mcp.json
 .DS_Store
+
+# Local working notes (roadmaps, scratch plans). Never committed.
+*.local.md

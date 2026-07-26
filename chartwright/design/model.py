@@ -12,7 +12,12 @@ from typing import Callable, Iterator
 from ..resolver import ResolvedDataset, Resolution
 from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock
 
-DESIGN_BRAIN_VERSION = "2"
+# "3" = the post-review batch: the reconciled grid model and stricter
+# table_visible_ratio, `polished` provenance in the payload, and the
+# data.unwindowed-history rule. Bumped because all three change what a spec
+# is told -- a new warn-severity rule can newly block a `--design strict`
+# pipeline, so consumers keying on this get an honest signal.
+DESIGN_BRAIN_VERSION = "3"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
@@ -211,27 +216,44 @@ class RuleContext:
 # -- registry -----------------------------------------------------------------
 
 
+SEVERITY_RANK = {"error": 0, "warn": 1, "info": 2}
+
+
 @dataclass
 class Rule:
     id: str
-    severity: str            # the rule's DEFAULT level; individual findings may
-    #                          vary it (e.g. row-density escalates to error when
-    #                          a chart is starved), and the overlay's `severity`
+    severity: str            # the rule's DEFAULT level; the overlay's `severity`
     #                          map overrides it per deployment.
     doc: str                 # one line; the brief prints these
     fixable: bool
     data_aware: bool         # needs a live resolution (skipped offline)
     fn: Callable[[RuleContext], Iterator[Finding]]
     since: str = "1"         # design_brain version that introduced the rule
+    # Every level this rule can actually emit, default first. Four rules vary
+    # it per finding (row-density escalates to error when a chart is starved;
+    # row-fill and format-bands soften to info), and `ok` is error-driven --
+    # so a rule that can produce an error while advertising `warn` understates
+    # exactly the case a reader most needs to know about. Declared, printed in
+    # the generated table, and checked against the rule's source by a test.
+    severities: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        self.severities = self.severities or (self.severity,)
+
+    @property
+    def severity_label(self) -> str:
+        """'warn', or 'warn/error' when the rule varies it per finding."""
+        rest = sorted(set(self.severities) - {self.severity}, key=SEVERITY_RANK.get)
+        return "/".join([self.severity, *rest])
 
 
 RULES: dict[str, Rule] = {}
 
 
 def rule(id: str, severity: str, doc: str, fixable: bool = False, data_aware: bool = False,
-         since: str = "1"):
+         since: str = "1", severities: tuple[str, ...] = ()):
     def deco(fn):
-        RULES[id] = Rule(id, severity, doc, fixable, data_aware, fn, since)
+        RULES[id] = Rule(id, severity, doc, fixable, data_aware, fn, since, severities)
         return fn
     return deco
 

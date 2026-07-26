@@ -155,11 +155,11 @@ space under `K` deliberately empty. Every rule, drawn and explained:
 ## Testing and evidence
 
 Every push and every pull request runs the full offline suite on Linux and
-Windows, plus the full pipeline (apply,
-lifecycle soak, stale-tab adversary, fault injection) against real Superset
-4.1.4, 5.0.0, and 6.1.0 containers. Chart options are checked against
-Superset's own source for every supported version, so a Superset change is
-caught in our tests before it reaches your dashboards.
+Windows, plus the full pipeline (apply, lifecycle soak, stale-tab adversary,
+fault injection) against real Superset 4.1.4, 5.0.0, and 6.1.0 containers.
+Chart options are checked against Superset's own source for every supported
+version, so a Superset change is caught in our tests before it reaches your
+dashboards.
 
 Full evidence: [docs/VERIFICATION.md](https://github.com/debabsah/chartwright/blob/main/docs/VERIFICATION.md). Source citations
 for every Superset behavior the tool relies on:

@@ -28,7 +28,8 @@ from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext
 # -- size: minimum readable geometry ------------------------------------------
 
 
-@rule("size.min-width", "warn", "below 3/12 width a chart is unreadable; KPIs need 2/12", since="2")
+@rule("size.min-width", "warn", "below 3/12 width a chart is unreadable; KPIs need 2/12",
+      since="2", severities=("warn", "error"))
 def min_width(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type in ("pie", "heatmap"):
@@ -328,7 +329,8 @@ def kpi_band(ctx: RuleContext):
                     )
 
 
-@rule("layout.row-density", "warn", "too many axis charts side by side starves each of width")
+@rule("layout.row-density", "warn", "too many axis charts side by side starves each of width",
+      severities=("warn", "error"))
 def row_density(ctx: RuleContext):
     # Horizontal SLOTS, not flattened charts: a stack of three charts occupies
     # one slot's width, so it counts once (the user already split vertically).
@@ -348,7 +350,8 @@ def row_density(ctx: RuleContext):
             )
 
 
-@rule("layout.row-fill", "warn", "a row should fill the 12-column grid")
+@rule("layout.row-fill", "warn", "a row should fill the 12-column grid",
+      severities=("warn", "info"))
 def row_fill(ctx: RuleContext):
     for si, sec in enumerate(ctx.sections):
         if sec.mode != "rows":
@@ -635,7 +638,8 @@ def pivot_columns(ctx: RuleContext):
             )
 
 
-@rule("chart.format-bands", "warn", "conditional-formatting bands must tell one coherent story per metric", since="2")
+@rule("chart.format-bands", "warn", "conditional-formatting bands must tell one coherent story per metric",
+      since="2", severities=("warn", "info"))
 def format_bands(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type != "pivot_table" or not c.conditional_formatting:
@@ -831,20 +835,64 @@ def grain_vs_range(ctx: RuleContext):
             )
 
 
+_FINE_GRAINS = (None, "PT1S", "PT1M", "PT1H", "P1D")
+
+
+def _unwindowed(ctx: RuleContext) -> bool:
+    """No defaulted dashboard time filter, so first load spans ALL history."""
+    return not any(f.type == "time_range" and f.default for f in ctx.spec.filters)
+
+
 @rule("chart.trend-grain", "info", "trend tiles at a fine grain over full history draw thousands of points in a small card", since="2")
 def trend_grain(ctx: RuleContext):
-    fine = (None, "PT1S", "PT1M", "PT1H", "P1D")
-    windowed = any(f.type == "time_range" and f.default for f in ctx.spec.filters)
-    if windowed:
+    if not _unwindowed(ctx):
         return
     for c in ctx.spec.charts:
-        if c.type == "big_number_trend" and c.time_grain in fine:
+        if c.type == "big_number_trend" and c.time_grain in _FINE_GRAINS:
             yield Finding(
                 "chart.trend-grain", "info", c.name, ctx.where(c.name),
                 f"sparkline at grain {c.time_grain or 'P1D (default)'} with no defaulted "
                 f"dashboard time window draws full history daily; coarsen to P1W/P1M or "
                 f"give the time_range filter a default",
             )
+
+
+@rule("data.unwindowed-history", "warn",
+      "timeseries charts with no way to bound the window draw ALL history at their grain",
+      since="3")
+def unwindowed_history(ctx: RuleContext):
+    """The commonest real-world Superset dashboard failure, and the one the
+    rulebook missed entirely: nothing bounds the time window, so the board
+    queries the full table and draws a point per day on every load.
+
+    Reported ONCE for the dashboard, not once per chart: it is a single
+    property of the dashboard with a single fix, and a six-timeseries board
+    would otherwise emit six warns for it.
+
+    Deliberately silent when a time_range filter EXISTS without a default --
+    `filters.time-default` already names that exact one-line fix, and
+    double-reporting one remedy at two severities is noise. Deployments that
+    want it to bite raise that rule via the overlay's `severity` map, which is
+    the mechanism sec.15.8 chose for precisely this.
+
+    `data.grain-vs-range` is the sibling for when a range IS set: it can count
+    the points. This one cannot, because the span is "however much data
+    exists" -- which is what makes it dangerous. Not autofixable: every remedy
+    changes what data the chart shows (sec.2.2)."""
+    if not _unwindowed(ctx) or any(f.type == "time_range" for f in ctx.spec.filters):
+        return
+    exposed = [c.name for c in ctx.spec.charts
+               if c.type in TIMESERIES_TYPES and not c.time_range
+               and c.time_grain in _FINE_GRAINS]
+    if not exposed:
+        return
+    yield Finding(
+        "data.unwindowed-history", "warn", None, "filters",
+        f"{exposed} have no time_range and the dashboard has no time_range filter at "
+        f"all: at a daily-or-finer grain every load queries and draws the dataset's "
+        f"FULL history. Add a time_range filter WITH a default (e.g. 'Last quarter'), "
+        f"set the charts' time_range, or coarsen the grain",
+    )
 
 
 # -- narrative & filters: polish -------------------------------------------------

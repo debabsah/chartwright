@@ -60,7 +60,9 @@ def _advice(spec, resolution=None, audience: str | None = None) -> dict:
     try:
         return advise(spec, audience=audience, resolution=resolution).payload()
     except Exception as e:  # noqa: BLE001
-        return {"stage": "design", "ok": True, "design_brain": "1",
+        from .design import DESIGN_BRAIN_VERSION
+
+        return {"stage": "design", "ok": True, "design_brain": DESIGN_BRAIN_VERSION,
                 "counts": {"error": 0, "warn": 0, "info": 0}, "findings": [],
                 "fixed": [], "ignored": [],
                 "errors": [{"code": "overlay" if isinstance(e, ValueError) else "advice",
