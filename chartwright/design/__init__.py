@@ -48,6 +48,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     ctx = RuleContext(spec, params, resolution, prober)
     findings: list[Finding] = []
     ignored: list[str] = []
+    polished: list[str] = []
     for r in RULES.values():
         if r.data_aware and resolution is None:
             continue
@@ -63,7 +64,11 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
             # this chart in the UI; HEIGHT opinions yield to that. Width and
             # data complaints survive -- absorb cannot write widths, so a
             # fractional height says nothing about them.
+            # The skip is REPORTED (`polished`): this is an inferred signal,
+            # and an inferred signal that silences a rule invisibly is
+            # indistinguishable from the rule having passed.
             if f.height_driven and f.chart and ctx.human_polished(f.chart):
+                polished.append(f.key)
                 continue
             # A height fix on a sketch-drawn chart is real but leaves the
             # drawing stale; say so instead of silently diverging (WYSIWYG).
@@ -79,7 +84,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     return AdviceReport(
         ok=not any(f.severity == "error" for f in findings),
         audience=aud, findings=findings, ignored=sorted(set(ignored)),
-        unmatched_ignores=sorted(unmatched),
+        unmatched_ignores=sorted(unmatched), polished=sorted(set(polished)),
     )
 
 

@@ -43,6 +43,30 @@ def test_table_overflow_and_fit():
     assert _fit_warning(spec.charts[0], spec, result_rows([{"a": 1}, {"a": 2}])) is None
 
 
+def test_smoke_and_the_design_critic_share_one_grid_model():
+    """Three components once modelled 'how tall must a grid be' three ways
+    (0.8 units/row + 1 header here, 0.75 + 3 there, 30px/row in smoke), so one
+    table could be silent offline, warned data-aware, and warned again at
+    apply. They now read the same numbers from chartwright.spec."""
+    from chartwright.design import advise
+    from chartwright.design.presets import Overlay
+    from chartwright.spec import grid_rows_visible, grid_units_for_rows
+
+    rows, height = 20, 8
+    chart = {"type": "table", "name": "T", "dataset": DS, "columns": ["a"],
+             "height": height, "row_limit": rows}
+    spec = spec_with(chart)
+
+    # smoke (post-apply, real rows) and the offline critic agree it is too short
+    assert _fit_warning(spec.charts[0], spec, result_rows([{"a": i} for i in range(rows)]))
+    findings = advise(spec, overlay=Overlay()).findings
+    assert any(f.rule == "size.table-window" for f in findings), [f.rule for f in findings]
+
+    # and both derive that from the same two functions
+    assert grid_units_for_rows(rows) > height
+    assert grid_rows_visible(height) < rows
+
+
 def test_non_grid_charts_and_empty_results_skipped():
     chart = {"type": "timeseries_line", "name": "L", "dataset": DS,
              "metrics": ["COUNT(*)"], "time_column": "ts", "height": 2}

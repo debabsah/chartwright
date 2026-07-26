@@ -3,6 +3,11 @@ name: ci
 on:
   push:
     branches: [main]
+  # Branches must clear the same bar as main BEFORE they merge: the offline
+  # matrix (Linux + Windows, 3.11) and the live matrix (three Superset
+  # versions) are exactly the checks a feature branch is most likely to break.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:

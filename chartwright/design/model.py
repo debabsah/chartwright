@@ -80,6 +80,10 @@ class AdviceReport:
         return c["error"] > 0 or (strict and c["warn"] > 0)
 
     unmatched_ignores: list[str] = field(default_factory=list)
+    # Findings withheld because the chart carries a human-polished (fractional)
+    # height. Reported, never silent: a rule that stands down on an INFERRED
+    # signal has to say so, or the user reads the silence as approval.
+    polished: list[str] = field(default_factory=list)
 
     def payload(self) -> dict:
         out = {
@@ -94,6 +98,8 @@ class AdviceReport:
         }
         if self.unmatched_ignores:
             out["unmatched_ignores"] = self.unmatched_ignores
+        if self.polished:
+            out["polished"] = self.polished
         return out
 
 

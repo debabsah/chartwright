@@ -17,7 +17,12 @@ import math
 import re
 from datetime import date
 
-from ..spec import DEFAULT_TIME_GRAIN
+from ..spec import (
+    DEFAULT_TIME_GRAIN,
+    GRID_HEADER_UNITS,
+    grid_rows_visible,
+    grid_units_for_rows,
+)
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 
 # -- size: minimum readable geometry ------------------------------------------
@@ -136,12 +141,20 @@ def table_window(ctx: RuleContext):
         if c.type != "table" or c.row_limit is None:
             continue
         h = ctx.height(c.name)
-        visible = max(1, (h - 1) / 0.8)  # ~0.8 units per row after the header
-        if visible < ctx.params.table_visible_ratio * c.row_limit:
+        # Same grid model as size.grid-fit and apply-time smoke: offline this
+        # can only reason about row_limit (the ceiling), where grid-fit probes
+        # the real count -- but both now measure a row the same way, so they
+        # can no longer give one chart contradictory verdicts.
+        visible = grid_rows_visible(h)
+        want = ctx.params.table_visible_ratio * c.row_limit
+        if visible < want:
             yield Finding(
                 "size.table-window", "warn", c.name, ctx.where(c.name),
                 f"table shows ~{visible:.0f} of {c.row_limit} rows at {h:g} units "
-                f"(a scroll dungeon); raise height or lower row_limit",
+                f"(a scroll dungeon); raise height to "
+                f"~{math.ceil(grid_units_for_rows(want))} or lower row_limit",
+                fix=ctx.fix_height(c, math.ceil(grid_units_for_rows(want)))
+                if grid_units_for_rows(want) <= 20 else None,
                 height_driven=True,
             )
 
@@ -170,13 +183,17 @@ def pivot_window(ctx: RuleContext):
         if c.type != "pivot_table" or c.row_limit is None:
             continue
         h = ctx.height(c.name)
-        header = 1 + len(c.columns)  # one header line per column dimension
-        visible = max(1, (h - header) / 0.8)
-        if visible < ctx.params.table_visible_ratio * c.row_limit:
+        header = GRID_HEADER_UNITS + (1 if c.columns else 0)  # nested column headers cost one more
+        visible = grid_rows_visible(h, header)
+        want = ctx.params.table_visible_ratio * c.row_limit
+        if visible < want:
             yield Finding(
                 "size.pivot-window", "warn", c.name, ctx.where(c.name),
                 f"pivot shows ~{visible:.0f} of {c.row_limit} rows at {h:g} units "
-                f"({header} header line(s)); raise height or lower row_limit",
+                f"({header:g} header units); raise height to "
+                f"~{math.ceil(grid_units_for_rows(want, header))} or lower row_limit",
+                fix=ctx.fix_height(c, math.ceil(grid_units_for_rows(want, header)))
+                if grid_units_for_rows(want, header) <= 20 else None,
                 height_driven=True,
             )
 
@@ -205,7 +222,8 @@ def grid_fit(ctx: RuleContext):
         if n is None:
             continue
         n = min(n, cap)
-        needed = math.ceil(n * 0.75) + 3 + extra_header  # 30px/row + header block
+        # Shared grid model (chartwright/spec.py), same numbers smoke uses.
+        needed = math.ceil(grid_units_for_rows(n, GRID_HEADER_UNITS + extra_header))
         h = ctx.height(c.name)
         if needed <= h:
             continue

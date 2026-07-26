@@ -19,13 +19,7 @@ from dataclasses import dataclass
 from .client import SupersetClient
 from .compiler import _metric_payload
 from .resolver import Resolution
-from .spec import DashboardSpec
-
-# Issue #1 calibration: ~30 px per rendered grid row; 3 height units (120 px)
-# for the card title + column-header block, one more when a pivot nests
-# column-dimension headers.
-_ROW_PX = 30
-_HEADER_UNITS = 3
+from .spec import GRID_HEADER_UNITS, DashboardSpec, grid_units_for_rows
 
 
 def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
@@ -45,20 +39,22 @@ def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
         if not chart.rows:
             return None  # columns-only pivot: a single metric band, height-safe
         leaf = len({tuple(r.get(d) for d in chart.rows) for r in data})
-        header_units = _HEADER_UNITS + (1 if chart.columns else 0)
+        header_units = GRID_HEADER_UNITS + (1 if chart.columns else 0)
         what = f"pivot renders ~{leaf} leaf rows"
     else:
         leaf = len(data)  # already capped by the query's row_limit
-        header_units = _HEADER_UNITS
+        header_units = GRID_HEADER_UNITS
         what = f"table renders ~{leaf} rows"
     height = spec.resolved_height(chart.name)
-    needed_px = leaf * _ROW_PX + header_units * 40
-    have_px = height * 40
-    if needed_px <= have_px:
+    # Shared grid model (chartwright/spec.py): the design critic's
+    # size.grid-fit and size.table-window read the same numbers, so pre-apply
+    # advice and this post-apply warning can never contradict each other.
+    needed = grid_units_for_rows(leaf, header_units)
+    if needed <= height:
         return None
-    return (f"{what} (~{needed_px:.0f}px) but height={height:g} ({have_px:.0f}px): "
+    return (f"{what} (~{needed * 40:.0f}px) but height={height:g} ({height * 40:.0f}px): "
             f"rows will hide behind an inner scrollbar; raise height to "
-            f"~{math.ceil(needed_px / 40)} units or cap row_limit")
+            f"~{math.ceil(needed)} units or cap row_limit")
 
 
 @dataclass

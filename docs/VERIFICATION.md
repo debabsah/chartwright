@@ -34,7 +34,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (125 tests, 16 modules) | Contract, determinism, round-trips, credentials | every push, Linux + Windows |
+| Offline suite (235 tests, 26 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every push |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every push, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every push |
@@ -42,7 +42,12 @@ injection.
 | Fault injection | A typed failure at every stage boundary; complete restore | every push, all 3 versions |
 | Real-instance use | Production 4.1.x on Windows, real datasets, real users | ongoing |
 
-## 1. Offline suite: 125 tests
+## 1. Offline suite
+
+The counts in the table above are the only hard numbers in the docs, and
+`tests/test_docs.py` fails when they drift from what pytest actually
+collects — the same "generated, not hand-maintained" rule the rule table in
+[DESIGN-BRAIN.md](DESIGN-BRAIN.md) §7 follows.
 
 - **Spec contract** (`test_spec.py`, `test_spec_v2.py`): validation
   semantics. A layout is rows or tabs, never both; row widths must fit the
@@ -214,7 +219,7 @@ layer exists.
 
 ```bash
 # offline (any machine, no Superset needed)
-python -m pytest tests/ -q                 # 125 tests
+python -m pytest tests/ -q                 # the offline suite
 python tools/params_drift.py --all         # chart options vs plugin source, 3 versions
 
 # live (any sandbox; sandbox/up.sh --tag <v> boots one)

@@ -169,7 +169,7 @@ minus Superset chrome is ≈ 22 units).
 | `kpi_height` | 5 | 4 | 3 |
 | `min_axis_height` | 8 | 6 | 5 |
 | `max_filter_selects` | 5 | 6 | 7 |
-| `table_visible_ratio` (min visible/row_limit) | 0.5 | 0.25 | 0.25 |
+| `table_visible_ratio` (min visible/row_limit) | 0.5 | 0.5 | 0.5 |
 | `vbar_max_categories` | 6 | 8 | 8 |
 | `pie_max_slices` | 5 | 7 | 7 |
 | `series_max` (lines per timeseries) | 5 | 10 | 8 |
@@ -263,9 +263,9 @@ rerun the snippet in the comment and splice.
 | `size.kpi-height` | warn | ✔ | — | 1 | big numbers read best at 2-6 units |
 | `size.min-width` | warn | — | — | 2 | below 3/12 width a chart is unreadable; KPIs need 2/12 |
 | `size.pie-geometry` | warn | ✔ | — | 1 | pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds |
-| `size.pivot-window` | warn | — | — | 2 | a pivot's height should show a meaningful share of its row_limit |
+| `size.pivot-window` | warn | ✔ | — | 2 | a pivot's height should show a meaningful share of its row_limit |
 | `size.row-harmony` | warn | ✔ | — | 1 | charts sharing a row should share a height (Superset sizes the row to its tallest child) |
-| `size.table-window` | warn | — | — | 1 | a table's height should show a meaningful share of its row_limit |
+| `size.table-window` | warn | ✔ | — | 1 | a table's height should show a meaningful share of its row_limit |
 
 Anything fuzzier than this (reading order beyond KPI-first, grouping
 related metrics, matched granularity across a row, insight-stating titles)
@@ -327,7 +327,8 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
      "chart": "Sales by Region", "set": {"height": 8}, "was": {"height": 4}}
   ],
   "ignored": ["layout.fold-budget"],
-  "unmatched_ignores": ["size.pie-geometri"]
+  "unmatched_ignores": ["size.pie-geometri"],
+  "polished": ["size.axis-min-height@Weekly Orders"]
 }
 ```
 
@@ -338,8 +339,16 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   `advise --fix` additionally reports the `written` file path.
 - `unmatched_ignores` lists ignore/disable entries whose rule id doesn't
   exist — a typo'd suppression is surfaced, never a silent no-op.
+- `polished` lists sizing findings withheld because the chart carries a
+  human-polished (fractional) height — §2.4's deference, made visible.
+  `ignored` is the user's *explicit* intent; `polished` is the brain's own
+  *inference*, and an inference that silences a rule invisibly reads exactly
+  like the rule having passed. Present only when non-empty.
 - Under `apply --design warn`, this object is embedded in the apply report
-  as `"advice"` and never affects `apply`'s own `ok`.
+  as `"advice"` and never affects `apply`'s own `ok`. Under
+  `--design strict` the gate fails CLOSED: if advice could not be evaluated
+  at all (a broken `design.yaml`), that blocks too, rather than reporting
+  counts of zero and passing.
 
 ## 11. Interactions with the existing system
 
@@ -360,9 +369,13 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   while rendered rows are data-driven — data that grows after authoring hides
   new rows behind the chart's inner scrollbar with everything looking green.
   Smoke now compares the rows its query already fetched against the
-  configured height and warns on every apply (`~9 leaf rows (~420px) but
+  configured height and warns on every apply (`~9 leaf rows (~430px) but
   height=8 (320px)`); the data-aware `size.grid-fit` rule catches the same
-  class pre-apply for single-dimension grids.
+  class pre-apply for single-dimension grids. All of it — smoke,
+  `size.grid-fit`, `size.table-window`, `size.pivot-window` — reads ONE grid
+  model (`grid_units_for_rows` / `grid_rows_visible` in `chartwright/spec.py`),
+  so the offline critic, the data-aware critic, and the apply-time warning
+  cannot give one chart three different verdicts.
 - **Chart identity:** no rule may ever autofix a chart `name` — names seed
   uuid5 identity; a rename is a delete+create on the live instance.
 - **`plan`/golden tests:** advise is pure spec-side analysis; compiled bytes
@@ -486,3 +499,32 @@ Recorded during the v2 roadmap burn-down:
     candidate** (the compiler pins SMART_NUMBER today); the guideline was
     softened to what the spec can express rather than promising the
     inexpressible.
+
+Recorded during the post-merge review burn-down:
+
+11. **One grid model, three consumers.** `size.table-window` (0.8 units/row,
+    1 header unit), `size.grid-fit` (0.75 + 3) and smoke (30px/row + 3×40px)
+    each modelled a rendered grid row differently, so a 20-row table at
+    height 8 passed offline while the data-aware rule and the apply warning
+    both said it hid ten rows. The constants now live once in
+    `chartwright/spec.py`; the rules and smoke import them.
+12. **`table_visible_ratio` is 0.5 for every audience**, up from 0.25 on
+    `analytical`/`operational`. Below half, the MAJORITY of the rows the
+    author deliberately asked for sit behind the inner scrollbar — the exact
+    defect §11's issue-#1 work exists to catch, so the offline rule must not
+    bless it. It remains a per-deployment knob; it is no longer a lenient
+    default. `size.table-window` and `size.pivot-window` also became
+    autofixable (a height raise, guarded to sane heights) now that they
+    compute a real target rather than a ratio verdict.
+13. **The polish skip is disclosed, not silent** (`polished` in §10). §2.4's
+    deference to a human-dragged height is an INFERRED signal; v2 theme 1
+    named it alongside `unmatched_ignores` and the strict-gate `ok`, and only
+    the other two landed. Known limits of the inference, unchanged: a drag to
+    an exact 40px boundary absorbs as an integer and is not recognized, and a
+    hand-written fractional height silences sizing rules without the author
+    intending it. Explicit provenance (a spec field written by `absorb`) is
+    the real fix and stays a v-next candidate; reporting it is the floor.
+14. **`--design strict` fails closed.** Advice still degrades to an error
+    note instead of crashing check/apply, but under `strict` an unevaluable
+    overlay blocks: previously one typo in an org-wide `design.yaml`
+    silently disarmed the gate everywhere it was used.

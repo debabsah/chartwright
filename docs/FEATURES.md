@@ -92,7 +92,7 @@ that way. Everything below works from that one file.
 | `chartwright restore` | Bring back a backed-up dashboard, completely |
 
 ## Testing and Evidence
-- **125 tests** on Linux and Windows on every push.
+- **The full offline suite** on Linux and Windows on every push, and on every pull request ([exact counts](VERIFICATION.md)).
 - **Live CI against real Superset 4.1.4, 5.0.0, and 6.1.0** on every push: full apply, lifecycle soak, stale-tab adversary, fault injection.
 - **500-cycle soak** passed on the oldest and newest supported versions.
 - **Chart options verified against Superset's own source code** for every supported version, so a Superset change is caught in our tests before it reaches your dashboards.

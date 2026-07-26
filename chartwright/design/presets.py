@@ -25,7 +25,12 @@ class Params:
     kpi_row_max: int
     kpi_height: int
     min_axis_height: int
-    table_visible_ratio: float   # min visible rows / row_limit
+    # Min visible rows / row_limit. 0.5 everywhere: below half, the MAJORITY of
+    # the rows you deliberately asked for sit behind the grid's inner
+    # scrollbar -- the exact defect size.grid-fit and apply-time smoke exist to
+    # catch, so the offline rule must not bless it. Still a knob (deployments
+    # override per audience in design.yaml), just no longer a lenient default.
+    table_visible_ratio: float
     vbar_max_categories: int
     pie_max_slices: int
     series_max: int              # lines per timeseries
@@ -45,11 +50,11 @@ AUDIENCES: dict[str, Params] = {
                         pie_max_slices=5, series_max=5, max_filter_selects=5),
     "analytical": Params("analytical", fold_units=66, max_row_charts=4, kpi_row_min=2,
                          kpi_row_max=6, kpi_height=4, min_axis_height=6,
-                         table_visible_ratio=0.25, vbar_max_categories=8,
+                         table_visible_ratio=0.5, vbar_max_categories=8,
                          pie_max_slices=7, series_max=10, max_filter_selects=6),
     "operational": Params("operational", fold_units=22, max_row_charts=4, kpi_row_min=2,
                           kpi_row_max=8, kpi_height=3, min_axis_height=5,
-                          table_visible_ratio=0.25, vbar_max_categories=8,
+                          table_visible_ratio=0.5, vbar_max_categories=8,
                           pie_max_slices=7, series_max=8, max_filter_selects=7),
 }
 AUDIENCE_NAMES = tuple(AUDIENCES)
