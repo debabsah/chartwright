@@ -26,8 +26,14 @@ is also worth fixing.
   staying decompilable and every supported Superset version staying in
   contract (docs/CONTRACTS.md).
 - Every pull request runs the same gates as every push: the offline suite
-  (`python -m pytest tests/ -q`) and the params drift check
+  (`pytest tests/ -q`) and the params drift check
   (`python tools/params_drift.py --all`) must both pass.
+- Run the suite exactly as written above, from the repo root. `python -m
+  pytest` also works, but it puts the current directory on `sys.path`, which
+  CI does not: a test module importing through the `tests.` package passes
+  that way and is uncollectable in CI. That gap once let a whole test module
+  sit unrun; `tests/test_docs.py` now guards the specific case, but the habit
+  is what keeps the two honest.
 
 By contributing, you agree that your contributions are licensed under the
 Apache License 2.0, the same license as the project.
