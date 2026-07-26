@@ -175,6 +175,36 @@ def test_implicit_width_remainder_distributed():
     assert not any(f.rule == "layout.row-fill" for f in rep.findings)
 
 
+def test_equal_markdown_blocks_do_not_overflow_the_row():
+    """Markdown blocks compare by VALUE, so every identical block used to
+    resolve to the first one's index, take the remainder's +1, and push the
+    row past 12 columns -- a row Superset cannot lay out."""
+    md = {"markdown": "---", "height": 2}
+    spec = load_spec(mk([line("L")], layout={"rows": [["L", *(dict(md) for _ in range(4))]]}))
+    widths = [spec.resolved_item_width(i) for i in spec.layout.rows[0]]
+    assert sum(widths) == 12, widths
+    assert widths == [3, 3, 2, 2, 2], widths
+
+
+# -- review: the polish skip is an INFERRED signal, so it must be reported ---------
+
+
+def test_human_polished_skip_is_disclosed_not_silent():
+    """A fractional height means "a human sized this in the UI", so sizing
+    rules stand down. Silence there is indistinguishable from passing, so the
+    withheld finding is named in `polished`."""
+    spec = load_spec(mk([line("Polished", height=2.4)]))
+    rep = advise(spec, overlay=EMPTY)
+    assert not any(f.rule == "size.axis-min-height" for f in rep.findings)
+    assert rep.polished == ["size.axis-min-height@Polished"]
+    assert rep.payload()["polished"] == ["size.axis-min-height@Polished"]
+
+
+def test_polished_absent_when_nothing_was_withheld():
+    """Payload stays clean when the heuristic never fired."""
+    assert "polished" not in advise(load_spec(mk([line("L")])), overlay=EMPTY).payload()
+
+
 def test_sketch_height_fix_disclosed():
     charts = [line("A"), line("B")]
     for c in charts:

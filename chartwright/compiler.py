@@ -200,10 +200,20 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         if chart.columns:
             p["query_mode"] = "raw"
             p["all_columns"] = chart.columns
+            if chart.sort_by:
+                # Raw mode sorts on COLUMNS: order_by_cols holds JSON-encoded
+                # [column, ascending] pairs (Table controlPanel, all supported
+                # versions). False = descending, matching the ranking intent.
+                p["order_by_cols"] = [json.dumps([chart.sort_by, False])]
         else:
             p["query_mode"] = "aggregate"
             p["groupby"] = chart.groupby or []
             p["metrics"] = [metric(m) for m in (chart.metrics or [])]
+            if chart.sort_by:
+                # Aggregate mode sorts on a METRIC via timeseries_limit_metric
+                # ("Sort by" in the UI), declared by the Table plugin on 4.1.4,
+                # 5.0.0 and 6.1.0 alike (tools/contracts/params-contract.json).
+                p["timeseries_limit_metric"] = metric(chart.sort_by)
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         p["server_page_length"] = 10
         if chart.sort_by:

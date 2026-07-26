@@ -8,6 +8,7 @@ report, never silently dropped-and-forgotten.
 from __future__ import annotations
 
 import io
+import json
 import re
 import zipfile
 from dataclasses import asdict, dataclass, field
@@ -92,6 +93,21 @@ def _format_to_spec(cf: dict) -> dict | None:
         if rule["target"] is None:
             return None
     return rule
+
+
+def _order_by_col(order_by_cols) -> tuple[str | None, bool]:
+    """Raw-table sort: order_by_cols holds ["column", ascending] pairs, stored
+    JSON-encoded by the control but seen as plain lists in some exports.
+    Returns (first column, ascending); (None, False) when there is no sort."""
+    for entry in order_by_cols or []:
+        if isinstance(entry, str):
+            try:
+                entry = json.loads(entry)
+            except ValueError:
+                continue
+        if isinstance(entry, list) and len(entry) == 2 and isinstance(entry[0], str):
+            return entry[0], bool(entry[1])
+    return None, False
 
 
 def _metric_to_spec(m, losses: list[Loss], chart: str) -> str | None:
@@ -249,6 +265,9 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             if not out["columns"]:
                 losses.append(Loss(name, "raw table with no columns; chart skipped"))
                 return None
+            col, asc = _order_by_col(p.get("order_by_cols"))
+            if col:
+                out["sort_by"] = col
         else:
             ms = [m for m in (metric_one(m) for m in (p.get("metrics") or [])) if m]
             out["metrics"] = ms or None
@@ -256,6 +275,17 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             if not out["metrics"] and not out["groupby"]:
                 losses.append(Loss(name, "aggregate table with no metrics/groupby; chart skipped"))
                 return None
+            sort = p.get("timeseries_limit_metric") or p.get("series_limit_metric")
+            if sort:
+                s = metric_one(sort)
+                if s:
+                    out["sort_by"] = s
+            asc = p.get("order_desc") is False
+        if out.get("sort_by") and asc:
+            # The spec sorts descending (a ranking); an ascending live sort is
+            # named rather than silently flipped on the next apply.
+            losses.append(Loss(name, "ascending sort not preserved; the spec sorts "
+                                     "sort_by descending, so re-apply will sort descending"))
         keep_row_limit()
     elif spec_type == "pivot_table":
         ms = [m for m in (metric_one(m) for m in (p.get("metrics") or [])) if m]
@@ -327,7 +357,9 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         out["groupby"] = gb
         keep_row_limit()
 
-    mapped_here = {"combineMetric", "conditional_formatting"} if spec_type == "pivot_table" else set()
+    mapped_here = {"combineMetric", "conditional_formatting"} if spec_type == "pivot_table" else (
+        {"order_by_cols", "timeseries_limit_metric", "series_limit_metric"}
+        if spec_type == "table" else set())
     unmapped = sorted(k for k in p if k not in _IGNORABLE and k not in mapped_here)
     if unmapped:
         losses.append(Loss(name, f"params not preserved: {unmapped}"))

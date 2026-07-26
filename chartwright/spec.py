@@ -24,6 +24,25 @@ DEFAULT_ROW_LIMIT = {
 }
 DEFAULT_TIME_GRAIN = "P1D"
 
+# How a rendered table/pivot grid consumes spec height. ONE model, used by the
+# design critic (size.table-window, size.pivot-window, size.grid-fit) and by
+# apply-time smoke, so offline advice, data-aware advice, and the apply warning
+# can never disagree about the same chart. ~30px per grid row over a 40px unit;
+# 3 units of card title + column header (one more when a pivot nests column
+# dimensions). Calibration knob, same status as ROW_UNITS_PER_SPEC_UNIT.
+GRID_UNITS_PER_ROW = 0.75
+GRID_HEADER_UNITS = 3
+
+
+def grid_units_for_rows(rows: float, header_units: float = GRID_HEADER_UNITS) -> float:
+    """Spec height units needed to render `rows` grid rows without an inner scrollbar."""
+    return rows * GRID_UNITS_PER_ROW + header_units
+
+
+def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS) -> float:
+    """Inverse: grid rows visible at `height` before the inner scrollbar starts."""
+    return max(0.0, (height - header_units) / GRID_UNITS_PER_ROW)
+
 ADHOC_AGGREGATES = ("SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX")
 _ADHOC_RE = re.compile(r"^(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((.+?)\)(?:\s+AS\s+(.+))?$")
 
@@ -178,7 +197,11 @@ class TableChart(_ChartBase):
     metrics: list[str] | None = None
     groupby: list[str] | None = None
     row_limit: int | None = Field(default=None, ge=1)
-    sort_by: str | None = Field(default=None, description="Metric or column to sort by (aggregate mode: metric)")
+    sort_by: str | None = Field(
+        default=None,
+        description="Sort key, DESCENDING (a ranking). Aggregate mode: one of the "
+                    "chart's metrics, written the same way. Raw mode: a column name.",
+    )
 
     @model_validator(mode="after")
     def _mode(self) -> "TableChart":
@@ -606,7 +629,11 @@ class DashboardSpec(BaseModel):
         # every 5-implicit row renders with a phantom 2-column hole at the
         # right (floor division used to drop it). Earlier items get the +1.
         base, rem = divmod(GRID_WIDTH - explicit_total, len(implicit))
-        pos = next(i for i, x in enumerate(implicit) if x is item or x == item)
+        # Position by IDENTITY for blocks, value only for chart names (unique by
+        # validator). Two equal markdown blocks both matched the first one's
+        # index under `==`, so both took the +1 and the row summed past 12.
+        pos = next(i for i, x in enumerate(implicit)
+                   if x is item or (isinstance(item, str) and x == item))
         return max(1, base + (1 if pos < rem else 0))
 
     def resolved_height(self, name: str) -> float:

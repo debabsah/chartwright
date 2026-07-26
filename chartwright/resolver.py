@@ -189,6 +189,14 @@ def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
             _check_metric(m, chart.name, ds, res)
         for g in chart.groupby or []:
             _check_column(g, chart.name, ds, res, "groupby")
+        if chart.sort_by:
+            # Resolved like everything else it references: raw mode sorts by a
+            # column, aggregate mode by a metric. Unchecked, a typo here used to
+            # pass check and then silently not sort.
+            if chart.columns:
+                _check_column(chart.sort_by, chart.name, ds, res, "sort_by")
+            else:
+                _check_metric(chart.sort_by, chart.name, ds, res)
     elif t == "pivot_table":
         for m in chart.metrics:
             _check_metric(m, chart.name, ds, res)

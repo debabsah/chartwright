@@ -234,7 +234,8 @@
         "SUM(sales)",
         "COUNT(*)"
       ],
-      "row_limit": 100
+      "row_limit": 100,
+      "sort_by": "SUM(sales)"
     }
   ],
   "layout": {

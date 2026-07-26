@@ -1,10 +1,18 @@
 # Design Brain v2: Review Findings and Roadmap
 
-> **Status: EXECUTED.** All 37 roadmap items below landed in the four
-> `design brain v2 batch A-D` commits (design_brain version "2"); §15 of
-> [DESIGN-BRAIN.md](DESIGN-BRAIN.md) records the few places execution
-> deliberately deviated from a proposal. This page remains the review
-> record.
+> **Status: EXECUTED, with one item re-opened.** 36 of the 37 roadmap items
+> below landed in the four `design brain v2 batch A-D` commits (design_brain
+> version "2"); §15 of [DESIGN-BRAIN.md](DESIGN-BRAIN.md) records the few
+> places execution deliberately deviated from a proposal. This page remains
+> the review record.
+>
+> **Item 20 (stale hard-coded counts) only half-landed** — 'six MCP tools'
+> was corrected, '125 tests' was not, and this page asserted completion while
+> incomplete. Closed afterwards by moving the counts into a single row in
+> [VERIFICATION.md](VERIFICATION.md) that `tests/test_docs.py` now enforces,
+> so the class of drift cannot recur. Recorded rather than quietly amended:
+> a status line that overstates is the same defect as a rule that passes
+> silently, which is what theme 1 below is about.
 >
 > Originally produced 2026-07-16 by a
 > multi-lens agent review of the shipped design brain (docs/DESIGN-BRAIN.md).

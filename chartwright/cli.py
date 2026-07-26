@@ -41,9 +41,27 @@ def _die(payload: dict, code: int = 1) -> None:
     sys.exit(code)
 
 
+def _design_blocks(advice: dict) -> str | None:
+    """Why `--design strict` should block, or None. A gate that cannot EVALUATE
+    must fail closed: advice degrades to counts of zero when the overlay is
+    broken (see _advice_payload), and a silent pass there would turn one typo
+    in an org-wide design.yaml into a disarmed gate everywhere it is used."""
+    if advice.get("errors"):
+        return ("design advice could not be evaluated: "
+                + "; ".join(e.get("detail", "") for e in advice["errors"])
+                + " -- fix it or pass --design off")
+    if advice["counts"]["error"] or advice["counts"]["warn"]:
+        return ("design findings block under --design strict; fix them, run "
+                "`chartwright advise --fix`, or record deliberate exceptions "
+                "in the spec's design.ignore")
+    return None
+
+
 def _advice_payload(spec, resolution=None) -> dict:
     """Advice riding along check/apply must never break the pipeline: a bad
-    overlay degrades to an error note inside the advice block, not a crash."""
+    overlay degrades to an error note inside the advice block, not a crash.
+    Under --design strict that error block BLOCKS (see _design_blocks); under
+    warn it is reported and the pipeline continues."""
     from .design import advise
 
     try:
@@ -191,14 +209,11 @@ def _main(argv: list[str] | None = None) -> None:
         if args.design != "off":
             advice = _advice_payload(spec, resolution=res if res.ok else None)
             payload["advice"] = advice
-            gate = args.design == "strict" and (advice["counts"]["error"] or advice["counts"]["warn"])
+            blocked = _design_blocks(advice) if args.design == "strict" else None
+            gate = blocked is not None
             if gate:
                 payload["ok"] = False
-                payload["errors"].append({
-                    "code": "design_gate",
-                    "detail": "design findings block under --design strict; fix them, "
-                              "run `chartwright advise --fix`, or record deliberate "
-                              "exceptions in the spec's design.ignore"})
+                payload["errors"].append({"code": "design_gate", "detail": blocked})
         print(json.dumps(payload, indent=2))
         sys.exit(0 if res.ok and not gate else 1)
 
@@ -210,12 +225,10 @@ def _main(argv: list[str] | None = None) -> None:
             # advice is `chartwright advise --profile`). Strict blocks BEFORE
             # anything on the instance is touched.
             advice = _advice_payload(spec)
-            if args.design == "strict" and (advice["counts"]["error"] or advice["counts"]["warn"]):
-                _die({"stage": "design", "ok": False, "advice": advice, "errors": [{
-                    "code": "design_gate",
-                    "detail": "design findings block under --design strict; fix them, "
-                              "run `chartwright advise --fix`, or record deliberate "
-                              "exceptions in the spec's design.ignore"}]})
+            blocked = _design_blocks(advice) if args.design == "strict" else None
+            if blocked:
+                _die({"stage": "design", "ok": False, "advice": advice,
+                      "errors": [{"code": "design_gate", "detail": blocked}]})
         client = _client(args.profile)
         from .apply import apply as run_apply
 
