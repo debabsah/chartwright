@@ -34,7 +34,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (235 tests, 26 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows |
+| Offline suite (236 tests, 26 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every push |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every push, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every push |
