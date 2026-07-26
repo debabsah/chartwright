@@ -1,8 +1,10 @@
 # Chartwright
 
-A dashboard compiler for Apache Superset. Describe the dashboard once, in a
-small text file called a spec, and the `chartwright` command line creates it,
-verifies it, and keeps it that way.
+A dashboard compiler for Apache Superset. The `chartwright` command line builds
+a dashboard from a small deterministic file, updates it from that file later,
+and decompiles an existing dashboard back into one. Every dataset, column, and
+metric is checked against your own Superset first. An AI can write the file for
+you, or revise it, from a request in plain words.
 
 ![An operations dashboard over NYC yellow-taxi data: KPI cards with unit subtitles, daily trend charts, an hour-by-weekday demand heatmap, a payment donut, borough and zone rankings, and a trip-distance histogram, behind a three-filter bar](https://raw.githubusercontent.com/debabsah/chartwright/main/docs/images/nyc-taxi-operations.png)
 
@@ -12,13 +14,19 @@ charts, three filters, one `chartwright apply`. An AI wrote
 [the request and rebuild steps](https://github.com/debabsah/chartwright/blob/main/examples/README.md).*
 
 A dashboard that lives in a file gets the workflow code already has: review it
-in a pull request, rebuild it identically, diff it against what is live, and
-bring it back after a bad change. Write the spec yourself or ask an AI for one;
-either way, every dataset, column, and metric the spec names is confirmed to
-exist before anything is built, and every chart is checked to load with data
-after.
+in a pull request, rebuild it identically, and bring it back after a bad
+change. `chartwright plan` diffs the file against the live dashboard and exits
+non-zero when they differ, so drift fails a CI check. `chartwright decompile`
+covers the other direction, and lists anything it could not carry over.
+
+Write the file yourself, or describe the dashboard you want and have an AI
+write it. The same checks run either way. After the build, each chart's query
+runs once to prove it shows data, and `chartwright advise` reviews the layout
+for readability.
 
 ## What a spec looks like
+
+The file is called a spec:
 
 ```json
 {
@@ -48,6 +56,22 @@ after.
 builds a KPI card above a line chart, and finishes by running each chart's
 query once to prove it shows data. A misspelled column or a missing table is a
 clear error naming the problem, before anything is created.
+
+## Creating dashboards with AI
+
+The spec is typed, and every reference in it is checked before anything is
+created. Whatever a model proposes has to survive the same verification your
+own specs do.
+
+- **Claude Code skill**: from a clone of this repo, run
+  `python install-skill.py`; the model writes the spec from your request, and
+  the tool verifies and builds it.
+- **MCP server**: `chartwright-mcp` (installed with `pip install "chartwright[mcp]"`)
+  exposes ten tools covering the whole lifecycle, usable from any MCP client.
+- **Open contract**: `chartwright schema` prints the spec's JSON Schema, so any LLM or
+  tool can generate valid specs.
+- **Guardrails**: the AI proposes; the tool verifies, using your own Superset
+  login. Verification reads names (datasets, columns, metrics), not rows.
 
 ## Quick start
 
@@ -90,11 +114,11 @@ as-is.
   dashboard into a spec; `chartwright plan` shows what differs between the spec and
   the live dashboard, ready as a CI gate; `chartwright compile` builds the import
   bundle offline, no server needed.
-- **Safety built in**: every apply backs up the previous state first; a failed
-  apply restores it automatically; the tool only ever overwrites dashboards it
-  created, and a hand-built dashboard is adopted by decompiling it into a spec
+- **Recoverable by default**: every apply backs up the previous state first,
+  and a failed apply restores it. Dashboards Chartwright did not create are
+  never overwritten; to bring a hand-built one under a spec, decompile it
   first.
-- **The full design surface**: 14 chart types, metrics as you write them,
+- **What a spec can express**: 14 chart types, metrics as you write them,
   per-chart filters, a native filter bar, tabs, markdown notes, and layouts
   you can draw as ASCII sketches.
 - **Environment promotion**: specs name their data (connection, schema,
@@ -102,25 +126,14 @@ as-is.
 
 Every capability, with the CLI verb reference: [docs/FEATURES.md](https://github.com/debabsah/chartwright/blob/main/docs/FEATURES.md).
 
-## Creating dashboards with AI
-
-- **Claude Code skill**: from a clone of this repo, `python install-skill.py`,
-  then ask for a dashboard in plain words; the AI writes the spec, and the
-  tool verifies and builds it.
-- **MCP server**: `chartwright-mcp` (installed with `pip install "chartwright[mcp]"`)
-  exposes ten tools covering the whole lifecycle, usable from any MCP client.
-- **Open contract**: `chartwright schema` prints the spec's JSON Schema, so any LLM or
-  tool can generate valid specs.
-- **Guardrails**: the AI proposes; the tool verifies, using your own Superset
-  login. Verification reads names (datasets, columns, metrics), not rows.
-
 ## The design brain
 
-Correct-by-construction is table stakes; the design brain makes dashboards
-*read well*. A toggleable BI/UX intelligence layer — audience-aware size and
-scroll budgets, chart-choice limits, layout composition — split into a brief
-the AI reads before authoring and a deterministic critic that reviews the
-result:
+A spec can import perfectly and still produce a dashboard nobody can read: a
+pie squeezed into two columns, a KPI buried under three tables, a bar chart
+with forty category labels Superset silently drops. The design brain covers
+size and scroll budgets, chart-choice limits, and layout composition. It
+arrives as a brief the AI reads before authoring, and a critic that reviews
+the result:
 
 ```bash
 chartwright brief --audience executive        # the guidance, before writing a spec
@@ -128,11 +141,11 @@ chartwright advise spec.json --fix            # the critique, with safe auto-rep
 chartwright redesign old-dash --profile prod  # audit + repair a live dashboard
 ```
 
-Rules key on stable ids you can suppress per chart in the spec, thresholds
-tune per audience or per deployment (`design.yaml`), and the brain learns
-your house heights from the sizes you polish by hand (`chartwright
-calibrate`). Off is really off: `--design off` restores byte-identical
-behavior. The full rulebook and architecture:
+You stay in charge of it: suppress any rule for one chart in the spec, tune
+the thresholds per audience or per deployment in `design.yaml`, and feed the
+heights you drag in the UI back into the recommendations with `chartwright
+calibrate`. Pass `--design off` and the output is byte-identical to a build
+that never had it. The full rulebook and architecture:
 [docs/DESIGN-BRAIN.md](https://github.com/debabsah/chartwright/blob/main/docs/DESIGN-BRAIN.md).
 
 ## Drawing layouts as text
@@ -158,12 +171,15 @@ Every push and every pull request runs the full offline suite on Linux and
 Windows, plus the full pipeline (apply, lifecycle soak, stale-tab adversary,
 fault injection) against real Superset 4.1.4, 5.0.0, and 6.1.0 containers.
 Chart options are checked against Superset's own source for every supported
-version, so a Superset change is caught in our tests before it reaches your
-dashboards.
+version, so a Superset change surfaces here before it reaches your dashboards.
 
-Full evidence: [docs/VERIFICATION.md](https://github.com/debabsah/chartwright/blob/main/docs/VERIFICATION.md). Source citations
-for every Superset behavior the tool relies on:
-[docs/CONTRACTS.md](https://github.com/debabsah/chartwright/blob/main/docs/CONTRACTS.md).
+Full evidence: [docs/VERIFICATION.md](https://github.com/debabsah/chartwright/blob/main/docs/VERIFICATION.md).
+
+[docs/CONTRACTS.md](https://github.com/debabsah/chartwright/blob/main/docs/CONTRACTS.md) records how Superset itself behaves: what its
+importer accepts, how dashboard settings are stored, what its chart plugins
+expect. Every behavior is cited to its source line at 4.1.4, 5.0.0, and 6.1.0.
+Release tags are immutable, so any line of it can be checked against a fresh
+checkout of that tag.
 
 ## Documentation
 
@@ -171,10 +187,15 @@ for every Superset behavior the tool relies on:
   reference
 - [docs/LAYOUT-GUIDE.md](https://github.com/debabsah/chartwright/blob/main/docs/LAYOUT-GUIDE.md): drawing layouts as text,
   every rule illustrated
+- [docs/DESIGN-BRAIN.md](https://github.com/debabsah/chartwright/blob/main/docs/DESIGN-BRAIN.md): the design rulebook, every
+  rule and threshold, and how to tune or switch them off
 - [docs/VERIFICATION.md](https://github.com/debabsah/chartwright/blob/main/docs/VERIFICATION.md): what is tested, what it
   caught, and how to reproduce it
-- [docs/CONTRACTS.md](https://github.com/debabsah/chartwright/blob/main/docs/CONTRACTS.md): the Superset behaviors the tool
-  depends on, cited to source at each supported version
+- [docs/CONTRACTS.md](https://github.com/debabsah/chartwright/blob/main/docs/CONTRACTS.md): how Superset behaves on import,
+  on dashboard storage, and in chart options, cited to its source line at
+  each supported release
+- [docs/COMPARISON.md](https://github.com/debabsah/chartwright/blob/main/docs/COMPARISON.md): what Chartwright, preset-cli,
+  sup, and the Terraform provider each automate, so you can pick by the job
 
 ---
 

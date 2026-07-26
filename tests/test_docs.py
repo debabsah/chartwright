@@ -39,6 +39,38 @@ def test_no_test_module_imports_through_the_tests_package():
     assert not bad, f"import siblings directly (`from test_x import ...`), not via `tests.`: {bad}"
 
 
+def test_features_cli_table_covers_every_verb():
+    """v2 roadmap item 21 (the CLI Verbs table is missing the design-brain
+    verbs) was reported as executed and never landed: `brief`, `advise`,
+    `redesign` and `calibrate` shipped undocumented. A hand-maintained table
+    of a growing list drifts; this fails until it is caught up."""
+    cli = (REPO / "chartwright" / "cli.py").read_text(encoding="utf-8")
+    registered = set(re.findall(r'sub\.add_parser\(\s*"(\w+)"', cli))
+    registered |= {"check", "apply", "plan"}          # added in a loop, not literally
+    documented = set(re.findall(r"\| `chartwright (\w+)`",
+                                (REPO / "docs" / "FEATURES.md").read_text(encoding="utf-8")))
+    assert not registered - documented, (
+        f"docs/FEATURES.md CLI Verbs table is missing: {sorted(registered - documented)}")
+    assert not documented - registered, (
+        f"docs/FEATURES.md documents verbs that do not exist: {sorted(documented - registered)}")
+
+
+def test_documented_mcp_tool_count_is_right():
+    """The other half of item 21's sibling, item 20: 'Six tools' outlived the
+    design brain adding four more."""
+    words = {"Six": 6, "Seven": 7, "Eight": 8, "Nine": 9, "Ten": 10,
+             "Eleven": 11, "Twelve": 12}
+    actual = len(re.findall(r"^@mcp\.tool\(\)",
+                            (REPO / "chartwright" / "mcp_server.py").read_text(encoding="utf-8"),
+                            re.M))
+    for doc in (REPO / "README.md", REPO / "docs" / "FEATURES.md"):
+        text = doc.read_text(encoding="utf-8")
+        for claim in re.findall(r"\b([A-Z][a-z]+|\d+) tools\b", text):
+            n = words.get(claim, int(claim) if claim.isdigit() else None)
+            if n is not None:
+                assert n == actual, f"{doc.name} says {claim} MCP tools; there are {actual}"
+
+
 def test_verification_is_the_only_place_with_a_test_count():
     """Counts stated in several places drift in several places."""
     stale = []

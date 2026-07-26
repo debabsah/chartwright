@@ -1,15 +1,15 @@
 # The Design Brain
 
-> **Status: SHIPPED — design brain 3.** This page is both the design and the
+> **Status: SHIPPED, design brain 3.** This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
 > text. A verified multi-lens review of the first implementation produced the
 > ranked roadmap in [DESIGN-BRAIN-V2.md](DESIGN-BRAIN-V2.md) (36 of 37 items
-> in the v2 batch, the last closed afterwards — see that page's status note);
+> in the v2 batch, the last closed afterwards (see that page's status note);
 > a later full review of core + brain produced the version-3 changes recorded
 > in §15.11 onward. §7's rule table is now genuinely generated
-> (`tools/gen_rule_table.py`, checked by `tests/test_docs.py`) — the v2 claim
+> (`tools/gen_rule_table.py`, checked by `tests/test_docs.py`). The v2 claim
 > that it was pointed at a placeholder snippet, and the table had drifted.
 >
 > **Still pending: rendering-quality verification against a live Superset.**
@@ -25,13 +25,13 @@ guarantee the dashboard **reads well**. Nothing stops a spec from shipping a
 pie chart squeezed into 2 of 12 columns, a vertical bar with 40 category
 labels (Superset silently drops most of them), a KPI buried under three rows
 of tables, or a 4,000-pixel scroll for an executive audience. Today the only
-design knowledge in the system is a prose section in `skill/SKILL.md` —
+design knowledge in the system is a prose section in `skill/SKILL.md`,
 frozen inside one prompt, invisible to the CLI, not versioned as a surface,
 not toggleable, and not testable.
 
 The design brain is that missing layer: a codified, continuously-improvable
 body of BI/UX design knowledge (Few, Tufte, IBCS, and Superset-specific
-rendering facts) that the toolchain can consult, enforce, and explain — and
+rendering facts) that the toolchain can consult, enforce, and explain, and
 that the user can switch off.
 
 ## 2. Principles
@@ -74,11 +74,11 @@ One knowledge base, two delivery mechanisms, split by who can apply the rule:
   (skill step 1.5)                (skill step 4.5; also in apply/check)
 ```
 
-- **Tier G — the brief.** Composition, grouping, narrative flow, when to use
+- **Tier G, the brief.** Composition, grouping, narrative flow, when to use
   tabs, title-as-insight, color restraint: judgments only an intelligence can
   make. Delivered as a compact markdown brief the skill loads before writing
   a spec. Continuously improvable by editing guideline files; no code change.
-- **Tier L — the critic.** Predicates over the spec (optionally enriched with
+- **Tier L, the critic.** Predicates over the spec (optionally enriched with
   live metadata): minimum readable geometry per chart type, category limits,
   layout composition, fold budgets. Implemented as a rule registry in Python,
   each rule tested, each finding actionable, safe subset auto-fixable.
@@ -115,14 +115,14 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
 - `advise` (offline by default): evaluates the spec, prints an
   `AdviceReport` JSON (shape in §10). Exit 0 unless a finding of severity
   `error` exists, or `--strict` and any `warn` exists.
-- `advise --profile P`: adds **data-aware** rules — column type checks and
+- `advise --profile P`: adds **data-aware** rules: column type checks and
   bounded cardinality probes against the live instance (§8). `--no-probe`
   keeps it to metadata already fetched by resolution (no queries).
 - `advise --fix`: applies the safe-fix subset in place (same file-rewrite
   mechanics as `absorb`; formatting normalizes), re-validates, and reports
   each change as `{rule, chart, set: {field: new}, was: {field: old}}` plus
   the `written` path. Idempotent: a second `--fix` run is a no-op.
-- `brief`: prints the Tier G design brief for the audience — the document the
+- `brief`: prints the Tier G design brief for the audience, the document the
   skill reads before authoring. Compact by contract (a test caps the line
   count), because it lands in an LLM context window.
 - `check`/`apply` gain `--design off|warn|strict` (default `warn`):
@@ -132,7 +132,7 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
     instance is touched.
   - `off`: byte-identical to the pre-brain behavior, advice machinery never
     runs.
-- `calibrate`: the learning loop (§13 phase 3) — mines absorb history into
+- `calibrate`: the learning loop (§13 phase 3). Mines absorb history into
   per-audience recommended heights; `--since` is the decay knob.
 - MCP server: `design_brief`, `advise_spec`, `fix_spec`, `redesign_dashboard`
   mirror the CLI verbs; `check_spec` carries the advice block.
@@ -152,7 +152,7 @@ One additive optional block (models stay `extra="forbid"`):
   built-in default (`analytical`) applies when both are absent.
 - `ignore`: rule ids to suppress, dashboard-wide (`rule.id`), per chart
   (`rule.id@Chart Name`), or per band for findings that name no chart
-  (`rule.id@tab-Ops-row-1` — the finding's `where`, slugified). Suppressions
+  (`rule.id@tab-Ops-row-1`, the finding's `where`, slugified). Suppressions
   are reported in every AdviceReport (`"ignored"`), so silence is always
   visible; entries whose rule id doesn't exist come back as
   `unmatched_ignores` instead of silently suppressing nothing.
@@ -186,7 +186,7 @@ name, only parameters. Adding an audience is adding a row.
 ### House style: design.yaml
 
 `~/.config/chartwright/design.yaml` (or `$CHARTWRIGHT_DESIGN_DIR/design.yaml`)
-overlays the presets for a whole deployment — no fork of the rulebook. Five
+overlays the presets for a whole deployment, without forking the rulebook. Five
 keys, all optional, all validated at load with typed errors:
 
 ```yaml
@@ -206,12 +206,12 @@ layers; the brief prints the merged values and height autofixes target them.
 
 ## 7. The rulebook
 
-Stable ids (`category.slug`) are the public API — `ignore`/`disable` lists
+Stable ids (`category.slug`) are the public API: `ignore`/`disable` lists
 and severity overrides key on them, and renames keep working through the
 alias table. Severity: **error** = unreadable for any audience; **warn** =
 below professional quality; **info** = polish nudge. The overlay can override
 it per deployment. A `sev` of `warn/error` means the rule's DEFAULT is `warn`
-but it escalates per finding — worth reading closely, because `ok` is
+but it escalates per finding. Worth reading closely, because `ok` is
 error-driven, so those rules can fail a run while advertising `warn`.
 "fix" marks the safe-autofix subset (presentation-only, §9).
 "data" marks rules that only run with a live resolution (`--profile`);
@@ -228,55 +228,55 @@ fails when it drifts.
 
 | id | sev | fix | data | since | rule |
 |---|---|---|---|---|---|
-| `chart.dupe` | info | — | — | 1 | two charts answering the identical question is redundancy |
-| `chart.format-bands` | warn/info | — | — | 2 | conditional-formatting bands must tell one coherent story per metric |
-| `chart.funnel-stages` | warn | — | ⚡ | 1 | funnels need 3-8 ordered stages |
-| `chart.heatmap-grid` | warn | — | ⚡ | 1 | a heatmap past ~400 cells is unreadable at any size |
-| `chart.histogram-bins` | info | — | — | 1 | histograms read best at 10-50 bins |
-| `chart.metrics-per-bar` | warn | — | — | 1 | many metrics per category read better as a table |
-| `chart.ordinal-order` | info | — | — | 2 | ordinal dimensions (weekday, month) sort alphabetically unless order-encoded |
-| `chart.pie-slices` | warn | — | — | 1 | pies stop working past ~7 slices |
-| `chart.pivot-columns` | warn | — | ⚡ | 2 | column-dim values x metrics = rendered columns; past ~15 the pivot scrolls sideways |
-| `chart.pivot-dims` | warn | — | — | 2 | a pivot past three total dimensions is unreadable nesting |
-| `chart.series-limit` | warn | — | ⚡ | 1 | a timeseries with too many grouped series turns to spaghetti |
-| `chart.temporal-type` | error | — | ⚡ | 1 | a time axis must point at a temporal column |
-| `chart.treemap-depth` | warn | — | — | 1 | treemaps past two grouping levels become unreadable nesting |
-| `chart.treemap-vs-bar` | info | — | ⚡ | 2 | a one-level treemap of few categories is a worse bar chart |
-| `chart.trend-grain` | info | — | — | 2 | trend tiles at a fine grain over full history draw thousands of points in a small card |
-| `chart.vbar-categories` | warn | ✔ | — | 1 | vertical bars drop labels past ~8 categories; rank with horizontal bars |
-| `data.grain-vs-range` | warn | — | — | 1 | the time grain should yield a sane number of points for the range |
-| `data.row-limit-intent` | info | — | — | 1 | row limits doing design work should be deliberate, not defaults |
-| `data.top-n-sort` | warn | — | — | 2 | a limit without an order is a sample, not a ranking |
-| `data.unwindowed-history` | warn | — | — | 3 | timeseries charts with no way to bound the window draw ALL history at their grain |
-| `filters.count` | warn | — | — | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
-| `filters.duplicate-column` | info | — | — | 2 | two filters on the same column fight each other |
-| `filters.range-default` | info | — | — | 2 | a range slider with no default bounds spans the whole domain |
-| `filters.select-cardinality` | warn | — | ⚡ | 2 | a select over hundreds of distinct values is an unusable picker |
-| `filters.time-default` | info | — | — | 2 | an undefaulted time picker loads the dashboard over ALL history |
-| `filters.time-picker` | info | — | — | 1 | time-based dashboards want a time range picker in the filter bar |
-| `layout.fold-budget` | warn | — | — | 1 | the dashboard should fit its audience's scroll budget |
-| `layout.kpi-band` | warn | — | — | 1 | KPIs get their own band, in readable numbers |
-| `layout.kpi-first` | warn | — | — | 1 | summary KPIs belong above detail charts (inverted pyramid) |
-| `layout.markdown-height` | info | ✔ | — | 2 | a one-line markdown header doesn't need a chart-sized block |
-| `layout.orphan-chart` | info | — | — | 1 | a lone narrow chart in its own row looks unfinished |
-| `layout.row-density` | warn/error | — | — | 1 | too many axis charts side by side starves each of width |
-| `layout.row-fill` | warn/info | — | — | 1 | a row should fill the 12-column grid |
-| `layout.section-headers` | info | — | — | 1 | large flat dashboards need markdown signposts |
-| `layout.tab-balance` | info | — | — | 1 | tabs should carry comparable weight |
-| `narrative.big-number-format` | info | — | — | 1 | hero numbers deserve a number format |
-| `narrative.filtered-title` | info | — | — | 1 | a filtered chart's title should say what it shows |
-| `narrative.format-consistency` | info | — | — | 2 | one measure, one number format |
-| `narrative.title-style` | info | — | — | 1 | chart titles should share one casing style |
-| `size.axis-min-height` | warn | ✔ | — | 1 | axis charts below the audience minimum height flatten and drop labels |
+| `chart.dupe` | info | - | - | 1 | two charts answering the identical question is redundancy |
+| `chart.format-bands` | warn/info | - | - | 2 | conditional-formatting bands must tell one coherent story per metric |
+| `chart.funnel-stages` | warn | - | ⚡ | 1 | funnels need 3-8 ordered stages |
+| `chart.heatmap-grid` | warn | - | ⚡ | 1 | a heatmap past ~400 cells is unreadable at any size |
+| `chart.histogram-bins` | info | - | - | 1 | histograms read best at 10-50 bins |
+| `chart.metrics-per-bar` | warn | - | - | 1 | many metrics per category read better as a table |
+| `chart.ordinal-order` | info | - | - | 2 | ordinal dimensions (weekday, month) sort alphabetically unless order-encoded |
+| `chart.pie-slices` | warn | - | - | 1 | pies stop working past ~7 slices |
+| `chart.pivot-columns` | warn | - | ⚡ | 2 | column-dim values x metrics = rendered columns; past ~15 the pivot scrolls sideways |
+| `chart.pivot-dims` | warn | - | - | 2 | a pivot past three total dimensions is unreadable nesting |
+| `chart.series-limit` | warn | - | ⚡ | 1 | a timeseries with too many grouped series turns to spaghetti |
+| `chart.temporal-type` | error | - | ⚡ | 1 | a time axis must point at a temporal column |
+| `chart.treemap-depth` | warn | - | - | 1 | treemaps past two grouping levels become unreadable nesting |
+| `chart.treemap-vs-bar` | info | - | ⚡ | 2 | a one-level treemap of few categories is a worse bar chart |
+| `chart.trend-grain` | info | - | - | 2 | trend tiles at a fine grain over full history draw thousands of points in a small card |
+| `chart.vbar-categories` | warn | ✔ | - | 1 | vertical bars drop labels past ~8 categories; rank with horizontal bars |
+| `data.grain-vs-range` | warn | - | - | 1 | the time grain should yield a sane number of points for the range |
+| `data.row-limit-intent` | info | - | - | 1 | row limits doing design work should be deliberate, not defaults |
+| `data.top-n-sort` | warn | - | - | 2 | a limit without an order is a sample, not a ranking |
+| `data.unwindowed-history` | warn | - | - | 3 | timeseries charts with no way to bound the window draw ALL history at their grain |
+| `filters.count` | warn | - | - | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
+| `filters.duplicate-column` | info | - | - | 2 | two filters on the same column fight each other |
+| `filters.range-default` | info | - | - | 2 | a range slider with no default bounds spans the whole domain |
+| `filters.select-cardinality` | warn | - | ⚡ | 2 | a select over hundreds of distinct values is an unusable picker |
+| `filters.time-default` | info | - | - | 2 | an undefaulted time picker loads the dashboard over ALL history |
+| `filters.time-picker` | info | - | - | 1 | time-based dashboards want a time range picker in the filter bar |
+| `layout.fold-budget` | warn | - | - | 1 | the dashboard should fit its audience's scroll budget |
+| `layout.kpi-band` | warn | - | - | 1 | KPIs get their own band, in readable numbers |
+| `layout.kpi-first` | warn | - | - | 1 | summary KPIs belong above detail charts (inverted pyramid) |
+| `layout.markdown-height` | info | ✔ | - | 2 | a one-line markdown header doesn't need a chart-sized block |
+| `layout.orphan-chart` | info | - | - | 1 | a lone narrow chart in its own row looks unfinished |
+| `layout.row-density` | warn/error | - | - | 1 | too many axis charts side by side starves each of width |
+| `layout.row-fill` | warn/info | - | - | 1 | a row should fill the 12-column grid |
+| `layout.section-headers` | info | - | - | 1 | large flat dashboards need markdown signposts |
+| `layout.tab-balance` | info | - | - | 1 | tabs should carry comparable weight |
+| `narrative.big-number-format` | info | - | - | 1 | hero numbers deserve a number format |
+| `narrative.filtered-title` | info | - | - | 1 | a filtered chart's title should say what it shows |
+| `narrative.format-consistency` | info | - | - | 2 | one measure, one number format |
+| `narrative.title-style` | info | - | - | 1 | chart titles should share one casing style |
+| `size.axis-min-height` | warn | ✔ | - | 1 | axis charts below the audience minimum height flatten and drop labels |
 | `size.grid-fit` | warn | ✔ | ⚡ | 2 | table/pivot heights must fit their data-driven row counts (they grow after authoring) |
-| `size.hbar-window` | warn | ✔ | — | 1 | horizontal bars need ~0.5 units of height per bar |
-| `size.heatmap-geometry` | warn | ✔ | — | 1 | heatmaps need >= 5/12 width (7/12 with many columns) and 6 height |
-| `size.kpi-height` | warn | ✔ | — | 1 | big numbers read best at 2-6 units |
-| `size.min-width` | warn/error | — | — | 2 | below 3/12 width a chart is unreadable; KPIs need 2/12 |
-| `size.pie-geometry` | warn | ✔ | — | 1 | pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds |
-| `size.pivot-window` | warn | — | — | 2 | a pivot's height should show a meaningful share of its row_limit |
-| `size.row-harmony` | warn | ✔ | — | 1 | charts sharing a row should share a height (Superset sizes the row to its tallest child) |
-| `size.table-window` | warn | — | — | 1 | a table's height should show a meaningful share of its row_limit |
+| `size.hbar-window` | warn | ✔ | - | 1 | horizontal bars need ~0.5 units of height per bar |
+| `size.heatmap-geometry` | warn | ✔ | - | 1 | heatmaps need >= 5/12 width (7/12 with many columns) and 6 height |
+| `size.kpi-height` | warn | ✔ | - | 1 | big numbers read best at 2-6 units |
+| `size.min-width` | warn/error | - | - | 2 | below 3/12 width a chart is unreadable; KPIs need 2/12 |
+| `size.pie-geometry` | warn | ✔ | - | 1 | pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds |
+| `size.pivot-window` | warn | - | - | 2 | a pivot's height should show a meaningful share of its row_limit |
+| `size.row-harmony` | warn | ✔ | - | 1 | charts sharing a row should share a height (Superset sizes the row to its tallest child) |
+| `size.table-window` | warn | - | - | 1 | a table's height should show a meaningful share of its row_limit |
 
 <!-- END rule-table -->
 
@@ -288,13 +288,13 @@ is Tier G: it goes in the brief, not the linter.
 
 Resolution already fetches full column metadata (`dataset_detail`) and
 discards everything but names. Phase 2 extends `ResolvedDataset` with
-`column_types` (Superset's `type_generic`) and the `is_dttm` set — zero extra
-API calls — which powers `chart.temporal-type`.
+`column_types` (Superset's `type_generic`) and the `is_dttm` set, at zero extra
+API cost, which powers `chart.temporal-type`.
 
 Cardinality (`chart.pie-slices` ⚡, `chart.series-limit`, `chart.funnel-stages`,
 `chart.heatmap-grid`) uses one bounded probe per distinct (dataset, column):
 a `COUNT` grouped query through `/api/v1/chart/data` (the smoke module's
-existing machinery) with `row_limit = threshold + 1` — the rule only needs
+existing machinery) with `row_limit = threshold + 1`, because the rule only needs
 "more than N", never the true count. Probes are cached per run, skipped
 entirely under `--no-probe`, and never run for `advise` without `--profile`.
 
@@ -309,7 +309,7 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
 - **Idempotent by test:** fixed specs re-advise with zero fixable findings.
 - Sketch layouts: heights are fixable (an explicit `chart.height` overrides
   sketch height by existing precedence in `spec.resolved_height`); widths are
-  not (the drawing is authoritative) — width findings under a sketch include
+  not (the drawing is authoritative). Width findings under a sketch include
   a suggested redrawn sketch line for the LLM or human to adopt.
 - Fractional heights (absorb's signature) suppress sizing rules on that
   chart: human polish wins (§2.4).
@@ -351,9 +351,9 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
 - `fixed` entries disclose the full diff (`set` new values, `was` old);
   `advise --fix` additionally reports the `written` file path.
 - `unmatched_ignores` lists ignore/disable entries whose rule id doesn't
-  exist — a typo'd suppression is surfaced, never a silent no-op.
+  exist: a typo'd suppression is surfaced, never a silent no-op.
 - `polished` lists sizing findings withheld because the chart carries a
-  human-polished (fractional) height — §2.4's deference, made visible.
+  human-polished (fractional) height, which is §2.4's deference made visible.
   `ignored` is the user's *explicit* intent; `polished` is the brain's own
   *inference*, and an inference that silences a rule invisibly reads exactly
   like the rule having passed. Present only when non-empty.
@@ -369,40 +369,40 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   compose: brain roughs in professional geometry, human drags to taste,
   absorb records it, brain respects it forever after.
 - **`decompile`:** running `advise` on a decompiled spec is a **design audit
-  of any legacy UI-built dashboard** — an emergent feature worth documenting:
+  of any legacy UI-built dashboard**, an emergent feature worth documenting:
   `chartwright decompile old-dash -o spec.json && chartwright advise spec.json`.
 - **`redesign`:** the one-shot form of the above: decompile → data-aware
   audit → safe geometry fixes → redesigned spec + losses + remaining
   structural findings. Ownership decides where it lands: tool-born
   dashboards redesign in place; UI-born ones come back under a `-redesign`
   slug (title suffixed too) so apply builds the redesign **side by side**
-  and the original is never overwritten. Structural findings stay findings —
+  and the original is never overwritten. Structural findings stay findings:
   the spec author (usually the skill-driven LLM) acts on them before apply.
 - **`smoke` (issue #1):** table/pivot heights are fixed layout properties
-  while rendered rows are data-driven — data that grows after authoring hides
+  while rendered rows are data-driven, and data that grows after authoring hides
   new rows behind the chart's inner scrollbar with everything looking green.
   Smoke now compares the rows its query already fetched against the
   configured height and warns on every apply (`~9 leaf rows (~430px) but
   height=8 (320px)`); the data-aware `size.grid-fit` rule catches the same
-  class pre-apply for single-dimension grids. All of it — smoke,
-  `size.grid-fit`, `size.table-window`, `size.pivot-window` — reads ONE grid
+  class pre-apply for single-dimension grids. All of it, meaning smoke,
+  `size.grid-fit`, `size.table-window`, `size.pivot-window`, reads ONE grid
   model (`grid_units_for_rows` / `grid_rows_visible` in `chartwright/spec.py`),
   so the offline critic, the data-aware critic, and the apply-time warning
   cannot give one chart three different verdicts.
-- **Chart identity:** no rule may ever autofix a chart `name` — names seed
+- **Chart identity:** no rule may ever autofix a chart `name`: names seed
   uuid5 identity; a rename is a delete+create on the live instance.
 - **`plan`/golden tests:** advise is pure spec-side analysis; compiled bytes
   are untouched, golden tests unaffected.
 - **Skill (`skill/SKILL.md`):** the static "Design rules" section is replaced
   by two procedure steps:
-  - *Step 1.5* — brain on (default): run `CW brief --audience <inferred>`
+  - *Step 1.5*, brain on (default): run `CW brief --audience <inferred>`
     and follow it while authoring. Infer audience from the request
     ("executive scorecard" / "ops monitor" / default analytical). Brain off
     (user said "no design opinions" / "exactly as I specify"): skip the
     brief, pass `--design off`.
-  - *Step 4.5* — after `check` passes: `CW advise <spec> --profile <p>`;
+  - *Step 4.5*, after `check` passes: `CW advise <spec> --profile <p>`;
     apply or consciously `ignore` findings (with the user, in the spec's
-    `design.ignore`) — at most 2 design iterations, then surface remaining
+    `design.ignore`); at most 2 design iterations, then surface remaining
     findings verbatim.
   - Anti-evasion row: *"Advice finding seems wrong → record it in
     `design.ignore` and tell the user, or report a rule bug; never hand-tune
@@ -432,7 +432,7 @@ What actually runs (tests/test_design*.py, test_calibrate.py, test_redesign.py):
 |---|---|
 | **1** (next minor) | design/ package, offline rulebook (all non-⚡ rules), presets, `advise`/`brief` CLI, `--fix`, spec `design` block, `apply`/`check --design`, skill rewrite, MCP tools, tests |
 | **2** | data-aware rules (resolver type enrichment, bounded cardinality probes, `--no-probe`), house-style overlay: `~/.config/chartwright/design.yaml` (org-level parameter overrides, disabled rules, extra Tier G guidance appended to the brief) |
-| **3** | calibration loop: mine absorb history and backups for systematic human corrections (e.g. tables consistently dragged from 8 to 11 units) and propose preset updates — the brain learns from every human polish it was told to respect |
+| **3** | calibration loop: mine absorb history and backups for systematic human corrections (e.g. tables consistently dragged from 8 to 11 units) and propose preset updates, so the brain learns from every human polish it was told to respect |
 
 ## 14. Decision log
 
@@ -483,7 +483,7 @@ Where the shipped code deliberately departs from the design text above:
    applies stay fast; `check --design` attaches type-aware advice for free
    (it already resolved); full data-aware advice is `advise --profile`.
 3. **`size.axis-min-height` fixes to the audience minimum** (8/6/5 by
-   audience), not a blanket 8 — a dense operational board shouldn't be
+   audience), not a blanket 8, because a dense operational board shouldn't be
    inflated to analytical proportions.
 4. **Rule cards are the registry docstrings** (one line per rule, printed in
    the brief) plus two Tier G guideline files; 27 separate markdown cards
@@ -506,7 +506,7 @@ Recorded during the v2 roadmap burn-down:
    `severity` map rather than a boolean param.
 9. **Sketch WYSIWYG resolved as disclosure, not withholding**: height fixes
    still apply to sketch-drawn charts (explicit heights legitimately override
-   the drawing — absorb's precedent), and the finding says the drawing goes
+   the drawing, absorb's precedent), and the finding says the drawing goes
    stale and how to redraw it.
 10. **A per-metric d3 format on table/pivot/timeseries is a spec v-next
     candidate** (the compiler pins SMART_NUMBER today); the guideline was
@@ -523,7 +523,7 @@ Recorded during the post-merge review burn-down:
     `chartwright/spec.py`; the rules and smoke import them.
 12. **`table_visible_ratio` is 0.5 for every audience**, up from 0.25 on
     `analytical`/`operational`. Below half, the MAJORITY of the rows the
-    author deliberately asked for sit behind the inner scrollbar — the exact
+    author deliberately asked for sit behind the inner scrollbar: the exact
     defect §11's issue-#1 work exists to catch, so the offline rule must not
     bless it. It remains a per-deployment knob; it is no longer a lenient
     default. `size.table-window` and `size.pivot-window` also became
@@ -545,7 +545,7 @@ Recorded during the post-merge review burn-down:
     contract, so the exit code was previously the only signal that `--strict`
     blocked. It now appends a `design_gate` entry to `errors`, matching
     check/apply. (The review first read the `ok` difference between the two
-    verbs as the defect; it is not — they are different payloads with
+    verbs as the defect; it is not. They are different payloads with
     different `ok` meanings. The missing cause was the real gap.)
 16. **Severities a rule can actually emit are declared** (`severities=` on
     `@rule`) and printed as `warn/error`. Four rules vary severity per
@@ -562,11 +562,11 @@ Recorded during the post-merge review burn-down:
     Superset failure was uncovered: no chart `time_range`, no time_range
     filter at all, daily-or-finer grain, so every load queries the dataset's
     full history. Reported ONCE per dashboard, not per chart, and deliberately
-    silent when a time_range filter exists without a default —
+    silent when a time_range filter exists without a default;
     `filters.time-default` already names that one-line fix, and double-
     reporting one remedy at two severities is noise. Deployments that want
     that case to bite raise it via the overlay `severity` map (§15.8).
 19. **`decompile` says when its dataset index is truncated.** The lookup
     stops at a page cap; past it, a real dataset became "uuid not resolvable"
-    and its chart was dropped — a wrong answer wearing the costume of an
+    and its chart was dropped: a wrong answer wearing the costume of an
     honest loss, which is the one failure this decompiler must never produce.

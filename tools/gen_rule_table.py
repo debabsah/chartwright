@@ -36,9 +36,11 @@ def render() -> str:
     lines = ["| id | sev | fix | data | since | rule |", "|---|---|---|---|---|---|"]
     for rid in sorted(RULES):
         r = RULES[rid]
+        # ASCII hyphen for "no", not an em dash: the glyph carries no meaning
+        # here, and 49 rows of it swamped the file's real punctuation.
         lines.append(
-            f"| `{r.id}` | {r.severity_label} | {'✔' if r.fixable else '—'} | "
-            f"{'⚡' if r.data_aware else '—'} | {r.since} | {r.doc} |"
+            f"| `{r.id}` | {r.severity_label} | {'✔' if r.fixable else '-'} | "
+            f"{'⚡' if r.data_aware else '-'} | {r.since} | {r.doc} |"
         )
     return "\n".join(lines)
 

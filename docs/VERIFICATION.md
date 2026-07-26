@@ -34,7 +34,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (254 tests, 27 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows |
+| Offline suite (256 tests, 27 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every push |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every push, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every push |
@@ -46,7 +46,7 @@ injection.
 
 The counts in the table above are the only hard numbers in the docs, and
 `tests/test_docs.py` fails when they drift from what pytest actually
-collects — the same "generated, not hand-maintained" rule the rule table in
+collects, the same "generated, not hand-maintained" rule the rule table in
 [DESIGN-BRAIN.md](DESIGN-BRAIN.md) §7 follows.
 
 - **Spec contract** (`test_spec.py`, `test_spec_v2.py`): validation
