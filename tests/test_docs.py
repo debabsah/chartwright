@@ -7,6 +7,7 @@ generated rule table in DESIGN-BRAIN.md follows.
 """
 
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,17 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 VERIFICATION = REPO / "docs" / "VERIFICATION.md"
 _ROW = re.compile(r"Offline suite \((\d+) tests, (\d+) modules\)")
+
+
+def test_design_brain_rule_table_matches_the_registry():
+    """DESIGN-BRAIN.md section 7 claimed "GENERATED from the registry" while
+    pointing at a placeholder snippet, so it was hand-maintained and had
+    drifted (four rules that vary severity all printed as their default).
+    There is a real generator now, and this runs its --check path."""
+    sys.path.insert(0, str(REPO))
+    from tools.gen_rule_table import main as gen
+
+    assert gen(["--check"]) == 0, "run: python tools/gen_rule_table.py --write"
 
 
 def test_no_test_module_imports_through_the_tests_package():

@@ -277,6 +277,18 @@ def _main(argv: list[str] | None = None) -> None:
             payload["written"] = written
         if resolution is not None and resolution.errors:
             payload["resolution_errors"] = [e.as_dict() for e in resolution.errors]
+        if report.gate(args.strict):
+            # `ok` stays error-driven by contract (§10), so the exit code was
+            # the ONLY signal that --strict blocked. Name the cause the way
+            # check/apply do, or a caller sees exit 1 with nothing to read.
+            payload.setdefault("errors", []).append({
+                "code": "design_gate",
+                "detail": "warn-severity findings block under --strict; fix them, run "
+                          "`chartwright advise --fix`, or record deliberate exceptions "
+                          "in the spec's design.ignore"
+                          if report.counts["error"] == 0 else
+                          "error-severity findings block; fix them or record deliberate "
+                          "exceptions in the spec's design.ignore"})
         print(json.dumps(payload, indent=2))
         sys.exit(1 if report.gate(args.strict) else 0)
 

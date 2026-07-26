@@ -611,11 +611,27 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
         spec["filters"] = filters
     if not ordered:
         losses.append(Loss("dashboard", "no representable charts; spec is not valid for apply"))
+    truncated = getattr(lookup, "truncated", 0)
+    if truncated:
+        losses.append(Loss(
+            "dashboard",
+            f"the dataset index stopped at {truncated} datasets (page cap); any "
+            f"'dataset uuid not resolvable' loss above may be a dataset past the cap "
+            f"rather than a missing one -- re-check those charts before trusting this spec"))
     return DecompileResult(spec=spec, losses=losses, dataset_uuids=dataset_uuids)
 
 
+PAGE_CAP = 200  # 20,000 datasets; a runaway guard, not an expected ceiling
+
+
 def live_dataset_lookup(client) -> DatasetLookup:
-    """uuid -> triple, resolved lazily against the live instance."""
+    """uuid -> triple, resolved lazily against the live instance.
+
+    Sets `lookup.truncated` when the runaway guard trips, so decompile can SAY
+    the index is incomplete. Without that, a dataset past the cap silently
+    became "uuid not resolvable" and its chart was dropped -- a wrong answer
+    dressed as an honest loss, which is the one failure this decompiler must
+    never produce."""
     cache: dict[str, dict] | None = None
 
     def lookup(u: str) -> dict | None:
@@ -638,10 +654,12 @@ def live_dataset_lookup(client) -> DatasetLookup:
                         "table": d["table_name"],
                     }
                 page += 1
-                if page > 200:
+                if page > PAGE_CAP:
+                    lookup.truncated = len(cache)
                     break
         return cache.get(u)
 
+    lookup.truncated = 0
     return lookup
 
 

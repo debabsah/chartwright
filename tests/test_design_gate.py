@@ -53,6 +53,10 @@ def test_clean_spec_does_not_block(design_dir):
         "dashboard": {"title": "T", "slug": "t"},
         "charts": [{"type": "timeseries_line", "name": "L", "dataset": DS,
                     "metrics": ["COUNT(*)"], "time_column": "ts", "height": 8}],
+        # A defaulted time_range picker is what makes a timeseries dashboard
+        # clean: without one, data.unwindowed-history warns that every load
+        # draws the dataset's full history.
+        "filters": [{"type": "time_range", "name": "Date", "default": "Last month"}],
         "layout": {"rows": [["L"]]},
     })
     advice = _advice_payload(clean)
