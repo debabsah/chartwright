@@ -6,8 +6,10 @@ on:
   # Branches must clear the same bar as main BEFORE they merge: the offline
   # matrix (Linux + Windows, 3.11) and the live matrix (three Superset
   # versions) are exactly the checks a feature branch is most likely to break.
+  # Deliberately unfiltered by base branch: a stacked PR (one that targets
+  # another feature branch rather than main) would otherwise run no checks at
+  # all, which is the case this trigger exists to prevent.
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
