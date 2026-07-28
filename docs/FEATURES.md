@@ -4,7 +4,7 @@ Chartwright builds Apache Superset dashboards from a small file called a spec,
 updates them from that same file later, and decompiles existing dashboards back
 into one. Everything below works from that one file.
 
-## AI-Native Dashboard Creation
+## Creating Dashboards with AI
 - **Context to Dashboard**: Ask in plain words; the dashboard is built from what is in front of you.
     - The analysis you just ran, a KPI contract document, a metrics definition page.
     - The tables and views you were exploring: dbt-built models, ELT outputs, anything Superset knows as a dataset.
@@ -19,7 +19,7 @@ into one. Everything below works from that one file.
 - **14 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap.
 - **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`).
 - **Filters and Formatting**: Per-chart WHERE conditions, a native filter bar (value pickers, a time range with an optional starting range, numeric sliders, each scopable to specific charts), green/amber/red thresholds on pivot cells, d3 number and date formats.
-- **No Empty First Load**: New charts open on your full data range, not a default time window that can hide everything.
+- **No Empty First Load**: New charts open on your full data range, so a narrow default time window never hides everything on the first paint. On a large dataset that full range is a lot to draw, so give the filter bar a time range with a default; `chartwright advise` tells you when a dashboard has nothing bounding its dates.
 
 ## Layout Design
 - **ASCII Layout Design**: Draw the layout straight from the terminal: `"KKKK LLLLLLLL"` is a KPI card beside a wide line chart.
@@ -31,12 +31,12 @@ into one. Everything below works from that one file.
 - **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs, and markdown blocks for headers and notes.
 
 ## The Design Brain
-- **A Visual Designer On Call**: An optional intelligence layer that knows BI/UX practice (Few, Tufte, IBCS) and Superset's rendering quirks, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).
+- **Codified BI/UX Practice**: An optional layer holding what Few, Tufte and IBCS teach about reading a dashboard, plus the Superset rendering quirks that break it, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).
 - **The Brief**: `chartwright brief` prints design guidance for the AI (or you) to read before writing a spec: budgets, chart choice, and composition, tuned to an audience preset (`executive`, `analytical`, or `operational`).
 - **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices).
 - **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
 - **House Style**: A `design.yaml` overlay tunes thresholds, disables rules, and appends org guidance to the brief, so a deployment can set its own standards without forking the rulebook.
-- **It Learns From You**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.
+- **Heights Calibrated From Your Own Dashboards**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.
 - **Design Audits of Legacy Dashboards**: `decompile` + `advise` grades any UI-built dashboard against the rulebook.
 - **One-Shot Redesign**: `chartwright redesign <dashboard>` decompiles a live dashboard, audits it, applies the safe geometry fixes, and writes the redesigned spec. A tool-built dashboard is redesigned in place; anything else comes back under a new slug and applies side by side, leaving the original untouched.
 
@@ -65,7 +65,7 @@ into one. Everything below works from that one file.
 ## Enterprise Ready
 - **Multiple Instances**: Sandbox, staging, and production as profiles in one file.
 - **Credentials Stay Out of Files**: Usernames and passwords from env vars (any names) or your credential manager (1Password, macOS Keychain, sops).
-- **Your Data Stays Put**: The AI proposes; the tool verifies, using your own Superset login. Verification reads names (datasets, columns, metrics), not rows; the AI never queries your warehouse.
+- **What the AI Can See**: The AI proposes; the tool verifies, using your own Superset login. Verification reads names (datasets, columns, metrics), not rows; the AI never queries your warehouse.
     - The post-apply data check keeps a row count and discards the rows.
 - **Corporate Networks**: Custom CA bundles, proxies, LDAP auth, internal pip mirrors (only 3 dependencies).
 - **Works Where You Work**: Windows, macOS, Linux; PowerShell and git bash; run from any directory; the Claude Code skill installs by copy, no admin rights.
