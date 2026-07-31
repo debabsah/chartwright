@@ -82,6 +82,49 @@ def test_preset_profile_unset_env_names_the_var(tmp_path, monkeypatch):
         load_profile("preset_dryrun", _write(tmp_path, PRESET_TOML))
 
 
+CRED_TOML = '''
+[preset_dryrun]
+base_url = "https://ws.us1.app.preset.io"
+preset_credentials_file = "{path}"
+'''
+
+
+def test_credentials_file_from_preset_cli_is_reused(tmp_path):
+    cred = tmp_path / "credentials.yaml"
+    cred.write_text(
+        "api_token: stored-name\napi_secret: stored-secret\nbaseurl: https://api.app.preset.io/\n"
+    )
+    f = _write(tmp_path, CRED_TOML.format(path=cred.as_posix()))
+    p = load_profile("preset_dryrun", f)
+    assert (p.api_token, p.api_secret) == ("stored-name", "stored-secret")
+    assert p.preset_baseurl == "https://api.app.preset.io/"   # taken from the stored file
+    assert p.username == "" and p.password == ""
+
+
+def test_credentials_file_missing_names_the_path(tmp_path):
+    f = _write(tmp_path, CRED_TOML.format(path=(tmp_path / "nope.yaml").as_posix()))
+    with pytest.raises(ProfileError, match="nope.yaml"):
+        load_profile("preset_dryrun", f)
+
+
+def test_credentials_file_without_keys_lists_keys_not_values(tmp_path):
+    cred = tmp_path / "credentials.yaml"
+    cred.write_text("unrelated: sup3r-s3cret-value\n")
+    f = _write(tmp_path, CRED_TOML.format(path=cred.as_posix()))
+    with pytest.raises(ProfileError) as ei:
+        load_profile("preset_dryrun", f)
+    assert "unrelated" in str(ei.value)
+    assert "sup3r-s3cret-value" not in str(ei.value)   # errors must not leak the file's contents
+
+
+def test_explicit_preset_baseurl_beats_the_stored_one(tmp_path):
+    cred = tmp_path / "credentials.yaml"
+    cred.write_text("api_token: n\napi_secret: s\nbaseurl: https://stored.example.com/\n")
+    body = CRED_TOML.format(path=cred.as_posix()) + 'preset_baseurl = "https://override.example.com/"\n'
+    p = load_profile("preset_dryrun", _write(tmp_path, body))
+    assert p.preset_baseurl == "https://override.example.com/"
+
+
 def test_preset_login_sets_bearer_and_never_fetches_csrf():
     s = _FakeSession({
         "https://api.app.preset.io/v1/auth/": _Resp({"payload": {"access_token": "jwt-123"}}),

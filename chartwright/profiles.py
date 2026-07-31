@@ -36,6 +36,13 @@ api_token_env selects that mode -- username/password are then not consulted:
     api_secret_env = "PRESET_API_SECRET"             # key SECRET
     # preset_baseurl = "https://api.app.preset.io/"  # manager API; default shown
 
+...or, if preset-cli is already set up, reuse the credentials it stored (nothing
+to export; the file's own 0600 permissions are the protection):
+
+    [preset_dryrun]
+    base_url = "https://<workspace>.<region>.app.preset.io"
+    preset_credentials_file = "~/AppData/Local/Preset/preset-cli/credentials.yaml"
+
 Password resolution: password_env first (if set and non-empty), else
 password_cmd. Username resolution: literal `username` first, else
 `username_env` (first-listed source wins, same rule as passwords). No
@@ -138,6 +145,38 @@ def _resolve_username(name: str, p: dict) -> str:
     raise ProfileError(f"profile {name!r}: set username or username_env")
 
 
+def _load_preset_credentials_file(name: str, raw: str) -> tuple[str, str, str | None]:
+    """Reuse the credentials.yaml that preset-cli already wrote (keys api_token,
+    api_secret, baseurl) rather than duplicating the secret into env vars.
+    Default location on Windows: %LOCALAPPDATA%/Preset/preset-cli/credentials.yaml.
+
+    Parse failures report the exception TYPE only: yaml errors quote the offending
+    line, which here would be a credential.
+    """
+    import yaml
+
+    path = Path(_expand(str(raw)))
+    if not path.exists():
+        raise ProfileError(f"profile {name!r}: preset_credentials_file not found: {path}")
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as e:  # noqa: BLE001
+        raise ProfileError(
+            f"profile {name!r}: cannot parse {path} ({type(e).__name__}); "
+            f"expected the yaml preset-cli writes"
+        ) from None
+    if not isinstance(data, dict):
+        raise ProfileError(f"profile {name!r}: {path} is not a yaml mapping")
+    token, secret = data.get("api_token"), data.get("api_secret")
+    if not token or not secret:
+        # Key names only -- never the values.
+        raise ProfileError(
+            f"profile {name!r}: {path} has no api_token/api_secret (keys present: {sorted(data)})"
+        )
+    baseurl = data.get("baseurl")
+    return str(token), str(secret), (str(baseurl) if baseurl else None)
+
+
 def _resolve_env(name: str, p: dict, key: str) -> str:
     """Preset credentials are env-only (same rule as passwords: no secrets in
     the file). ponytail: no *_cmd fallback here yet -- add one mirroring
@@ -167,9 +206,16 @@ def load_profile(name: str, path: Path | None = None) -> Profile:
     p = data[name]
     if "base_url" not in p:
         raise ProfileError(f"profile {name!r} missing 'base_url'")
-    if "api_token_env" in p or "api_secret_env" in p:
+    cred_file = p.get("preset_credentials_file")
+    if cred_file or "api_token_env" in p or "api_secret_env" in p:
         # Preset mode: no password login exists, so username/password are not
         # resolved at all (asking for them would fail on a valid profile).
+        stored_baseurl = None
+        if cred_file:
+            api_token, api_secret, stored_baseurl = _load_preset_credentials_file(name, cred_file)
+        else:
+            api_token = _resolve_env(name, p, "api_token_env")
+            api_secret = _resolve_env(name, p, "api_secret_env")
         return Profile(
             name=name,
             base_url=p["base_url"],
@@ -177,9 +223,10 @@ def load_profile(name: str, path: Path | None = None) -> Profile:
             password="",
             ca_bundle=p.get("ca_bundle"),
             verify=p.get("verify", True),
-            api_token=_resolve_env(name, p, "api_token_env"),
-            api_secret=_resolve_env(name, p, "api_secret_env"),
-            preset_baseurl=p.get("preset_baseurl", PRESET_BASEURL),
+            api_token=api_token,
+            api_secret=api_secret,
+            # Explicit profile setting wins, then whatever preset-cli stored, then the default.
+            preset_baseurl=p.get("preset_baseurl") or stored_baseurl or PRESET_BASEURL,
         )
     return Profile(
         name=name,
