@@ -32,6 +32,10 @@ class SupersetClient:
     auth_provider: str = "db"
     ca_bundle: str | None = None
     verify: bool = True
+    # Preset mode (api_token set): API key pair -> JWT, no password login.
+    api_token: str | None = None
+    api_secret: str | None = None
+    preset_baseurl: str = "https://api.app.preset.io/"
     session: requests.Session = field(default_factory=requests.Session)
     _csrf: str | None = None
     _logged_in: bool = False
@@ -80,6 +84,9 @@ class SupersetClient:
     # -- auth ---------------------------------------------------------------
 
     def login(self) -> None:
+        if self.api_token:
+            self._login_preset()
+            return
         r = self._send(lambda: self.session.post(
             f"{self.base_url}/api/v1/security/login",
             json={
@@ -106,6 +113,32 @@ class SupersetClient:
         self._raise_for(r, "csrf token fetch failed")
         self._csrf = r.json()["result"]
         self.session.headers["X-CSRFToken"] = self._csrf
+        self.session.headers["Referer"] = self.base_url
+        self._logged_in = True
+
+    def _login_preset(self) -> None:
+        """Preset-hosted workspaces: exchange the API key pair for a JWT at the
+        manager API, then Bearer + Referer only. NO CSRF token -- Preset's own
+        client (preset-io/backend-sdk) posts multipart import bundles with just
+        those two, and the workspace has no /security/csrf_token/ session to
+        pair one with."""
+        auth_url = self.preset_baseurl.rstrip("/") + "/v1/auth/"
+        r = self._send(lambda: self.session.post(
+            auth_url,
+            json={"name": self.api_token, "secret": self.api_secret},
+            timeout=30,
+        ), relogin_on_401=False)
+        self._raise_for(r, "preset auth failed")
+        try:
+            token = r.json()["payload"]["access_token"]
+        except (ValueError, KeyError, TypeError) as e:
+            raise SupersetAPIError(
+                f"preset auth at {auth_url} returned no payload.access_token; check the "
+                "API key pair (Preset > Manage User Settings > API Keys) and that "
+                "base_url points at the WORKSPACE, not the manager.",
+                r.status_code, r.text[:300],
+            ) from e
+        self.session.headers["Authorization"] = f"Bearer {token}"
         self.session.headers["Referer"] = self.base_url
         self._logged_in = True
 

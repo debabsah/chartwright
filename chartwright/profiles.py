@@ -26,6 +26,16 @@ e.g. when the home dir is roaming/OneDrive-redirected).
     # ca_bundle = "/path/to/corp-root-ca.pem"         # corporate TLS interception
     # verify = false                                  # last resort, disables TLS verification
 
+Preset-hosted workspaces (preset.io) have NO password login; they take an API
+key pair, exchanged for a JWT at the Preset manager API. Declaring
+api_token_env selects that mode -- username/password are then not consulted:
+
+    [preset_dryrun]
+    base_url = "https://<workspace>.<region>.app.preset.io"
+    api_token_env = "PRESET_API_TOKEN"               # key NAME (not a secret, still env-only)
+    api_secret_env = "PRESET_API_SECRET"             # key SECRET
+    # preset_baseurl = "https://api.app.preset.io/"  # manager API; default shown
+
 Password resolution: password_env first (if set and non-empty), else
 password_cmd. Username resolution: literal `username` first, else
 `username_env` (first-listed source wins, same rule as passwords). No
@@ -53,6 +63,11 @@ class ProfileError(RuntimeError):
     pass
 
 
+# Preset's manager API (verified against preset-io/backend-sdk: the SDK's own
+# default preset_baseurl, POST <base>/v1/auth/).
+PRESET_BASEURL = "https://api.app.preset.io/"
+
+
 @dataclass
 class Profile:
     name: str
@@ -62,6 +77,10 @@ class Profile:
     auth_provider: str = "db"
     ca_bundle: str | None = None
     verify: bool = True
+    # Preset mode only; None on ordinary username/password instances.
+    api_token: str | None = None
+    api_secret: str | None = None
+    preset_baseurl: str = PRESET_BASEURL
 
 
 def _expand(token: str) -> str:
@@ -119,6 +138,22 @@ def _resolve_username(name: str, p: dict) -> str:
     raise ProfileError(f"profile {name!r}: set username or username_env")
 
 
+def _resolve_env(name: str, p: dict, key: str) -> str:
+    """Preset credentials are env-only (same rule as passwords: no secrets in
+    the file). ponytail: no *_cmd fallback here yet -- add one mirroring
+    _resolve_password if a credential manager needs to feed these."""
+    env_name = p.get(key)
+    if not env_name:
+        raise ProfileError(
+            f"profile {name!r}: Preset profiles need both api_token_env and "
+            f"api_secret_env; {key} is missing"
+        )
+    value = os.environ.get(env_name)
+    if not value:
+        raise ProfileError(f"profile {name!r}: env var {env_name!r} ({key}) is unset or empty")
+    return value
+
+
 def load_profile(name: str, path: Path | None = None) -> Profile:
     path = path or profiles_path()
     if not path.exists():
@@ -132,6 +167,20 @@ def load_profile(name: str, path: Path | None = None) -> Profile:
     p = data[name]
     if "base_url" not in p:
         raise ProfileError(f"profile {name!r} missing 'base_url'")
+    if "api_token_env" in p or "api_secret_env" in p:
+        # Preset mode: no password login exists, so username/password are not
+        # resolved at all (asking for them would fail on a valid profile).
+        return Profile(
+            name=name,
+            base_url=p["base_url"],
+            username="",
+            password="",
+            ca_bundle=p.get("ca_bundle"),
+            verify=p.get("verify", True),
+            api_token=_resolve_env(name, p, "api_token_env"),
+            api_secret=_resolve_env(name, p, "api_secret_env"),
+            preset_baseurl=p.get("preset_baseurl", PRESET_BASEURL),
+        )
     return Profile(
         name=name,
         base_url=p["base_url"],
