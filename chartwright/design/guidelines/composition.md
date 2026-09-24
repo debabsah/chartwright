@@ -16,8 +16,9 @@
   deepens. Never a tab with a single lonely chart.
 - Whitespace is markdown's job, sparingly: a one-line section header beats an
   empty band (2 units is plenty for a header). Consistent number formats per
-  measure across KPI cards (tables and pivots use Superset's smart default;
-  the spec cannot set per-column formats yet).
+  measure across KPI cards and axes (`number_format` on KPIs, timeseries and
+  bars; `number_formats` per column on tables; pivots use Superset's smart
+  default).
 - Color restraint: Superset's default palette, RAG only where a threshold has
   a real business meaning; never encode the same dimension with two palettes.
 - RAG polarity is a convention, not a choice: red = adverse, green = good

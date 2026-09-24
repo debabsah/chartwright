@@ -187,7 +187,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["time_range"] = chart.time_range
         p["groupby"] = [chart.groupby] if chart.groupby else []
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
-        p["y_axis_format"] = "SMART_NUMBER"
+        p["y_axis_format"] = chart.number_format or "SMART_NUMBER"
         p["rich_tooltip"] = True
         p["show_legend"] = True
         if t == "timeseries_area":
@@ -199,7 +199,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["x_axis"] = chart.x_column
         p["groupby"] = [chart.groupby] if chart.groupby else []
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
-        p["y_axis_format"] = "SMART_NUMBER"
+        p["y_axis_format"] = chart.number_format or "SMART_NUMBER"
         p["rich_tooltip"] = True
         p["show_legend"] = True
         # Rankings read sorted by their measure, not by label order. The

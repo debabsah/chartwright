@@ -150,6 +150,7 @@ class _TimeseriesBase(_ChartBase):
     time_range: str | None = Field(default=None, description='Superset time range; defaults to "No filter"')
     groupby: str | None = Field(default=None, description="At most one dimension column")
     row_limit: int | None = Field(default=None, ge=1)
+    number_format: str | None = Field(default=None, description="d3 format for the value axis, e.g. '.1%'")
 
 
 class TimeseriesLineChart(_TimeseriesBase):
@@ -181,6 +182,7 @@ class BarChart(_ChartBase):
     groupby: str | None = None
     row_limit: int | None = Field(default=None, ge=1)
     orientation: Literal["vertical", "horizontal"] = "vertical"
+    number_format: str | None = Field(default=None, description="d3 format for the value axis, e.g. ',.0f'")
 
 
 class PieChart(_ChartBase):
