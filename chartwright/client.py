@@ -17,6 +17,18 @@ from typing import Callable
 import requests
 
 
+def _json_q(obj) -> str:
+    """The `q` argument as JSON that survives Flask-AppBuilder's fallback.
+
+    FAB tries rison first; on failure it re-parses the already-decoded value
+    with `urllib.parse.parse_qs(f"q={value}")`, which splits at '&' and
+    decodes '+' and '%' a second time. So a chart named "Sales & Marketing"
+    came back HTTP 400 "Not a valid rison/json argument". Escaping those three
+    as JSON unicode escapes keeps the value intact through both parses."""
+    return (json.dumps(obj).replace("%", r"\u0025").replace("&", r"\u0026")
+            .replace("+", r"\u002b"))
+
+
 class SupersetAPIError(RuntimeError):
     def __init__(self, message: str, status: int | None = None, body: str | None = None):
         super().__init__(message)
@@ -147,7 +159,7 @@ class SupersetClient:
     def get(self, path: str, **params) -> dict:
         q = {}
         if params:
-            q["q"] = json.dumps(params.pop("q")) if "q" in params else None
+            q["q"] = _json_q(params.pop("q")) if "q" in params else None
             q = {k: v for k, v in q.items() if v is not None}
             q.update(params)
         r = self._send(lambda: self.session.get(f"{self.base_url}{path}", params=q, timeout=60))

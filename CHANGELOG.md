@@ -22,6 +22,11 @@ The design brain, plus the fixes found reviewing it.
 
 ### Fixed
 
+- A chart, dataset or dashboard name containing `&` (e.g. "Sales & Marketing")
+  failed every lookup with HTTP 400 "Not a valid rison/json argument", which
+  aborted `apply` at prepare. Flask-AppBuilder's JSON fallback for `q` re-parses
+  the decoded value with `parse_qs`, splitting at `&` (and decoding `+` / `%`
+  again); those three are now sent as JSON unicode escapes.
 - Range colour rules never coloured anything: `between` compiled to the
   literal `"between"`, which is not a Superset comparator in any supported
   release (it is `'< x <'`), so the amber band of every RAG set was dead.
