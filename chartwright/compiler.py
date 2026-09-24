@@ -557,7 +557,7 @@ def _range_default_mask(f) -> dict | None:
 def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
     metadata: dict = {
         "color_scheme": "",
-        "cross_filters_enabled": False,
+        "cross_filters_enabled": spec.dashboard.cross_filters,
         "expanded_slices": {},
         "label_colors": {},
         "refresh_frequency": 0,

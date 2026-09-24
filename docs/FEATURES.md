@@ -19,6 +19,7 @@ into one. Everything below works from that one file.
 - **14 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap.
 - **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`).
 - **Filters and Formatting**: Per-chart WHERE conditions, a native filter bar (value pickers, a time range with an optional starting range, numeric sliders, each scopable to specific charts), green/amber/red thresholds on pivot cells, d3 number and date formats.
+- **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs.
 - **No Empty First Load**: New charts open on your full data range, so a narrow default time window never hides everything on the first paint. On a large dataset that full range is a lot to draw, so give the filter bar a time range with a default; `chartwright advise` tells you when a dashboard has nothing bounding its dates.
 
 ## Layout Design
@@ -105,4 +106,4 @@ into one. Everything below works from that one file.
 ## Deliberately Not Included
 - Exotic chart types (maps, sankey, gauge): added when a real dashboard needs one (ask); until then those dashboards live on in the UI, untouched.
 - API keys: open-source Superset has none (Preset does); its API signs in with a username and password, which is exactly what the tool uses (database or LDAP providers). On SSO-only shops, ask your admin for a service account with password login enabled.
-- Cross-filter configuration from the spec: clicking a chart to filter the others still works on every applied dashboard; designing custom cross-filter scoping in the spec waits for real demand.
+- Per-chart cross-filter scoping (which charts emit or receive): the on/off switch is in the spec; finer scoping waits for real demand.

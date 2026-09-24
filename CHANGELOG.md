@@ -9,6 +9,11 @@ The design brain, plus the fixes found reviewing it.
 
 ### Added
 
+- `"cross_filters": true|false` on the dashboard block. The tool had always
+  written `cross_filters_enabled: false` into every dashboard it built, with
+  no way to say otherwise; the flag is now spec-owned, decompiles back, and a
+  UI toggle shows up in `plan` as `cross_filters_changed`. Default stays
+  `false`, so existing specs and the golden bundle are byte-identical.
 - **The design brain**, an optional layer that checks whether a dashboard
   reads well, not just whether it imports. Off with `--design off`, which
   restores byte-identical output.
