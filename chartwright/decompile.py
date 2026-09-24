@@ -82,9 +82,14 @@ def _format_to_spec(cf: dict) -> dict | None:
     # '< x <' is Superset's range comparator; the bare "between" older
     # chartwright builds wrote (and Superset never matched) reads back the same.
     op = {"< x <": "between"}.get(cf.get("operator"), cf.get("operator"))
-    if not color or not cf.get("column") or op not in ("<", ">", "between"):
+    if not color or not cf.get("column") or op not in ("<", ">", "=", "between"):
         return None
+    if cf.get("toTextColor") or cf.get("objectFormatting") not in (None, "BACKGROUND_COLOR"):
+        return None  # text colour / cell bars: outside the surface
     rule: dict = {"metric": cf["column"], "operator": op, "color": color}
+    target_col = cf.get("columnFormatting") or ("ENTIRE_ROW" if cf.get("toAllRow") else None)
+    if target_col:
+        rule["apply_to"] = "row" if target_col == "ENTIRE_ROW" else target_col
     if op == "between":
         rule["target_left"] = cf.get("targetValueLeft")
         rule["target_right"] = cf.get("targetValueRight")
@@ -284,10 +289,30 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
                     out["sort_by"] = s
             asc = p.get("order_desc") is False
         if out.get("sort_by") and asc:
-            # The spec sorts descending (a ranking); an ascending live sort is
-            # named rather than silently flipped on the next apply.
-            losses.append(Loss(name, "ascending sort not preserved; the spec sorts "
-                                     "sort_by descending, so re-apply will sort descending"))
+            out["sort_ascending"] = True
+        rules = []
+        for cf in p.get("conditional_formatting") or []:
+            rule = _format_to_spec(cf if isinstance(cf, dict) else {})
+            if rule is None:
+                losses.append(Loss(name, f"conditional format not representable, dropped: {cf}"))
+            else:
+                rules.append(rule)
+        if rules:
+            out["conditional_formatting"] = rules
+        hidden, formats = [], {}
+        for label, cfg in (p.get("column_config") or {}).items():
+            cfg = cfg if isinstance(cfg, dict) else {}
+            if cfg.get("visible") is False:
+                hidden.append(label)
+            if cfg.get("d3NumberFormat"):
+                formats[label] = cfg["d3NumberFormat"]
+            extra = sorted(k for k in cfg if k not in ("visible", "d3NumberFormat"))
+            if extra:
+                losses.append(Loss(name, f"column_config {label!r} settings not preserved: {extra}"))
+        if hidden:
+            out["hidden"] = hidden
+        if formats:
+            out["number_formats"] = formats
         keep_row_limit()
     elif spec_type == "pivot_table":
         ms = [m for m in (metric_one(m) for m in (p.get("metrics") or [])) if m]
@@ -360,7 +385,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         keep_row_limit()
 
     mapped_here = {"combineMetric", "conditional_formatting"} if spec_type == "pivot_table" else (
-        {"order_by_cols", "timeseries_limit_metric", "series_limit_metric"}
+        {"order_by_cols", "timeseries_limit_metric", "series_limit_metric",
+         "conditional_formatting", "column_config"}
         if spec_type == "table" else set())
     unmapped = sorted(k for k in p if k not in _IGNORABLE and k not in mapped_here)
     if unmapped:

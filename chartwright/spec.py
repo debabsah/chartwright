@@ -191,6 +191,35 @@ class PieChart(_ChartBase):
     row_limit: int | None = Field(default=None, ge=1)
 
 
+class FormatRule(BaseModel):
+    """One solid RAG band on one metric. A pivot colours a cell by its OWN
+    value only, so band a normalized metric (e.g. a %-of-goal ratio) when
+    thresholds differ per row. A table can read one column and paint another
+    (apply_to): colour a number by a status column beside it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric: str = Field(description="Display label of the metric (table: or column) whose value is tested")
+    operator: Literal["<", ">", "=", "between"]
+    target: float | None = Field(default=None, description="Threshold for <, > or =")
+    target_left: float | None = Field(default=None, description="Lower bound for 'between'")
+    target_right: float | None = Field(default=None, description="Upper bound for 'between'")
+    color: Literal["green", "amber", "red"]
+    apply_to: str | None = Field(
+        default=None,
+        description="Table only: the label of the column to paint, or \"row\"; default the metric's own cells",
+    )
+
+    @model_validator(mode="after")
+    def _target_shape(self) -> "FormatRule":
+        if self.operator == "between":
+            if self.target is not None or self.target_left is None or self.target_right is None:
+                raise ValueError("'between' needs target_left + target_right (and no target)")
+        elif self.target is None or self.target_left is not None or self.target_right is not None:
+            raise ValueError(f"operator {self.operator!r} needs target (and no target_left/right)")
+        return self
+
+
 class TableChart(_ChartBase):
     type: Literal["table"]
     columns: list[str] | None = Field(default=None, description="Raw-records mode: plain columns")
@@ -199,9 +228,26 @@ class TableChart(_ChartBase):
     row_limit: int | None = Field(default=None, ge=1)
     sort_by: str | None = Field(
         default=None,
-        description="Sort key, DESCENDING (a ranking). Aggregate mode: one of the "
-                    "chart's metrics, written the same way. Raw mode: a column name.",
+        description="Sort key, DESCENDING (a ranking) unless sort_ascending. Aggregate "
+                    "mode: a metric written the same way (it need not be displayed). "
+                    "Raw mode: a column name.",
     )
+    sort_ascending: bool = Field(default=False, description="Sort sort_by ascending (a fixed row order)")
+    conditional_formatting: list[FormatRule] = Field(
+        default_factory=list,
+        description="Colour rules. A rule reads its metric's value and, with apply_to, "
+                    "paints another column or the whole row (Superset 6.1+).",
+    )
+    hidden: list[str] = Field(
+        default_factory=list,
+        description="Labels queried but not displayed, e.g. a status only a colour rule reads (Superset 6.1+)",
+    )
+    number_formats: dict[str, str] = Field(
+        default_factory=dict, description="d3 format per label, e.g. {\"Rate\": \".3f\"}",
+    )
+
+    def labels(self) -> list[str]:
+        return [metric_label(m) for m in self.metrics or []] + list(self.groupby or []) + list(self.columns or [])
 
     @model_validator(mode="after")
     def _mode(self) -> "TableChart":
@@ -211,30 +257,16 @@ class TableChart(_ChartBase):
             raise ValueError("table chart: use either columns (raw mode) or metrics+groupby (aggregate mode), not both")
         if not aggregate and not raw:
             raise ValueError("table chart: provide columns (raw mode) or metrics+groupby (aggregate mode)")
-        return self
-
-
-class FormatRule(BaseModel):
-    """One RAG band on one pivot metric. Superset colors by FIXED value bands;
-    it cannot compare a cell to another column, so band a normalized metric
-    (e.g. a %-of-goal ratio) when thresholds differ per row."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    metric: str = Field(description="Display label of one of the chart's metrics")
-    operator: Literal["<", ">", "between"]
-    target: float | None = Field(default=None, description="Threshold for < or >")
-    target_left: float | None = Field(default=None, description="Lower bound for 'between'")
-    target_right: float | None = Field(default=None, description="Upper bound for 'between'")
-    color: Literal["green", "amber", "red"]
-
-    @model_validator(mode="after")
-    def _target_shape(self) -> "FormatRule":
-        if self.operator == "between":
-            if self.target is not None or self.target_left is None or self.target_right is None:
-                raise ValueError("'between' needs target_left + target_right (and no target)")
-        elif self.target is None or self.target_left is not None or self.target_right is not None:
-            raise ValueError(f"operator {self.operator!r} needs target (and no target_left/right)")
+        if self.sort_ascending and not self.sort_by:
+            raise ValueError("table chart: sort_ascending needs sort_by")
+        labels = set(self.labels())
+        named = [(r.metric, "conditional_formatting metric") for r in self.conditional_formatting]
+        named += [(r.apply_to, "conditional_formatting apply_to") for r in self.conditional_formatting
+                  if r.apply_to not in (None, "row")]
+        named += [(h, "hidden") for h in self.hidden] + [(k, "number_formats") for k in self.number_formats]
+        for label, where in named:
+            if label not in labels:
+                raise ValueError(f"{where} {label!r} is not one of the table's labels {sorted(labels)}")
         return self
 
 
@@ -260,6 +292,8 @@ class PivotTableChart(_ChartBase):
             raise ValueError("pivot_table needs at least one of rows/columns")
         labels = {metric_label(m) for m in self.metrics}
         for rule in self.conditional_formatting:
+            if rule.apply_to is not None:
+                raise ValueError("conditional_formatting apply_to is table-only: a pivot colours a cell by its own value")
             if rule.metric not in labels:
                 raise ValueError(
                     f"conditional_formatting metric {rule.metric!r} is not one of the "

@@ -9,6 +9,24 @@ The design brain, plus the fixes found reviewing it.
 
 ### Added
 
+- Table colour rules. `conditional_formatting` on a table, with `apply_to`
+  (another column's label, or `"row"`): the rule reads one column and paints
+  another, which is how a scorecard colours each number by a status beside it
+  when every row has its own goal (Superset 6.1's `columnFormatting`; a pivot
+  can only colour a cell by its own value). Also on tables: `hidden` (queried,
+  not displayed, e.g. that status), `number_formats` (d3, per label) and
+  `sort_ascending` (a fixed row order; an ascending live sort now decompiles
+  instead of being reported as a loss). New operator `=` on every colour rule.
+
+### Fixed
+
+- Range colour rules never coloured anything: `between` compiled to the
+  literal `"between"`, which is not a Superset comparator in any supported
+  release (it is `'< x <'`), so the amber band of every RAG set was dead.
+- Colour rules render as solid bands (`useGradient: false`). Superset's
+  default fades a `<` / `>` / range colour by the value's distance from the
+  threshold, so bands read as shades rather than green/amber/red.
+
 - `"cross_filters": true|false` on the dashboard block. The tool had always
   written `cross_filters_enabled: false` into every dashboard it built, with
   no way to say otherwise; the flag is now spec-owned, decompiles back, and a

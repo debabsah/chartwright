@@ -116,9 +116,9 @@ def test_plan_does_not_drift_on_a_sorted_table():
     assert _normalize(live)["charts"] == _normalize(spec)["charts"]
 
 
-def test_ascending_live_sort_is_reported_as_a_loss():
-    """The spec sorts descending; an ascending live sort is NAMED, not
-    silently flipped on the next apply."""
+def test_ascending_live_sort_reads_back_as_sort_ascending():
+    """An ascending live sort (flipped in the UI) comes back as
+    sort_ascending, not silently flipped to descending on the next apply."""
     spec = mk(aggregate(sort_by="SUM(v)"))
     bundle = compile_bundle(spec, stub_resolution(spec))
     import io
@@ -137,4 +137,11 @@ def test_ascending_live_sort_is_reported_as_a_loss():
                 blob = yaml.safe_dump(cy).encode()
             w.writestr(n, blob)
     result = decompile_bundle(out.getvalue(), _lookup(spec))
-    assert any("ascending sort not preserved" in x.what for x in result.losses)
+    assert result.losses == [], result.losses_json()
+    assert result.spec["charts"][0]["sort_ascending"] is True
+
+
+def test_sort_ascending_compiles_in_both_modes():
+    assert params_for(aggregate(sort_by="SUM(v)", sort_ascending=True))["order_desc"] is False
+    assert params_for(raw(sort_by="region", sort_ascending=True))["order_by_cols"] == [
+        json.dumps(["region", True])]

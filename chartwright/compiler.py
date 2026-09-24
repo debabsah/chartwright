@@ -87,7 +87,7 @@ def _metric_payload(metric: str, slug: str, chart_name: str) -> str | dict:
 # Spec operator -> Superset's Comparator value. A range is '< x <' in every
 # supported release (types.ts at 4.1.4/5.0.0/6.1.0); the literal "between"
 # matches no comparator, and getColorFormatters' default case colours nothing.
-FORMAT_OPERATOR = {"<": "<", ">": ">", "between": "< x <"}
+FORMAT_OPERATOR = {"<": "<", ">": ">", "=": "=", "between": "< x <"}
 
 
 def _format_rule_payload(rule) -> dict:
@@ -105,7 +105,21 @@ def _format_rule_payload(rule) -> dict:
         out["targetValueRight"] = rule.target_right
     else:
         out["targetValue"] = rule.target
+    if rule.apply_to:
+        # The 6.1 table's "apply to": another column's key, or the whole row
+        # (TableChart.tsx reads columnFormatting; ObjectFormattingEnum.ENTIRE_ROW).
+        out["columnFormatting"] = "ENTIRE_ROW" if rule.apply_to == "row" else rule.apply_to
     return out
+
+
+def _column_config(chart) -> dict:
+    """Per-column table display: hidden columns and d3 number formats."""
+    cfg: dict = {}
+    for label in chart.hidden:
+        cfg.setdefault(label, {})["visible"] = False
+    for label, fmt in chart.number_formats.items():
+        cfg.setdefault(label, {})["d3NumberFormat"] = fmt
+    return cfg
 
 
 def _adhoc_filters(chart) -> list[dict]:
@@ -214,7 +228,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
                 # Raw mode sorts on COLUMNS: order_by_cols holds JSON-encoded
                 # [column, ascending] pairs (Table controlPanel, all supported
                 # versions). False = descending, matching the ranking intent.
-                p["order_by_cols"] = [json.dumps([chart.sort_by, False])]
+                p["order_by_cols"] = [json.dumps([chart.sort_by, chart.sort_ascending])]
         else:
             p["query_mode"] = "aggregate"
             p["groupby"] = chart.groupby or []
@@ -227,7 +241,14 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         p["server_page_length"] = 10
         if chart.sort_by:
-            p["order_desc"] = True
+            p["order_desc"] = not chart.sort_ascending
+        # Emitted only when set, so pre-feature bundles stay byte-identical.
+        if chart.conditional_formatting:
+            p["conditional_formatting"] = [
+                _format_rule_payload(r) for r in chart.conditional_formatting
+            ]
+        if chart.hidden or chart.number_formats:
+            p["column_config"] = _column_config(chart)
     elif t == "pivot_table":
         p["groupbyRows"] = chart.rows
         p["groupbyColumns"] = chart.columns
