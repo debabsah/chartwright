@@ -95,6 +95,10 @@ def _format_rule_payload(rule) -> dict:
         "column": rule.metric,
         "colorScheme": FORMAT_COLOR_HEX[rule.color],
         "operator": FORMAT_OPERATOR[rule.operator],
+        # A rule is a solid band. Left unset, Superset fades '<' / '>' / range
+        # colours by distance from the threshold (getColorFormatters.getOpacity);
+        # useGradient is honoured from 6.x and ignored by 4.1.4/5.0.0.
+        "useGradient": False,
     }
     if rule.operator == "between":
         out["targetValueLeft"] = rule.target_left
