@@ -440,6 +440,15 @@ class DashboardMeta(BaseModel):
 
     title: str = Field(min_length=1)
     slug: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9-]*$", description="uuid seed input; lowercase kebab-case")
+    cross_filters: bool = Field(
+        default=False,
+        description=(
+            "Superset cross-filtering on this dashboard: clicking a value in one chart "
+            "filters every other chart whose dataset has that column (across tabs). "
+            "Default off, matching what the tool has always written; set true to turn it on. "
+            "Spec-owned, so a UI toggle shows up as drift in `plan` and is repaired by `apply`."
+        ),
+    )
 
 
 class DesignConfig(BaseModel):

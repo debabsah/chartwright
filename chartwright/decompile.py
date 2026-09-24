@@ -599,7 +599,13 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
 
     spec = {
         "spec_version": "1",
-        "dashboard": {"title": title, "slug": slug},
+        "dashboard": {
+            "title": title,
+            "slug": slug,
+            # Superset force-stamps True when the key is absent from a PUT
+            # (docs/CONTRACTS.md), so read it back explicitly and always emit it.
+            "cross_filters": bool((dash.get("metadata") or {}).get("cross_filters_enabled", False)),
+        },
         "charts": ordered,
         "layout": layout,
     }

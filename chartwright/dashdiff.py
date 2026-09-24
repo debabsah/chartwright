@@ -27,6 +27,7 @@ class Plan:
     filters_removed: list[str] = field(default_factory=list)
     title_changed: bool = False
     layout_changed: bool = False
+    cross_filters_changed: bool = False   # live setting flipped in the UI, or the spec changed
     decompile_losses: list[dict] = field(default_factory=list)
 
     @property
@@ -34,7 +35,7 @@ class Plan:
         return self.dashboard == "unchanged" and not (
             self.charts_added or self.charts_changed or self.charts_removed
             or self.filters_added or self.filters_changed or self.filters_removed
-            or self.title_changed or self.layout_changed
+            or self.title_changed or self.layout_changed or self.cross_filters_changed
         )
 
     def to_json(self) -> str:
@@ -51,6 +52,7 @@ class Plan:
                 "filters_removed": self.filters_removed,
                 "title_changed": self.title_changed,
                 "layout_changed": self.layout_changed,
+                "cross_filters_changed": self.cross_filters_changed,
                 "decompile_losses": self.decompile_losses,
             },
             indent=2,
@@ -200,6 +202,10 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
         p.filters_changed.sort()
 
     p.title_changed = t["dashboard"]["title"] != l["dashboard"]["title"]
+    p.cross_filters_changed = (
+        bool(t["dashboard"].get("cross_filters", False))
+        != bool(l["dashboard"].get("cross_filters", False))
+    )
     # Whole-layout compare: a tabs layout has no "rows" key after
     # exclude_none dumping, so keyed access would KeyError.
     p.layout_changed = t["layout"] != l["layout"]
