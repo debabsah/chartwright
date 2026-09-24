@@ -80,10 +80,12 @@ def test_pivot_formatting_emission():
     assert p["combineMetric"] is True
     assert p["date_format"] == "%m/%d/%y"
     assert p["conditional_formatting"] == [
-        {"column": "% of Goal", "colorScheme": "#ACE1C4", "operator": "<", "targetValue": 1.0},
+        {"column": "% of Goal", "colorScheme": "#ACE1C4", "operator": "<", "targetValue": 1.0,
+         "useGradient": False},
         {"column": "% of Goal", "colorScheme": "#FDE380", "operator": "< x <",
-         "targetValueLeft": 1.0, "targetValueRight": 1.25},
-        {"column": "% of Goal", "colorScheme": "#EFA1AA", "operator": ">", "targetValue": 1.25},
+         "targetValueLeft": 1.0, "targetValueRight": 1.25, "useGradient": False},
+        {"column": "% of Goal", "colorScheme": "#EFA1AA", "operator": ">", "targetValue": 1.25,
+         "useGradient": False},
     ]
 
 
