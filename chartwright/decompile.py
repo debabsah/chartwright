@@ -237,6 +237,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             out["time_grain"] = p["time_grain_sqla"]
         if p.get("time_range") and p["time_range"] != "No filter":
             out["time_range"] = p["time_range"]
+        if p.get("y_axis_format") not in (None, "SMART_NUMBER"):
+            out["number_format"] = p["y_axis_format"]
         gb = _groupby_one(p, losses, name)
         if gb:
             out["groupby"] = gb
@@ -251,6 +253,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         out["x_column"] = x
         if p.get("orientation") == "horizontal":
             out["orientation"] = "horizontal"
+        if p.get("y_axis_format") not in (None, "SMART_NUMBER"):
+            out["number_format"] = p["y_axis_format"]
         gb = _groupby_one(p, losses, name)
         if gb:
             out["groupby"] = gb

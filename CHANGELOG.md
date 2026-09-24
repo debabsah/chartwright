@@ -17,6 +17,8 @@ The design brain, plus the fixes found reviewing it.
   not displayed, e.g. that status), `number_formats` (d3, per label) and
   `sort_ascending` (a fixed row order; an ascending live sort now decompiles
   instead of being reported as a loss). New operator `=` on every colour rule.
+- `number_format` on timeseries and categorical bar charts (the value axis;
+  it was hard-coded to Superset's smart number, so a rate read `0.9760`, not `97.6%`).
 
 ### Fixed
 

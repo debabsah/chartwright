@@ -83,3 +83,21 @@ def test_decompile_outside_surface():
     assert _format_to_spec({**base, "toAllRow": True})["apply_to"] == "row"  # 5.x-era flag
     assert _format_to_spec({**base, "toTextColor": True}) is None
     assert _format_to_spec({**base, "objectFormatting": "CELL_BAR"}) is None
+
+
+def test_axis_number_format_round_trips():
+    from test_table_sort import DS
+    for chart in (
+        {"name": "L", "type": "timeseries_line", "dataset": DS, "metrics": ["MAX(r)"],
+         "time_column": "m", "time_grain": "P1M", "number_format": ".1%"},
+        {"name": "B", "type": "bar", "dataset": DS, "metrics": ["SUM(v)"], "x_column": "k",
+         "number_format": ",.0f"},
+    ):
+        p = params_for(chart)
+        assert p["y_axis_format"] == chart["number_format"]
+        spec = mk(chart)
+        result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _lookup(spec))
+        assert result.losses == [], result.losses_json()
+        assert _normalize(load_spec(result.spec))["charts"] == _normalize(spec)["charts"]
+    assert params_for({"name": "B", "type": "bar", "dataset": DS, "metrics": ["SUM(v)"],
+                       "x_column": "k"})["y_axis_format"] == "SMART_NUMBER"
