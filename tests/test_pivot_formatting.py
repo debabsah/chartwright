@@ -81,7 +81,7 @@ def test_pivot_formatting_emission():
     assert p["date_format"] == "%m/%d/%y"
     assert p["conditional_formatting"] == [
         {"column": "% of Goal", "colorScheme": "#ACE1C4", "operator": "<", "targetValue": 1.0},
-        {"column": "% of Goal", "colorScheme": "#FDE380", "operator": "between",
+        {"column": "% of Goal", "colorScheme": "#FDE380", "operator": "< x <",
          "targetValueLeft": 1.0, "targetValueRight": 1.25},
         {"column": "% of Goal", "colorScheme": "#EFA1AA", "operator": ">", "targetValue": 1.25},
     ]
@@ -115,10 +115,11 @@ def test_decompile_roundtrip_helpers():
     assert _format_to_spec({"column": "% of Goal", "colorScheme": "#ACE1C4",
                             "operator": "<", "targetValue": 1.0}) == \
         {"metric": "% of Goal", "operator": "<", "color": "green", "target": 1.0}
-    assert _format_to_spec({"column": "% of Goal", "colorScheme": "#FDE380", "operator": "between",
-                            "targetValueLeft": 1.0, "targetValueRight": 1.25}) == \
-        {"metric": "% of Goal", "operator": "between", "color": "amber",
-         "target_left": 1.0, "target_right": 1.25}
+    for op in ("< x <", "between"):  # Superset's comparator; the legacy literal reads back too
+        assert _format_to_spec({"column": "% of Goal", "colorScheme": "#FDE380", "operator": op,
+                                "targetValueLeft": 1.0, "targetValueRight": 1.25}) == \
+            {"metric": "% of Goal", "operator": "between", "color": "amber",
+             "target_left": 1.0, "target_right": 1.25}
     assert _format_to_spec({"column": "% of Goal", "colorScheme": "#123456",
                             "operator": "<", "targetValue": 1.0}) is None
     assert _format_to_spec({"column": "% of Goal", "colorScheme": "#ACE1C4",
