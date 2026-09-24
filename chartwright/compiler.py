@@ -84,11 +84,17 @@ def _metric_payload(metric: str, slug: str, chart_name: str) -> str | dict:
     }
 
 
+# Spec operator -> Superset's Comparator value. A range is '< x <' in every
+# supported release (types.ts at 4.1.4/5.0.0/6.1.0); the literal "between"
+# matches no comparator, and getColorFormatters' default case colours nothing.
+FORMAT_OPERATOR = {"<": "<", ">": ">", "between": "< x <"}
+
+
 def _format_rule_payload(rule) -> dict:
     out = {
         "column": rule.metric,
         "colorScheme": FORMAT_COLOR_HEX[rule.color],
-        "operator": rule.operator,
+        "operator": FORMAT_OPERATOR[rule.operator],
     }
     if rule.operator == "between":
         out["targetValueLeft"] = rule.target_left

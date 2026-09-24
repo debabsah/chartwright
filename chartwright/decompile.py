@@ -79,7 +79,9 @@ DatasetLookup = Callable[[str], dict | None]
 def _format_to_spec(cf: dict) -> dict | None:
     """Superset conditional_formatting entry -> FormatRule dict, None if outside surface."""
     color = {v.upper(): k for k, v in FORMAT_COLOR_HEX.items()}.get((cf.get("colorScheme") or "").upper())
-    op = cf.get("operator")
+    # '< x <' is Superset's range comparator; the bare "between" older
+    # chartwright builds wrote (and Superset never matched) reads back the same.
+    op = {"< x <": "between"}.get(cf.get("operator"), cf.get("operator"))
     if not color or not cf.get("column") or op not in ("<", ">", "between"):
         return None
     rule: dict = {"metric": cf["column"], "operator": op, "color": color}
