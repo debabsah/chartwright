@@ -28,3 +28,16 @@ def test_429_retries_are_bounded(monkeypatch):
     monkeypatch.setattr("chartwright.client.time.sleep", lambda s: None)
     r = _client()._send(lambda: _Resp(429))
     assert r.status_code == 429   # exhausted: caller's _raise_for reports it typed
+
+
+def test_json_q_survives_fab_parse_qs_fallback():
+    """FAB's JSON fallback re-parses the decoded `q` with parse_qs: '&' split
+    the value (HTTP 400 on "Sales & Marketing"), '+' and '%' decoded twice."""
+    import json
+    import urllib.parse
+
+    from chartwright.client import _json_q
+
+    q = {"filters": [{"col": "slice_name", "opr": "eq", "value": "Sales & Marketing + 5% — x"}]}
+    value = _json_q(q)
+    assert json.loads(urllib.parse.parse_qs(f"q={value}")["q"][0]) == q
