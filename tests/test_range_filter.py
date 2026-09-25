@@ -187,3 +187,18 @@ def test_chart_payloads_from_bundle():
     assert payloads[u]["query_context"] is None
     metric = json.loads(payloads[u]["params"])["metric"]
     assert metric["sqlExpression"] == "COUNT(*)" and metric["label"] == "COUNT(*)"
+    assert "datasource_id" not in payloads[u]  # no dataset map (restore path): unchanged
+
+
+def test_chart_payloads_move_a_chart_onto_its_spec_dataset():
+    """A chart whose spec dataset changed must land on it: the PUT carries datasource_id."""
+    from chartwright.apply import chart_payloads_from_bundle
+    from chartwright import ids as _ids
+
+    spec = _spec([{"type": "range", "name": "W", "dataset": DS, "column": "week_rank", "le": 8}])
+    res = stub_resolution(spec)
+    bundle = compile_bundle(spec, res)
+    ds = next(iter(res.datasets.values()))
+    payloads = chart_payloads_from_bundle(bundle, {str(ds.uuid): 10})
+    u = str(_ids.chart_uuid("sdc-t", "A"))
+    assert payloads[u]["datasource_id"] == 10 and payloads[u]["datasource_type"] == "table"

@@ -151,8 +151,13 @@ def _roundtrip_dataset_files(resolution: Resolution, client: SupersetClient) -> 
     return extra
 
 
-def chart_payloads_from_bundle(bundle: bytes) -> dict[str, dict]:
+def chart_payloads_from_bundle(bundle: bytes, dataset_ids: dict[str, int] | None = None) -> dict[str, dict]:
     """uuid -> ChartRestApi.put payload, from the compiled bundle's chart yamls.
+
+    With ``dataset_ids`` (dataset uuid -> id on the target), the payload also moves the
+    chart onto its spec dataset: params alone carry the new datasource, but the chart's
+    own datasource_id would stay on the old one (observed live 2026-09-25: a chart moved
+    from dataset 5 to 10 kept datasource_id 5).
 
     Used to update pre-existing owned charts IN PLACE. Slice ids must stay
     stable across re-applies: delete+reimport mints new ids, which invalidates
@@ -164,24 +169,30 @@ def chart_payloads_from_bundle(bundle: bytes) -> dict[str, dict]:
     for n in zf.namelist():
         if "/charts/" in n and n.endswith(".yaml"):
             cy = yaml.safe_load(zf.read(n))
-            out[str(cy.get("uuid"))] = {
+            payload = {
                 "slice_name": cy.get("slice_name"),
                 "viz_type": cy.get("viz_type"),
                 "params": json.dumps(cy.get("params") or {}),
                 # params changed -> any stored query context is stale
                 "query_context": None,
             }
+            ds_id = (dataset_ids or {}).get(str(cy.get("dataset_uuid")))
+            if ds_id is not None:
+                payload["datasource_id"] = ds_id
+                payload["datasource_type"] = "table"
+            out[str(cy.get("uuid"))] = payload
     return out
 
 
 def _update_owned_charts_in_place(
     spec: DashboardSpec, client: SupersetClient, bundle: bytes,
-    existing_by_uuid: dict[str, dict],
+    existing_by_uuid: dict[str, dict], resolution: Resolution | None = None,
 ) -> tuple[list[str], list[str]]:
-    """PUT compiled params onto pre-existing owned charts (ids stay stable).
-    Returns (updated chart names, errors)."""
+    """PUT compiled params (and the spec dataset) onto pre-existing owned charts (ids
+    stay stable). Returns (updated chart names, errors)."""
     owned = {str(ids.chart_uuid(spec.dashboard.slug, c.name)): c.name for c in spec.charts}
-    payloads = chart_payloads_from_bundle(bundle)
+    dataset_ids = {str(d.uuid): d.id for d in resolution.datasets.values()} if resolution else None
+    payloads = chart_payloads_from_bundle(bundle, dataset_ids)
     updated, errors = [], []
     for u, summary in existing_by_uuid.items():
         payload = payloads.get(u)
@@ -359,7 +370,8 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
             return report
 
         if existing_by_uuid:
-            updated, update_errors = _update_owned_charts_in_place(spec, client, bundle, existing_by_uuid)
+            updated, update_errors = _update_owned_charts_in_place(
+                spec, client, bundle, existing_by_uuid, resolution)
             if update_errors:
                 report.import_detail = "; ".join(update_errors)
                 return report
