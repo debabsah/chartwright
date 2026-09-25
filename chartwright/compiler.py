@@ -458,21 +458,41 @@ def _position(spec: DashboardSpec) -> dict:
     else:
         tabs_id = "TABS-sdc-1"
         tab_ids: list[str] = []
-        for k, tab in enumerate(spec.layout.tabs or []):
-            tab_id = f"TAB-sdc-{k + 1}"
-            into = _sketch_into if tab.sketch else _rows_into
-            row_ids = into(
-                pos, tab.parsed_sketch() if tab.sketch else tab.rows, spec,
-                ["ROOT_ID", "GRID_ID", tabs_id, tab_id],
-                f"sdc-t{k + 1}-", counter,
-            )
-            pos[tab_id] = {
+        def tab_node(tab_id: str, title: str, children: list[str], parents: list[str]) -> dict:
+            return {
                 "type": "TAB",
                 "id": tab_id,
-                "children": row_ids,
-                "parents": ["ROOT_ID", "GRID_ID", tabs_id],
-                "meta": {"text": tab.title, "defaultText": "Tab title", "placeholder": "Tab title"},
+                "children": children,
+                "parents": parents,
+                "meta": {"text": title, "defaultText": "Tab title", "placeholder": "Tab title"},
             }
+
+        def content_into(tab, parents: list[str], prefix: str) -> list[str]:
+            into = _sketch_into if tab.sketch else _rows_into
+            return into(pos, tab.parsed_sketch() if tab.sketch else tab.rows, spec, parents, prefix, counter)
+
+        for k, tab in enumerate(spec.layout.tabs or []):
+            tab_id = f"TAB-sdc-{k + 1}"
+            tab_parents = ["ROOT_ID", "GRID_ID", tabs_id]
+            if tab.tabs:
+                # sub-tabs: a TABS node inside this TAB (its own id space, so it can
+                # never collide with the top-level TABS-sdc-1)
+                sub_tabs_id = f"TABS-sdc-t{k + 1}"
+                sub_parents = [*tab_parents, tab_id, sub_tabs_id]
+                sub_ids = []
+                for j, sub in enumerate(tab.tabs):
+                    sub_id = f"TAB-sdc-{k + 1}-{j + 1}"
+                    row_ids = content_into(sub, [*sub_parents, sub_id], f"sdc-t{k + 1}-{j + 1}-")
+                    pos[sub_id] = tab_node(sub_id, sub.title, row_ids, sub_parents)
+                    sub_ids.append(sub_id)
+                pos[sub_tabs_id] = {
+                    "type": "TABS", "id": sub_tabs_id, "children": sub_ids,
+                    "parents": [*tab_parents, tab_id], "meta": {},
+                }
+                children = [sub_tabs_id]
+            else:
+                children = content_into(tab, [*tab_parents, tab_id], f"sdc-t{k + 1}-")
+            pos[tab_id] = tab_node(tab_id, tab.title, children, tab_parents)
             tab_ids.append(tab_id)
         pos[tabs_id] = {
             "type": "TABS",

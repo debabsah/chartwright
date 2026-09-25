@@ -483,17 +483,29 @@ class _SketchHolder(BaseModel):
 
 
 class Tab(_SketchHolder):
+    """A dashboard tab: rows, a sketch, or ``tabs`` (sub-tabs, one level deep, each
+    with rows or a sketch), e.g. a region tab with a sub-tab per row."""
+
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1)
     rows: list[list[RowItem]] | None = None
+    tabs: list["Tab"] | None = Field(
+        default=None, description="Sub-tabs (one level), instead of rows / sketch")
 
     @model_validator(mode="after")
     def _rows_or_sketch(self) -> "Tab":
-        if bool(self.rows) == bool(self.sketch):
-            raise ValueError(f"tab {self.title!r}: provide exactly one of rows / sketch")
+        if sum([bool(self.rows), bool(self.sketch), bool(self.tabs)]) != 1:
+            raise ValueError(f"tab {self.title!r}: provide exactly one of rows / sketch / tabs")
         if self.sketch and not self.legend:
             raise ValueError(f"tab {self.title!r}: a sketch needs a legend")
+        seen: set[str] = set()
+        for sub in self.tabs or []:
+            if sub.tabs:
+                raise ValueError(f"tab {self.title!r} > {sub.title!r}: sub-tabs nest one level only")
+            if sub.title in seen:
+                raise ValueError(f"tab {self.title!r}: duplicate sub-tab title {sub.title!r}")
+            seen.add(sub.title)
         return self
 
 
@@ -553,15 +565,19 @@ class Layout(_SketchHolder):
             seen.add(t.title)
         return self
 
+    def leaf_tabs(self) -> list[Tab]:
+        """The tabs that hold content: each top tab, or its sub-tabs."""
+        return [leaf for tab in (self.tabs or []) for leaf in (tab.tabs or [tab])]
+
     def all_rows(self) -> list[list[RowItem]]:
         if self.rows:
             return self.rows
-        return [row for tab in (self.tabs or []) for row in (tab.rows or [])]
+        return [row for tab in self.leaf_tabs() for row in (tab.rows or [])]
 
     def sketch_holders(self) -> list["_SketchHolder"]:
         if self.sketch:
             return [self]
-        return [t for t in (self.tabs or []) if t.sketch]
+        return [t for t in self.leaf_tabs() if t.sketch]
 
 
 class DashboardSpec(BaseModel):
