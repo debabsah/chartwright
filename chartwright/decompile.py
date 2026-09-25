@@ -424,7 +424,21 @@ def _native_filters_to_spec(
             multi = (nf.get("controlValues") or {}).get("multiSelect", True)
             if multi is False:
                 f["multi"] = False
+            value = ((nf.get("defaultDataMask") or {}).get("filterState") or {}).get("value")
+            if isinstance(value, list) and value:
+                f["default"] = list(value)
+            scoped = nf.get("sdc_scope_charts")
+            if scoped:
+                f["charts"] = list(scoped)
+            elif (nf.get("scope") or {}).get("excluded"):
+                losses.append(Loss(
+                    f"filter:{name}",
+                    "chart scope not preserved (live scopes are numeric slice ids; "
+                    "re-declare `charts` by name in the spec)",
+                ))
             out.append(f)
+            if "default" in f:
+                continue  # default preserved; skip the default-loss check
         elif ftype == "filter_range":
             targets = nf.get("targets") or []
             col = ((targets[0].get("column") or {}).get("name")) if targets else None

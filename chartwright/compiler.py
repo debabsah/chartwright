@@ -512,6 +512,16 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
                 "inverseSelection": False,
                 "searchAllOptions": False,
             }
+            if f.default:
+                # Same contract as the range and time defaults: BOTH halves, or the
+                # pill shows the value while the queries ignore it (or vice versa).
+                base["defaultDataMask"] = {
+                    "extraFormData": {"filters": [{"col": f.column, "op": "IN", "val": list(f.default)}]},
+                    "filterState": {"value": list(f.default), "label": ", ".join(str(v) for v in f.default)},
+                    "ownState": {},
+                }
+            if f.charts:
+                base["sdc_scope_charts"] = list(f.charts)  # name-based; apply's scope stage maps ids
         elif f.type == "range":
             ds = resolution.datasets[f.dataset.key()]
             base["filterType"] = "filter_range"
