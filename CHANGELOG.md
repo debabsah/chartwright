@@ -20,6 +20,9 @@ The design brain, plus the fixes found reviewing it.
 - `"paint": "text"` on a colour rule: colour the text (e.g. an arrow) instead of the cell,
   with darker shades of green / amber / red (each >= 4.5:1 on white; Superset's picker
   colours are pastel backgrounds, unreadable as text).
+- Select filters take `default_to_first` (select the first value on load),
+  `sort_descending` and `required`: with year labels like "2026 (this year)", a
+  Year filter always opens on the latest year, with no literal default to go stale.
 - Pivot totals: `row_totals` (a total per row, as a column at the right, e.g. the
   year beside its months) and `column_totals` (a total row at the bottom).
 - Mixed chart (`"type": "mixed"`, Superset's Mixed Chart): two queries, `a` and

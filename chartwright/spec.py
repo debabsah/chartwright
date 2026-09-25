@@ -405,6 +405,13 @@ class SelectFilter(BaseModel):
     default: list[str | int | float] | None = Field(
         default=None, description="Values selected on load; omit for none",
     )
+    default_to_first: bool = Field(
+        default=False,
+        description="Select the first value on load (Superset's own option; with sort_descending "
+                    "that is the latest of sortable values like '2026 (this year)', so it never goes stale)",
+    )
+    sort_descending: bool = Field(default=False, description="List (and pick the first of) the values Z-A")
+    required: bool = Field(default=False, description="A value must stay selected (no empty filter)")
     charts: list[str] | None = Field(
         default=None,
         description="Chart names this filter governs; omit for all charts",
@@ -414,6 +421,8 @@ class SelectFilter(BaseModel):
     def _default_and_scope(self) -> "SelectFilter":
         if self.default is not None and not self.default:
             raise ValueError(f"select filter {self.name!r}: default must be omitted or non-empty")
+        if self.default and self.default_to_first:
+            raise ValueError(f"select filter {self.name!r}: default and default_to_first are exclusive (Superset allows one)")
         if self.default and not self.multi and len(self.default) > 1:
             raise ValueError(f"select filter {self.name!r}: a single-select default takes one value")
         if self.charts is not None and not self.charts:

@@ -557,11 +557,15 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
             base["targets"] = [{"column": {"name": f.column}, "datasetUuid": ds.uuid}]
             base["controlValues"] = {
                 "multiSelect": f.multi,
-                "defaultToFirstItem": False,
-                "enableEmptyFilter": False,
+                "defaultToFirstItem": f.default_to_first,
+                "enableEmptyFilter": f.required,
                 "inverseSelection": False,
                 "searchAllOptions": False,
             }
+            if f.sort_descending:
+                # the backend orders the values by the column (Select/buildQuery.ts, 6.1.0),
+                # so the first value -- defaultToFirstItem's pick -- is the largest
+                base["controlValues"]["sortAscending"] = False
             if f.default:
                 # Same contract as the range and time defaults: BOTH halves, or the
                 # pill shows the value while the queries ignore it (or vice versa).
