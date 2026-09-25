@@ -20,6 +20,8 @@ The design brain, plus the fixes found reviewing it.
 - `"paint": "text"` on a colour rule: colour the text (e.g. an arrow) instead of the cell,
   with darker shades of green / amber / red (each >= 4.5:1 on white; Superset's picker
   colours are pastel backgrounds, unreadable as text).
+- Pivot totals: `row_totals` (a total per row, as a column at the right, e.g. the
+  year beside its months) and `column_totals` (a total row at the bottom).
 - Mixed chart (`"type": "mixed"`, Superset's Mixed Chart): two queries, `a` and
   `b`, each drawn as bars or a line on the primary or secondary value axis, over
   a time column (`time_grain`) or any column (a categorical axis, e.g. by cause).
