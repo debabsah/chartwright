@@ -100,14 +100,20 @@ def _normalize(spec: DashboardSpec) -> dict:
     elif spec.layout.rows:
         norm_rows(spec.layout.rows, data["layout"]["rows"])
     else:
-        for mtab, dtab in zip(spec.layout.tabs or [], data["layout"].get("tabs") or []):
-            if mtab.sketch:
+        def norm_tab(mtab, dtab) -> None:
+            if mtab.tabs:
+                for msub, dsub in zip(mtab.tabs, dtab.get("tabs") or []):
+                    norm_tab(msub, dsub)
+            elif mtab.sketch:
                 dtab.pop("sketch", None)
                 dtab.pop("legend", None)
                 dtab["rows"] = sketch_as_rows(mtab)
             else:
                 norm_rows(mtab.rows, dtab["rows"])
             dtab.pop("line", None)
+
+        for mtab, dtab in zip(spec.layout.tabs or [], data["layout"].get("tabs") or []):
+            norm_tab(mtab, dtab)
     # `line` is sketch drawing config (units per sketch line), not geometry;
     # its non-None default survives the dump and would false-drift a sketch
     # spec against its rows-form live state.

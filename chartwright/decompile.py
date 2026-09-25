@@ -546,6 +546,11 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
     return rows
 
 
+def _leaf_tabs(layout: dict) -> list[dict]:
+    """The spec-layout tabs that hold rows: each top tab, or its sub-tabs."""
+    return [leaf for tab in layout.get("tabs") or [] for leaf in (tab.get("tabs") or [tab])]
+
+
 def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult:
     losses: list[Loss] = []
     zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
@@ -588,11 +593,29 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
         for tabs_id in grid_children:
             for tab_id in (position.get(tabs_id) or {}).get("children", []):
                 tab_node = position.get(tab_id) or {}
-                tab_rows = _walk_rows(position, tab_node.get("children", []), kept, losses, geometry)
+                tab_title = (tab_node.get("meta") or {}).get("text") or "Tab"
+                kids = tab_node.get("children", [])
+                if kids and all((position.get(c) or {}).get("type") == "TABS" for c in kids):
+                    subs = []
+                    for sub_tabs_id in kids:
+                        for sub_id in (position.get(sub_tabs_id) or {}).get("children", []):
+                            sub_node = position.get(sub_id) or {}
+                            sub_title = (sub_node.get("meta") or {}).get("text") or "Tab"
+                            sub_rows = _walk_rows(position, sub_node.get("children", []), kept, losses, geometry)
+                            if sub_rows:
+                                subs.append({"title": sub_title, "rows": sub_rows})
+                            else:
+                                losses.append(Loss("layout", f"tab {tab_title!r} > {sub_title!r} had no representable content; dropped"))
+                    if subs:
+                        tabs.append({"title": tab_title, "tabs": subs})
+                    else:
+                        losses.append(Loss("layout", f"tab {tab_title!r} had no representable content; dropped"))
+                    continue
+                tab_rows = _walk_rows(position, kids, kept, losses, geometry)
                 if tab_rows:
-                    tabs.append({"title": (tab_node.get("meta") or {}).get("text") or "Tab", "rows": tab_rows})
+                    tabs.append({"title": tab_title, "rows": tab_rows})
                 else:
-                    losses.append(Loss("layout", f"tab {(tab_node.get('meta') or {}).get('text')!r} had no representable content; dropped"))
+                    losses.append(Loss("layout", f"tab {tab_title!r} had no representable content; dropped"))
         layout = {"tabs": tabs} if tabs else {"rows": []}
     else:
         if "TABS" in top_types:
@@ -600,9 +623,9 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
         rows = _walk_rows(position, grid_children, kept, losses, geometry)
         layout = {"rows": rows}
 
-    all_rows = layout.get("rows") if "rows" in layout else [r for t in layout["tabs"] for r in t["rows"]]
+    all_rows = layout.get("rows") if "rows" in layout else [r for leaf in _leaf_tabs(layout) for r in leaf["rows"]]
     placed = {x for row in (all_rows or []) for x in row if isinstance(x, str)}
-    unplaced_target = layout.get("rows") if "rows" in layout else (layout["tabs"][0]["rows"] if layout.get("tabs") else None)
+    unplaced_target = layout.get("rows") if "rows" in layout else (_leaf_tabs(layout)[0]["rows"] if layout.get("tabs") else None)
     for name in sorted(kept - placed):
         losses.append(Loss("layout", f"chart {name!r} not found in layout; appended as its own row"))
         if unplaced_target is None:
@@ -629,7 +652,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             return charts_by_name.get(item, {}).get("width") or 0
         return item.get("width") or 0
 
-    all_rows = layout.get("rows") if "rows" in layout else [r for t in layout["tabs"] for r in t["rows"]]
+    all_rows = layout.get("rows") if "rows" in layout else [r for leaf in _leaf_tabs(layout) for r in leaf["rows"]]
     for i, row in enumerate(all_rows or []):
         total = sum(width_of(x) for x in row)
         if total > 12:

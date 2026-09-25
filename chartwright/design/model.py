@@ -277,10 +277,12 @@ def _normalize(spec: DashboardSpec) -> list[Section]:
         return [Section(None, "sketch", _bands_from_sketch(spec, lay))]
     sections = []
     for tab in lay.tabs or []:
-        if tab.rows:
-            sections.append(Section(tab.title, "rows", _bands_from_rows(spec, tab.rows)))
-        else:
-            sections.append(Section(tab.title, "sketch", _bands_from_sketch(spec, tab)))
+        for leaf in tab.tabs or [tab]:
+            title = tab.title if leaf is tab else f"{tab.title} > {leaf.title}"
+            if leaf.rows:
+                sections.append(Section(title, "rows", _bands_from_rows(spec, leaf.rows)))
+            else:
+                sections.append(Section(title, "sketch", _bands_from_sketch(spec, leaf)))
     return sections
 
 
