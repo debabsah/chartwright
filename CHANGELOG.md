@@ -20,6 +20,9 @@ The design brain, plus the fixes found reviewing it.
 - `"paint": "text"` on a colour rule: colour the text (e.g. an arrow) instead of the cell,
   with darker shades of green / amber / red (each >= 4.5:1 on white; Superset's picker
   colours are pastel backgrounds, unreadable as text).
+- Select filters take a `default` (values selected on load, e.g. a relative
+  "This year" that stays right after 1 January) and `charts` (scope the filter to
+  named charts, resolved to slice ids at apply, as on range filters).
 - `number_format` on timeseries and categorical bar charts (the value axis;
   it was hard-coded to Superset's smart number, so a rate read `0.9760`, not `97.6%`).
 

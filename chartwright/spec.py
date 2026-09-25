@@ -355,7 +355,12 @@ CHART_TYPES = (
 
 
 class SelectFilter(BaseModel):
-    """Native filter bar: value picker over one dataset column."""
+    """Native filter bar: value picker over one dataset column.
+
+    ``default`` pre-selects values on load (viewers can still change them); a
+    relative value such as "This year" keeps a default right as time passes, where
+    a literal year would go stale. ``charts`` scopes the filter to the named charts
+    only (default: every chart), resolved to slice ids after import, as on range."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -364,6 +369,23 @@ class SelectFilter(BaseModel):
     dataset: DatasetRef
     column: str
     multi: bool = True
+    default: list[str | int | float] | None = Field(
+        default=None, description="Values selected on load; omit for none",
+    )
+    charts: list[str] | None = Field(
+        default=None,
+        description="Chart names this filter governs; omit for all charts",
+    )
+
+    @model_validator(mode="after")
+    def _default_and_scope(self) -> "SelectFilter":
+        if self.default is not None and not self.default:
+            raise ValueError(f"select filter {self.name!r}: default must be omitted or non-empty")
+        if self.default and not self.multi and len(self.default) > 1:
+            raise ValueError(f"select filter {self.name!r}: a single-select default takes one value")
+        if self.charts is not None and not self.charts:
+            raise ValueError(f"select filter {self.name!r}: charts must be omitted or non-empty")
+        return self
 
 
 class TimeRangeFilter(BaseModel):
