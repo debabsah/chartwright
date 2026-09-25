@@ -236,6 +236,29 @@
       ],
       "row_limit": 100,
       "sort_by": "SUM(sales)"
+    },
+    {
+      "name": "Sales and Price by Month",
+      "type": "mixed",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "x_column": "order_date",
+      "time_grain": "P1M",
+      "a": {
+        "metrics": [
+          "SUM(sales)"
+        ]
+      },
+      "b": {
+        "metrics": [
+          "AVG(price_each)"
+        ],
+        "kind": "line",
+        "axis": "secondary"
+      },
+      "number_format_secondary": ",.2f"
     }
   ],
   "layout": {
@@ -284,6 +307,9 @@
           ],
           [
             "Order Detail"
+          ],
+          [
+            "Sales and Price by Month"
           ]
         ]
       }

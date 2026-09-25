@@ -21,7 +21,7 @@ DESIGN_BRAIN_VERSION = "3"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
-AXIS_TYPES = TIMESERIES_TYPES | {"bar", "heatmap", "histogram"}
+AXIS_TYPES = TIMESERIES_TYPES | {"bar", "heatmap", "histogram", "mixed"}
 # Charts that are neither KPI nor axis-bearing; a contract test asserts the
 # three sets exactly cover CHART_TYPES, so a 15th chart type fails CI until
 # someone consciously classifies it (and reviews which rules apply).

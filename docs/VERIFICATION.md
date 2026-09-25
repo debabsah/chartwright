@@ -34,7 +34,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (290 tests, 32 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows |
+| Offline suite (295 tests, 33 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every push |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every push, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every push |
@@ -61,7 +61,7 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   identical bundle on any build platform.
 - **Lossless round-trips** (`test_decompile.py`): decompiling a compiled
   spec reproduces that spec exactly, across the full surface (15 charts
-  covering all 14 chart types, chart filters, the native filter bar,
+  covering all 15 chart types, chart filters, the native filter bar,
   markdown, tabs), and stays stable under a second round-trip. Decompiling
   a real 25-chart export that uses unsupported chart types names every
   loss; nothing drops silently.
@@ -107,7 +107,7 @@ a runtime surprise.
 Runs against a real instance, start to finish. First, pre-flight
 resolution, which collects every bad reference into typed errors. Then an
 apply of the complete example spec (`tests/fixtures/kitchen_sink.json`),
-which exercises all 14 chart types, per-chart WHERE filters, a native
+which exercises all 15 chart types, per-chart WHERE filters, a native
 filter bar with a value picker, a time range, and a numeric range scoped to
 specific charts, plus markdown and tabs. Then a per-chart data check: each
 chart's query must return HTTP 200 and rows; an empty chart is a named

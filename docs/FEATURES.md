@@ -16,7 +16,7 @@ into one. Everything below works from that one file.
 
 ## Dashboard Design
 - **Deterministic Dashboards**: The same spec always produces the identical dashboard. Diff it in git, review it in a PR.
-- **14 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap.
+- **15 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, and mixed (bars and a line on two value axes, over time or over categories).
 - **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`).
 - **Filters and Formatting**: Per-chart WHERE conditions, a native filter bar (value pickers, a time range with an optional starting range, numeric sliders, each scopable to specific charts), solid green/amber/red rules on pivot and table cells (a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it; Superset 6.1+), hidden table columns, a fixed ascending table sort, d3 number and date formats.
 - **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs.

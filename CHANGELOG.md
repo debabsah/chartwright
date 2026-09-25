@@ -20,6 +20,11 @@ The design brain, plus the fixes found reviewing it.
 - `"paint": "text"` on a colour rule: colour the text (e.g. an arrow) instead of the cell,
   with darker shades of green / amber / red (each >= 4.5:1 on white; Superset's picker
   colours are pastel backgrounds, unreadable as text).
+- Mixed chart (`"type": "mixed"`, Superset's Mixed Chart): two queries, `a` and
+  `b`, each drawn as bars or a line on the primary or secondary value axis, over
+  a time column (`time_grain`) or any column (a categorical axis, e.g. by cause).
+  Compiled, decompiled, smoke-queried (both queries) and in the params contract
+  for all three releases.
 - Sub-tabs: a tab can hold `tabs` (one level deep, each with rows or a sketch)
   instead of rows, compiled as Superset's tabs-inside-a-tab and decompiled back.
 - Select filters take a `default` (values selected on load, e.g. a relative

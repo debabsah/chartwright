@@ -20,7 +20,7 @@ DEFAULT_ROW_LIMIT = {
     "timeseries_line": 10000, "timeseries_bar": 10000, "timeseries_area": 10000,
     "timeseries_scatter": 10000, "bar": 10000, "pie": 100, "table": 1000,
     "pivot_table": 10000, "heatmap": 10000, "histogram": 10000, "funnel": 10,
-    "treemap": 100,
+    "treemap": 100, "mixed": 10000,
 }
 DEFAULT_TIME_GRAIN = "P1D"
 
@@ -338,11 +338,41 @@ class TreemapChart(_ChartBase):
     row_limit: int | None = Field(default=None, ge=1)
 
 
+class MixedSeries(BaseModel):
+    """One of a mixed chart's two queries: its metrics, drawn as bars or a line, on
+    the primary (left) or secondary (right) value axis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metrics: list[str] = Field(min_length=1)
+    kind: Literal["bar", "line"] = "bar"
+    axis: Literal["primary", "secondary"] = "primary"
+    groupby: str | None = Field(default=None, description="At most one dimension column")
+
+
+class MixedChart(_ChartBase):
+    """Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue
+    as bars with revenue per order as a line. ``x_column`` is a time column (bucketed
+    by ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and
+    ``b`` are the two queries; the chart's own ``filters`` apply to both."""
+
+    type: Literal["mixed"]
+    x_column: str
+    time_grain: str | None = Field(default=None, description="ISO 8601 duration for a time x axis, e.g. P1M")
+    time_range: str | None = Field(default=None, description='Superset time range; defaults to "No filter"')
+    a: MixedSeries
+    b: MixedSeries
+    row_limit: int | None = Field(default=None, ge=1)
+    number_format: str | None = Field(default=None, description="d3 format for the primary axis")
+    number_format_secondary: str | None = Field(default=None, description="d3 format for the secondary axis")
+
+
 Chart = Annotated[
     Union[
         BigNumberChart, BigNumberTrendChart, TimeseriesLineChart, TimeseriesBarChart,
         TimeseriesAreaChart, TimeseriesScatterChart, BarChart, PieChart, TableChart,
         PivotTableChart, HeatmapChart, HistogramChart, FunnelChart, TreemapChart,
+        MixedChart,
     ],
     Field(discriminator="type"),
 ]
@@ -350,7 +380,7 @@ Chart = Annotated[
 CHART_TYPES = (
     "big_number_total", "big_number_trend", "timeseries_line", "timeseries_bar",
     "timeseries_area", "timeseries_scatter", "bar", "pie", "table", "pivot_table",
-    "heatmap", "histogram", "funnel", "treemap",
+    "heatmap", "histogram", "funnel", "treemap", "mixed",
 )
 
 

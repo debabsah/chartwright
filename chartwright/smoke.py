@@ -135,11 +135,29 @@ def _query_for(chart, spec: DashboardSpec) -> dict:
     return q
 
 
+def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
+    """Query A and query B, as MixedTimeseries/buildQuery.ts sends them."""
+    x = (_time_axis(chart.x_column, chart.time_grain)
+         if chart.time_grain or ds.is_temporal(chart.x_column) else chart.x_column)
+    out = []
+    for series in (chart.a, chart.b):
+        out.append({
+            "filters": _filters_payload(chart),
+            "extras": {"time_grain_sqla": chart.time_grain or "P1D"},
+            "time_range": chart.time_range or "No filter",
+            "row_limit": chart.row_limit or 1000,
+            "columns": [x] + ([series.groupby] if series.groupby else []),
+            "metrics": [_metric_payload(m, spec.dashboard.slug, chart.name) for m in series.metrics],
+            "orderby": [],
+        })
+    return out
+
+
 def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: SupersetClient) -> SmokeResult:
     ds = resolution.for_chart(chart.dataset)
     ctx = {
         "datasource": {"id": ds.id, "type": "table"},
-        "queries": [_query_for(chart, spec)],
+        "queries": _mixed_queries(chart, spec, ds) if chart.type == "mixed" else [_query_for(chart, spec)],
         "result_format": "json",
         "result_type": "full",
     }
