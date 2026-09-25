@@ -25,6 +25,10 @@ The design brain, plus the fixes found reviewing it.
 
 ### Fixed
 
+- Changing a chart's dataset in the spec didn't land on re-apply: the in-place
+  update sent the new params only, so Superset kept the chart on its old dataset
+  (`datasource_id`) while its params pointed at the new one, and `plan` reported the
+  chart as changed forever. The update now moves the chart onto its spec dataset.
 - A chart, dataset or dashboard name containing `&` (e.g. "Sales & Marketing")
   failed every lookup with HTTP 400 "Not a valid rison/json argument", which
   aborted `apply` at prepare. Flask-AppBuilder's JSON fallback for `q` re-parses
