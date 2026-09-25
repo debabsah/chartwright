@@ -27,6 +27,32 @@ def test_select_default_fills_both_halves_and_scope_marker():
     assert nf["sdc_scope_charts"] == ["A", "B"]
 
 
+def test_select_first_value_descending_required():
+    (nf,) = _native_filter_config(_spec([
+        {"type": "select", "name": "Year", "dataset": DS, "column": "year_label", "multi": False,
+         "default_to_first": True, "sort_descending": True, "required": True},
+    ]))
+    cv = nf["controlValues"]
+    assert cv["defaultToFirstItem"] is True and cv["enableEmptyFilter"] is True
+    assert cv["sortAscending"] is False
+    assert nf["defaultDataMask"] == {"extraFormData": {}, "filterState": {}, "ownState": {}}
+    with pytest.raises(ValidationError):
+        _spec([{"type": "select", "name": "Y", "dataset": DS, "column": "c",
+                "default": ["a"], "default_to_first": True}])
+
+
+def test_decompile_first_value_descending_required():
+    spec = _spec([{"type": "select", "name": "Year", "dataset": DS, "column": "year_label", "multi": False,
+                   "default_to_first": True, "sort_descending": True, "required": True}])
+    bundle = compile_bundle(spec, stub_resolution(spec))
+    ds = stub_resolution(spec).for_chart(spec.charts[0].dataset)
+    result = decompile_bundle(bundle, lambda u: {"database": "examples", "schema": None, "table": "t"}
+                              if u == ds.uuid else None)
+    assert result.losses == [], result.losses_json()
+    (f,) = result.spec["filters"]
+    assert f["default_to_first"] is True and f["sort_descending"] is True and f["required"] is True
+
+
 def test_select_without_default_keeps_empty_mask():
     (nf,) = _native_filter_config(_spec([
         {"type": "select", "name": "Class", "dataset": DS, "column": "event_class"},

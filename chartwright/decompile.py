@@ -468,9 +468,16 @@ def _native_filters_to_spec(
             if filter_uuids is not None:
                 filter_uuids[f"filter:{name}"] = str(ds_uuid)
             f: dict = {"type": "select", "name": name, "dataset": ds, "column": col}
-            multi = (nf.get("controlValues") or {}).get("multiSelect", True)
+            cv = nf.get("controlValues") or {}
+            multi = cv.get("multiSelect", True)
             if multi is False:
                 f["multi"] = False
+            if cv.get("defaultToFirstItem"):
+                f["default_to_first"] = True
+            if cv.get("sortAscending") is False:
+                f["sort_descending"] = True
+            if cv.get("enableEmptyFilter"):
+                f["required"] = True
             value = ((nf.get("defaultDataMask") or {}).get("filterState") or {}).get("value")
             if isinstance(value, list) and value:
                 f["default"] = list(value)
