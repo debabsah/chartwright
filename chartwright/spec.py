@@ -46,8 +46,10 @@ def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS) ->
 ADHOC_AGGREGATES = ("SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX")
 _ADHOC_RE = re.compile(r"^(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((.+?)\)(?:\s+AS\s+(.+))?$")
 
-# The RAG hexes Superset's own conditional-formatting picker offers.
+# The RAG hexes Superset's own conditional-formatting picker offers (cell backgrounds).
 FORMAT_COLOR_HEX = {"green": "#ACE1C4", "amber": "#FDE380", "red": "#EFA1AA"}
+# Text needs darker shades of the same three: each is >= 4.5:1 on white (WCAG AA).
+FORMAT_TEXT_HEX = {"green": "#1B7F3B", "amber": "#8A6100", "red": "#B3261E"}
 
 FilterOp = Literal["==", "!=", ">", ">=", "<", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL"]
 _LIST_OPS = ("IN", "NOT IN")
@@ -211,6 +213,8 @@ class FormatRule(BaseModel):
         default=None,
         description="Table only: the label of the column to paint, or \"row\"; default the metric's own cells",
     )
+    paint: Literal["cell", "text"] = Field(
+        default="cell", description="Paint the cell background (default) or the text, e.g. an arrow")
 
     @model_validator(mode="after")
     def _target_shape(self) -> "FormatRule":

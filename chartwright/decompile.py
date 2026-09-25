@@ -17,7 +17,7 @@ from typing import Callable, get_args
 import yaml
 
 from .compiler import ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, VIZ_TYPE
-from .spec import ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FilterOp
+from .spec import ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FilterOp
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
 _FILTER_OPS = set(get_args(FilterOp))
@@ -78,15 +78,19 @@ DatasetLookup = Callable[[str], dict | None]
 
 def _format_to_spec(cf: dict) -> dict | None:
     """Superset conditional_formatting entry -> FormatRule dict, None if outside surface."""
-    color = {v.upper(): k for k, v in FORMAT_COLOR_HEX.items()}.get((cf.get("colorScheme") or "").upper())
+    text = cf.get("objectFormatting") == "TEXT_COLOR"
+    palette = FORMAT_TEXT_HEX if text else FORMAT_COLOR_HEX
+    color = {v.upper(): k for k, v in palette.items()}.get((cf.get("colorScheme") or "").upper())
     # '< x <' is Superset's range comparator; the bare "between" older
     # chartwright builds wrote (and Superset never matched) reads back the same.
     op = {"< x <": "between"}.get(cf.get("operator"), cf.get("operator"))
     if not color or not cf.get("column") or op not in ("<", ">", "=", "between"):
         return None
-    if cf.get("toTextColor") or cf.get("objectFormatting") not in (None, "BACKGROUND_COLOR"):
-        return None  # text colour / cell bars: outside the surface
+    if cf.get("toTextColor") or cf.get("objectFormatting") not in (None, "BACKGROUND_COLOR", "TEXT_COLOR"):
+        return None  # legacy text flag / cell bars: outside the surface
     rule: dict = {"metric": cf["column"], "operator": op, "color": color}
+    if text:
+        rule["paint"] = "text"
     target_col = cf.get("columnFormatting") or ("ENTIRE_ROW" if cf.get("toAllRow") else None)
     if target_col:
         rule["apply_to"] = "row" if target_col == "ENTIRE_ROW" else target_col
