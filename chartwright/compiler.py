@@ -21,6 +21,7 @@ from .spec import (
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
     FORMAT_COLOR_HEX,
+    FORMAT_TEXT_HEX,
     DashboardSpec,
     MarkdownBlock,
     parse_metric,
@@ -93,7 +94,7 @@ FORMAT_OPERATOR = {"<": "<", ">": ">", "=": "=", "between": "< x <"}
 def _format_rule_payload(rule) -> dict:
     out = {
         "column": rule.metric,
-        "colorScheme": FORMAT_COLOR_HEX[rule.color],
+        "colorScheme": (FORMAT_TEXT_HEX if rule.paint == "text" else FORMAT_COLOR_HEX)[rule.color],
         "operator": FORMAT_OPERATOR[rule.operator],
         # A rule is a solid band. Left unset, Superset fades '<' / '>' / range
         # colours by distance from the threshold (getColorFormatters.getOpacity);
@@ -105,6 +106,8 @@ def _format_rule_payload(rule) -> dict:
         out["targetValueRight"] = rule.target_right
     else:
         out["targetValue"] = rule.target
+    if rule.paint == "text":
+        out["objectFormatting"] = "TEXT_COLOR"
     if rule.apply_to:
         # The 6.1 table's "apply to": another column's key, or the whole row
         # (TableChart.tsx reads columnFormatting; ObjectFormattingEnum.ENTIRE_ROW).

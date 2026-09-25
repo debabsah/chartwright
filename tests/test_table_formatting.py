@@ -85,6 +85,21 @@ def test_decompile_outside_surface():
     assert _format_to_spec({**base, "objectFormatting": "CELL_BAR"}) is None
 
 
+def test_text_paint_uses_the_dark_palette_and_round_trips():
+    rule = {"metric": "dir", "operator": "=", "target": -1, "color": "green", "apply_to": "Trend",
+            "paint": "text"}
+    chart = aggregate(metrics=["MAX(txt) AS Trend", "MAX(d) AS dir"], hidden=["dir"],
+                      conditional_formatting=[rule])
+    p = params_for(chart)
+    assert p["conditional_formatting"] == [{
+        "column": "dir", "colorScheme": "#1B7F3B", "operator": "=", "targetValue": -1.0,
+        "useGradient": False, "objectFormatting": "TEXT_COLOR", "columnFormatting": "Trend"}]
+    spec = mk(chart)
+    result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _lookup(spec))
+    assert result.losses == [], result.losses_json()
+    assert _normalize(load_spec(result.spec))["charts"] == _normalize(spec)["charts"]
+
+
 def test_axis_number_format_round_trips():
     from test_table_sort import DS
     for chart in (
