@@ -69,6 +69,13 @@ def test_plain_pivot_emits_no_new_keys():
     assert "combineMetric" not in p
     assert "date_format" not in p
     assert "conditional_formatting" not in p
+    assert "rowTotals" not in p and "colTotals" not in p
+
+
+def test_pivot_totals_emission():
+    p = _params(_pivot_spec(row_totals=True, column_totals=True, date_format="%b"))
+    assert p["rowTotals"] is True and p["colTotals"] is True
+    assert p["date_format"] == "%b"
 
 
 def test_pivot_formatting_emission():

@@ -174,7 +174,8 @@
       "metrics": [
         "SUM(sales)"
       ],
-      "row_limit": 500
+      "row_limit": 500,
+      "row_totals": true
     },
     {
       "name": "Product Line Heat",

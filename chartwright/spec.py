@@ -290,6 +290,9 @@ class PivotTableChart(_ChartBase):
         default=None,
         description="strftime for temporal pivot headers, e.g. '%m/%d/%y'",
     )
+    row_totals: bool = Field(
+        default=False, description="A total per row, as a column at the right (e.g. the year beside its months)")
+    column_totals: bool = Field(default=False, description="A total per column, as a row at the bottom")
     conditional_formatting: list[FormatRule] = Field(default_factory=list)
 
     @model_validator(mode="after")
