@@ -37,7 +37,7 @@ def test_round_trip_tool_born_bundle():
 
 
 def test_round_trip_kitchen_sink():
-    """The full surface (14 chart types, chart filters, native filters,
+    """The full surface (15 chart types, chart filters, native filters,
     markdown, tabs) must survive compile->decompile losslessly."""
     original = load_spec(json.loads((FIXTURES / "kitchen_sink.json").read_text()))
     bundle = compile_bundle(original, stub_resolution(original))

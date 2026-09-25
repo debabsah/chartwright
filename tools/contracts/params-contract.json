@@ -473,6 +473,26 @@
    "show_labels",
    "show_upper_labels",
    "sort_by_metric"
+  ],
+  "mixed_timeseries": [
+   "adhoc_filters",
+   "adhoc_filters_b",
+   "groupby",
+   "groupby_b",
+   "metrics",
+   "metrics_b",
+   "rich_tooltip",
+   "row_limit",
+   "row_limit_b",
+   "seriesType",
+   "seriesTypeB",
+   "show_legend",
+   "time_grain_sqla",
+   "x_axis",
+   "yAxisIndex",
+   "yAxisIndexB",
+   "y_axis_format",
+   "y_axis_format_secondary"
   ]
  },
  "5.0.0": {
@@ -953,6 +973,26 @@
    "show_labels",
    "show_upper_labels",
    "sort_by_metric"
+  ],
+  "mixed_timeseries": [
+   "adhoc_filters",
+   "adhoc_filters_b",
+   "groupby",
+   "groupby_b",
+   "metrics",
+   "metrics_b",
+   "rich_tooltip",
+   "row_limit",
+   "row_limit_b",
+   "seriesType",
+   "seriesTypeB",
+   "show_legend",
+   "time_grain_sqla",
+   "x_axis",
+   "yAxisIndex",
+   "yAxisIndexB",
+   "y_axis_format",
+   "y_axis_format_secondary"
   ]
  },
  "6.1.0": {
@@ -1484,6 +1524,26 @@
    "show_labels",
    "show_upper_labels",
    "sort_by_metric"
+  ],
+  "mixed_timeseries": [
+   "adhoc_filters",
+   "adhoc_filters_b",
+   "groupby",
+   "groupby_b",
+   "metrics",
+   "metrics_b",
+   "rich_tooltip",
+   "row_limit",
+   "row_limit_b",
+   "seriesType",
+   "seriesTypeB",
+   "show_legend",
+   "time_grain_sqla",
+   "x_axis",
+   "yAxisIndex",
+   "yAxisIndexB",
+   "y_axis_format",
+   "y_axis_format_secondary"
   ]
  }
 }

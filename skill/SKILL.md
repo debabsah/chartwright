@@ -35,9 +35,10 @@ approximate it with a different mechanism.
 
 ## Procedure
 
-1. `CW schema`: read the contract. Surface: 14 chart types (big numbers,
+1. `CW schema`: read the contract. Surface: 15 chart types (big numbers,
    timeseries line/bar/area/scatter, categorical bar, pie/donut, table,
-   pivot_table, heatmap, histogram, funnel, treemap), per-chart `filters`
+   pivot_table, heatmap, histogram, funnel, treemap, mixed: bars + a line on
+   two axes), per-chart `filters`
    (WHERE), dashboard-level `filters` (select + time_range native filter bar,
    time_range with an optional `default`), layout as `rows`, `tabs`, or an
    ASCII `sketch` with a `legend`, markdown blocks in rows, an optional

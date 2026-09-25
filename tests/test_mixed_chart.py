@@ -1,0 +1,112 @@
+"""Mixed chart (mixed_timeseries): bars and a line on two axes, on a time or a
+categorical x axis. Key names follow MixedTimeseries/controlPanel.tsx at 4.1.4,
+5.0.0 and 6.1.0: query B's query keys take '_b', its display keys 'B'."""
+
+import io
+import zipfile
+
+import yaml
+
+from chartwright.compiler import compile_bundle
+from chartwright.decompile import decompile_bundle
+from chartwright.dashdiff import _normalize
+from chartwright.resolver import Resolution, _check_chart_fields
+from chartwright.smoke import _mixed_queries
+from chartwright.spec import load_spec
+from chartwright.testing import stub_resolution
+
+DS = {"database": "examples", "table": "t"}
+BY_MONTH = {
+    "name": "Revenue and revenue per order", "type": "mixed", "dataset": DS,
+    "x_column": "month_start", "time_grain": "P1M",
+    "a": {"metrics": ["SUM(revenue)"]},
+    "b": {"metrics": ["MAX(revenue_per_order)"], "kind": "line", "axis": "secondary"},
+    "number_format_secondary": ".3f",
+    "filters": [{"column": "event_type", "op": "==", "value": "Online"}],
+}
+BY_CAUSE = {
+    "name": "Categories: count and revenue", "type": "mixed", "dataset": DS,
+    "x_column": "category",
+    "a": {"metrics": ["COUNT(*)"]},
+    "b": {"metrics": ["SUM(revenue)"], "kind": "line", "axis": "secondary"},
+}
+
+
+def _spec(*charts):
+    return load_spec({
+        "spec_version": "1",
+        "dashboard": {"title": "T", "slug": "sdc-t"},
+        "charts": list(charts),
+        "layout": {"rows": [[c["name"]] for c in charts]},
+    })
+
+
+def _params(spec, res=None):
+    zf = zipfile.ZipFile(io.BytesIO(compile_bundle(spec, res or stub_resolution(spec))))
+    out = {}
+    for n in zf.namelist():
+        if "/charts/" in n:
+            cy = yaml.safe_load(zf.read(n))
+            out[cy["slice_name"]] = (cy["viz_type"], cy["params"])
+    return out
+
+
+def test_compile_time_axis_mixed():
+    viz, p = _params(_spec(BY_MONTH))["Revenue and revenue per order"]
+    assert viz == "mixed_timeseries"
+    assert p["x_axis"] == "month_start" and p["time_grain_sqla"] == "P1M"
+    assert [m["label"] for m in p["metrics"]] == ["SUM(revenue)"]
+    assert [m["label"] for m in p["metrics_b"]] == ["MAX(revenue_per_order)"]
+    assert (p["seriesType"], p["seriesTypeB"]) == ("bar", "line")
+    assert (p["yAxisIndex"], p["yAxisIndexB"]) == (0, 1)
+    assert p["y_axis_format"] == "SMART_NUMBER" and p["y_axis_format_secondary"] == ".3f"
+    assert p["adhoc_filters"] == p["adhoc_filters_b"] and len(p["adhoc_filters"]) == 1
+    assert p["groupby"] == [] and p["groupby_b"] == []
+
+
+def test_categorical_mixed_has_no_grain_and_binds_the_dataset_time():
+    spec = _spec(BY_CAUSE, BY_MONTH)
+    res = stub_resolution(spec)
+    for ds in res.datasets.values():
+        ds.main_dttm_col = "event_date"
+    params = _params(spec, res)
+    _, cause = params["Categories: count and revenue"]
+    assert "time_grain_sqla" not in cause
+    assert cause["granularity_sqla"] == "event_date"  # dashboard time filters still reach it
+    _, month = params["Revenue and revenue per order"]
+    assert "granularity_sqla" not in month  # its own x axis is the time binding
+
+
+def test_decompile_round_trips_both_forms():
+    spec = _spec(BY_MONTH, BY_CAUSE)
+    bundle = compile_bundle(spec, stub_resolution(spec))
+    ds = stub_resolution(spec).for_chart(spec.charts[0].dataset)
+    result = decompile_bundle(bundle, lambda u: {"database": "examples", "schema": None, "table": "t"}
+                              if u == ds.uuid else None)
+    assert result.losses == [], result.losses_json()
+    assert _normalize(load_spec(result.spec)) == _normalize(spec)
+
+
+def test_smoke_sends_both_queries():
+    spec = _spec(BY_MONTH, BY_CAUSE)
+    res = stub_resolution(spec)
+    ds = res.for_chart(spec.charts[0].dataset)
+    month = next(c for c in spec.charts if c.name.startswith("Revenue"))
+    qa, qb = _mixed_queries(month, spec, ds)
+    assert qa["columns"][0]["columnType"] == "BASE_AXIS"  # time axis, bucketed
+    assert [m["label"] for m in qa["metrics"]] == ["SUM(revenue)"]
+    assert [m["label"] for m in qb["metrics"]] == ["MAX(revenue_per_order)"]
+    assert qa["filters"] == qb["filters"] and qa["filters"]
+    cause = next(c for c in spec.charts if c.name.startswith("Categories"))
+    qa, qb = _mixed_queries(cause, spec, ds)
+    assert qa["columns"] == ["category"] and qb["columns"] == ["category"]
+
+
+def test_resolver_checks_both_queries():
+    spec = _spec({**BY_CAUSE, "b": {"metrics": ["SUM(nope)"], "groupby": "missing"}})
+    ds = stub_resolution(spec).for_chart(spec.charts[0].dataset)
+    ds.columns = ["category", "revenue"]
+    res = Resolution()
+    _check_chart_fields(spec.charts[0], ds, res)
+    assert {e.code for e in res.errors} == {"column_not_found"}
+    assert any("missing" in e.ref for e in res.errors)

@@ -179,6 +179,13 @@ def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
         _check_column(chart.x_column, chart.name, ds, res, "x_column")
         if chart.groupby:
             _check_column(chart.groupby, chart.name, ds, res, "groupby")
+    elif t == "mixed":
+        _check_column(chart.x_column, chart.name, ds, res, "x_column")
+        for series in (chart.a, chart.b):
+            for m in series.metrics:
+                _check_metric(m, chart.name, ds, res)
+            if series.groupby:
+                _check_column(series.groupby, chart.name, ds, res, "groupby")
     elif t == "pie":
         _check_metric(chart.metric, chart.name, ds, res)
         _check_column(chart.groupby, chart.name, ds, res, "groupby")

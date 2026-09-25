@@ -50,6 +50,7 @@ VIZ_TYPE = {
     "histogram": "histogram_v2",
     "funnel": "funnel",
     "treemap": "treemap_v2",
+    "mixed": "mixed_timeseries",
 }
 # 'bar' and 'timeseries_bar' share a viz_type; the compiler marks categorical
 # bars in params so the decompiler can tell them apart (x column not temporal
@@ -214,6 +215,30 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         if chart.orientation == "horizontal":
             p["orientation"] = "horizontal"
         p[SDC_BAR_MARKER] = True
+    elif t == "mixed":
+        # Query A carries no suffix and query B '_b' (metrics_b, groupby_b, ...); the
+        # display controls take 'B' (seriesTypeB, yAxisIndexB): MixedTimeseries
+        # controlPanel.tsx createQuerySection(..., '_b') / createCustomizeSection(..., 'B')
+        # at 4.1.4, 5.0.0 and 6.1.0. A non-temporal x column gets a category axis
+        # (utils/series.ts getAxisType), so a count-and-minutes chart by cause works.
+        p["x_axis"] = chart.x_column
+        if chart.time_grain or ds.is_temporal(chart.x_column):
+            p["time_grain_sqla"] = chart.time_grain or DEFAULT_TIME_GRAIN
+        if chart.time_range:
+            p["time_range"] = chart.time_range
+        for suffix, series in (("", chart.a), ("_b", chart.b)):
+            p[f"metrics{suffix}"] = [metric(m) for m in series.metrics]
+            p[f"groupby{suffix}"] = [series.groupby] if series.groupby else []
+            p[f"row_limit{suffix}"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
+        p["adhoc_filters_b"] = _adhoc_filters(chart)
+        p["seriesType"] = chart.a.kind
+        p["seriesTypeB"] = chart.b.kind
+        p["yAxisIndex"] = 0 if chart.a.axis == "primary" else 1
+        p["yAxisIndexB"] = 0 if chart.b.axis == "primary" else 1
+        p["y_axis_format"] = chart.number_format or "SMART_NUMBER"
+        p["y_axis_format_secondary"] = chart.number_format_secondary or "SMART_NUMBER"
+        p["rich_tooltip"] = True
+        p["show_legend"] = True
     elif t == "pie":
         p["metric"] = metric(chart.metric)
         p["groupby"] = [chart.groupby]
@@ -306,7 +331,8 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
     # column, so it needs the binding too.
     timeseries = ("timeseries_line", "timeseries_bar", "timeseries_area",
                   "timeseries_scatter", "big_number_trend")
-    if t not in timeseries and ds.main_dttm_col:
+    time_x = t == "mixed" and "time_grain_sqla" in p
+    if t not in timeseries and not time_x and ds.main_dttm_col:
         p["granularity_sqla"] = ds.main_dttm_col
     return p
 

@@ -391,11 +391,54 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         out["metric"] = m
         out["groupby"] = gb
         keep_row_limit()
+    elif spec_type == "mixed":
+        x = p.get("x_axis")
+        if isinstance(x, dict):
+            x = x.get("sqlExpression") or x.get("label")
+        if not x:
+            losses.append(Loss(name, "mixed chart without x_axis; chart skipped"))
+            return None
+        out["x_column"] = x
+        for key, sfx, kind_key, axis_key in (("a", "", "seriesType", "yAxisIndex"),
+                                             ("b", "_b", "seriesTypeB", "yAxisIndexB")):
+            ms = [m for m in (metric_one(m) for m in (p.get(f"metrics{sfx}") or [])) if m]
+            if not ms:
+                losses.append(Loss(name, f"mixed chart query {key.upper()} has no representable metrics; chart skipped"))
+                return None
+            series: dict = {"metrics": ms}
+            kind = p.get(kind_key) or "line"  # the plugin's own default series type
+            if kind not in ("bar", "line"):
+                losses.append(Loss(name, f"query {key.upper()} series type {kind!r} not preserved (line on re-apply)"))
+                kind = "line"
+            if kind != "bar":
+                series["kind"] = kind
+            if p.get(axis_key) == 1:
+                series["axis"] = "secondary"
+            gb = [g for g in (p.get(f"groupby{sfx}") or []) if isinstance(g, str)]
+            if len(gb) > 1:
+                losses.append(Loss(name, f"query {key.upper()}: multiple groupby {gb}; kept first only"))
+            if gb:
+                series["groupby"] = gb[0]
+            out[key] = series
+        if _filters_to_spec({"adhoc_filters": p.get("adhoc_filters_b")}, [], name) != (out.get("filters") or []):
+            losses.append(Loss(name, "query B filters differ from query A's; not preserved (both take the chart's filters)"))
+        if p.get("time_grain_sqla"):
+            out["time_grain"] = p["time_grain_sqla"]
+        if p.get("time_range") and p["time_range"] != "No filter":
+            out["time_range"] = p["time_range"]
+        if p.get("y_axis_format") not in (None, "SMART_NUMBER"):
+            out["number_format"] = p["y_axis_format"]
+        if p.get("y_axis_format_secondary") not in (None, "SMART_NUMBER"):
+            out["number_format_secondary"] = p["y_axis_format_secondary"]
+        keep_row_limit()
 
     mapped_here = {"combineMetric", "conditional_formatting"} if spec_type == "pivot_table" else (
         {"order_by_cols", "timeseries_limit_metric", "series_limit_metric",
          "conditional_formatting", "column_config"}
         if spec_type == "table" else set())
+    if spec_type == "mixed":
+        mapped_here = {"metrics_b", "groupby_b", "adhoc_filters_b", "row_limit_b", "seriesTypeB",
+                       "yAxisIndex", "yAxisIndexB", "y_axis_format_secondary"}
     unmapped = sorted(k for k in p if k not in _IGNORABLE and k not in mapped_here)
     if unmapped:
         losses.append(Loss(name, f"params not preserved: {unmapped}"))
