@@ -24,6 +24,7 @@ from .spec import (
     FORMAT_TEXT_HEX,
     DashboardSpec,
     MarkdownBlock,
+    _AxisChart,
     parse_metric,
 )
 
@@ -327,6 +328,9 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["groupby"] = chart.groupby
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
 
+    if isinstance(chart, _AxisChart):
+        _x_label_params(chart, p)
+
     # Bind charts without their own TIME column to the dataset's main temporal
     # column. The dashboard time filter reaches a chart only through a time
     # binding; without one the chart silently ignores it while the filter bar
@@ -339,6 +343,23 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
     if t not in timeseries and not time_x and ds.main_dttm_col:
         p["granularity_sqla"] = ds.main_dttm_col
     return p
+
+
+def _x_label_params(chart: _AxisChart, p: dict) -> None:
+    # Emitted only when set, so pre-feature bundles stay byte-identical.
+    # x_axis_time_format and xAxisLabelRotation: every chart panel at 4.1.4, 5.0.0 and 6.1.0.
+    if chart.x_label_format:
+        p["x_axis_time_format"] = chart.x_label_format
+    if chart.x_label_rotation is not None:
+        p["xAxisLabelRotation"] = chart.x_label_rotation
+    if chart.x_label_every:
+        # 6.1.0 controls; older plugins don't read them, so older releases ignore them.
+        # A time axis needs the grain as its WIDEST tick spacing (ECharts otherwise picks
+        # e.g. every 2 months: transformProps maxInterval); interval applies to category axes only.
+        if "time_grain_sqla" in p:
+            p["force_max_interval"] = True
+        else:
+            p["xAxisLabelInterval"] = "0"
 
 
 def _chart_yaml(chart, spec: DashboardSpec, resolution: Resolution) -> dict:

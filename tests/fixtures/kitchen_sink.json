@@ -105,7 +105,9 @@
       ],
       "time_column": "order_date",
       "time_grain": "P1M",
-      "groupby": "deal_size"
+      "groupby": "deal_size",
+      "x_label_format": "%b",
+      "x_label_every": true
     },
     {
       "name": "Order Scatter",
@@ -259,7 +261,9 @@
         "kind": "line",
         "axis": "secondary"
       },
-      "number_format_secondary": ",.2f"
+      "number_format_secondary": ",.2f",
+      "x_label_format": "%b %y",
+      "x_label_every": true
     }
   ],
   "layout": {

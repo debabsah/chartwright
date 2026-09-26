@@ -52,6 +52,35 @@ _IGNORABLE = {
     "show_tooltip_labels", "tooltip_label_type", SDC_BAR_MARKER,
 }
 
+# Charts with an x axis (spec._AxisChart) and the params their x-label fields map to.
+_AXIS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter",
+               "bar", "mixed")
+_X_LABEL_KEYS = {"x_axis_time_format", "xAxisLabelRotation", "force_max_interval",
+                 "xAxisLabelInterval"}
+
+
+def _x_labels_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
+    # Superset's own defaults (adaptive format, 0 degrees, auto spacing) map to nothing.
+    if p.get("x_axis_time_format") not in (None, "", "smart_date"):
+        out["x_label_format"] = p["x_axis_time_format"]
+    rot = p.get("xAxisLabelRotation")
+    if rot not in (None, "", 0, "0"):
+        try:
+            deg = int(rot)
+        except (TypeError, ValueError):
+            deg = None
+        if deg is not None and -90 <= deg <= 90:
+            out["x_label_rotation"] = deg
+        else:
+            losses.append(Loss(name, f"x-axis label rotation {rot!r} not representable; dropped"))
+    # Each control works on one axis kind only, as the compiler emits them.
+    if "time_grain_sqla" in p:
+        every = bool(p.get("force_max_interval"))
+    else:
+        every = str(p.get("xAxisLabelInterval")) == "0"
+    if every:
+        out["x_label_every"] = True
+
 
 @dataclass
 class Loss:
@@ -443,6 +472,9 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
     if spec_type == "mixed":
         mapped_here = {"metrics_b", "groupby_b", "adhoc_filters_b", "row_limit_b", "seriesTypeB",
                        "yAxisIndex", "yAxisIndexB", "y_axis_format_secondary"}
+    if spec_type in _AXIS_TYPES:
+        _x_labels_to_spec(p, out, losses, name)
+        mapped_here = mapped_here | _X_LABEL_KEYS
     unmapped = sorted(k for k in p if k not in _IGNORABLE and k not in mapped_here)
     if unmapped:
         losses.append(Loss(name, f"params not preserved: {unmapped}"))
