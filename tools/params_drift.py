@@ -64,6 +64,19 @@ ALLOWED = {
                             # at tag 6.1.0); 4.1.4/5.0.0 declare both natively
 }
 
+# Keys a later release added, emitted only by opt-in spec fields documented with
+# that release (x_label_every: "Superset 6.1.0+"). An older plugin never reads
+# them, so an older Superset ignores them; they must still be declared from the
+# named release on, and every other key is held to every release.
+SINCE = {
+    "force_max_interval": "6.1.0",  # Timeseries + MixedTimeseries controlPanel.tsx at 6.1.0
+    "xAxisLabelInterval": "6.1.0",  # (absent at 4.1.4 and 5.0.0)
+}
+
+
+def _release(v: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in v.split("."))
+
 
 def emitted_keys_by_viz_type() -> dict[str, set[str]]:
     out: dict[str, set[str]] = {}
@@ -90,7 +103,8 @@ def check(version: str, contract: dict, emitted: dict[str, set[str]]) -> list[st
         if known == "ABSENT":
             problems.append(f"{vt}: viz_type ABSENT in Superset {version}")
             continue
-        drift = keys - set(known) - ALLOWED
+        later = {k for k, since in SINCE.items() if _release(version) < _release(since)}
+        drift = keys - set(known) - ALLOWED - later
         if drift:
             problems.append(f"{vt}: keys unknown to {version}: {sorted(drift)}")
     return problems

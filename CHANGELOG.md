@@ -25,6 +25,14 @@ The design brain, plus the fixes found reviewing it.
   Year filter always opens on the latest year, with no literal default to go stale.
 - Pivot totals: `row_totals` (a total per row, as a column at the right, e.g. the
   year beside its months) and `column_totals` (a total row at the bottom).
+- X-axis labels on timeseries, bar and mixed charts: `x_label_format` (a d3 time
+  format, e.g. `%b` for "Sep"), `x_label_every` (a label at every month, week or
+  category) and `x_label_rotation`. Superset's default writes full month names and
+  January as the year, at a spacing it picks from the width, then drops labels that
+  collide, so 13 months read "September, November, 2026, March" with gaps that
+  differ chart to chart. `x_label_every` uses two 6.1.0 controls (the grain as the
+  widest tick spacing on a time axis, interval 0 on a category axis); older releases
+  ignore them, and the drift check allows exactly those keys before 6.1.0 (`SINCE`).
 - Mixed chart (`"type": "mixed"`, Superset's Mixed Chart): two queries, `a` and
   `b`, each drawn as bars or a line on the primary or secondary value axis, over
   a time column (`time_grain`) or any column (a categorical axis, e.g. by cause).

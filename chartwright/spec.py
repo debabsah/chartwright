@@ -145,7 +145,29 @@ class BigNumberTrendChart(_ChartBase):
     number_format: str | None = None
 
 
-class _TimeseriesBase(_ChartBase):
+class _AxisChart(_ChartBase):
+    """A chart with an x axis: how its labels read. Superset's default labels a time
+    axis adaptively (full month names, January written as the year) at a spacing it
+    picks from the width, then drops labels that collide, so 13 months can read
+    'September, November, 2026, March' with gaps that differ chart to chart."""
+
+    x_label_format: str | None = Field(
+        default=None,
+        description="d3 time format for the labels of a time x axis, e.g. '%b' (Sep); "
+                    "omit for Superset's adaptive format",
+    )
+    x_label_every: bool = Field(
+        default=False,
+        description="A label at every x value: every time-grain step, or every category "
+                    "(Superset 6.1.0+ controls; older releases ignore them)",
+    )
+    x_label_rotation: int | None = Field(
+        default=None, ge=-90, le=90,
+        description="Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
+    )
+
+
+class _TimeseriesBase(_AxisChart):
     metrics: list[str] = Field(min_length=1)
     time_column: str
     time_grain: str | None = Field(default=None, description="ISO 8601 duration, e.g. P1D, P1W, P1M")
@@ -171,7 +193,7 @@ class TimeseriesScatterChart(_TimeseriesBase):
     type: Literal["timeseries_scatter"]
 
 
-class BarChart(_ChartBase):
+class BarChart(_AxisChart):
     """Categorical bar: any column on the x axis.
 
     ``orientation: "horizontal"`` draws ranked lists with long labels the
@@ -353,7 +375,7 @@ class MixedSeries(BaseModel):
     groupby: str | None = Field(default=None, description="At most one dimension column")
 
 
-class MixedChart(_ChartBase):
+class MixedChart(_AxisChart):
     """Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue
     as bars with revenue per order as a line. ``x_column`` is a time column (bucketed
     by ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and

@@ -87,7 +87,13 @@ running the tool against real instances of all three releases.
 - **Options genuinely differ by release.** 6.1.0 renamed the big-number
   subtitle field (`subheader` became `subtitle`) and removed sort controls
   that older releases still have. The tool emits only options valid on all
-  three releases.
+  three releases, with one named exception: an opt-in field documented with a
+  later release (`x_label_every`, "Superset 6.1.0+") may emit that release's
+  controls (`force_max_interval`, `xAxisLabelInterval`, 6.1.0
+  `Timeseries/Regular/*/controlPanel.tsx` and `MixedTimeseries/controlPanel.tsx`).
+  An older plugin never reads them, so an older Superset ignores them;
+  `tools/params_drift.py` lists them in `SINCE` and holds every other key to
+  every release.
 - **On 4.1.4, heatmap and histogram exist twice** (a legacy plugin and a
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named

@@ -3,7 +3,10 @@ categorical x axis. Key names follow MixedTimeseries/controlPanel.tsx at 4.1.4,
 5.0.0 and 6.1.0: query B's query keys take '_b', its display keys 'B'."""
 
 import io
+import json
+import sys
 import zipfile
+from pathlib import Path
 
 import yaml
 
@@ -14,6 +17,9 @@ from chartwright.resolver import Resolution, _check_chart_fields
 from chartwright.smoke import _mixed_queries
 from chartwright.spec import load_spec
 from chartwright.testing import stub_resolution
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
+from params_drift import CONTRACT, check  # noqa: E402
 
 DS = {"database": "examples", "table": "t"}
 BY_MONTH = {
@@ -110,3 +116,39 @@ def test_resolver_checks_both_queries():
     _check_chart_fields(spec.charts[0], ds, res)
     assert {e.code for e in res.errors} == {"column_not_found"}
     assert any("missing" in e.ref for e in res.errors)
+
+
+X_LABEL_KEYS = {"x_axis_time_format", "xAxisLabelRotation", "force_max_interval", "xAxisLabelInterval"}
+
+
+def test_x_labels_every_month_on_a_time_axis_every_category_on_a_category_axis():
+    month = {**BY_MONTH, "x_label_format": "%b", "x_label_every": True}
+    cause = {**BY_CAUSE, "x_label_every": True, "x_label_rotation": 45}
+    params = _params(_spec(month, cause))
+    _, pm = params["Revenue and revenue per order"]
+    assert pm["x_axis_time_format"] == "%b"
+    assert pm["force_max_interval"] is True  # the grain is the widest tick spacing
+    assert "xAxisLabelInterval" not in pm  # ECharts reads interval on category axes only
+    _, pc = params["Categories: count and revenue"]
+    assert pc["xAxisLabelInterval"] == "0" and pc["xAxisLabelRotation"] == 45
+    assert "force_max_interval" not in pc and "x_axis_time_format" not in pc
+
+
+def test_x_labels_unset_emit_nothing():
+    for _, p in _params(_spec(BY_MONTH, BY_CAUSE)).values():
+        assert not X_LABEL_KEYS & set(p)
+
+
+def test_x_labels_round_trip_and_stay_within_the_contract():
+    spec = _spec({**BY_MONTH, "x_label_format": "%b", "x_label_every": True},
+                 {**BY_CAUSE, "x_label_every": True, "x_label_rotation": 45})
+    bundle = compile_bundle(spec, stub_resolution(spec))
+    ds = stub_resolution(spec).for_chart(spec.charts[0].dataset)
+    result = decompile_bundle(bundle, lambda u: {"database": "examples", "schema": None, "table": "t"}
+                              if u == ds.uuid else None)
+    assert result.losses == [], result.losses_json()
+    assert _normalize(load_spec(result.spec)) == _normalize(spec)
+    emitted = {"mixed_timeseries": set().union(*(set(p) for _, p in _params(spec).values()))}
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:  # 6.1.0-only keys are allowed, and ignored, before 6.1.0
+        assert check(version, contract, emitted) == [], version
