@@ -325,6 +325,12 @@ class PivotTableChart(_ChartBase):
     row_totals: bool = Field(
         default=False, description="A total per row, as a column at the right (e.g. the year beside its months)")
     column_totals: bool = Field(default=False, description="A total per column, as a row at the bottom")
+    measure_totals: bool = Field(
+        default=False,
+        description="With several metrics and combine_metric off: a total after each metric's "
+                    "block of columns (Superset's column subtotals), where row_totals would add "
+                    "the metrics together",
+    )
     number_format: str | None = Field(default=None, description="d3 format for the cells and totals, e.g. ',.0f'")
     conditional_formatting: list[FormatRule] = Field(default_factory=list)
 

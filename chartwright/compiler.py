@@ -306,6 +306,10 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["rowTotals"] = True
         if chart.column_totals:
             p["colTotals"] = True
+        if chart.measure_totals:
+            # The metric is a column level (PivotTableChart.tsx METRIC_KEY), outermost when
+            # not combined, so column subtotals total each metric's block (all three releases).
+            p["colSubTotals"] = True
         if chart.conditional_formatting:
             p["conditional_formatting"] = [
                 _format_rule_payload(r) for r in chart.conditional_formatting

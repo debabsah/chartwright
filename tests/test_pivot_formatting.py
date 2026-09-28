@@ -182,3 +182,21 @@ def test_number_format_sets_cells_and_totals_and_round_trips():
                               lambda u: {"database": "examples", "schema": None, "table": "t"} if u == ds.uuid else None)
     assert result.losses == [], result.losses_json()
     assert result.spec["charts"][0]["number_format"] == ",.0f"
+
+
+def test_measure_totals_are_column_subtotals_and_round_trip():
+    """A row total adds every column, the metric being a column level; with the metric
+    outermost, column subtotals total each metric's block."""
+    from chartwright.decompile import decompile_bundle
+
+    p = _params(_pivot_spec(measure_totals=True))
+    assert p["colSubTotals"] is True and "rowTotals" not in p and "combineMetric" not in p
+    assert "colSubTotals" not in _params(_pivot_spec())
+    spec = _pivot_spec(measure_totals=True)
+    res = stub_resolution(spec)
+    ds = res.for_chart(spec.charts[0].dataset)
+    result = decompile_bundle(compile_bundle(spec, res),
+                              lambda u: {"database": "examples", "schema": None, "table": "t"} if u == ds.uuid else None)
+    assert result.losses == [], result.losses_json()
+    assert result.spec["charts"][0]["measure_totals"] is True
+
