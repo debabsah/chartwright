@@ -71,6 +71,7 @@ ALLOWED = {
 SINCE = {
     "force_max_interval": "6.1.0",  # Timeseries + MixedTimeseries controlPanel.tsx at 6.1.0
     "xAxisLabelInterval": "6.1.0",  # (absent at 4.1.4 and 5.0.0)
+    "echart_options": "6.1.0",  # the panels' "ECharts Options" (x_label_every edges, y_axis_max)
 }
 
 
