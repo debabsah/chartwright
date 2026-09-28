@@ -96,3 +96,18 @@ def test_decompile_select_default_and_scope():
                  "dataset": {"database": "examples", "schema": None, "table": "t"},
                  "column": "year_label", "multi": False,
                  "default": ["This year (2026)"], "charts": ["A"]}
+
+
+def test_first_value_marks_the_filter_required_first():
+    """Superset applies a filter's value on load only when the filter carries
+    requiredFirst (FilterBar/index.tsx); its own form saves it with 'first value'.
+    Without it the pill showed '2026 (this year)' while every chart queried all years."""
+    (nf,) = _native_filter_config(_spec([
+        {"type": "select", "name": "Year", "dataset": DS, "column": "year_label", "multi": False,
+         "default_to_first": True, "required": True},
+    ]))
+    assert nf["requiredFirst"] is True
+    (plain,) = _native_filter_config(_spec([
+        {"type": "select", "name": "Year", "dataset": DS, "column": "year_label"},
+    ]))
+    assert "requiredFirst" not in plain

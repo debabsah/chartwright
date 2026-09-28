@@ -273,6 +273,12 @@ class TableChart(_ChartBase):
     number_formats: dict[str, str] = Field(
         default_factory=dict, description="d3 format per label, e.g. {\"Rate\": \".3f\"}",
     )
+    cell_bars: bool | None = Field(
+        default=None,
+        description="Bars behind numeric cells (Superset draws them by default; false for ids, "
+                    "years or a column a colour rule already speaks for)",
+    )
+    date_format: str | None = Field(default=None, description="strftime for date columns, e.g. '%Y-%m-%d'")
 
     def labels(self) -> list[str]:
         return [metric_label(m) for m in self.metrics or []] + list(self.groupby or []) + list(self.columns or [])
@@ -315,6 +321,7 @@ class PivotTableChart(_ChartBase):
     row_totals: bool = Field(
         default=False, description="A total per row, as a column at the right (e.g. the year beside its months)")
     column_totals: bool = Field(default=False, description="A total per column, as a row at the bottom")
+    number_format: str | None = Field(default=None, description="d3 format for the cells and totals, e.g. ',.0f'")
     conditional_formatting: list[FormatRule] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -373,6 +380,10 @@ class MixedSeries(BaseModel):
     kind: Literal["bar", "line"] = "bar"
     axis: Literal["primary", "secondary"] = "primary"
     groupby: str | None = Field(default=None, description="At most one dimension column")
+    markers: bool = Field(
+        default=False,
+        description="A marker at each point (a line over one category draws nothing without them)",
+    )
 
 
 class MixedChart(_AxisChart):

@@ -45,9 +45,17 @@ The design brain, plus the fixes found reviewing it.
   named charts, resolved to slice ids at apply, as on range filters).
 - `number_format` on timeseries and categorical bar charts (the value axis;
   it was hard-coded to Superset's smart number, so a rate read `0.9760`, not `97.6%`).
+- Tables take `cell_bars` (Superset draws bars behind numeric cells by default, including
+  ids and years) and `date_format` (e.g. `%Y-%m-%d`, not a midnight timestamp); pivots
+  take `number_format` (cells and totals, e.g. `,.0f` for `2,570`, not `2.57k`); a mixed
+  chart's series take `markers` (a line over a single category draws nothing without one).
 
 ### Fixed
 
+- A select filter with `default_to_first` showed its first value while every chart queried
+  unfiltered until the viewer pressed Apply. Superset applies a value on load only for a
+  filter marked `requiredFirst`, which its own form saves with "select first value"
+  (`FilterBar/index.tsx`, `FiltersConfigModal/utils.ts`); the compiler now marks it too.
 - Changing a chart's dataset in the spec didn't land on re-apply: the in-place
   update sent the new params only, so Superset kept the chart on its old dataset
   (`datasource_id`) while its params pointed at the new one, and `plan` reported the

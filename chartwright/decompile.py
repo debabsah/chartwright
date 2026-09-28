@@ -350,6 +350,10 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             out["hidden"] = hidden
         if formats:
             out["number_formats"] = formats
+        if "show_cell_bars" in p:
+            out["cell_bars"] = bool(p["show_cell_bars"])
+        if p.get("table_timestamp_format") not in (None, "", "smart_date"):
+            out["date_format"] = p["table_timestamp_format"]
         keep_row_limit()
     elif spec_type == "pivot_table":
         ms = [m for m in (metric_one(m) for m in (p.get("metrics") or [])) if m]
@@ -373,6 +377,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             out["column_totals"] = True
         if p.get("date_format"):
             out["date_format"] = p["date_format"]
+        if p.get("valueFormat") not in (None, "", "SMART_NUMBER"):
+            out["number_format"] = p["valueFormat"]
         rules = []
         for cf in p.get("conditional_formatting") or []:
             rule = _format_to_spec(cf if isinstance(cf, dict) else {})
@@ -452,6 +458,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
                 losses.append(Loss(name, f"query {key.upper()}: multiple groupby {gb}; kept first only"))
             if gb:
                 series["groupby"] = gb[0]
+            if p.get(kind_key.replace("seriesType", "markerEnabled")):  # markerEnabled / markerEnabledB
+                series["markers"] = True
             out[key] = series
         if _filters_to_spec({"adhoc_filters": p.get("adhoc_filters_b")}, [], name) != (out.get("filters") or []):
             losses.append(Loss(name, "query B filters differ from query A's; not preserved (both take the chart's filters)"))
@@ -471,7 +479,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         if spec_type == "table" else set())
     if spec_type == "mixed":
         mapped_here = {"metrics_b", "groupby_b", "adhoc_filters_b", "row_limit_b", "seriesTypeB",
-                       "yAxisIndex", "yAxisIndexB", "y_axis_format_secondary"}
+                       "yAxisIndex", "yAxisIndexB", "y_axis_format_secondary",
+                       "markerEnabled", "markerEnabledB"}
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
         mapped_here = mapped_here | _X_LABEL_KEYS

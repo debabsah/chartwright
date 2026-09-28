@@ -12,7 +12,7 @@ from chartwright.decompile import _format_to_spec, decompile_bundle
 from chartwright.spec import load_spec
 from chartwright.testing import stub_resolution
 
-from test_table_sort import _lookup, aggregate, mk, params_for
+from test_table_sort import _lookup, aggregate, mk, params_for, raw
 
 STATUS = [
     {"metric": "status", "operator": "=", "target": 1, "color": "green", "apply_to": "Rate"},
@@ -116,3 +116,13 @@ def test_axis_number_format_round_trips():
         assert _normalize(load_spec(result.spec))["charts"] == _normalize(spec)["charts"]
     assert params_for({"name": "B", "type": "bar", "dataset": DS, "metrics": ["SUM(v)"],
                        "x_column": "k"})["y_axis_format"] == "SMART_NUMBER"
+
+
+def test_cell_bars_and_date_format_emit_only_when_set_and_round_trip():
+    p = params_for(raw(cell_bars=False, date_format="%Y-%m-%d"))
+    assert p["show_cell_bars"] is False and p["table_timestamp_format"] == "%Y-%m-%d"
+    assert not {"show_cell_bars", "table_timestamp_format"} & set(params_for(raw()))
+    spec = mk(raw(cell_bars=False, date_format="%Y-%m-%d"))
+    result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _lookup(spec))
+    assert result.losses == [], result.losses_json()
+    assert _normalize(load_spec(result.spec))["charts"] == _normalize(spec)["charts"]
