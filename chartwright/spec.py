@@ -179,6 +179,10 @@ class _TimeseriesBase(_AxisChart):
 
 class TimeseriesLineChart(_TimeseriesBase):
     type: Literal["timeseries_line"]
+    y_axis_max: float | None = Field(
+        default=None,
+        description="Top of the value axis, e.g. 1 for a share that can't pass 100 % (Superset 6.1.0+)",
+    )
 
 
 class TimeseriesBarChart(_TimeseriesBase):

@@ -82,6 +82,26 @@ def _x_labels_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
         out["x_label_every"] = True
 
 
+def _echart_options_to_spec(p: dict, out: dict, losses: list, name: str, spec_type: str) -> None:
+    # The compiler writes JSON; an xAxis part is regenerated from x_label_every.
+    raw = p.get("echart_options")
+    if not raw:
+        return
+    try:
+        opts = json.loads(raw) if isinstance(raw, str) else dict(raw)
+    except (TypeError, ValueError):
+        losses.append(Loss(name, "echart_options not preserved (not JSON)"))
+        return
+    if out.get("x_label_every"):
+        opts.pop("xAxis", None)
+    y = opts.get("yAxis")
+    if spec_type == "timeseries_line" and isinstance(y, dict) and set(y) == {"max"}:
+        out["y_axis_max"] = y["max"]
+        opts.pop("yAxis")
+    if opts:
+        losses.append(Loss(name, f"echart_options not preserved: {sorted(opts)}"))
+
+
 @dataclass
 class Loss:
     where: str
@@ -483,7 +503,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
                        "markerEnabled", "markerEnabledB"}
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
-        mapped_here = mapped_here | _X_LABEL_KEYS
+        _echart_options_to_spec(p, out, losses, name, spec_type)
+        mapped_here = mapped_here | _X_LABEL_KEYS | {"echart_options"}
     unmapped = sorted(k for k in p if k not in _IGNORABLE and k not in mapped_here)
     if unmapped:
         losses.append(Loss(name, f"params not preserved: {unmapped}"))

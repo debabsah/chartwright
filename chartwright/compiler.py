@@ -339,6 +339,13 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
 
     if isinstance(chart, _AxisChart):
         _x_label_params(chart, p)
+    if getattr(chart, "y_axis_max", None) is not None:
+        p.setdefault("echart_options", {})["yAxis"] = {"max": chart.y_axis_max}
+    if "echart_options" in p:
+        # The panel's "ECharts Options" (6.1.0, Timeseries + MixedTimeseries): a JS object
+        # literal, parsed without eval and deep-merged into the chart's own options
+        # (utils/mergeCustomEChartOptions.ts: arrays replace, so never a mixed chart's yAxis).
+        p["echart_options"] = json.dumps(p["echart_options"])
 
     # Bind charts without their own TIME column to the dataset's main temporal
     # column. The dashboard time filter reaches a chart only through a time
@@ -367,8 +374,27 @@ def _x_label_params(chart: _AxisChart, p: dict) -> None:
         # e.g. every 2 months: transformProps maxInterval); interval applies to category axes only.
         if "time_grain_sqla" in p:
             p["force_max_interval"] = True
+            if chart.type in _ECHART_OPTIONS_TYPES:
+                # Seen rendering on 6.1.0: ECharts leaves a tick that sits exactly on a line's
+                # edge unlabelled, and Superset's forced last label (showMaxLabel) then hides
+                # the last month's. Bars are padded already; pad a line the same way and label
+                # the ticks only: 13 of 13 months at 747 px, both ends kept at 479 px.
+                x_axis: dict = {"axisLabel": {"showMaxLabel": False}}
+                if not _has_bars(chart):
+                    x_axis["boundaryGap"] = ["3%", "3%"]
+                p.setdefault("echart_options", {})["xAxis"] = x_axis
         else:
             p["xAxisLabelInterval"] = "0"
+
+
+# Chart types whose 6.1.0 control panel declares echart_options (scatter's does not).
+_ECHART_OPTIONS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "mixed")
+
+
+def _has_bars(chart) -> bool:
+    if chart.type == "mixed":
+        return "bar" in (chart.a.kind, chart.b.kind)
+    return chart.type == "timeseries_bar"
 
 
 def _chart_yaml(chart, spec: DashboardSpec, resolution: Resolution) -> dict:

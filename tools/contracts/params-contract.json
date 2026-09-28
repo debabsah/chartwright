@@ -1537,6 +1537,7 @@
   "mixed_timeseries": [
    "adhoc_filters",
    "adhoc_filters_b",
+   "echart_options",
    "force_max_interval",
    "groupby",
    "groupby_b",

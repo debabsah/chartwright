@@ -33,6 +33,11 @@ The design brain, plus the fixes found reviewing it.
   differ chart to chart. `x_label_every` uses two 6.1.0 controls (the grain as the
   widest tick spacing on a time axis, interval 0 on a category axis); older releases
   ignore them, and the drift check allows exactly those keys before 6.1.0 (`SINCE`).
+  On a time axis it also keeps both ends labelled: 6.1.0 left the first and last month
+  of a 13-month line blank (a tick on the axis edge gets no label, and Superset's forced
+  last label hid the last tick's), so the panel's ECharts Options (`echart_options`,
+  6.1.0) pad a line's axis like a bar's and label the ticks only. `y_axis_max` on a line
+  sets the top of the value axis (e.g. 1 for a share, where the default ran to 120 %).
 - Mixed chart (`"type": "mixed"`, Superset's Mixed Chart): two queries, `a` and
   `b`, each drawn as bars or a line on the primary or secondary value axis, over
   a time column (`time_grain`) or any column (a categorical axis, e.g. by cause).

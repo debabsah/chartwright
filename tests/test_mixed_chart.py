@@ -169,3 +169,31 @@ def test_markers_per_series_emit_only_when_set_and_round_trip():
     contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
     for version in contract:
         assert check(version, contract, {"mixed_timeseries": set(p)}) == [], version
+
+
+def test_every_month_keeps_both_ends_on_lines_and_bars():
+    """6.1.0 left the first and last month of a 13-month line unlabelled (a tick on the
+    axis edge gets no label; the forced last label hid the last tick's)."""
+    line = {"name": "Trend", "type": "timeseries_line", "dataset": DS, "metrics": ["MAX(r)"],
+            "time_column": "month_start", "time_grain": "P1M", "x_label_every": True, "y_axis_max": 1}
+    scatter = {**line, "name": "Dots", "type": "timeseries_scatter"}
+    scatter.pop("y_axis_max")
+    params = _params(_spec(line, scatter, {**BY_MONTH, "x_label_every": True}))
+    _, pl = params["Trend"]
+    assert json.loads(pl["echart_options"]) == {
+        "xAxis": {"axisLabel": {"showMaxLabel": False}, "boundaryGap": ["3%", "3%"]},
+        "yAxis": {"max": 1}}
+    _, pm = params["Revenue and revenue per order"]  # bars are padded already
+    assert json.loads(pm["echart_options"]) == {"xAxis": {"axisLabel": {"showMaxLabel": False}}}
+    _, ps = params["Dots"]  # scatter's 6.1.0 panel has no echart_options
+    assert ps["force_max_interval"] is True and "echart_options" not in ps
+    spec = _spec(line)
+    ds = stub_resolution(spec).for_chart(spec.charts[0].dataset)
+    result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)),
+                              lambda u: {"database": "examples", "schema": None, "table": "t"} if u == ds.uuid else None)
+    assert result.losses == [], result.losses_json()
+    assert _normalize(load_spec(result.spec)) == _normalize(spec)
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"echarts_timeseries_line": set(pl), "mixed_timeseries": set(pm)}) == [], version
+
