@@ -608,6 +608,22 @@ class DashboardMeta(BaseModel):
             "Spec-owned, so a UI toggle shows up as drift in `plan` and is repaired by `apply`."
         ),
     )
+    label_colors: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "A fixed colour per series label on every chart of the dashboard, e.g. "
+            "{\"Revenue\": \"#1FA8C9\"}. Superset otherwise assigns colours as the page "
+            "loads, so a measure can change colour between charts and visits; these win over "
+            "the scheme and the per-view map (6.1.0 applyColors)."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _hex_colours(self) -> "DashboardMeta":
+        bad = {k: v for k, v in self.label_colors.items() if not re.fullmatch(r"#[0-9A-Fa-f]{6}", v)}
+        if bad:
+            raise ValueError(f"label_colors must be #RRGGBB: {bad}")
+        return self
 
 
 class DesignConfig(BaseModel):

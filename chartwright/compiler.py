@@ -725,7 +725,8 @@ def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
         "color_scheme": "",
         "cross_filters_enabled": spec.dashboard.cross_filters,
         "expanded_slices": {},
-        "label_colors": {},
+        # custom label colours (6.1.0 applyColors merges them last, over the scheme)
+        "label_colors": dict(spec.dashboard.label_colors),
         "refresh_frequency": 0,
         "timed_refresh_immune_slices": [],
     }

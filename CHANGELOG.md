@@ -28,6 +28,11 @@ The design brain, plus the fixes found reviewing it.
   `measure_totals`: with several metrics, a total after each metric's block of columns
   (Superset's column subtotals, the metric being the outer column level); `row_totals`
   adds the metrics together, e.g. orders plus revenue.
+- `dashboard.label_colors`: a fixed colour per series label on every chart (the
+  dashboard's custom label colours, which 6.1.0 applies over the scheme and the per-view
+  map). Superset otherwise assigns colours as the page loads, so a measure can change
+  colour between charts and visits. Validated as `#RRGGBB`, decompiled, and compared by
+  `plan` (`label_colors_changed`).
 - X-axis labels on timeseries, bar and mixed charts: `x_label_format` (a d3 time
   format, e.g. `%b` for "Sep"), `x_label_every` (a label at every month, week or
   category) and `x_label_rotation`. Superset's default writes full month names and
