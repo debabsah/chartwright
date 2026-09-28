@@ -168,3 +168,17 @@ def test_cli_load_reads_utf8(tmp_path):
     spec = _load(str(p))
     assert spec.dashboard.title == "Quarterly — Overview"
     assert spec.charts[0].name == "P — chart"
+
+
+def test_number_format_sets_cells_and_totals_and_round_trips():
+    from chartwright.decompile import decompile_bundle
+
+    assert _params(_pivot_spec(number_format=",.0f"))["valueFormat"] == ",.0f"
+    assert _params(_pivot_spec())["valueFormat"] == "SMART_NUMBER"  # unset: as before
+    spec = _pivot_spec(number_format=",.0f", row_totals=True)
+    res = stub_resolution(spec)
+    ds = res.for_chart(spec.charts[0].dataset)
+    result = decompile_bundle(compile_bundle(spec, res),
+                              lambda u: {"database": "examples", "schema": None, "table": "t"} if u == ds.uuid else None)
+    assert result.losses == [], result.losses_json()
+    assert result.spec["charts"][0]["number_format"] == ",.0f"

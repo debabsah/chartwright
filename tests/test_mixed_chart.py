@@ -152,3 +152,20 @@ def test_x_labels_round_trip_and_stay_within_the_contract():
     contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
     for version in contract:  # 6.1.0-only keys are allowed, and ignored, before 6.1.0
         assert check(version, contract, emitted) == [], version
+
+
+def test_markers_per_series_emit_only_when_set_and_round_trip():
+    cause = {**BY_CAUSE, "b": {**BY_CAUSE["b"], "markers": True}}
+    _, p = _params(_spec(cause))["Categories: count and revenue"]
+    assert p["markerEnabledB"] is True and "markerEnabled" not in p
+    for _, q in _params(_spec(BY_MONTH, BY_CAUSE)).values():
+        assert not {"markerEnabled", "markerEnabledB"} & set(q)
+    spec = _spec(cause)
+    ds = stub_resolution(spec).for_chart(spec.charts[0].dataset)
+    result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)),
+                              lambda u: {"database": "examples", "schema": None, "table": "t"} if u == ds.uuid else None)
+    assert result.losses == [], result.losses_json()
+    assert _normalize(load_spec(result.spec)) == _normalize(spec)
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"mixed_timeseries": set(p)}) == [], version

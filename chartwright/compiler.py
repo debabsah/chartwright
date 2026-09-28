@@ -240,6 +240,11 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["y_axis_format_secondary"] = chart.number_format_secondary or "SMART_NUMBER"
         p["rich_tooltip"] = True
         p["show_legend"] = True
+        # markerEnabled / markerEnabledB (createCustomizeSection, all three releases);
+        # emitted only when set, so pre-feature bundles stay byte-identical.
+        for suffix, series in (("", chart.a), ("B", chart.b)):
+            if series.markers:
+                p[f"markerEnabled{suffix}"] = True
     elif t == "pie":
         p["metric"] = metric(chart.metric)
         p["groupby"] = [chart.groupby]
@@ -278,6 +283,10 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             ]
         if chart.hidden or chart.number_formats:
             p["column_config"] = _column_config(chart)
+        if chart.cell_bars is not None:
+            p["show_cell_bars"] = chart.cell_bars
+        if chart.date_format:
+            p["table_timestamp_format"] = chart.date_format
     elif t == "pivot_table":
         p["groupbyRows"] = chart.rows
         p["groupbyColumns"] = chart.columns
@@ -286,7 +295,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["metricsLayout"] = "COLUMNS"
         p["rowOrder"] = "key_a_to_z"
         p["colOrder"] = "key_a_to_z"
-        p["valueFormat"] = "SMART_NUMBER"
+        p["valueFormat"] = chart.number_format or "SMART_NUMBER"
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         # Emitted only when set, so pre-feature bundles stay byte-identical.
         if chart.combine_metric:
@@ -583,6 +592,14 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
                 "inverseSelection": False,
                 "searchAllOptions": False,
             }
+            if f.default_to_first:
+                # Superset's filter form saves requiredFirst with "select first value"
+                # (Select/controlPanel.ts marks the control requiredFirst;
+                # FiltersConfigModal/utils.ts copies it), and the filter bar applies a
+                # value on load ONLY for requiredFirst filters (FilterBar/index.tsx,
+                # 6.1.0). Without it the pill shows the first value while every chart
+                # queries unfiltered until the viewer presses Apply. All three releases.
+                base["requiredFirst"] = True
             if f.sort_descending:
                 # the backend orders the values by the column (Select/buildQuery.ts, 6.1.0),
                 # so the first value -- defaultToFirstItem's pick -- is the largest
