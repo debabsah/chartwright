@@ -28,6 +28,7 @@ class Plan:
     title_changed: bool = False
     layout_changed: bool = False
     cross_filters_changed: bool = False   # live setting flipped in the UI, or the spec changed
+    label_colors_changed: bool = False    # the pinned series colours differ
     decompile_losses: list[dict] = field(default_factory=list)
 
     @property
@@ -36,6 +37,7 @@ class Plan:
             self.charts_added or self.charts_changed or self.charts_removed
             or self.filters_added or self.filters_changed or self.filters_removed
             or self.title_changed or self.layout_changed or self.cross_filters_changed
+            or self.label_colors_changed
         )
 
     def to_json(self) -> str:
@@ -53,6 +55,7 @@ class Plan:
                 "title_changed": self.title_changed,
                 "layout_changed": self.layout_changed,
                 "cross_filters_changed": self.cross_filters_changed,
+                "label_colors_changed": self.label_colors_changed,
                 "decompile_losses": self.decompile_losses,
             },
             indent=2,
@@ -211,6 +214,9 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     p.cross_filters_changed = (
         bool(t["dashboard"].get("cross_filters", False))
         != bool(l["dashboard"].get("cross_filters", False))
+    )
+    p.label_colors_changed = (
+        (t["dashboard"].get("label_colors") or {}) != (l["dashboard"].get("label_colors") or {})
     )
     # Whole-layout compare: a tabs layout has no "rows" key after
     # exclude_none dumping, so keyed access would KeyError.

@@ -60,3 +60,25 @@ def test_round_trips_both_ways():
         assert out.losses == []
         assert out.spec["dashboard"]["cross_filters"] is value
         assert _normalize(load_spec(out.spec)) == _normalize(spec)
+
+
+def test_label_colors_reach_the_metadata_and_round_trip():
+    """Pinned series colours: Superset otherwise assigns colours as
+    the page loads, so one measure changed colour between charts and visits."""
+    import pytest
+    from pydantic import ValidationError
+
+    assert _dashboard_yaml(compile_bundle(_spec(), stub_resolution(_spec())))["metadata"]["label_colors"] == {}
+    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    data["dashboard"]["label_colors"] = {"Revenue": "#1FA8C9", "Orders": "#666666"}
+    spec = load_spec(data)
+    res = stub_resolution(spec)
+    bundle = compile_bundle(spec, res)
+    assert _dashboard_yaml(bundle)["metadata"]["label_colors"] == {"Revenue": "#1FA8C9", "Orders": "#666666"}
+    result = decompile_bundle(bundle, _lookup(res))
+    assert result.spec["dashboard"]["label_colors"] == {"Revenue": "#1FA8C9", "Orders": "#666666"}
+    assert _normalize(load_spec(result.spec))["dashboard"] == _normalize(spec)["dashboard"]
+    data["dashboard"]["label_colors"] = {"Revenue": "teal"}
+    with pytest.raises(ValidationError):
+        load_spec(data)
+

@@ -788,6 +788,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
                 ordered_names.append(x)
     ordered = [charts_by_name[n] for n in ordered_names]
 
+    label_colors = (dash.get("metadata") or {}).get("label_colors") or {}
     spec = {
         "spec_version": "1",
         "dashboard": {
@@ -796,6 +797,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             # Superset force-stamps True when the key is absent from a PUT
             # (docs/CONTRACTS.md), so read it back explicitly and always emit it.
             "cross_filters": bool((dash.get("metadata") or {}).get("cross_filters_enabled", False)),
+            **({"label_colors": dict(label_colors)} if label_colors else {}),
         },
         "charts": ordered,
         "layout": layout,
