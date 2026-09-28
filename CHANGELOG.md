@@ -25,6 +25,9 @@ The design brain, plus the fixes found reviewing it.
   Year filter always opens on the latest year, with no literal default to go stale.
 - Pivot totals: `row_totals` (a total per row, as a column at the right, e.g. the
   year beside its months) and `column_totals` (a total row at the bottom).
+  `measure_totals`: with several metrics, a total after each metric's block of columns
+  (Superset's column subtotals, the metric being the outer column level); `row_totals`
+  adds the metrics together, e.g. orders plus revenue.
 - X-axis labels on timeseries, bar and mixed charts: `x_label_format` (a d3 time
   format, e.g. `%b` for "Sep"), `x_label_every` (a label at every month, week or
   category) and `x_label_rotation`. Superset's default writes full month names and

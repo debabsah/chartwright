@@ -395,6 +395,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             out["row_totals"] = True
         if p.get("colTotals"):
             out["column_totals"] = True
+        if p.get("colSubTotals"):
+            out["measure_totals"] = True
         if p.get("date_format"):
             out["date_format"] = p["date_format"]
         if p.get("valueFormat") not in (None, "", "SMART_NUMBER"):
@@ -493,7 +495,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             out["number_format_secondary"] = p["y_axis_format_secondary"]
         keep_row_limit()
 
-    mapped_here = {"combineMetric", "conditional_formatting", "rowTotals", "colTotals"} if spec_type == "pivot_table" else (
+    mapped_here = {"combineMetric", "conditional_formatting", "rowTotals", "colTotals", "colSubTotals"} if spec_type == "pivot_table" else (
         {"order_by_cols", "timeseries_limit_metric", "series_limit_metric",
          "conditional_formatting", "column_config"}
         if spec_type == "table" else set())
