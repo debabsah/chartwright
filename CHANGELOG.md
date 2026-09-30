@@ -9,6 +9,10 @@ The design brain, plus the fixes found reviewing it.
 
 ### Added
 
+- **`layout.footer`**: rows below the rows, tabs, or sketch, outside any tab,
+  so a tabbed dashboard shows them under every tab. Round-trips through
+  decompile and `plan`; rows below a dashboard's tabs, including ones placed
+  in Superset's UI, decompile as its footer.
 - Table colour rules. `conditional_formatting` on a table, with `apply_to`
   (another column's label, or `"row"`): the rule reads one column and paints
   another, which is how a scorecard colours each number by a status beside it

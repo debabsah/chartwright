@@ -16,7 +16,7 @@ from typing import Callable, get_args
 
 import yaml
 
-from .compiler import ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, VIZ_TYPE
+from .compiler import FOOTER_PREFIX, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, VIZ_TYPE
 from .spec import ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FilterOp
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
@@ -703,6 +703,17 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
     kept = set(charts_by_name)
     grid = position.get("GRID_ID") or {}
     grid_children = grid.get("children", [])
+    # Footer = grid-level content after the last TABS (Superset draws it under
+    # every tab), or, with no tabs, the compiler's marked trailing rows.
+    types = [(position.get(c) or {}).get("type") for c in grid_children]
+    if "TABS" in types:
+        cut = len(types) - types[::-1].index("TABS")
+    else:
+        cut = len(grid_children)
+        while cut and grid_children[cut - 1].startswith(f"ROW-{FOOTER_PREFIX}"):
+            cut -= 1
+    grid_children, footer_ids = grid_children[:cut], grid_children[cut:]
+    footer_rows = _walk_rows(position, footer_ids, kept, losses, geometry) if footer_ids else []
     top_types = {(position.get(c) or {}).get("type") for c in grid_children}
 
     layout: dict
@@ -740,8 +751,14 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             losses.append(Loss("layout", "mixed rows + tabs at top level; tabs flattened into rows"))
         rows = _walk_rows(position, grid_children, kept, losses, geometry)
         layout = {"rows": rows}
+    if footer_rows:
+        layout["footer"] = footer_rows
 
-    all_rows = layout.get("rows") if "rows" in layout else [r for leaf in _leaf_tabs(layout) for r in leaf["rows"]]
+    def body_and_footer() -> list:
+        body = layout.get("rows") if "rows" in layout else [r for leaf in _leaf_tabs(layout) for r in leaf["rows"]]
+        return [*(body or []), *layout.get("footer", [])]
+
+    all_rows = body_and_footer()
     placed = {x for row in (all_rows or []) for x in row if isinstance(x, str)}
     unplaced_target = layout.get("rows") if "rows" in layout else (_leaf_tabs(layout)[0]["rows"] if layout.get("tabs") else None)
     for name in sorted(kept - placed):
@@ -770,7 +787,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             return charts_by_name.get(item, {}).get("width") or 0
         return item.get("width") or 0
 
-    all_rows = layout.get("rows") if "rows" in layout else [r for leaf in _leaf_tabs(layout) for r in leaf["rows"]]
+    all_rows = body_and_footer()
     for i, row in enumerate(all_rows or []):
         total = sum(width_of(x) for x in row)
         if total > 12:

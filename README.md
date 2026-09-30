@@ -119,8 +119,8 @@ as-is.
   never overwritten; to bring a hand-built one under a spec, decompile it
   first.
 - **What a spec can express**: 15 chart types, metrics as you write them,
-  per-chart filters, a native filter bar, tabs, markdown notes, and layouts
-  you can draw as ASCII sketches.
+  per-chart filters, a native filter bar, tabs, markdown notes, a footer shown
+  under every tab, and layouts you can draw as ASCII sketches.
 - **Environment promotion**: specs name their data (connection, schema,
   table), so the same file applies to dev, staging, and production unchanged.
 

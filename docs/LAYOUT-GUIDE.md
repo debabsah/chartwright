@@ -168,3 +168,22 @@ layout: symbol 'L' does not form a solid rectangle
 Prefer explicit numbers? `layout.rows` with per-chart widths and heights does
 the same job without drawing, and dragging a chart taller in the UI followed
 by `chartwright absorb` writes the polished height back into the spec.
+
+## A footer under every tab
+
+`layout.footer` takes rows, exactly like `layout.rows`, and places them below
+the rows, tabs, or sketch, outside any tab. On a tabbed dashboard Superset
+draws them under whichever tab is open, so one footer serves every tab:
+
+```json
+"layout": {
+  "tabs": [{"title": "Overview", "rows": [["Revenue"]]}, {"title": "Detail", "rows": [["Orders"]]}],
+  "footer": [[{"markdown": "Maintained by the analytics team", "width": 12, "height": 2}]]
+}
+```
+
+A footer row may hold charts as well as markdown; each chart is still placed
+exactly once. Decompile reads any rows below a dashboard's tabs as its footer,
+including rows dragged there in Superset's UI. Without tabs there is no
+visible boundary, so only rows chartwright compiled as a footer read back as
+one. The design critic reviews the body, not the footer.

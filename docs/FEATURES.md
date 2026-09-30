@@ -30,6 +30,7 @@ into one. Everything below works from that one file.
     - Every rule drawn and compiled: [the layout guide](LAYOUT-GUIDE.md).
 - **Precise Sizing**: Set exact widths and heights per chart, or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
 - **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs (with one level of sub-tabs, e.g. a sub-tab per row of a scorecard), and markdown blocks for headers and notes.
+- **Footer**: `layout.footer` rows sit below everything, outside any tab, so a tabbed dashboard shows them under every tab: a branding strip, a data note, a contact line.
 
 ## The Design Brain
 - **Codified BI/UX Practice**: An optional layer holding what Few, Tufte and IBCS teach about reading a dashboard, plus the Superset rendering quirks that break it, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).

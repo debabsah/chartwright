@@ -643,12 +643,17 @@ class DesignConfig(BaseModel):
 
 
 class Layout(_SketchHolder):
-    """Flat rows, tabs, or an ASCII sketch; exactly one."""
+    """Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a footer:
+    rows below all of it, outside any tab, so a tabbed dashboard shows the
+    footer under every tab."""
 
     model_config = ConfigDict(extra="forbid")
 
     rows: list[list[RowItem]] | None = None
     tabs: list[Tab] | None = None
+    footer: list[list[RowItem]] | None = Field(
+        default=None,
+        description="Rows below the rows / tabs / sketch, outside any tab (shown under every tab)")
 
     @model_validator(mode="after")
     def _exactly_one(self) -> "Layout":
@@ -671,9 +676,8 @@ class Layout(_SketchHolder):
         return [leaf for tab in (self.tabs or []) for leaf in (tab.tabs or [tab])]
 
     def all_rows(self) -> list[list[RowItem]]:
-        if self.rows:
-            return self.rows
-        return [row for tab in self.leaf_tabs() for row in (tab.rows or [])]
+        body = self.rows or [row for tab in self.leaf_tabs() for row in (tab.rows or [])]
+        return [*body, *(self.footer or [])]
 
     def sketch_holders(self) -> list["_SketchHolder"]:
         if self.sketch:
