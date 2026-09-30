@@ -13,6 +13,11 @@ The design brain, plus the fixes found reviewing it.
   so a tabbed dashboard shows them under every tab. Round-trips through
   decompile and `plan`; rows below a dashboard's tabs, including ones placed
   in Superset's UI, decompile as its footer.
+- **Markdown heights in fifths of a unit** (0.2 = 8 px, one Superset grid row),
+  so a slim header or footer fits exactly (`"height": 1.6` is 64 px). Whole
+  numbers are unchanged. Decompile reads text-block heights exactly instead of
+  rounding them to whole units, so `plan` now reports a text block resized in
+  the UI.
 - Table colour rules. `conditional_formatting` on a table, with `apply_to`
   (another column's label, or `"row"`): the rule reads one column and paints
   another, which is how a scorecard colours each number by a status beside it
