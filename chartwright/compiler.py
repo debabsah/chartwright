@@ -35,6 +35,7 @@ ZIP_DATE_TIME = (2026, 1, 1, 0, 0, 0)
 # ponytail: 1 spec grid unit -> 5 superset row units (1 row unit ~ 8px).
 # Calibration knob; validated against rendered dashboards.
 ROW_UNITS_PER_SPEC_UNIT = 5
+FOOTER_PREFIX = "sdc-footer-"  # layout.footer rows compile to ROW-sdc-footer-<n>; decompile keys on it
 
 VIZ_TYPE = {
     "big_number_total": "big_number_total",
@@ -592,6 +593,12 @@ def _position(spec: DashboardSpec) -> dict:
             "meta": {},
         }
         grid_children = [tabs_id]
+    if spec.layout.footer:
+        # Grid-level rows after everything: Superset draws them under whichever
+        # tab is open. The id prefix is how decompile tells a footer from body
+        # rows on an untabbed dashboard.
+        grid_children = [*grid_children, *_rows_into(
+            pos, spec.layout.footer, spec, ["ROOT_ID", "GRID_ID"], FOOTER_PREFIX, counter)]
     pos["GRID_ID"] = {"type": "GRID", "id": "GRID_ID", "children": grid_children, "parents": ["ROOT_ID"]}
     return pos
 

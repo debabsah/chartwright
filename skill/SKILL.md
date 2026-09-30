@@ -42,6 +42,7 @@ approximate it with a different mechanism.
    (WHERE), dashboard-level `filters` (select + time_range native filter bar,
    time_range with an optional `default`), layout as `rows`, `tabs`, or an
    ASCII `sketch` with a `legend`, markdown blocks in rows, an optional
+   `layout.footer` (rows below everything, shown under every tab), an optional
    `design` block (audience + rule suppressions).
 2. Design brain, ON by default: run `CW brief --audience <a>` and follow it
    while authoring. Infer the audience from the request: executive
