@@ -178,9 +178,13 @@ draws them under whichever tab is open, so one footer serves every tab:
 ```json
 "layout": {
   "tabs": [{"title": "Overview", "rows": [["Revenue"]]}, {"title": "Detail", "rows": [["Orders"]]}],
-  "footer": [[{"markdown": "Maintained by the analytics team", "width": 12, "height": 2}]]
+  "footer": [[{"markdown": "Maintained by the analytics team", "width": 12, "height": 1.6}]]
 }
 ```
+
+Markdown heights take fifths of a unit, one Superset grid row (8 px) each, so a
+slim strip fits exactly: `1.6` is 64 px. Superset pads a text block 16 px on
+every side, so the block needs its content's height plus 32 px, or it scrolls.
 
 A footer row may hold charts as well as markdown; each chart is still placed
 exactly once. Decompile reads any rows below a dashboard's tabs as its footer,

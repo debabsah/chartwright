@@ -634,7 +634,8 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                         if meta.get("width"):
                             block["width"] = max(1, min(12, int(meta["width"])))
                         if meta.get("height"):
-                            block["height"] = max(1, round(int(meta["height"]) / ROW_UNITS_PER_SPEC_UNIT))
+                            h = int(meta["height"]) / ROW_UNITS_PER_SPEC_UNIT  # exact: text blocks take fifths
+                            block["height"] = int(h) if h.is_integer() else round(h, 1)
                         if block["markdown"]:
                             row.append(block)
                         else:

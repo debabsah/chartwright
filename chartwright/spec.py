@@ -532,7 +532,16 @@ class MarkdownBlock(BaseModel):
 
     markdown: str = Field(min_length=1)
     width: int | None = Field(default=None, ge=1, le=GRID_WIDTH)
-    height: int | None = Field(default=None, ge=1, le=100)
+    height: int | float | None = Field(
+        default=None, ge=0.2, le=100,
+        description="Height units (1 = 40 px) in fifths: 0.2 = 8 px, one Superset grid row (1.6 = 64 px)")
+
+    @field_validator("height")
+    @classmethod
+    def _whole_grid_rows(cls, h: int | float | None) -> int | float | None:
+        if h is not None and abs(h * 5 - round(h * 5)) > 1e-9:
+            raise ValueError(f"markdown height {h}: use fifths of a unit (0.2 = one 8 px grid row), e.g. 1.6")
+        return h
 
 
 RowItem = Union[str, MarkdownBlock]

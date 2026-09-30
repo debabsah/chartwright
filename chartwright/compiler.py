@@ -438,7 +438,7 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
                     "meta": {
                         "code": item.markdown,
                         "width": spec.resolved_item_width(item),
-                        "height": (item.height or 4) * ROW_UNITS_PER_SPEC_UNIT,
+                        "height": int(round((item.height or 4) * ROW_UNITS_PER_SPEC_UNIT)),
                     },
                 }
                 continue
