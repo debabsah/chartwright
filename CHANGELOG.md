@@ -74,6 +74,9 @@ The design brain, plus the fixes found reviewing it.
 
 ### Fixed
 
+- `docs/FEATURES.md` said every filter-bar control can be scoped to specific
+  charts. Value pickers (`select`) and numeric sliders (`range`) can; the time
+  range applies to the whole dashboard.
 - A select filter with `default_to_first` showed its first value while every chart queried
   unfiltered until the viewer pressed Apply. Superset applies a value on load only for a
   filter marked `requiredFirst`, which its own form saves with "select first value"
