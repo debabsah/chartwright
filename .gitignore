@@ -11,3 +11,6 @@ profiles.toml
 
 # Local working notes (roadmaps, scratch plans). Never committed.
 *.local.md
+
+# Local working specs (per-deployment dashboards). Never committed.
+work-specs/
