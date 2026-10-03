@@ -49,6 +49,8 @@ jobs:
         run: bash sandbox/up.sh --tag "${{ matrix.superset }}" 8098
       - name: Kitchen-sink apply + slice-id stability
         run: python tools/ci_live_check.py --base-url http://localhost:8098
+      - name: Adopt a hand-built dashboard in place
+        run: python tools/ci_live_adopt.py --base-url http://localhost:8098
       - name: Lifecycle soak (25 cycles)
         run: python tools/soak.py --base-url http://localhost:8098 --cycles 25 --seed 7
       - name: Second-writer adversary

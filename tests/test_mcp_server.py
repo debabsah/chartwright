@@ -22,6 +22,7 @@ def test_tool_surface():
     tools = _run(mcp.list_tools())
     names = sorted(t.name for t in tools)
     assert names == [
+        "adopt_dashboard",
         "advise_spec",
         "build_dashboard",
         "check_spec",

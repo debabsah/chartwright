@@ -67,7 +67,7 @@ own specs do.
   `python install-skill.py`; the model writes the spec from your request, and
   the tool verifies and builds it.
 - **MCP server**: `chartwright-mcp` (installed with `pip install "chartwright[mcp]"`)
-  exposes ten tools covering the whole lifecycle, usable from any MCP client.
+  exposes eleven tools covering the whole lifecycle, usable from any MCP client.
 - **Open contract**: `chartwright schema` prints the spec's JSON Schema, so any LLM or
   tool can generate valid specs.
 - **Guardrails**: the AI proposes; the tool verifies, using your own Superset
@@ -116,8 +116,8 @@ as-is.
   bundle offline, no server needed.
 - **Recoverable by default**: every apply backs up the previous state first,
   and a failed apply restores it. Dashboards Chartwright did not create are
-  never overwritten; to bring a hand-built one under a spec, decompile it
-  first.
+  never overwritten; to bring a hand-built one under a spec in place, run
+  `chartwright adopt` on it.
 - **What a spec can express**: 15 chart types, metrics as you write them,
   per-chart filters, a native filter bar, tabs, markdown notes, a footer shown
   under every tab, and layouts you can draw as ASCII sketches.

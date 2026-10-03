@@ -424,7 +424,7 @@ def _chart_yaml(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         "params": _chart_params(chart, spec, resolution),
         "query_context": None,
         "cache_timeout": None,
-        "uuid": str(ids.chart_uuid(spec.dashboard.slug, chart.name)),
+        "uuid": str(spec.chart_uuid(chart.name)),
         "version": "1.0.0",
         "dataset_uuid": ds.uuid,
     }
@@ -432,7 +432,6 @@ def _chart_yaml(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
 
 def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix: str, counter: list[int]) -> list[str]:
     """Emit ROW/CHART/MARKDOWN nodes for a list of rows; returns row ids."""
-    slug = spec.dashboard.slug
     row_ids: list[str] = []
     for i, row in enumerate(rows):
         row_id = f"ROW-{prefix}{i + 1}"
@@ -454,7 +453,7 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
                 }
                 continue
             counter[0] += 1
-            cuuid = ids.chart_uuid(slug, item)
+            cuuid = spec.chart_uuid(item)
             chart_id = f"CHART-sdc-{cuuid.hex[:10]}"
             child_ids.append(chart_id)
             pos[chart_id] = {
@@ -485,7 +484,7 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
 def _sketch_chart_node(pos, spec, sc, width, parents, counter) -> str:
     """Emit one CHART node from a sketch cell; explicit chart height wins."""
     counter[0] += 1
-    cuuid = ids.chart_uuid(spec.dashboard.slug, sc.name)
+    cuuid = spec.chart_uuid(sc.name)
     chart_id = f"CHART-sdc-{cuuid.hex[:10]}"
     explicit = next(c.height for c in spec.charts if c.name == sc.name)
     pos[chart_id] = {
@@ -758,7 +757,7 @@ def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
         "certified_by": None,
         "certification_details": None,
         "published": True,
-        "uuid": str(ids.dashboard_uuid(spec.dashboard.slug)),
+        "uuid": str(spec.dashboard_uuid()),
         "position": _position(spec),
         "metadata": metadata,
         "version": "1.0.0",
@@ -780,7 +779,7 @@ def compile_bundle(
     }
     for chart in spec.charts:
         safe = "".join(ch if ch.isalnum() else "_" for ch in chart.name)
-        files[f"{BUNDLE_ROOT}/charts/{safe}_{ids.chart_uuid(spec.dashboard.slug, chart.name).hex[:8]}.yaml"] = _yaml(
+        files[f"{BUNDLE_ROOT}/charts/{safe}_{spec.chart_uuid(chart.name).hex[:8]}.yaml"] = _yaml(
             _chart_yaml(chart, spec, resolution)
         )
     for rel, content in (extra_files or {}).items():

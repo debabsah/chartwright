@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from . import ids
 from .client import SupersetClient
 from .decompile import decompile_live
 from .spec import DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec
@@ -140,7 +139,7 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     # list_columns; find_dashboard_by_slug already returned it.
     live_uuid = existing.get("uuid") or client.get(
         f"/api/v1/dashboard/{existing['id']}")["result"].get("uuid")
-    if str(live_uuid) != str(ids.dashboard_uuid(target.dashboard.slug)):
+    if str(live_uuid) != str(target.dashboard_uuid()):
         return Plan(dashboard="blocked",
                     detail=f"slug {target.dashboard.slug!r} exists but is not owned by this tool")
 

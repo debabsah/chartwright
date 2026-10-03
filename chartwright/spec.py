@@ -10,6 +10,7 @@ filter bar (select, time_range, numeric range), markdown blocks, and tabs.
 from __future__ import annotations
 
 import re
+import uuid as _uuid
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -603,6 +604,33 @@ class Tab(_SketchHolder):
         return self
 
 
+class AdoptedIdentity(BaseModel):
+    """The existing dashboard this spec takes over in place, written by `chartwright
+    adopt`. Without it, a spec's dashboard and charts get ids derived from the slug,
+    and the tool refuses to touch any dashboard it did not create; with it, apply
+    updates THIS dashboard and these charts (same ids, same address)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dashboard_uuid: str = Field(description="uuid of the adopted dashboard")
+    charts: dict[str, str] = Field(
+        default_factory=dict,
+        description="Chart name -> uuid of the adopted chart. Rename a key together with its chart.",
+    )
+
+    @model_validator(mode="after")
+    def _uuids(self) -> "AdoptedIdentity":
+        for label, value in [("dashboard_uuid", self.dashboard_uuid), *self.charts.items()]:
+            try:
+                _uuid.UUID(value)
+            except ValueError:
+                raise ValueError(f"adopted: {label!r} is not a uuid: {value!r}") from None
+        dupes = {v for v in self.charts.values() if list(self.charts.values()).count(v) > 1}
+        if dupes:
+            raise ValueError(f"adopted: one chart uuid mapped to several names: {sorted(dupes)}")
+        return self
+
+
 class DashboardMeta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -624,6 +652,14 @@ class DashboardMeta(BaseModel):
             "{\"Revenue\": \"#1FA8C9\"}. Superset otherwise assigns colours as the page "
             "loads, so a measure can change colour between charts and visits; these win over "
             "the scheme and the per-view map (6.1.0 applyColors)."
+        ),
+    )
+
+    adopted: AdoptedIdentity | None = Field(
+        default=None,
+        description=(
+            "Set by `chartwright adopt`: the existing dashboard (and its charts) this spec "
+            "manages in place. Leave it out for dashboards the tool creates."
         ),
     )
 
@@ -703,6 +739,17 @@ class DashboardSpec(BaseModel):
     filters: list[DashboardFilter] = Field(default_factory=list, description="Native filter bar")
     layout: Layout
     design: DesignConfig | None = Field(default=None, description="Design-brain settings (optional)")
+
+    @model_validator(mode="after")
+    def _adopted_names(self) -> "DashboardSpec":
+        adopted = self.dashboard.adopted
+        if adopted:
+            unknown = sorted(set(adopted.charts) - {c.name for c in self.charts})
+            if unknown:
+                raise ValueError(
+                    f"dashboard.adopted.charts names charts not in the spec: {unknown}; "
+                    "rename the key together with its chart, or drop the entry")
+        return self
 
     @field_validator("charts")
     @classmethod
@@ -836,6 +883,26 @@ class DashboardSpec(BaseModel):
         pos = next(i for i, x in enumerate(implicit)
                    if x is item or (isinstance(item, str) and x == item))
         return max(1, base + (1 if pos < rem else 0))
+
+    # -- identity: derived from the slug, or the adopted dashboard's own ids ----
+
+    def dashboard_uuid(self) -> _uuid.UUID:
+        from . import ids
+
+        adopted = self.dashboard.adopted
+        return _uuid.UUID(adopted.dashboard_uuid) if adopted else ids.dashboard_uuid(self.dashboard.slug)
+
+    def chart_uuid(self, name: str) -> _uuid.UUID:
+        from . import ids
+
+        adopted = self.dashboard.adopted
+        if adopted and name in adopted.charts:
+            return _uuid.UUID(adopted.charts[name])
+        return ids.chart_uuid(self.dashboard.slug, name)
+
+    def owns_chart_uuid(self, value: str) -> bool:
+        """A chart this spec may update or delete: one of its own charts by uuid."""
+        return any(str(self.chart_uuid(c.name)) == str(value) for c in self.charts)
 
     def resolved_height(self, name: str) -> float:
         chart = next(c for c in self.charts if c.name == name)

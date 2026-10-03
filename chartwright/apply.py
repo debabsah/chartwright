@@ -50,7 +50,8 @@ def check(spec: DashboardSpec, client: SupersetClient) -> Resolution:
 
 def _ownership_guard(spec: DashboardSpec, client: SupersetClient) -> str | None:
     """Refuse to overwrite a dashboard at our slug that we did not create.
-    uuid5-owned objects are safe to overwrite; anything else is someone's work."""
+    uuid5-owned objects are safe to overwrite; anything else is someone's work,
+    unless the spec adopted that exact dashboard (`chartwright adopt`)."""
     existing = client.find_dashboard_by_slug(spec.dashboard.slug)
     if existing is None:
         return None
@@ -66,11 +67,17 @@ def _ownership_guard(spec: DashboardSpec, client: SupersetClient) -> str | None:
             if "/dashboards/" in n and n.endswith(".yaml"):
                 existing_uuid = str(yaml.safe_load(zf.read(n)).get("uuid"))
                 break
-    if existing_uuid != str(ids.dashboard_uuid(spec.dashboard.slug)):
+    if existing_uuid != str(spec.dashboard_uuid()):
+        if spec.dashboard.adopted:
+            return (
+                f"dashboard slug {spec.dashboard.slug!r} exists (id={existing['id']}) with uuid "
+                f"{existing_uuid}, but this spec adopted uuid {spec.dashboard.adopted.dashboard_uuid}; "
+                f"refusing to overwrite a different dashboard. Re-run `chartwright adopt` for it."
+            )
         return (
             f"dashboard slug {spec.dashboard.slug!r} exists (id={existing['id']}) with uuid "
             f"{existing_uuid}, which this tool does not own; refusing to overwrite. "
-            f"Pick a different slug."
+            f"Pick a different slug, or take it over with `chartwright adopt`."
         )
     return None
 
@@ -202,13 +209,26 @@ def bundle_dataset_ids(bundle: bytes, client: SupersetClient) -> dict[str, int]:
     return found
 
 
+def _unlink_charts(client: SupersetClient, dashboard_id: int, charts: list[dict]) -> list[str]:
+    """Remove `dashboard_id` from each chart's dashboards, keeping the chart and its
+    other dashboards. Returns the names unlinked."""
+    done = []
+    for c in charts:
+        detail = client.get(f"/api/v1/chart/{c['id']}")["result"]
+        keep = [d["id"] for d in detail.get("dashboards") or [] if d.get("id") != dashboard_id]
+        r = client.put_json(f"/api/v1/chart/{c['id']}", {"dashboards": keep})
+        if r.status_code == 200:
+            done.append(c["slice_name"])
+    return done
+
+
 def _update_owned_charts_in_place(
     spec: DashboardSpec, client: SupersetClient, bundle: bytes,
     existing_by_uuid: dict[str, dict], resolution: Resolution | None = None,
 ) -> tuple[list[str], list[str]]:
     """PUT compiled params (and the spec dataset) onto pre-existing owned charts (ids
     stay stable). Returns (updated chart names, errors)."""
-    owned = {str(ids.chart_uuid(spec.dashboard.slug, c.name)): c.name for c in spec.charts}
+    owned = {str(spec.chart_uuid(c.name)): c.name for c in spec.charts}
     dataset_ids = {str(d.uuid): d.id for d in resolution.datasets.values()} if resolution else None
     payloads = chart_payloads_from_bundle(bundle, dataset_ids)
     updated, errors = [], []
@@ -367,8 +387,8 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
             # otherwise accumulate as an instance orphan. uuid5 ownership
             # (uuid == chart_uuid(slug, its own name)) gates the delete;
             # user charts and UI-renamed drift are never touched.
-            stale = {c["slice_name"] for c in client.dashboard_charts(existing["id"])}
-            stale -= {c.name for c in spec.charts}
+            linked_now = client.dashboard_charts(existing["id"])
+            stale = {c["slice_name"] for c in linked_now} - {c.name for c in spec.charts}
             if stale:
                 owned_stale = client.charts_by_uuids(
                     {str(ids.chart_uuid(spec.dashboard.slug, n)): n for n in stale})
@@ -378,12 +398,23 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
                     report.warnings.append(
                         f"deleted owned charts no longer in spec: {sorted(row['slice_name'] for row in owned_stale.values())}"
                     )
+                if spec.dashboard.adopted:
+                    # An adopted dashboard's original charts were made by hand and may
+                    # sit on other dashboards too: take them off THIS one, never delete.
+                    deleted = {row["id"] for row in owned_stale.values()}
+                    unlinked = _unlink_charts(
+                        client, existing["id"],
+                        [c for c in linked_now if c["slice_name"] in stale and c["id"] not in deleted])
+                    if unlinked:
+                        report.warnings.append(
+                            f"took charts no longer in the spec off the adopted dashboard "
+                            f"(not deleted): {sorted(unlinked)}")
 
         extra = _roundtrip_dataset_files(resolution, client)
         # Slice ids must survive re-apply (see chart_payloads_from_bundle): existing
         # owned charts are updated in place AFTER import; the importer creates only
         # the missing ones and never overwrites existing charts.
-        owned_names = {str(ids.chart_uuid(spec.dashboard.slug, c.name)): c.name for c in spec.charts}
+        owned_names = {str(spec.chart_uuid(c.name)): c.name for c in spec.charts}
         existing_by_uuid = client.charts_by_uuids(owned_names)
 
         report.stage = "import"

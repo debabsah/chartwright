@@ -116,6 +116,9 @@ class DecompileResult:
     spec: dict
     losses: list[Loss] = field(default_factory=list)
     dataset_uuids: dict[str, str] = field(default_factory=dict)  # chart name -> dataset uuid
+    chart_uuids: dict[str, str] = field(default_factory=dict)  # chart name -> chart uuid
+    skipped_charts: list[str] = field(default_factory=list)  # charts the spec can't represent
+    dashboard_uuid: str | None = None
 
     def losses_json(self) -> list[dict]:
         return [loss.as_dict() for loss in self.losses]
@@ -707,6 +710,8 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
 
     charts_by_name: dict[str, dict] = {}
     dataset_uuids: dict[str, str] = {}
+    chart_uuids: dict[str, str] = {}
+    skipped: list[str] = []
     for n in zf.namelist():
         if "/charts/" in n and n.endswith(".yaml"):
             cy = yaml.safe_load(zf.read(n))
@@ -717,6 +722,10 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
                     spec_chart["name"] = f"{spec_chart['name']} (2)"
                 charts_by_name[spec_chart["name"]] = spec_chart
                 dataset_uuids[spec_chart["name"]] = str(cy.get("dataset_uuid"))
+                if cy.get("uuid"):
+                    chart_uuids[spec_chart["name"]] = str(cy["uuid"])
+            else:
+                skipped.append(cy.get("slice_name") or "Unnamed")
 
     title = dash.get("dashboard_title") or "Untitled"
     slug = dash.get("slug")
@@ -860,7 +869,11 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             f"the dataset index stopped at {truncated} datasets (page cap); any "
             f"'dataset uuid not resolvable' loss above may be a dataset past the cap "
             f"rather than a missing one -- re-check those charts before trusting this spec"))
-    return DecompileResult(spec=spec, losses=losses, dataset_uuids=dataset_uuids)
+    return DecompileResult(spec=spec, losses=losses, dataset_uuids=dataset_uuids,
+                           chart_uuids={n: u for n, u in chart_uuids.items()
+                                        if n in {c["name"] for c in spec.get("charts", [])}},
+                           skipped_charts=skipped,
+                           dashboard_uuid=str(dash["uuid"]) if dash.get("uuid") else None)
 
 
 PAGE_CAP = 200  # 20,000 datasets; a runaway guard, not an expected ceiling

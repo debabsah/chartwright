@@ -203,6 +203,23 @@ def decompile_dashboard(dashboard: str, profile: str) -> str:
 
 
 @mcp.tool()
+def adopt_dashboard(dashboard: str, profile: str, force: bool = False) -> str:
+    """Take over an existing dashboard (slug or numeric id) in place: returns a spec
+    that names that dashboard and its charts by their own ids, so applying it
+    updates the same dashboard (same address, links and reports keep working).
+    Changes nothing in Superset itself; run plan_dashboard on the spec before
+    build_dashboard. Refuses when some charts can't be represented (applying would
+    take them off the dashboard) unless force is true."""
+    from .adopt import adopt_live
+
+    try:
+        result = adopt_live(dashboard, _client(profile), force=force)
+    except ValueError as e:
+        return json.dumps({"ok": False, "stage": "adopt", "errors": [{"code": "decompile", "detail": str(e)}]})
+    return json.dumps({**result.payload(), "spec": result.spec})
+
+
+@mcp.tool()
 def redesign_dashboard(dashboard: str, profile: str, audience: str = "") -> str:
     """One-shot redesign of a live dashboard (slug or numeric id): decompile,
     design-audit with data-aware rules, apply safe geometry fixes. Returns the

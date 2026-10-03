@@ -27,16 +27,17 @@ real use and that a single test run holds constant:
 Every layer below runs in CI on every push: the offline suite on
 `ubuntu-latest` and `windows-latest`, then per-version live jobs that boot a
 real `apache/superset` container at each of the three releases and run the
-live check, a 25-cycle soak, the second-writer scenarios, and fault
-injection.
+live check, the adopt-in-place check, a 25-cycle soak, the second-writer
+scenarios, and fault injection.
 
 ## The matrix
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (343 tests, 35 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows, mcp 1 and 2 |
+| Offline suite (353 tests, 36 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every push |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every push, all 3 versions |
+| Adopt-in-place check | A hand-built dashboard is taken over with its id and chart ids kept; a dropped chart leaves the dashboard but is not deleted | every push, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every push |
 | Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every push, all 3 versions |
 | Fault injection | A typed failure at every stage boundary; complete restore | every push, all 3 versions |
@@ -115,6 +116,14 @@ warning, never a silent pass. Finally a second apply of the same spec,
 asserting that every chart keeps its id. Id stability matters because
 dashboard metadata references charts by id: changing ids is what turns a
 stale browser tab into a writer that corrupts filter scopes.
+
+**Adopt in place (`tools/ci_live_adopt.py`).** Imports a dashboard that looks
+built in the UI (every dashboard and chart uuid random), then checks, in
+order: a plain spec at that address is refused; `adopt` writes a spec and
+`plan` of it against the live dashboard is clean; applying it updates the
+same dashboard, with the same dashboard id and the same chart ids; a chart
+dropped from the spec is taken off the dashboard and still exists; a
+second apply keeps every id.
 
 ## 4. Lifecycle soak (`tools/soak.py`)
 
@@ -225,6 +234,7 @@ python tools/params_drift.py --all         # chart options vs plugin source, 3 v
 # live (any sandbox; sandbox/up.sh --tag <v> boots one)
 export SDC_CI_PASSWORD=admin
 python tools/ci_live_check.py --base-url http://localhost:8098
+python tools/ci_live_adopt.py --base-url http://localhost:8098
 python tools/soak.py       --base-url http://localhost:8098 --cycles 500 --seed 1
 python tools/adversary.py  --base-url http://localhost:8098
 python tools/faultline.py  --base-url http://localhost:8098

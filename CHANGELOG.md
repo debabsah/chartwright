@@ -9,6 +9,20 @@ The design brain, plus the fixes found reviewing it.
 
 ### Added
 
+- **`chartwright adopt <dashboard>`**: take over a dashboard built in the UI in
+  place. It writes a spec that names that dashboard and its charts by their own
+  ids (`dashboard.adopted`), so applying it updates the same dashboard: its
+  address, id and chart ids stay, and links, embeds and scheduled reports keep
+  pointing at it. Adopt changes nothing in Superset; `plan` shows what the first
+  apply will change, and apply backs up first. It refuses when some charts can't
+  be represented (applying would take them off the dashboard) unless `--force`.
+  Charts that leave an adopted dashboard's spec are taken off that dashboard,
+  never deleted, since a hand-made chart may sit on other dashboards too.
+  `restore` also accepts the tool's own backups, which covers the first backup
+  of an adopted dashboard. Also an MCP tool (`adopt_dashboard`). Known limit:
+  native filters get the tool's own ids on the first apply, so saved filter-state
+  links made before adoption may not carry over. Checked live on 4.1.4, 5.0.0
+  and 6.1.0 by `tools/ci_live_adopt.py`.
 - **`layout.footer`**: rows below the rows, tabs, or sketch, outside any tab,
   so a tabbed dashboard shows them under every tab. Round-trips through
   decompile and `plan`; rows below a dashboard's tabs, including ones placed
