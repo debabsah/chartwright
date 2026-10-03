@@ -112,8 +112,16 @@ def _call(name, args, profile):
     return json.loads(_text(_run(mcp.call_tool(name, {**args, "profile": profile}))))
 
 
+def _input_schema(tool):
+    """mcp 1 names it inputSchema; mcp 2 input_schema (inputSchema on the wire)."""
+    for attr in ("inputSchema", "input_schema"):
+        if hasattr(tool, attr):
+            return getattr(tool, attr)
+    return tool.model_dump(by_alias=True)["inputSchema"]
+
+
 def test_signing_in_tools_keep_their_parameters():
-    schemas = {t.name: t.inputSchema for t in _run(mcp.list_tools())}
+    schemas = {t.name: _input_schema(t) for t in _run(mcp.list_tools())}
     for name, args in SIGNING_IN:
         assert set(args) | {"profile"} <= set(schemas[name]["properties"]), name
 
