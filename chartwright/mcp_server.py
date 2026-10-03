@@ -34,10 +34,7 @@ def _client(profile: str):
     from .profiles import load_profile
 
     p = load_profile(profile)
-    c = SupersetClient(p.base_url, p.username, p.password, auth_provider=p.auth_provider,
-                       ca_bundle=p.ca_bundle, verify=p.verify,
-                       api_token=p.api_token, api_secret=p.api_secret,
-                       preset_baseurl=p.preset_baseurl)
+    c = SupersetClient.from_profile(p)
     c.login()
     return c
 

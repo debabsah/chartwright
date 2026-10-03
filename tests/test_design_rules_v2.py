@@ -188,3 +188,26 @@ def test_markdown_height_fix():
     assert entry["set"] == {"height": 2} and entry["was"] == {"height": 6}
     assert fixed["layout"]["rows"][0][0]["height"] == 2
     load_spec(fixed)
+
+
+def test_markdown_height_fix_reaches_sub_tabs_and_footer():
+    md = {"markdown": "## Section", "height": 6}
+    data = mk([line("L"), line("M")], layout={
+        "tabs": [{"title": "Region", "tabs": [{"title": "East", "rows": [[md], ["L"]]}]}],
+        "footer": [[dict(md)], ["M"]],
+    })
+    fixed, rep = advise_and_fix(data, overlay=EMPTY)
+    where = sorted(e["md"][0] if e["md"][0] == "footer" else "sub" for e in rep.fixed
+                   if e["rule"] == "layout.markdown-height")
+    assert where == ["footer", "sub"]
+    assert fixed["layout"]["tabs"][0]["tabs"][0]["rows"][0][0]["height"] == 2
+    assert fixed["layout"]["footer"][0][0]["height"] == 2
+    load_spec(fixed)
+
+
+def test_a_chart_in_the_footer_is_advised_not_a_crash():
+    data = mk([line("L"), line("F")], layout={"rows": [["L"]], "footer": [["F"]]})
+    rep = run(data)
+    assert {f.where for f in rep.findings if f.chart == "F"} <= {"footer row 0"}
+    # A footer is not a tab: it never makes a flat dashboard look tabbed.
+    assert "layout.tab-balance" not in {f.rule for f in rep.findings}

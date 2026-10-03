@@ -11,12 +11,20 @@ import copy
 from .model import Finding
 
 
-def _md_block(data: dict, ti, ri, ii):
-    """The raw markdown-block dict at (tab, row, item), or None if the layout
-    changed under us (stale indices are skipped, never errors)."""
+def _md_block(data: dict, addr, ri, ii):
+    """The raw markdown-block dict at (container, row, item), or None if the
+    layout changed under us (stale indices are skipped, never errors). The
+    container is None (layout rows), a tab index, [tab, sub-tab], or "footer"."""
     try:
-        rows = (data["layout"]["tabs"][ti]["rows"] if ti is not None
-                else data["layout"]["rows"])
+        lay = data["layout"]
+        if addr is None:
+            rows = lay["rows"]
+        elif addr == "footer":
+            rows = lay["footer"]
+        elif isinstance(addr, list):
+            rows = lay["tabs"][addr[0]]["tabs"][addr[1]]["rows"]
+        else:
+            rows = lay["tabs"][addr]["rows"]
         item = rows[ri][ii]
     except (KeyError, IndexError, TypeError):
         return None

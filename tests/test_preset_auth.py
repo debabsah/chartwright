@@ -160,3 +160,20 @@ def test_password_profile_still_takes_the_old_path():
     assert s.headers["Authorization"] == "Bearer tok"
     assert s.headers["X-CSRFToken"] == "csrf-abc"          # still required self-hosted
     assert not any("preset.io" in u for u in s.calls)
+
+
+def test_from_profile_carries_every_profile_setting():
+    """The CLI and the MCP server both build their client here; a profile field
+    the client takes but this skips would break sign-in on both at once."""
+    import dataclasses
+
+    from chartwright.profiles import Profile
+
+    p = Profile(name="w", base_url="https://ws.example/", username="u", password="pw",
+                auth_provider="ldap", ca_bundle="/ca.pem", verify=False, api_token="t",
+                api_secret="s", preset_baseurl="https://api.example/")
+    c = SupersetClient.from_profile(p)
+    for f in dataclasses.fields(Profile):
+        if f.name != "name":
+            want = getattr(p, f.name).rstrip("/") if f.name == "base_url" else getattr(p, f.name)
+            assert getattr(c, f.name) == want, f.name

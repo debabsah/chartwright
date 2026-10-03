@@ -10,7 +10,7 @@ from chartwright.compiler import compile_bundle
 from chartwright.dashdiff import _normalize
 from chartwright.decompile import _format_to_spec, decompile_bundle
 from chartwright.spec import load_spec
-from chartwright.testing import stub_resolution
+from chartwright.testing import edit_bundle, stub_resolution
 
 from test_table_sort import _lookup, aggregate, mk, params_for, raw
 
@@ -126,3 +126,44 @@ def test_cell_bars_and_date_format_emit_only_when_set_and_round_trip():
     result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _lookup(spec))
     assert result.losses == [], result.losses_json()
     assert _normalize(load_spec(result.spec))["charts"] == _normalize(spec)["charts"]
+
+
+def _edit_params(bundle: bytes, edit) -> bytes:
+    """The same bundle with every chart's params passed through `edit`."""
+    return edit_bundle(bundle, lambda path, doc: edit(doc["params"]) if "/charts/" in path else None)
+
+
+def test_settings_for_a_dropped_column_are_dropped_with_a_loss():
+    def stale(p):
+        p["column_config"]["gone"] = {"visible": False, "d3NumberFormat": ".1f"}
+        p["conditional_formatting"].append(
+            {"column": "gone", "colorScheme": "#ACE1C4", "operator": "=", "targetValue": 1})
+        p["conditional_formatting"].append(
+            {"column": "status", "colorScheme": "#ACE1C4", "operator": "=", "targetValue": 1,
+             "columnFormatting": "gone"})
+
+    spec = mk(board())
+    bundle = _edit_params(compile_bundle(spec, stub_resolution(spec)), stale)
+    result = decompile_bundle(bundle, _lookup(spec))
+    live = load_spec(result.spec)  # a valid spec, not a validation error
+    assert _normalize(live)["charts"] == _normalize(spec)["charts"]
+    assert sum("'gone'" in l.what for l in result.losses) == 3, result.losses_json()
+
+
+def test_pivot_rule_on_a_dropped_metric_is_dropped_with_a_loss():
+    spec = load_spec({
+        "spec_version": "1", "dashboard": {"title": "T", "slug": "t"},
+        "charts": [{"name": "P", "type": "pivot_table", "dataset": {"database": "db", "table": "t"},
+                    "rows": ["r"], "metrics": ["MAX(st) AS status"],
+                    "conditional_formatting": [{k: v for k, v in STATUS[0].items() if k != "apply_to"}]}],
+        "layout": {"rows": [["P"]]},
+    })
+
+    def stale(p):
+        p["conditional_formatting"].append(
+            {"column": "gone", "colorScheme": "#ACE1C4", "operator": "=", "targetValue": 1})
+
+    bundle = _edit_params(compile_bundle(spec, stub_resolution(spec)), stale)
+    result = decompile_bundle(bundle, _lookup(spec))
+    assert len(load_spec(result.spec).charts[0].conditional_formatting) == 1
+    assert any("'gone'" in l.what for l in result.losses), result.losses_json()

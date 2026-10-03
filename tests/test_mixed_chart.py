@@ -197,3 +197,28 @@ def test_every_month_keeps_both_ends_on_lines_and_bars():
     for version in contract:
         assert check(version, contract, {"echarts_timeseries_line": set(pl), "mixed_timeseries": set(pm)}) == [], version
 
+
+
+def test_a_grain_beside_a_category_column_keeps_the_category_axis():
+    """Superset stores time_grain_sqla on every UI-born mixed chart, so decompile hands
+    back a time_grain even on a category x axis. A column the instance reports as not
+    temporal stays a category axis: no grain, the dashboard time binding, and the
+    category label control."""
+    spec = _spec({**BY_CAUSE, "time_grain": "P1D", "x_label_every": True})
+    res = stub_resolution(spec)
+    for ds in res.datasets.values():
+        ds.main_dttm_col = "event_date"
+        ds.column_types["category"] = 1  # STRING
+    _, p = _params(spec, res)["Categories: count and revenue"]
+    assert "time_grain_sqla" not in p
+    assert p["granularity_sqla"] == "event_date"
+    assert p["xAxisLabelInterval"] == "0" and "force_max_interval" not in p
+
+
+def test_a_reported_temporal_column_is_a_time_axis_without_a_grain():
+    spec = _spec({**BY_MONTH, "time_grain": None})
+    res = stub_resolution(spec)
+    for ds in res.datasets.values():
+        ds.column_types["month_start"] = 2  # TEMPORAL
+    _, p = _params(spec, res)["Revenue and revenue per order"]
+    assert p["time_grain_sqla"] == "P1D" and "granularity_sqla" not in p
