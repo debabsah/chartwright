@@ -17,7 +17,7 @@ import math
 from dataclasses import dataclass
 
 from .client import SupersetClient
-from .compiler import _metric_payload
+from .compiler import _metric_payload, mixed_time_axis
 from .resolver import Resolution
 from .spec import GRID_HEADER_UNITS, DashboardSpec, grid_units_for_rows
 
@@ -138,7 +138,7 @@ def _query_for(chart, spec: DashboardSpec) -> dict:
 def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
     """Query A and query B, as MixedTimeseries/buildQuery.ts sends them."""
     x = (_time_axis(chart.x_column, chart.time_grain)
-         if chart.time_grain or ds.is_temporal(chart.x_column) else chart.x_column)
+         if mixed_time_axis(chart, ds) else chart.x_column)
     out = []
     for series in (chart.a, chart.b):
         out.append({

@@ -227,8 +227,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         # unknown. Superset stores a grain on every UI-born mixed chart, so a grain
         # beside a category column must not turn it into a time axis.
         p["x_axis"] = chart.x_column
-        temporal = ds.is_temporal(chart.x_column)
-        if temporal or (temporal is None and chart.time_grain):
+        if mixed_time_axis(chart, ds):
             p["time_grain_sqla"] = chart.time_grain or DEFAULT_TIME_GRAIN
         if chart.time_range:
             p["time_range"] = chart.time_range
@@ -368,6 +367,14 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
     if t not in timeseries and not time_x and ds.main_dttm_col:
         p["granularity_sqla"] = ds.main_dttm_col
     return p
+
+
+def mixed_time_axis(chart, ds) -> bool:
+    """Whether a mixed chart's x column draws a time axis: the column's reported type
+    decides (a column flagged temporal counts), time_grain only when it is unknown.
+    The compiler and smoke share it, so the smoke query matches the chart."""
+    temporal = ds.is_temporal(chart.x_column)
+    return bool(temporal or (temporal is None and chart.time_grain))
 
 
 def _x_label_params(chart: _AxisChart, p: dict) -> None:

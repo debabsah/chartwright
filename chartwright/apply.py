@@ -254,7 +254,13 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
 
         # With the dataset ids, a restore also moves each chart back onto its
         # backed-up dataset, so its datasource_id matches the params it gets.
-        payloads = chart_payloads_from_bundle(zip_bytes, bundle_dataset_ids(zip_bytes, client))
+        # Best effort: a failed lookup must not stop the restore itself.
+        try:
+            dataset_ids = bundle_dataset_ids(zip_bytes, client)
+        except SupersetAPIError as e:
+            dataset_ids = {}
+            report.warnings.append(f"chart datasets not restored (dataset lookup failed: {e})")
+        payloads = chart_payloads_from_bundle(zip_bytes, dataset_ids)
         existing = client.charts_by_uuids(
             {u: p["slice_name"] for u, p in payloads.items()})
         restored = []
