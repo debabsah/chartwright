@@ -11,8 +11,8 @@ into one. Everything below works from that one file.
     - A screenshot of a dashboard in another BI tool, pointed at the same underlying data.
 - **Reviewable Checkpoint**: The AI's output is a small spec file you can read, edit, and version like code.
 - **Open AI Contract**: `chartwright schema` prints the full JSON Schema so any LLM or tool can generate valid specs.
-- **MCP Server**: Ten tools covering the whole lifecycle, usable from any MCP client.
-- **Guardrails**: The dashboard is new; the data behind it must be real. Every dataset, column, and metric the AI references is confirmed to exist before anything is built, so a made-up column becomes a clear error message, never a broken chart.
+- **MCP Server**: Ten tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
+- **Guardrails**: The dashboard is new; the data behind it must be real. Every dataset, column, and metric the AI references is confirmed to exist before anything is built, so a made-up column becomes a clear error message, never a broken chart. The error suggests the closest real column names and lists the dataset's columns, so the AI can correct itself in one round.
 
 ## Dashboard Design
 - **Deterministic Dashboards**: The same spec always produces the identical dashboard. Diff it in git, review it in a PR.
@@ -49,30 +49,30 @@ into one. Everything below works from that one file.
 
 ## Dashboards as Code
 - **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, layout.
-- **Adopt Existing Dashboards**: Turn any dashboard built in the UI into a spec with `chartwright decompile`; anything it cannot carry over is listed, so you know exactly what stayed in the UI.
-- **Lossless Round-Trips**: Tool-built dashboards decompile back to their exact spec.
+- **Start From Existing Dashboards**: Turn any dashboard built in the UI into a spec with `chartwright decompile`, then build it as a copy at a new slug. Most of what it can't carry over is listed; a few settings (such as dashboard CSS, annotations and tab-scoped filters) are dropped without a note, so compare before you retire the original.
+- **Lossless Round-Trips**: Tool-built dashboards with `rows` or `tabs` layouts decompile back with nothing lost; a `sketch` comes back as rows.
 - **Targeted Edits**: Replace, rename, resize, or remove one chart and re-apply; old charts are cleaned up, never orphaned.
 - **Stable Identity**: Chart ids never change across re-applies, so links, scopes, and open browser tabs stay valid.
 
 ## CI/CD and Promotion
-- **Environment Promotion**: Specs name their data (connection, schema, table), so the same file applies to dev, staging, and production unchanged; nothing in it is tied to one instance.
+- **Environment Promotion**: Specs name their data (connection, schema, table), never instance ids, so the same file applies to dev, staging, and production when they share connection names; where names differ, generate one copy per instance.
 - **PR-Gated Dashboard Changes**: Specs live in git; `chartwright plan` passes when the live dashboard matches the spec and fails when it drifted, ready as a merge gate; read-only `chartwright check` runs safely on any schedule.
 - **Offline Compilation**: Build the import bundle with `chartwright compile`, no server needed; the output is reproducible byte-for-byte.
-- **Instance Migration**: Decompile from one Superset, apply to another.
+- **Instance Migration**: Decompile from one Superset, apply the spec to another; it applies to 4.1.4 and 5.0.0 even when it came from 6.1.0, whose exports those releases reject.
 - **Git as the Source of Truth**: A lost or mangled dashboard is one re-apply away from its spec.
 
 ## Safety and Recovery
-- **Automatic Backups**: Every apply saves the previous state first, no flag needed.
+- **Automatic Backups**: Every apply to an existing dashboard saves the live state first, no flag needed; backups are named to the microsecond and never overwritten.
 - **Complete Restore**: `chartwright restore` brings back the dashboard, chart settings, and filter scopes.
-- **Self-Healing Applies**: A failed apply restores the previous state automatically.
+- **Self-Healing Applies**: When an apply fails while preparing, importing or updating charts, the previous state is restored automatically, whatever the error. A failure after that (linkage, filter scopes, chart queries) leaves the new version live, and the report gives the backup to restore.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
-- **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once to prove it shows data; any failure says what went wrong and where.
-- **Ownership Guard**: The tool only ever overwrites dashboards it created. To edit a hand-built dashboard, adopt it first (decompile it into a spec, then apply); the original stays untouched.
+- **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once: an error fails the apply, and a chart that returns no rows is named. Any failure says what went wrong and where.
+- **Ownership Guard**: The tool only ever overwrites dashboards it created. To manage a hand-built dashboard, decompile it into a spec and build it at a new slug; the original stays untouched.
 
 ## Enterprise Ready
 - **Multiple Instances**: Sandbox, staging, and production as profiles in one file.
 - **Secrets Stay Out of Your Profiles**: Point each profile at where its secret already lives.
-    - Self-hosted Superset signs in with a username and password (database or LDAP provider): take the password from an env var (any name) or your credential manager (1Password, macOS Keychain, sops). On SSO-only Superset, ask your admin for a service account with password login enabled.
+    - Self-hosted Superset signs in with a username and password (database or LDAP provider): take the password from an env var (any name) or your credential manager (1Password, macOS Keychain, sops). Chartwright never signs in through SSO or OAuth; on an instance where people use SSO, ask your admin for an account that has a Superset password.
     - Preset-hosted workspaces (preset.io) sign in with an API token and secret: take them from env vars, or reuse the credentials preset-cli already stored.
 - **What the AI Can See**: The AI proposes; the tool verifies, using your own Superset login. Verification reads names (datasets, columns, metrics), not rows; the AI never queries your warehouse.
     - The post-apply data check keeps a row count and discards the rows.
@@ -81,10 +81,10 @@ into one. Everything below works from that one file.
 
 ## More Ways to Use It
 - **Dashboard Documentation**: Decompile any dashboard into a readable inventory of its charts, metrics, and filters.
-- **Cloning and Templating**: Copy a spec, change the name and the data it points at, apply. A proven dashboard becomes a starting point.
+- **Cloning**: Copy a spec, change the slug and the data it points at, apply. A proven dashboard becomes a starting point; a short script makes one copy per team or tenant (specs hold literal values, no template variables).
 - **Programmatic Dashboards**: Specs are JSON; generate or edit them with scripts, one dashboard per file.
 - **Drift Audits**: Run `plan` on a schedule to catch UI edits that diverged from the reviewed spec.
-- **Training and Demo Environments**: Boot a sandbox, apply a spec, and every student or demo gets the identical dashboard.
+- **Training and Demo Environments**: Apply the same spec to each training or demo instance, and every student or demo gets the identical dashboard.
 - **Safe Experiments**: Try a redesign under a new name, compare side by side with the original, delete nothing.
 
 ## CLI Verbs
@@ -105,8 +105,8 @@ into one. Everything below works from that one file.
 | `chartwright restore` | Bring back a backed-up dashboard, completely |
 
 ## Testing and Evidence
-- **The full offline suite** on Linux and Windows on every push, and on every pull request ([exact counts](VERIFICATION.md)).
-- **Live CI against real Superset 4.1.4, 5.0.0, and 6.1.0** on every push: full apply, lifecycle soak, stale-tab adversary, fault injection.
+- **The full offline suite** on Linux and Windows on every pull request and every push to main ([exact counts](VERIFICATION.md)).
+- **Live CI against real Superset 4.1.4, 5.0.0, and 6.1.0** on every pull request and every push to main: full apply, lifecycle soak, stale-tab adversary, fault injection.
 - **500-cycle soak** passed on the oldest and newest supported versions.
 - **Chart options verified against Superset's own source code** for every supported version, so a Superset change surfaces here before it reaches your dashboards.
 - Full evidence: `docs/VERIFICATION.md`; source citations: `docs/CONTRACTS.md`.
