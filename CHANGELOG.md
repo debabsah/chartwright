@@ -9,6 +9,11 @@ The design brain, plus the fixes found reviewing it.
 
 ### Added
 
+- **A missing column names the real ones.** The error suggests up to three close matches
+  (a case-only difference first, then by spelling) and lists the dataset's columns, up to
+  50, where it used to give only their count. The JSON error carries the suggestions in a
+  new `candidates` field, so an AI agent can correct the spec in one round; the MCP
+  tools return the same.
 - **`layout.footer`**: rows below the rows, tabs, or sketch, outside any tab,
   so a tabbed dashboard shows them under every tab. Round-trips through
   decompile and `plan`; rows below a dashboard's tabs, including ones placed

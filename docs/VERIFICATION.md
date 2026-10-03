@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (347 tests, 36 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (354 tests, 37 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
@@ -106,7 +106,9 @@ a runtime surprise.
 ## 3. Live guarantee check (`tools/ci_live_check.py`)
 
 Runs against a real instance, start to finish. First, pre-flight
-resolution, which collects every bad reference into typed errors. Then an
+resolution, which collects every bad reference into typed errors, and a
+deliberately misspelled column, which must come back with the real column
+as its first suggestion. Then an
 apply of the complete example spec (`tests/fixtures/kitchen_sink.json`),
 which exercises all 15 chart types, per-chart WHERE filters, a native
 filter bar with two value pickers and a time range, plus markdown and tabs.
