@@ -74,6 +74,24 @@ The design brain, plus the fixes found reviewing it.
 
 ### Fixed
 
+- `pip install "chartwright[mcp]"` installed mcp 2, which renamed `mcp.server.fastmcp`,
+  so `chartwright-mcp` failed to start. The extra now pins `mcp>=1.0,<2`.
+- `advise` (and `advise_spec`, `plan_dashboard`) crashed with a `KeyError` on any chart in
+  `layout.footer`: the design checks now see the footer, and `layout.markdown-height`
+  checks and fixes text blocks in the footer and in sub-tabs too.
+- Decompile wrote a spec that failed validation when a table kept settings for a column
+  it no longer queries (Superset keeps `column_config` entries and colour rules after
+  the column leaves the query). Those settings are now dropped and listed as losses, on
+  tables and pivots alike.
+- Decompile wrote both `default_to_first` and `default` for a select filter that had
+  "select first value" on and a saved value, which the spec rejects. It keeps
+  `default_to_first` alone: Superset picks the first value again on load.
+- `restore` (and the automatic restore after a failed apply) now moves each chart back
+  onto its backed-up dataset, as apply does, so the chart's dataset matches its params.
+- A mixed chart on a category column became a time axis when it had a `time_grain`,
+  which every chart built in Superset's UI does. The dashboard time range then stopped
+  reaching it and `x_label_every` sent the time-axis control. The column's reported type
+  now decides; `time_grain` decides only when the type is unknown.
 - `docs/FEATURES.md` said every filter-bar control can be scoped to specific
   charts. Value pickers (`select`) and numeric sliders (`range`) can; the time
   range applies to the whole dashboard.
