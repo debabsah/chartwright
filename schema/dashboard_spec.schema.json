@@ -50,6 +50,40 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "x_label_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 time format for the labels of a time x axis, e.g. '%b' (Sep); omit for Superset's adaptive format",
+          "title": "X Label Format"
+        },
+        "x_label_every": {
+          "default": false,
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "title": "X Label Every",
+          "type": "boolean"
+        },
+        "x_label_rotation": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": -90,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
+          "title": "X Label Rotation"
+        },
         "type": {
           "const": "bar",
           "title": "Type",
@@ -100,6 +134,19 @@
           ],
           "title": "Orientation",
           "type": "string"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the value axis, e.g. ',.0f'",
+          "title": "Number Format"
         }
       },
       "required": [
@@ -386,6 +433,20 @@
           "pattern": "^[a-z0-9][a-z0-9-]*$",
           "title": "Slug",
           "type": "string"
+        },
+        "cross_filters": {
+          "default": false,
+          "description": "Superset cross-filtering on this dashboard: clicking a value in one chart filters every other chart whose dataset has that column (across tabs). Default off, matching what the tool has always written; set true to turn it on. Spec-owned, so a UI toggle shows up as drift in `plan` and is repaired by `apply`.",
+          "title": "Cross Filters",
+          "type": "boolean"
+        },
+        "label_colors": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "A fixed colour per series label on every chart of the dashboard, e.g. {\"Revenue\": \"#1FA8C9\"}. Superset otherwise assigns colours as the page loads, so a measure can change colour between charts and visits; these win over the scheme and the per-view map (6.1.0 applyColors).",
+          "title": "Label Colors",
+          "type": "object"
         }
       },
       "required": [
@@ -430,12 +491,46 @@
       "title": "DatasetRef",
       "type": "object"
     },
+    "DesignConfig": {
+      "additionalProperties": false,
+      "description": "Per-dashboard design-brain settings (see docs/DESIGN-BRAIN.md).\n\nAdditive and optional: a spec without this block behaves exactly as\nbefore. `ignore` entries are rule ids ('size.pie-geometry'), optionally\nscoped to one chart ('size.pie-geometry@Sales by Region'); suppressed\nfindings are still reported as ignored, so silence stays visible.",
+      "properties": {
+        "audience": {
+          "anyOf": [
+            {
+              "enum": [
+                "executive",
+                "analytical",
+                "operational"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Design preset; CLI --audience overrides",
+          "title": "Audience"
+        },
+        "ignore": {
+          "description": "Design rule ids to suppress",
+          "items": {
+            "type": "string"
+          },
+          "title": "Ignore",
+          "type": "array"
+        }
+      },
+      "title": "DesignConfig",
+      "type": "object"
+    },
     "FormatRule": {
       "additionalProperties": false,
-      "description": "One RAG band on one pivot metric. Superset colors by FIXED value bands;\nit cannot compare a cell to another column, so band a normalized metric\n(e.g. a %-of-goal ratio) when thresholds differ per row.",
+      "description": "One solid RAG band on one metric. A pivot colours a cell by its OWN\nvalue only, so band a normalized metric (e.g. a %-of-goal ratio) when\nthresholds differ per row. A table can read one column and paint another\n(apply_to): colour a number by a status column beside it.",
       "properties": {
         "metric": {
-          "description": "Display label of one of the chart's metrics",
+          "description": "Display label of the metric (table: or column) whose value is tested",
           "title": "Metric",
           "type": "string"
         },
@@ -443,6 +538,7 @@
           "enum": [
             "<",
             ">",
+            "=",
             "between"
           ],
           "title": "Operator",
@@ -458,7 +554,7 @@
             }
           ],
           "default": null,
-          "description": "Threshold for < or >",
+          "description": "Threshold for <, > or =",
           "title": "Target"
         },
         "target_left": {
@@ -494,6 +590,29 @@
             "red"
           ],
           "title": "Color",
+          "type": "string"
+        },
+        "apply_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Table only: the label of the column to paint, or \"row\"; default the metric's own cells",
+          "title": "Apply To"
+        },
+        "paint": {
+          "default": "cell",
+          "description": "Paint the cell background (default) or the text, e.g. an arrow",
+          "enum": [
+            "cell",
+            "text"
+          ],
+          "title": "Paint",
           "type": "string"
         }
       },
@@ -784,7 +903,7 @@
     },
     "Layout": {
       "additionalProperties": false,
-      "description": "Flat rows, tabs, or an ASCII sketch; exactly one.",
+      "description": "Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a footer:\nrows below all of it, outside any tab, so a tabbed dashboard shows the\nfooter under every tab.",
       "properties": {
         "sketch": {
           "anyOf": [
@@ -865,6 +984,32 @@
           ],
           "default": null,
           "title": "Tabs"
+        },
+        "footer": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/$defs/MarkdownBlock"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rows below the rows / tabs / sketch, outside any tab (shown under every tab)",
+          "title": "Footer"
         }
       },
       "title": "Layout",
@@ -896,7 +1041,57 @@
         "height": {
           "anyOf": [
             {
-              "maximum": 100,
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "ge": 0.2,
+              "le": 100
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height units (1 = 40 px) in fifths: 0.2 = 8 px, one Superset grid row (1.6 = 64 px)",
+          "title": "Height"
+        }
+      },
+      "required": [
+        "markdown"
+      ],
+      "title": "MarkdownBlock",
+      "type": "object"
+    },
+    "MixedChart": {
+      "additionalProperties": false,
+      "description": "Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue\nas bars with revenue per order as a line. ``x_column`` is a time column (bucketed\nby ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and\n``b`` are the two queries; the chart's own ``filters`` apply to both.",
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
               "minimum": 1,
               "type": "integer"
             },
@@ -905,13 +1100,203 @@
             }
           ],
           "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "x_label_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 time format for the labels of a time x axis, e.g. '%b' (Sep); omit for Superset's adaptive format",
+          "title": "X Label Format"
+        },
+        "x_label_every": {
+          "default": false,
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "title": "X Label Every",
+          "type": "boolean"
+        },
+        "x_label_rotation": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": -90,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
+          "title": "X Label Rotation"
+        },
+        "type": {
+          "const": "mixed",
+          "title": "Type",
+          "type": "string"
+        },
+        "x_column": {
+          "title": "X Column",
+          "type": "string"
+        },
+        "time_grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO 8601 duration for a time x axis, e.g. P1M",
+          "title": "Time Grain"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range; defaults to \"No filter\"",
+          "title": "Time Range"
+        },
+        "a": {
+          "$ref": "#/$defs/MixedSeries"
+        },
+        "b": {
+          "$ref": "#/$defs/MixedSeries"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the primary axis",
+          "title": "Number Format"
+        },
+        "number_format_secondary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the secondary axis",
+          "title": "Number Format Secondary"
         }
       },
       "required": [
-        "markdown"
+        "name",
+        "dataset",
+        "type",
+        "x_column",
+        "a",
+        "b"
       ],
-      "title": "MarkdownBlock",
+      "title": "MixedChart",
+      "type": "object"
+    },
+    "MixedSeries": {
+      "additionalProperties": false,
+      "description": "One of a mixed chart's two queries: its metrics, drawn as bars or a line, on\nthe primary (left) or secondary (right) value axis.",
+      "properties": {
+        "metrics": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "kind": {
+          "default": "bar",
+          "enum": [
+            "bar",
+            "line"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "axis": {
+          "default": "primary",
+          "enum": [
+            "primary",
+            "secondary"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "groupby": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "At most one dimension column",
+          "title": "Groupby"
+        },
+        "markers": {
+          "default": false,
+          "description": "A marker at each point (a line over one category draws nothing without them)",
+          "title": "Markers",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "metrics"
+      ],
+      "title": "MixedSeries",
       "type": "object"
     },
     "PieChart": {
@@ -1115,6 +1500,37 @@
           "description": "strftime for temporal pivot headers, e.g. '%m/%d/%y'",
           "title": "Date Format"
         },
+        "row_totals": {
+          "default": false,
+          "description": "A total per row, as a column at the right (e.g. the year beside its months)",
+          "title": "Row Totals",
+          "type": "boolean"
+        },
+        "column_totals": {
+          "default": false,
+          "description": "A total per column, as a row at the bottom",
+          "title": "Column Totals",
+          "type": "boolean"
+        },
+        "measure_totals": {
+          "default": false,
+          "description": "With several metrics and combine_metric off: a total after each metric's block of columns (Superset's column subtotals), where row_totals would add the metrics together",
+          "title": "Measure Totals",
+          "type": "boolean"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the cells and totals, e.g. ',.0f'",
+          "title": "Number Format"
+        },
         "conditional_formatting": {
           "items": {
             "$ref": "#/$defs/FormatRule"
@@ -1207,7 +1623,7 @@
     },
     "SelectFilter": {
       "additionalProperties": false,
-      "description": "Native filter bar: value picker over one dataset column.",
+      "description": "Native filter bar: value picker over one dataset column.\n\n``default`` pre-selects values on load (viewers can still change them); a\nrelative value such as \"This year\" keeps a default right as time passes, where\na literal year would go stale. ``charts`` scopes the filter to the named charts\nonly (default: every chart), resolved to slice ids after import, as on range.",
       "properties": {
         "type": {
           "const": "select",
@@ -1230,6 +1646,66 @@
           "default": true,
           "title": "Multi",
           "type": "boolean"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Values selected on load; omit for none",
+          "title": "Default"
+        },
+        "default_to_first": {
+          "default": false,
+          "description": "Select the first value on load (Superset's own option; with sort_descending that is the latest of sortable values like '2026 (this year)', so it never goes stale)",
+          "title": "Default To First",
+          "type": "boolean"
+        },
+        "sort_descending": {
+          "default": false,
+          "description": "List (and pick the first of) the values Z-A",
+          "title": "Sort Descending",
+          "type": "boolean"
+        },
+        "required": {
+          "default": false,
+          "description": "A value must stay selected (no empty filter)",
+          "title": "Required",
+          "type": "boolean"
+        },
+        "charts": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Chart names this filter governs; omit for all charts",
+          "title": "Charts"
         }
       },
       "required": [
@@ -1243,6 +1719,7 @@
     },
     "Tab": {
       "additionalProperties": false,
+      "description": "A dashboard tab: rows, a sketch, or ``tabs`` (sub-tabs, one level deep, each\nwith rows or a sketch), e.g. a region tab with a sub-tab per row.",
       "properties": {
         "sketch": {
           "anyOf": [
@@ -1313,6 +1790,22 @@
           ],
           "default": null,
           "title": "Rows"
+        },
+        "tabs": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Tab"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sub-tabs (one level), instead of rows / sketch",
+          "title": "Tabs"
         }
       },
       "required": [
@@ -1444,8 +1937,64 @@
             }
           ],
           "default": null,
-          "description": "Metric or column to sort by (aggregate mode: metric)",
+          "description": "Sort key, DESCENDING (a ranking) unless sort_ascending. Aggregate mode: a metric written the same way (it need not be displayed). Raw mode: a column name.",
           "title": "Sort By"
+        },
+        "sort_ascending": {
+          "default": false,
+          "description": "Sort sort_by ascending (a fixed row order)",
+          "title": "Sort Ascending",
+          "type": "boolean"
+        },
+        "conditional_formatting": {
+          "description": "Colour rules. A rule reads its metric's value and, with apply_to, paints another column or the whole row (Superset 6.1+).",
+          "items": {
+            "$ref": "#/$defs/FormatRule"
+          },
+          "title": "Conditional Formatting",
+          "type": "array"
+        },
+        "hidden": {
+          "description": "Labels queried but not displayed, e.g. a status only a colour rule reads (Superset 6.1+)",
+          "items": {
+            "type": "string"
+          },
+          "title": "Hidden",
+          "type": "array"
+        },
+        "number_formats": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "d3 format per label, e.g. {\"Rate\": \".3f\"}",
+          "title": "Number Formats",
+          "type": "object"
+        },
+        "cell_bars": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bars behind numeric cells (Superset draws them by default; false for ids, years or a column a colour rule already speaks for)",
+          "title": "Cell Bars"
+        },
+        "date_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "strftime for date columns, e.g. '%Y-%m-%d'",
+          "title": "Date Format"
         }
       },
       "required": [
@@ -1539,6 +2088,40 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "x_label_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 time format for the labels of a time x axis, e.g. '%b' (Sep); omit for Superset's adaptive format",
+          "title": "X Label Format"
+        },
+        "x_label_every": {
+          "default": false,
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "title": "X Label Every",
+          "type": "boolean"
+        },
+        "x_label_rotation": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": -90,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
+          "title": "X Label Rotation"
+        },
         "metrics": {
           "items": {
             "type": "string"
@@ -1602,6 +2185,19 @@
           ],
           "default": null,
           "title": "Row Limit"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the value axis, e.g. '.1%'",
+          "title": "Number Format"
         },
         "type": {
           "const": "timeseries_area",
@@ -1668,6 +2264,40 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "x_label_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 time format for the labels of a time x axis, e.g. '%b' (Sep); omit for Superset's adaptive format",
+          "title": "X Label Format"
+        },
+        "x_label_every": {
+          "default": false,
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "title": "X Label Every",
+          "type": "boolean"
+        },
+        "x_label_rotation": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": -90,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
+          "title": "X Label Rotation"
+        },
         "metrics": {
           "items": {
             "type": "string"
@@ -1731,6 +2361,19 @@
           ],
           "default": null,
           "title": "Row Limit"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the value axis, e.g. '.1%'",
+          "title": "Number Format"
         },
         "type": {
           "const": "timeseries_bar",
@@ -1797,6 +2440,40 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "x_label_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 time format for the labels of a time x axis, e.g. '%b' (Sep); omit for Superset's adaptive format",
+          "title": "X Label Format"
+        },
+        "x_label_every": {
+          "default": false,
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "title": "X Label Every",
+          "type": "boolean"
+        },
+        "x_label_rotation": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": -90,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
+          "title": "X Label Rotation"
+        },
         "metrics": {
           "items": {
             "type": "string"
@@ -1861,10 +2538,36 @@
           "default": null,
           "title": "Row Limit"
         },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the value axis, e.g. '.1%'",
+          "title": "Number Format"
+        },
         "type": {
           "const": "timeseries_line",
           "title": "Type",
           "type": "string"
+        },
+        "y_axis_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top of the value axis, e.g. 1 for a share that can't pass 100 % (Superset 6.1.0+)",
+          "title": "Y Axis Max"
         }
       },
       "required": [
@@ -1926,6 +2629,40 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "x_label_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 time format for the labels of a time x axis, e.g. '%b' (Sep); omit for Superset's adaptive format",
+          "title": "X Label Format"
+        },
+        "x_label_every": {
+          "default": false,
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "title": "X Label Every",
+          "type": "boolean"
+        },
+        "x_label_rotation": {
+          "anyOf": [
+            {
+              "maximum": 90,
+              "minimum": -90,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
+          "title": "X Label Rotation"
+        },
         "metrics": {
           "items": {
             "type": "string"
@@ -1989,6 +2726,19 @@
           ],
           "default": null,
           "title": "Row Limit"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the value axis, e.g. '.1%'",
+          "title": "Number Format"
         },
         "type": {
           "const": "timeseries_scatter",
@@ -2117,6 +2867,7 @@
             "funnel": "#/$defs/FunnelChart",
             "heatmap": "#/$defs/HeatmapChart",
             "histogram": "#/$defs/HistogramChart",
+            "mixed": "#/$defs/MixedChart",
             "pie": "#/$defs/PieChart",
             "pivot_table": "#/$defs/PivotTableChart",
             "table": "#/$defs/TableChart",
@@ -2170,6 +2921,9 @@
           },
           {
             "$ref": "#/$defs/TreemapChart"
+          },
+          {
+            "$ref": "#/$defs/MixedChart"
           }
         ]
       },
@@ -2205,6 +2959,18 @@
     },
     "layout": {
       "$ref": "#/$defs/Layout"
+    },
+    "design": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DesignConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Design-brain settings (optional)"
     }
   },
   "required": [

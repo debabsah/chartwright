@@ -190,4 +190,6 @@ A footer row may hold charts as well as markdown; each chart is still placed
 exactly once. Decompile reads any rows below a dashboard's tabs as its footer,
 including rows dragged there in Superset's UI. Without tabs there is no
 visible boundary, so only rows chartwright compiled as a footer read back as
-one. The design critic reviews the body, not the footer.
+one. The design critic reviews footer rows with the same sizing and layout
+rules as the body; only tab balance and the section-header check leave the
+footer out.

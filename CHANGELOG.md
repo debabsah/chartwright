@@ -79,6 +79,15 @@ The design brain, plus the fixes found reviewing it.
 
 ### Fixed
 
+- `schema/dashboard_spec.schema.json` had not changed since 0.1.0 and was missing fields
+  the spec has gained. It is regenerated from `chartwright schema`, and a test fails if
+  the two drift apart again.
+- `chartwright.__version__` said 0.1.0. It now matches the package version, enforced by a
+  test.
+- Corrected text that disagreed with the code: the skill and a code docstring said 14
+  chart types (there are 15) and the skill left the numeric range filter out of the
+  filter bar; `LAYOUT-GUIDE.md` said the design review skips the footer (most rules
+  include it); `DESIGN-BRAIN.md` §9 listed widths as auto-fixable (they are report-only).
 - The login error and `docs/VERIFICATION.md` said Superset disables its password login
   API on SSO or OAuth instances. Superset's source doesn't support that: the login API
   stays registered whatever the sign-in method. Both now say what is true either way:
@@ -189,6 +198,12 @@ The design brain, plus the fixes found reviewing it.
 
 ### Changed
 
+- **The MCP tools return typed errors.** A tool that signs in (`check_spec`,
+  `build_dashboard`, `plan_dashboard`, `advise_spec` with a profile,
+  `decompile_dashboard`, `redesign_dashboard`) used to raise on a profile, password,
+  sign-in or Superset error, which reached the agent as a bare tool failure. They now
+  return the CLI's JSON: stage `profile` for profile and password problems, code `api`
+  for sign-in and Superset errors, code `unexpected` for anything else.
 - **`plan` reports missing references as data.** When the spec names something the
   instance doesn't have, `plan` is `blocked` and returns the same typed
   `resolution_errors` list as `check` and `apply`; `detail` is a short sentence. It

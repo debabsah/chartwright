@@ -3,7 +3,7 @@
 Anything not expressible here does not exist. Validation errors are the only
 feedback channel an LLM caller gets; keep messages precise and actionable.
 
-Surface: 14 chart types, per-chart WHERE filters, a dashboard-level native
+Surface: 15 chart types, per-chart WHERE filters, a dashboard-level native
 filter bar (select, time_range, numeric range), markdown blocks, and tabs.
 """
 

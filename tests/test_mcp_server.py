@@ -93,3 +93,70 @@ def test_fix_spec_offline(monkeypatch, tmp_path):
     payload = json.loads(_text(out))
     assert payload["ok"] is True and payload["advice"]["fixed"]
     load_spec(payload["spec"])  # fixed specs always re-validate
+
+
+# Tools that sign in return the CLI's typed error JSON, never a raised
+# exception (which reached the agent as a bare tool failure).
+
+SIGNING_IN = [
+    ("check_spec", {"spec_json": FIXTURE}),
+    ("build_dashboard", {"spec_json": FIXTURE}),
+    ("plan_dashboard", {"spec_json": FIXTURE}),
+    ("advise_spec", {"spec_json": FIXTURE}),
+    ("decompile_dashboard", {"dashboard": "sales-overview"}),
+    ("redesign_dashboard", {"dashboard": "sales-overview"}),
+]
+
+
+def _call(name, args, profile):
+    return json.loads(_text(_run(mcp.call_tool(name, {**args, "profile": profile}))))
+
+
+def _input_schema(tool):
+    """mcp 1 names it inputSchema; mcp 2 input_schema (inputSchema on the wire)."""
+    for attr in ("inputSchema", "input_schema"):
+        if hasattr(tool, attr):
+            return getattr(tool, attr)
+    return tool.model_dump(by_alias=True)["inputSchema"]
+
+
+def test_signing_in_tools_keep_their_parameters():
+    schemas = {t.name: _input_schema(t) for t in _run(mcp.list_tools())}
+    for name, args in SIGNING_IN:
+        assert set(args) | {"profile"} <= set(schemas[name]["properties"]), name
+
+
+@pytest.mark.parametrize("name,args", SIGNING_IN)
+def test_an_unknown_profile_is_a_typed_profile_error(name, args, monkeypatch, tmp_path):
+    profiles = tmp_path / "profiles.toml"
+    profiles.write_text('[dev]\nbase_url = "http://x"\nusername = "u"\npassword_env = "PW"\n')
+    monkeypatch.setenv("CHARTWRIGHT_PROFILES", str(profiles))
+    payload = _call(name, args, "prod")
+    assert payload["ok"] is False and payload["stage"] == "profile"
+    assert payload["errors"][0]["code"] == "profile"
+    assert "dev" in payload["errors"][0]["detail"]          # names kept, as at the CLI
+
+
+def test_an_unset_password_variable_is_a_typed_profile_error(monkeypatch, tmp_path):
+    profiles = tmp_path / "profiles.toml"
+    profiles.write_text('[dev]\nbase_url = "http://x"\nusername = "u"\npassword_env = "CW_TEST_UNSET_PW"\n')
+    monkeypatch.setenv("CHARTWRIGHT_PROFILES", str(profiles))
+    monkeypatch.delenv("CW_TEST_UNSET_PW", raising=False)
+    payload = _call("check_spec", {"spec_json": FIXTURE}, "dev")
+    assert payload["stage"] == "profile"
+
+
+@pytest.mark.parametrize("exc,code", [("api", "api"), ("bug", "unexpected")])
+def test_superset_and_unexpected_errors_are_typed(exc, code, monkeypatch):
+    import chartwright.mcp_server as server
+    from chartwright.client import SupersetAPIError
+
+    def broken(profile):
+        if exc == "api":
+            raise SupersetAPIError("login failed", 401, "")
+        raise KeyError("boom")
+
+    monkeypatch.setattr(server, "_client", broken)
+    payload = _call("build_dashboard", {"spec_json": FIXTURE}, "dev")
+    assert payload["ok"] is False and payload["stage"] == "error"
+    assert payload["errors"][0]["code"] == code

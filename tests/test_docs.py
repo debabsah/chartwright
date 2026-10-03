@@ -6,6 +6,7 @@ exactly ONE place and this test fails when they drift -- the same rule the
 generated rule table in DESIGN-BRAIN.md follows.
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -97,3 +98,23 @@ def test_documented_counts_match_what_pytest_collects(request):
         f"docs/VERIFICATION.md says {tests} tests / {modules} modules; "
         f"pytest collected {collected} across {actual_modules} modules. "
         f"Update that one row.")
+
+
+def test_the_schema_file_matches_the_schema_command():
+    """schema/dashboard_spec.schema.json sat at 0.1.0 for months while the spec
+    gained fields; anyone validating against the file got the old contract."""
+    from chartwright.spec import json_schema
+
+    on_disk = (REPO / "schema" / "dashboard_spec.schema.json").read_text(encoding="utf-8")
+    assert on_disk == json.dumps(json_schema(), indent=2) + "\n", (
+        "regenerate: chartwright schema > schema/dashboard_spec.schema.json")
+
+
+def test_package_version_matches_pyproject():
+    """__version__ said 0.1.0 while pyproject.toml said 0.2.0."""
+    import tomllib
+
+    import chartwright
+
+    project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert chartwright.__version__ == project["version"]

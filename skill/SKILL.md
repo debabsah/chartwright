@@ -1,6 +1,6 @@
 ---
 name: superset-dashboard
-description: Build or modify an Apache Superset dashboard from a natural-language request by emitting a typed spec and compiling it with the chartwright CLI (guaranteed-correct import, no freeform dashboard JSON). Covers 14 chart types incl. pivot tables, per-chart WHERE filters, a native dashboard filter bar, markdown blocks, and tabs. Use when the user asks to create, generate, or change a Superset dashboard or chart. Never create Superset dashboards any other way (no raw REST calls, no hand-written import bundles, no UI automation).
+description: Build or modify an Apache Superset dashboard from a natural-language request by emitting a typed spec and compiling it with the chartwright CLI (guaranteed-correct import, no freeform dashboard JSON). Covers 15 chart types incl. pivot tables, per-chart WHERE filters, a native dashboard filter bar, markdown blocks, and tabs. Use when the user asks to create, generate, or change a Superset dashboard or chart. Never create Superset dashboards any other way (no raw REST calls, no hand-written import bundles, no UI automation).
 ---
 
 # Superset dashboard via chartwright
@@ -39,8 +39,8 @@ approximate it with a different mechanism.
    timeseries line/bar/area/scatter, categorical bar, pie/donut, table,
    pivot_table, heatmap, histogram, funnel, treemap, mixed: bars + a line on
    two axes), per-chart `filters`
-   (WHERE), dashboard-level `filters` (select + time_range native filter bar,
-   time_range with an optional `default`), layout as `rows`, `tabs`, or an
+   (WHERE), dashboard-level `filters` (select, time_range and numeric range native
+   filter bar, time_range with an optional `default`), layout as `rows`, `tabs`, or an
    ASCII `sketch` with a `legend`, markdown blocks in rows, an optional
    `layout.footer` (rows below everything, shown under every tab), an optional
    `design` block (audience + rule suppressions).
@@ -103,7 +103,7 @@ learns from them over time (`CW calibrate`).
 |---|---|
 | Apply failed; tweak the generated ZIP/YAML by hand | Fix the spec; if the compiler is wrong, report the bug |
 | Column doesn't resolve; guess a similar name | Show the user the resolver error and the dataset's actual columns |
-| User wants a chart type outside the 14 | Say it's out of surface; offer the nearest supported type |
+| User wants a chart type outside the 15 | Say it's out of surface; offer the nearest supported type |
 | Retry apply a 4th time with random changes | Stop; surface all errors verbatim |
 | Advice finding seems wrong; hand-tune to dodge it | Record it in the spec's `design.ignore` and tell the user, or report a rule bug |
 | "Quick" dashboard via POST /api/v1/dashboard/ | Never; the guarantee only exists through chartwright |
