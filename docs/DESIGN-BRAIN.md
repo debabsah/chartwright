@@ -300,8 +300,9 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
 
 ## 9. Autofix semantics
 
-- **Safe set only:** heights, widths (rows mode), bar orientation. All
-  presentation; a fixed spec queries identically to the unfixed one.
+- **Safe set only:** heights, bar orientation and markdown header heights.
+  All presentation; a fixed spec queries identically to the unfixed one.
+  Widths are report-only (§15.1).
 - Mechanics mirror `absorb`: findings carry a patch
   (`{"chart": "Top Products", "set": {"height": 8}}`), `fix.py` applies them
   to the raw spec JSON, the result is re-validated before writing, and the
