@@ -184,6 +184,24 @@ def chart_payloads_from_bundle(bundle: bytes, dataset_ids: dict[str, int] | None
     return out
 
 
+def bundle_dataset_ids(bundle: bytes, client: SupersetClient) -> dict[str, int]:
+    """Dataset uuid -> id on the target, for each dataset the bundle ships. Looked
+    up per table name (indexed server-side) and matched by uuid, as charts are."""
+    zf = zipfile.ZipFile(io.BytesIO(bundle))
+    wanted: dict[str, str] = {}
+    for n in zf.namelist():
+        if "/datasets/" in n and n.endswith(".yaml"):
+            dy = yaml.safe_load(zf.read(n)) or {}
+            if dy.get("uuid") and dy.get("table_name"):
+                wanted[str(dy["uuid"])] = dy["table_name"]
+    found: dict[str, int] = {}
+    for table in set(wanted.values()):
+        for d in client.find_datasets(table):
+            if str(d.get("uuid")) in wanted:
+                found[str(d["uuid"])] = d["id"]
+    return found
+
+
 def _update_owned_charts_in_place(
     spec: DashboardSpec, client: SupersetClient, bundle: bytes,
     existing_by_uuid: dict[str, dict], resolution: Resolution | None = None,
@@ -234,7 +252,9 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
             report.import_detail = r.text[:2000]
             return report
 
-        payloads = chart_payloads_from_bundle(zip_bytes)
+        # With the dataset ids, a restore also moves each chart back onto its
+        # backed-up dataset, so its datasource_id matches the params it gets.
+        payloads = chart_payloads_from_bundle(zip_bytes, bundle_dataset_ids(zip_bytes, client))
         existing = client.charts_by_uuids(
             {u: p["slice_name"] for u, p in payloads.items()})
         restored = []

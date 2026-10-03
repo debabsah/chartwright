@@ -7,7 +7,8 @@ from pydantic import ValidationError
 from chartwright.apply import scoped_filter_fixup
 from chartwright.compiler import compile_bundle
 from chartwright.decompile import decompile_bundle
-from chartwright.testing import stub_resolution
+from chartwright.spec import load_spec
+from chartwright.testing import edit_bundle, stub_resolution
 
 from test_range_filter import DS, _native_filter_config, _spec
 
@@ -111,3 +112,22 @@ def test_first_value_marks_the_filter_required_first():
         {"type": "select", "name": "Year", "dataset": DS, "column": "year_label"},
     ]))
     assert "requiredFirst" not in plain
+
+
+@pytest.mark.parametrize("state", [{"value": ["2026"], "label": "2026"}, {"value": None}])
+def test_decompile_first_value_ignores_the_stored_value(state):
+    """The UI saves the first item it picked into filterState; the spec keeps
+    default_to_first alone (the two are exclusive), and logs no false loss."""
+    spec = _spec([{"type": "select", "name": "Year", "dataset": DS, "column": "year_label",
+                   "default_to_first": True}])
+    def saved_value(path, doc):
+        if "/dashboards/" in path:
+            doc["metadata"]["native_filter_configuration"][0]["defaultDataMask"]["filterState"] = state
+
+    bundle = edit_bundle(compile_bundle(spec, stub_resolution(spec)), saved_value)
+    ds = stub_resolution(spec).for_chart(spec.charts[0].dataset)
+    result = decompile_bundle(bundle, lambda u: {"database": "examples", "schema": None, "table": "t"}
+                              if u == ds.uuid else None)
+    assert result.losses == [], result.losses_json()
+    (f,) = load_spec(result.spec).filters
+    assert f.default_to_first is True and not f.default

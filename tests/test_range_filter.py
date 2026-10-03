@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from chartwright.apply import scoped_filter_fixup
 from chartwright.compiler import compile_bundle
 from chartwright.spec import load_spec
-from chartwright.testing import stub_resolution
+from chartwright.testing import edit_bundle, stub_resolution
 
 DS = {"database": "examples", "table": "t"}
 
@@ -202,3 +202,26 @@ def test_chart_payloads_move_a_chart_onto_its_spec_dataset():
     payloads = chart_payloads_from_bundle(bundle, {str(ds.uuid): 10})
     u = str(_ids.chart_uuid("sdc-t", "A"))
     assert payloads[u]["datasource_id"] == 10 and payloads[u]["datasource_type"] == "table"
+
+
+def test_restore_finds_the_backed_up_dataset_ids():
+    """restore_bundle PUTs params naming the backup's dataset; the payload must move
+    datasource_id there too, or a chart moved since keeps the newer dataset."""
+    from chartwright.apply import bundle_dataset_ids, chart_payloads_from_bundle
+    from chartwright import ids as _ids
+
+    spec = _spec([])
+    res = stub_resolution(spec)
+    ds = next(iter(res.datasets.values()))
+    # A Superset export also ships its datasets; a compiled bundle doesn't.
+    backup = edit_bundle(compile_bundle(spec, res), lambda path, doc: None, add={
+        "sdc_bundle/datasets/db/t.yaml": {"uuid": str(ds.uuid), "table_name": DS["table"]}})
+
+    class Client:
+        def find_datasets(self, table):
+            assert table == DS["table"]
+            return [{"id": 99, "uuid": "0000-other-schema"}, {"id": 5, "uuid": str(ds.uuid)}]
+
+    assert bundle_dataset_ids(backup, Client()) == {str(ds.uuid): 5}
+    payloads = chart_payloads_from_bundle(backup, bundle_dataset_ids(backup, Client()))
+    assert payloads[str(_ids.chart_uuid("sdc-t", "A"))]["datasource_id"] == 5
