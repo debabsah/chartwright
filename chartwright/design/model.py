@@ -137,6 +137,13 @@ class Section:
     title: str | None        # tab title, None for a flat layout
     mode: str                # "rows" | "sketch"
     bands: list[Band]
+    footer: bool = False     # layout.footer: below every tab, not a tab of its own
+
+    @property
+    def label(self) -> str:
+        if self.footer:
+            return "footer"
+        return f"tab {self.title!r}" if self.title else "layout"
 
 
 @dataclass
@@ -177,14 +184,15 @@ class RuleContext:
 
     def where(self, name: str) -> str:
         g = self.geo[name]
-        sec = self.sections[g.section]
-        prefix = f"tab {sec.title!r} " if sec.title else "layout "
-        return f"{prefix}row {g.band}"
+        return self.where_band(g.section, g.band)
 
     def where_band(self, si: int, bi: int) -> str:
-        sec = self.sections[si]
-        prefix = f"tab {sec.title!r} " if sec.title else "layout "
-        return f"{prefix}row {bi}"
+        return f"{self.sections[si].label} row {bi}"
+
+    @property
+    def body_sections(self) -> list[Section]:
+        """The rows / sketch / tabs, without the footer."""
+        return [s for s in self.sections if not s.footer]
 
     def is_sketch(self, name: str) -> bool:
         return self.sections[self.geo[name].section].mode == "sketch"
@@ -272,17 +280,20 @@ def canonical_rule_id(rule_id: str) -> str:
 def _normalize(spec: DashboardSpec) -> list[Section]:
     lay = spec.layout
     if lay.rows:
-        return [Section(None, "rows", _bands_from_rows(spec, lay.rows))]
-    if lay.sketch:
-        return [Section(None, "sketch", _bands_from_sketch(spec, lay))]
-    sections = []
-    for tab in lay.tabs or []:
-        for leaf in tab.tabs or [tab]:
-            title = tab.title if leaf is tab else f"{tab.title} > {leaf.title}"
-            if leaf.rows:
-                sections.append(Section(title, "rows", _bands_from_rows(spec, leaf.rows)))
-            else:
-                sections.append(Section(title, "sketch", _bands_from_sketch(spec, leaf)))
+        sections = [Section(None, "rows", _bands_from_rows(spec, lay.rows))]
+    elif lay.sketch:
+        sections = [Section(None, "sketch", _bands_from_sketch(spec, lay))]
+    else:
+        sections = []
+        for tab in lay.tabs or []:
+            for leaf in tab.tabs or [tab]:
+                title = tab.title if leaf is tab else f"{tab.title} > {leaf.title}"
+                if leaf.rows:
+                    sections.append(Section(title, "rows", _bands_from_rows(spec, leaf.rows)))
+                else:
+                    sections.append(Section(title, "sketch", _bands_from_sketch(spec, leaf)))
+    if lay.footer:
+        sections.append(Section(None, "rows", _bands_from_rows(spec, lay.footer), footer=True))
     return sections
 
 

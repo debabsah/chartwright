@@ -376,7 +376,7 @@ def fold_budget(ctx: RuleContext):
         for bi, band in enumerate(sec.bands):
             total += band.height
             if total > ctx.params.fold_units:
-                where = f"tab {sec.title!r}" if sec.title else "the dashboard"
+                where = "the dashboard" if sec.label == "layout" else sec.label
                 yield Finding(
                     "layout.fold-budget", "warn", None, ctx.where_band(si, bi),
                     f"{where} runs {total:g}+ units against a {ctx.params.audience} budget of "
@@ -388,9 +388,9 @@ def fold_budget(ctx: RuleContext):
 
 @rule("layout.tab-balance", "info", "tabs should carry comparable weight")
 def tab_balance(ctx: RuleContext):
-    if len(ctx.sections) < 2:
+    if len(ctx.body_sections) < 2:
         return
-    counts = {s.title: sum(len(b.chart_names) for b in s.bands) for s in ctx.sections}
+    counts = {s.title: sum(len(b.chart_names) for b in s.bands) for s in ctx.body_sections}
     lo, hi = min(counts.values()), max(counts.values())
     if hi >= 5 and hi > 4 * max(1, lo):
         thin = [t for t, n in counts.items() if n == lo]
@@ -416,10 +416,11 @@ def orphan_chart(ctx: RuleContext):
 
 @rule("layout.section-headers", "info", "large flat dashboards need markdown signposts")
 def section_headers(ctx: RuleContext):
-    if len(ctx.sections) != 1 or ctx.sections[0].mode != "rows" or ctx.sections[0].title:
+    body = ctx.body_sections
+    if len(body) != 1 or body[0].mode != "rows" or body[0].title:
         return
     n = len(ctx.spec.charts)
-    has_md = any(i.is_markdown for b in ctx.sections[0].bands for i in b.items)
+    has_md = any(i.is_markdown for sec in ctx.sections for b in sec.bands for i in b.items)
     if n > 8 and not has_md:
         yield Finding(
             "layout.section-headers", "info", None, "layout",
@@ -1065,26 +1066,32 @@ def format_consistency(ctx: RuleContext):
 
 @rule("layout.markdown-height", "info", "a one-line markdown header doesn't need a chart-sized block", fixable=True, since="2")
 def markdown_height(ctx: RuleContext):
-    def rows_of(container):
-        return container.get("rows") or []
-
     # Operates on the raw layout indices so the fix can address the block
-    # (markdown has no name to key on).
+    # (markdown has no name to key on). A container address is None (layout
+    # rows), a tab index, [tab, sub-tab], or "footer"; fix.py reads the same.
     lay = ctx.spec.layout
-    sources = ([(None, lay.rows)] if lay.rows
-               else [(ti, t.rows) for ti, t in enumerate(lay.tabs or []) if t.rows])
-    for ti, rows in sources:
-        for ri, row in enumerate(rows or []):
+    sources = []
+    if lay.rows:
+        sources.append((None, "layout", lay.rows))
+    for ti, t in enumerate(lay.tabs or []):
+        if t.rows:
+            sources.append((ti, f"tab {t.title!r}", t.rows))
+        for si, sub in enumerate(t.tabs or []):
+            if sub.rows:
+                title = f"{t.title} > {sub.title}"
+                sources.append(([ti, si], f"tab {title!r}", sub.rows))
+    if lay.footer:
+        sources.append(("footer", "footer", lay.footer))
+    for addr, label, rows in sources:
+        for ri, row in enumerate(rows):
             for ii, item in enumerate(row):
                 if isinstance(item, str):
                     continue
                 lines = [l for l in item.markdown.splitlines() if l.strip()]
                 h = item.height or 4
                 if len(lines) <= 1 and h >= 3:
-                    where = (f"tab {(lay.tabs[ti].title if ti is not None else '')!r} row {ri}"
-                             if ti is not None else f"layout row {ri}")
                     yield Finding(
-                        "layout.markdown-height", "info", None, where,
+                        "layout.markdown-height", "info", None, f"{label} row {ri}",
                         f"one-line markdown block at {h} units; 2 is plenty for a header",
-                        fix={"md": [ti, ri, ii], "set": {"height": 2}},
+                        fix={"md": [addr, ri, ii], "set": {"height": 2}},
                     )

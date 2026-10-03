@@ -223,8 +223,12 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         # controlPanel.tsx createQuerySection(..., '_b') / createCustomizeSection(..., 'B')
         # at 4.1.4, 5.0.0 and 6.1.0. A non-temporal x column gets a category axis
         # (utils/series.ts getAxisType), so a count-and-minutes chart by cause works.
+        # The column's reported type decides; time_grain only speaks when the type is
+        # unknown. Superset stores a grain on every UI-born mixed chart, so a grain
+        # beside a category column must not turn it into a time axis.
         p["x_axis"] = chart.x_column
-        if chart.time_grain or ds.is_temporal(chart.x_column):
+        temporal = ds.is_temporal(chart.x_column)
+        if temporal or (temporal is None and chart.time_grain):
             p["time_grain_sqla"] = chart.time_grain or DEFAULT_TIME_GRAIN
         if chart.time_range:
             p["time_range"] = chart.time_range

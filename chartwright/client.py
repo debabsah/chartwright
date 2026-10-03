@@ -16,6 +16,8 @@ from typing import Callable
 
 import requests
 
+from .profiles import PRESET_BASEURL, Profile
+
 
 def _json_q(obj) -> str:
     """The `q` argument as JSON that survives Flask-AppBuilder's fallback.
@@ -47,10 +49,19 @@ class SupersetClient:
     # Preset mode (api_token set): API key pair -> JWT, no password login.
     api_token: str | None = None
     api_secret: str | None = None
-    preset_baseurl: str = "https://api.app.preset.io/"
+    preset_baseurl: str = PRESET_BASEURL
     session: requests.Session = field(default_factory=requests.Session)
     _csrf: str | None = None
     _logged_in: bool = False
+
+    @classmethod
+    def from_profile(cls, p: Profile) -> "SupersetClient":
+        """The client a profile describes (not logged in yet). The one place a
+        profile becomes a client, so the CLI and the MCP server can't drift."""
+        return cls(p.base_url, p.username, p.password, auth_provider=p.auth_provider,
+                   ca_bundle=p.ca_bundle, verify=p.verify,
+                   api_token=p.api_token, api_secret=p.api_secret,
+                   preset_baseurl=p.preset_baseurl)
 
     def __post_init__(self) -> None:
         self.base_url = self.base_url.rstrip("/")

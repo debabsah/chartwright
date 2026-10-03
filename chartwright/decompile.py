@@ -17,7 +17,7 @@ from typing import Callable, get_args
 import yaml
 
 from .compiler import FOOTER_PREFIX, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, VIZ_TYPE
-from .spec import ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FilterOp
+from .spec import ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FilterOp, metric_label
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
 _FILTER_OPS = set(get_args(FilterOp))
@@ -153,6 +153,31 @@ def _format_to_spec(cf: dict) -> dict | None:
         if rule["target"] is None:
             return None
     return rule
+
+
+def _rules_to_spec(p: dict, losses: list, name: str, labels: set[str],
+                   table: bool) -> list[dict]:
+    """A table's or pivot's conditional_formatting as FormatRule dicts. Superset
+    keeps a rule after its column leaves the query; the spec rejects a rule on
+    a label the chart doesn't have, so those are dropped and recorded."""
+    rules = []
+    for cf in p.get("conditional_formatting") or []:
+        rule = _format_to_spec(cf if isinstance(cf, dict) else {})
+        if rule is None:
+            losses.append(Loss(name, f"conditional format not representable, dropped: {cf}"))
+            continue
+        target = rule.get("apply_to")
+        if rule["metric"] not in labels:
+            losses.append(Loss(name, f"conditional format on {rule['metric']!r}, which the chart "
+                                     "no longer queries, dropped"))
+        elif target is not None and not table:
+            losses.append(Loss(name, f"pivot conditional format painting {target!r} not preserved, dropped"))
+        elif target not in (None, "row") and target not in labels:
+            losses.append(Loss(name, f"conditional format painting {target!r}, which the chart "
+                                     "no longer queries, dropped"))
+        else:
+            rules.append(rule)
+    return rules
 
 
 def _order_by_col(order_by_cols) -> tuple[str | None, bool]:
@@ -347,18 +372,21 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             asc = p.get("order_desc") is False
         if out.get("sort_by") and asc:
             out["sort_ascending"] = True
-        rules = []
-        for cf in p.get("conditional_formatting") or []:
-            rule = _format_to_spec(cf if isinstance(cf, dict) else {})
-            if rule is None:
-                losses.append(Loss(name, f"conditional format not representable, dropped: {cf}"))
-            else:
-                rules.append(rule)
+        labels = {metric_label(m) for m in out.get("metrics") or []}
+        labels |= set(out.get("groupby") or []) | set(out.get("columns") or [])
+        rules = _rules_to_spec(p, losses, name, labels, table=True)
         if rules:
             out["conditional_formatting"] = rules
         hidden, formats = [], {}
         for label, cfg in (p.get("column_config") or {}).items():
             cfg = cfg if isinstance(cfg, dict) else {}
+            if label not in labels:
+                # Superset keeps column_config entries after the column leaves
+                # the query; they no longer do anything.
+                if cfg:
+                    losses.append(Loss(name, f"column_config for {label!r}, which the table "
+                                             "no longer queries, dropped"))
+                continue
             if cfg.get("visible") is False:
                 hidden.append(label)
             if cfg.get("d3NumberFormat"):
@@ -401,13 +429,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             out["date_format"] = p["date_format"]
         if p.get("valueFormat") not in (None, "", "SMART_NUMBER"):
             out["number_format"] = p["valueFormat"]
-        rules = []
-        for cf in p.get("conditional_formatting") or []:
-            rule = _format_to_spec(cf if isinstance(cf, dict) else {})
-            if rule is None:
-                losses.append(Loss(name, f"conditional format not representable, dropped: {cf}"))
-            else:
-                rules.append(rule)
+        rules = _rules_to_spec(p, losses, name, {metric_label(m) for m in ms}, table=False)
         if rules:
             out["conditional_formatting"] = rules
         keep_row_limit()
@@ -543,7 +565,10 @@ def _native_filters_to_spec(
             if cv.get("enableEmptyFilter"):
                 f["required"] = True
             value = ((nf.get("defaultDataMask") or {}).get("filterState") or {}).get("value")
-            if isinstance(value, list) and value:
+            # With "select first value" the stored value is just the first item
+            # when the filter was saved; Superset picks it again on load, and
+            # the spec takes one of default / default_to_first.
+            if isinstance(value, list) and value and not f.get("default_to_first"):
                 f["default"] = list(value)
             scoped = nf.get("sdc_scope_charts")
             if scoped:
@@ -555,7 +580,7 @@ def _native_filters_to_spec(
                     "re-declare `charts` by name in the spec)",
                 ))
             out.append(f)
-            if "default" in f:
+            if "default" in f or f.get("default_to_first"):
                 continue  # default preserved; skip the default-loss check
         elif ftype == "filter_range":
             targets = nf.get("targets") or []
