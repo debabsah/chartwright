@@ -65,6 +65,8 @@ Each tool runs the same code as its CLI command and returns a JSON report.
 
 The agent passes the spec as JSON text and a profile name. `fix_spec` and `redesign_dashboard` hand back a spec; the agent saves it and builds it.
 
+When something fails, a tool returns the same JSON error the CLI prints, so the agent can tell the kind of failure apart: `"stage": "profile"` for a missing profile or an unset password variable, code `api` for a failed sign-in or a Superset error, and code `unexpected` for anything else.
+
 ## What gets checked
 
 Before writing the spec:

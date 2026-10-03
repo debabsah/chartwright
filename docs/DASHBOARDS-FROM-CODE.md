@@ -8,7 +8,7 @@ You write, or generate, a short JSON spec that names a dashboard's charts, filte
 chartwright schema > spec.schema.json
 ```
 
-`chartwright schema` prints the JSON Schema every spec follows; generate and check your specs against it. Use this command's output as the reference; `schema/dashboard_spec.schema.json` in the repository can lag behind it.
+`chartwright schema` prints the JSON Schema every spec follows; generate and check your specs against it. The same schema is in the repository at `schema/dashboard_spec.schema.json`, and a test keeps the file identical to the command's output.
 
 The main fields:
 
