@@ -28,9 +28,9 @@ The export-and-sync tools check transport concerns: existing targets, previewabl
 
 - **Before writing:** `chartwright check` signs in read-only and confirms every dataset, column, and metric the spec names actually exists. A misspelled column is a clear error before anything is created, with the closest real column names suggested, which matters most when an AI wrote the spec.
 - **After writing:** `chartwright apply` compares the finished dashboard chart-by-chart against the spec and runs each chart's query once: an error fails the build, and a chart with no rows is named.
-- **On demand:** `chartwright plan` diffs the spec against the live dashboard: the charts and filters added, changed or removed, plus title, layout, cross-filter and series-colour changes. It passes when they match and fails when they drifted, ready as a CI gate.
+- **On demand:** `chartwright plan` diffs the spec against the live dashboard: the charts and filters added, changed or removed, plus title, layout, cross-filter and series-colour changes. It passes when they match and fails when they drifted, ready as a CI gate ([deploy from git](DEPLOY-FROM-GIT.md)).
 
-`chartwright decompile` closes the loop from the other side: it turns a dashboard built in the UI into a spec, listing most of what it couldn't carry over, and you build that spec as a copy at a new slug.
+`chartwright decompile` closes the loop from the other side: it turns a dashboard built in the UI into a spec, listing most of what it couldn't carry over, and you build that spec as a copy at a new slug ([how](CLONE-A-DASHBOARD.md#start-from-a-dashboard-you-already-have)).
 
 ## Tool notes
 
@@ -38,7 +38,7 @@ The export-and-sync tools check transport concerns: existing targets, previewabl
 
 **sup** is Preset's newer CLI, self-described as beta, with a strong terminal experience: run SQL against any workspace database, search charts and datasets server-side, export chart data, back up and restore assets with dependency tracking, and machine-readable output modes aimed at scripts and AI agents.
 
-**Superset's MCP service** ships with Superset 6.1.0 and gives an AI agent tools to create charts, create a dashboard from them, add charts to an existing dashboard, and update one chart. Superset's master branch adds tools that change existing dashboards, not yet in a release. Chartwright's own MCP server works the other way: the agent writes a spec, and every build updates the same dashboard in place.
+**Superset's MCP service** ships with Superset 6.1.0 and gives an AI agent tools to create charts, create a dashboard from them, add charts to an existing dashboard, and update one chart. Superset's master branch adds tools that change existing dashboards, not yet in a release. Chartwright's own MCP server works the other way: the agent writes a spec, and every build updates the same dashboard in place ([AI agents](AI-AGENTS.md)).
 
 **terraform-provider-superset** brings the databases-datasets-roles-users layer of a Superset instance under Terraform. If your platform team already lives in Terraform, it can own that layer while a dashboard tool owns the dashboards.
 

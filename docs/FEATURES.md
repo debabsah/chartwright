@@ -4,6 +4,12 @@ Chartwright builds Apache Superset dashboards from a small file called a spec,
 updates them from that same file later, and decompiles existing dashboards back
 into one. Everything below works from that one file.
 
+Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
+[clone a dashboard](CLONE-A-DASHBOARD.md) · [AI agents](AI-AGENTS.md) ·
+[dashboards from code](DASHBOARDS-FROM-CODE.md) · [deploy from git](DEPLOY-FROM-GIT.md) ·
+[back up and roll back](HISTORY-AND-ROLLBACK.md) · [Superset versions](SUPERSET-VERSIONS.md) ·
+[limits](LIMITS.md).
+
 ## Creating Dashboards with AI
 - **Context to Dashboard**: Ask in plain words; the dashboard is built from what is in front of you.
     - The analysis you just ran, a KPI contract document, a metrics definition page.
