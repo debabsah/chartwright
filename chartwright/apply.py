@@ -238,6 +238,26 @@ def backup_dir_for(profile: str, slug: str) -> "Path":
     return base / profile / slug
 
 
+def write_backup(backup_dir: "Path", data: bytes) -> "Path":
+    """Write a backup zip under a new name; never overwrite an earlier one.
+
+    Names are local time to the microsecond (``20261003T141502.123456.zip``),
+    fixed width, so they sort oldest to newest. Two applies within one second
+    used to share a name and the second overwrote the first. Exclusive create
+    makes a collision a retry, never a silent overwrite."""
+    import datetime
+
+    while True:
+        stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S.%f")
+        path = backup_dir / f"{stamp}.zip"
+        try:
+            with open(path, "xb") as fh:
+                fh.write(data)
+            return path
+        except FileExistsError:
+            continue
+
+
 def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> ApplyReport:
     """Restore a backup bundle COMPLETELY, not just import it. The importer
     never overwrites existing charts (docs/CONTRACTS.md), so surviving
@@ -321,7 +341,6 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
     if existing is not None:
         # Last-known-good insurance before we mutate anything: the previous
         # owned state, restorable with `chartwright restore <zip> --profile ...`.
-        import datetime
         import os
 
         backup_dir = backup_dir_for(profile, spec.dashboard.slug)
@@ -330,11 +349,8 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
             # Zips hold dashboard/dataset metadata; gate the default tree to
             # the owner. (No-op on Windows; custom dirs are the user's to manage.)
             os.chmod(backup_dir.parent.parent, 0o700)
-        stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-        backup_path = backup_dir / f"{stamp}.zip"
         backup_bytes = client.export_dashboard(existing["id"])
-        backup_path.write_bytes(backup_bytes)
-        report.backup = str(backup_path)
+        report.backup = str(write_backup(backup_dir, backup_bytes))
 
     def _auto_restore(reason: str) -> None:
         """Import failed mid-mutation: put the previous state back rather
@@ -399,7 +415,11 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
             updated, update_errors = _update_owned_charts_in_place(
                 spec, client, bundle, existing_by_uuid, resolution)
             if update_errors:
+                # Still the import step: some charts may carry the new params
+                # and others the old. Same outcome as a connection drop here,
+                # which already restored (SupersetAPIError while stage is import).
                 report.import_detail = "; ".join(update_errors)
+                _auto_restore("updating charts in place failed after the import")
                 return report
             if updated:
                 report.warnings.append(
@@ -440,6 +460,13 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
         report.import_detail = f"{e} (status={e.status})"
         if report.stage in ("prepare", "import"):
             _auto_restore(f"apply failed during {report.stage}: {e}")
+        return report
+    except Exception as e:  # noqa: BLE001 - a bug mid-mutation must still restore and report
+        # Not a Superset error: most likely a bug here. Same rule as above, and
+        # the report keeps the backup path, which a traceback would lose.
+        report.import_detail = f"unexpected error during {report.stage}: {type(e).__name__}: {e}"
+        if report.stage in ("prepare", "import"):
+            _auto_restore(f"apply failed during {report.stage}: {type(e).__name__}: {e}")
         return report
 
     report.stage = "done"

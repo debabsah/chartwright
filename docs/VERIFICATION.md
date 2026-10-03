@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (343 tests, 35 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (347 tests, 36 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
@@ -159,15 +159,18 @@ All four scenarios pass on 4.1.4, 5.0.0, and 6.1.0.
 ## 6. Fault injection (`tools/faultline.py`)
 
 A wrapping client trips a chosen method with the same typed error a real
-network drop produces, or a fake HTTP 500 for the importer. A fault at
-every stage boundary (the dataset round-trip and stale-chart deletion
-during preparation, an importer 500 and a mid-import drop, the post-import
-link verification, the data check) must produce a typed report naming the
+network drop produces, a fake HTTP 500 for a rejected request, or a plain
+`RuntimeError` standing in for a bug in the tool itself. A fault at every
+stage boundary (the dataset round-trip and stale-chart deletion during
+preparation; an importer 500, a mid-import drop and an import-time bug;
+a rejected or dropped in-place chart update; the post-import link
+verification; the data check) must produce a typed report naming the
 stage, never a traceback, and a recorded backup whenever mutation had
 begun. Then:
 
-- for faults during preparation or import, the automatic restore fires,
-  and `plan` against the pre-apply spec comes back clean: the dashboard is
+- for faults during preparation or import, in-place chart updates
+  included, the automatic restore fires whatever the error type, and
+  `plan` against the pre-apply spec comes back clean: the dashboard is
   back, not half-updated;
 - for faults after import, a clean re-apply converges.
 
