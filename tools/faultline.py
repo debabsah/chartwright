@@ -1,13 +1,15 @@
 """Fault injection: every apply-stage boundary must fail SAFE.
 
 A FaultyClient delegates to the real client but trips an armed method with
-either a typed SupersetAPIError (what a real network drop surfaces as after
-client._send's conversion) or a fake HTTP 500 (the importer's failure shape).
+a typed SupersetAPIError (what a real network drop surfaces as after
+client._send's conversion), a fake HTTP 500 (a rejected request), or a
+RuntimeError (a bug in the tool itself, not a Superset error).
 For each fault we assert the contract:
   - apply returns a TYPED report (never a traceback) naming the right stage;
   - report.backup is set whenever mutation had begun on an existing dashboard;
-  - auto-restore fires for prepare/import faults and the dashboard is BACK to
-    its pre-apply state (plan against the previous spec is clean);
+  - auto-restore fires for prepare/import faults (in-place chart updates
+    included), whatever the error type, and the dashboard is BACK to its
+    pre-apply state (plan against the previous spec is clean);
   - later-stage faults (linkage/scope/smoke) leave a recoverable dashboard:
     a clean re-apply converges (plan clean, ids stable).
 Also proves restore completeness: `restore_bundle` rolls back surviving
@@ -68,6 +70,8 @@ class FaultyClient:
                 self.tripped = True
                 if self._kind == "http500":
                     return FakeResponse()
+                if self._kind == "crash":
+                    raise RuntimeError(f"injected bug in {name}")
                 raise SupersetAPIError(f"injected fault in {name}", None, None)
             return attr(*a, **kw)
 
@@ -178,6 +182,9 @@ def main(argv: list[str] | None = None) -> int:
         ("delete_chart",            "error",   "prepare", True,  1),  # stale-owned deletion (v2 drops a chart)
         ("import_dashboard_bundle", "http500", "import",  True,  1),  # importer 500
         ("import_dashboard_bundle", "error",   "import",  True,  1),  # network drop mid-import
+        ("import_dashboard_bundle", "crash",   "import",  True,  1),  # a bug, not a Superset error
+        ("put_json",                "http500", "import",  True,  1),  # in-place chart update rejected
+        ("put_json",                "error",   "import",  True,  1),  # network drop mid chart update
         ("dashboard_charts",        "error",   "linkage", False, 2),  # call#1 is the prepare-stage stale check
         ("chart_data",              "error",   "smoke",   False, 1),  # smoke query
     ]

@@ -79,6 +79,15 @@ The design brain, plus the fixes found reviewing it.
   stays registered whatever the sign-in method. Both now say what is true either way:
   Chartwright signs in with a Superset account's own password (database or LDAP) or
   Preset API tokens, never through SSO or OAuth.
+- A failed build now puts the backup back by the same rule whatever the error. A chart
+  update that Superset rejected after the import left the dashboard half-updated, while a
+  connection drop at the same step restored it; both now restore. An error that wasn't a
+  Superset error (a bug in Chartwright) skipped the restore and lost the backup path;
+  it now follows the same rule and returns the normal report. Failures after the chart
+  updates (linkage, filter scopes, chart queries) still leave the new version live.
+- Two applies to the same dashboard within one second wrote the same backup name, and
+  the second overwrote the first. Backup names now go to the microsecond
+  (`20261003T141502.123456.zip`) and are never overwritten.
 - When an automatic restore failed, the suggested `chartwright restore <zip>` command
   left out the required `--profile`, so pasting it gave a usage error. It now includes it.
 - `docs/VERIFICATION.md` said CI runs on every push, and that the live check covers a
