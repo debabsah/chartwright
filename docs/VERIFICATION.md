@@ -24,7 +24,8 @@ real use and that a single test run holds constant:
   dashboard settings are stored").
 - **Faults**: injected failures at every stage boundary of `apply`.
 
-Every layer below runs in CI on every push: the offline suite on
+Every layer below runs in CI on every pull request, every push to main and
+every manual run: the offline suite on
 `ubuntu-latest` and `windows-latest`, then per-version live jobs that boot a
 real `apache/superset` container at each of the three releases and run the
 live check, a 25-cycle soak, the second-writer scenarios, and fault
@@ -34,12 +35,12 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (343 tests, 35 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows, mcp 1 and 2 |
-| Chart-option contract | Every emitted chart option is declared by each version's plugin source | every push |
-| Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every push, all 3 versions |
-| Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every push |
-| Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every push, all 3 versions |
-| Fault injection | A typed failure at every stage boundary; complete restore | every push, all 3 versions |
+| Offline suite (347 tests, 36 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
+| Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
+| Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
+| Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every PR and push to main, all 3 versions |
+| Fault injection | A typed failure at every stage boundary; complete restore | every PR and push to main, all 3 versions |
 | Real-instance use | Production 4.1.x on Windows, real datasets, real users | ongoing |
 
 ## 1. Offline suite
@@ -108,8 +109,9 @@ Runs against a real instance, start to finish. First, pre-flight
 resolution, which collects every bad reference into typed errors. Then an
 apply of the complete example spec (`tests/fixtures/kitchen_sink.json`),
 which exercises all 15 chart types, per-chart WHERE filters, a native
-filter bar with a value picker, a time range, and a numeric range scoped to
-specific charts, plus markdown and tabs. Then a per-chart data check: each
+filter bar with two value pickers and a time range, plus markdown and tabs.
+(A numeric range filter scoped to specific charts is exercised live by the
+second-writer and fault-injection runs.) Then a per-chart data check: each
 chart's query must return HTTP 200 and rows; an empty chart is a named
 warning, never a silent pass. Finally a second apply of the same spec,
 asserting that every chart keeps its id. Id stability matters because
@@ -157,15 +159,18 @@ All four scenarios pass on 4.1.4, 5.0.0, and 6.1.0.
 ## 6. Fault injection (`tools/faultline.py`)
 
 A wrapping client trips a chosen method with the same typed error a real
-network drop produces, or a fake HTTP 500 for the importer. A fault at
-every stage boundary (the dataset round-trip and stale-chart deletion
-during preparation, an importer 500 and a mid-import drop, the post-import
-link verification, the data check) must produce a typed report naming the
+network drop produces, a fake HTTP 500 for a rejected request, or a plain
+`RuntimeError` standing in for a bug in the tool itself. A fault at every
+stage boundary (the dataset round-trip and stale-chart deletion during
+preparation; an importer 500, a mid-import drop and an import-time bug;
+a rejected or dropped in-place chart update; the post-import link
+verification; the data check) must produce a typed report naming the
 stage, never a traceback, and a recorded backup whenever mutation had
 begun. Then:
 
-- for faults during preparation or import, the automatic restore fires,
-  and `plan` against the pre-apply spec comes back clean: the dashboard is
+- for faults during preparation or import, in-place chart updates
+  included, the automatic restore fires whatever the error type, and
+  `plan` against the pre-apply spec comes back clean: the dashboard is
   back, not half-updated;
 - for faults after import, a clean re-apply converges.
 
@@ -236,9 +241,10 @@ CI definition: `.github/workflows/ci.yml`.
 
 Stated plainly, so the green above means something:
 
-- **Auth**: database and LDAP login only. Instances that allow only SSO or
-  OAuth are out of scope, because Superset disables the password login API
-  there.
+- **Auth**: Chartwright signs in through Superset's password login API
+  (database or LDAP accounts) or with Preset API tokens; it can't complete an
+  SSO or OAuth sign-in. CI signs in with a database login; LDAP and Preset
+  sign-in aren't tested live.
 - **Versions**: 4.1.4, 5.0.0, and 6.1.0 exactly; other release lines are
   untested.
 - **Concurrency**: the second-writer harness scripts the known stale-tab
