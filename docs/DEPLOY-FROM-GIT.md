@@ -176,7 +176,7 @@ The commands below print JSON. Those that sign in exit 1 on a profile or sign-in
 | `apply` | The dashboard is built and every chart's query ran | A step failed (the report's `stage` names it); design findings, with `--design strict` |
 | `advise` | No error findings (and no warnings, with `--strict`) | Findings at that level |
 
-Because `plan` exits 1 both when the dashboard would change and when it couldn't compare, the review job runs `check` first, which fails on sign-in, profile and missing-reference errors. It then accepts plan's exit 1 only when the report's `dashboard` field says `create` or `update`. A report with `blocked`, or with no `dashboard` field at all, fails the job.
+Because `plan` exits 1 both when the dashboard would change and when it couldn't compare, the review job runs `check` first, which fails on sign-in, profile and missing-reference errors. It then accepts plan's exit 1 only when the report's `dashboard` field says `create` or `update`. A report with `blocked`, or with no `dashboard` field at all, fails the job. When `blocked` comes from the spec naming something prod doesn't have, the report lists it in `resolution_errors`, the same list `check` gives.
 
 ## 4. Gate on design
 
