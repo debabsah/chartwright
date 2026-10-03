@@ -189,6 +189,10 @@ The design brain, plus the fixes found reviewing it.
 
 ### Changed
 
+- **`plan` reports missing references as data.** When the spec names something the
+  instance doesn't have, `plan` is `blocked` and returns the same typed
+  `resolution_errors` list as `check` and `apply`; `detail` is a short sentence. It
+  used to put a Python-formatted list inside `detail`, which scripts couldn't parse.
 - A design finding that is withheld because a chart carries a hand-polished
   height is now reported rather than passing silently.
 - `--design strict` blocks when the advice cannot be evaluated at all, for

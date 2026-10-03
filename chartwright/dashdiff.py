@@ -30,6 +30,9 @@ class Plan:
     cross_filters_changed: bool = False   # live setting flipped in the UI, or the spec changed
     label_colors_changed: bool = False    # the pinned series colours differ
     decompile_losses: list[dict] = field(default_factory=list)
+    # Why a plan is blocked by the spec: the same typed errors `check` and
+    # `apply` return (column_not_found carries `candidates`). Empty otherwise.
+    resolution_errors: list[dict] = field(default_factory=list)
 
     @property
     def clean(self) -> bool:
@@ -57,6 +60,7 @@ class Plan:
                 "cross_filters_changed": self.cross_filters_changed,
                 "label_colors_changed": self.label_colors_changed,
                 "decompile_losses": self.decompile_losses,
+                "resolution_errors": self.resolution_errors,
             },
             indent=2,
         )
@@ -146,8 +150,11 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
 
     resolution = resolve(target, client)
     if not resolution.ok:
+        n = len(resolution.errors)
         return Plan(dashboard="blocked",
-                    detail=f"target spec has referential errors: {[e.as_dict() for e in resolution.errors]}")
+                    detail=f"the spec names {n} thing{'s' if n != 1 else ''} this instance doesn't have; "
+                           f"see resolution_errors",
+                    resolution_errors=[e.as_dict() for e in resolution.errors])
 
     live_result = decompile_live(target.dashboard.slug, client)
     try:
