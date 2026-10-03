@@ -34,6 +34,7 @@ class Plan:
     cross_filters_changed: bool = False   # live setting flipped in the UI, or the spec changed
     label_colors_changed: bool = False    # the pinned series colours differ
     settings_changed: list[str] = field(default_factory=list)  # dashboard settings apply overwrites
+    chart_option_changes: dict[str, list[str]] = field(default_factory=dict)  # adopted: chart -> option keys apply rewrites
     decompile_losses: list[dict] = field(default_factory=list)
 
     @property
@@ -62,6 +63,7 @@ class Plan:
                 "cross_filters_changed": self.cross_filters_changed,
                 "label_colors_changed": self.label_colors_changed,
                 "settings_changed": self.settings_changed,
+                "chart_option_changes": self.chart_option_changes,
                 "decompile_losses": self.decompile_losses,
             },
             indent=2,
@@ -163,18 +165,22 @@ def _adopted_blocks(target: DashboardSpec, live_bundle: bytes) -> str | None:
     return None
 
 
-def _rewritten_charts(target: DashboardSpec, resolution, live_bundle: bytes) -> set[str]:
-    """Adopted charts whose stored options differ from what apply will write."""
+def _rewritten_charts(target: DashboardSpec, resolution, live_bundle: bytes) -> dict[str, list[str]]:
+    """Adopted charts whose stored options differ from what apply will write:
+    chart name -> the option keys that differ."""
     compiled = _bundle_charts(compile_bundle(target, resolution))
     live = _bundle_charts(live_bundle)
-    changed = set()
+    changed: dict[str, list[str]] = {}
     for chart in target.charts:
         u = str(target.chart_uuid(chart.name))
         if u in live and u in compiled:
             want = {k: v for k, v in (compiled[u].get("params") or {}).items() if k not in _SERVER_PARAM_KEYS}
             have = {k: v for k, v in (live[u].get("params") or {}).items() if k not in _SERVER_PARAM_KEYS}
-            if want != have or compiled[u].get("viz_type") != live[u].get("viz_type"):
-                changed.add(chart.name)
+            keys = sorted(k for k in set(want) | set(have) if want.get(k) != have.get(k))
+            if compiled[u].get("viz_type") != live[u].get("viz_type"):
+                keys.append("viz_type")
+            if keys:
+                changed[chart.name] = keys
     return changed
 
 
@@ -252,7 +258,8 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
         # A spec-to-spec comparison can't see what decompile leaves out (options it
         # ignores, charts it can't hold), and on a dashboard built in the UI that is
         # real content. Compare what apply will WRITE with what is there instead.
-        p.charts_changed = sorted(set(p.charts_changed) | _rewritten_charts(target, resolution, live_bundle))
+        p.chart_option_changes = _rewritten_charts(target, resolution, live_bundle)
+        p.charts_changed = sorted(set(p.charts_changed) | set(p.chart_option_changes))
         p.charts_removed = sorted(set(p.charts_removed) | set(live_result.skipped_charts))
     # Filters: same identity model as charts (name-keyed, dataset by resolved
     # uuid). Without this, the primary real-world drift (a stale browser tab
