@@ -75,7 +75,8 @@ The design brain, plus the fixes found reviewing it.
 ### Fixed
 
 - `pip install "chartwright[mcp]"` installed mcp 2, which renamed `mcp.server.fastmcp`,
-  so `chartwright-mcp` failed to start. The extra now pins `mcp>=1.0,<2`.
+  so `chartwright-mcp` failed to start. It now runs on mcp 1 and mcp 2 (the extra
+  allows `mcp>=1.0,<3`), and CI tests both.
 - `advise` (and `advise_spec`, `plan_dashboard`) crashed with a `KeyError` on any chart in
   `layout.footer`: the design checks now see the footer, and `layout.markdown-height`
   checks and fixes text blocks in the footer and in sub-tabs too.
