@@ -167,7 +167,7 @@ space under `K` deliberately empty. Every rule, drawn and explained:
 
 ## Testing and evidence
 
-Every push and every pull request runs the full offline suite on Linux and
+Every pull request and every push to main runs the full offline suite on Linux and
 Windows, plus the full pipeline (apply, lifecycle soak, stale-tab adversary,
 fault injection) against real Superset 4.1.4, 5.0.0, and 6.1.0 containers.
 Chart options are checked against Superset's own source for every supported
