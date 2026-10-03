@@ -7,6 +7,7 @@ Run: chartwright-mcp   (stdio transport; profiles + password env vars as for the
 
 from __future__ import annotations
 
+import functools
 import json
 
 try:  # mcp 2 renamed FastMCP to MCPServer; the tool API chartwright uses is the same
@@ -40,6 +41,34 @@ def _client(profile: str):
     c = SupersetClient.from_profile(p)
     c.login()
     return c
+
+
+def _typed_errors(fn):
+    """Return the CLI's typed error JSON instead of raising, for tools that
+    sign in. A raised exception reached the agent as a bare tool failure it
+    couldn't tell apart from any other; the CLI's shape names the kind:
+    stage "profile" for profile and password problems, code "api" for sign-in
+    and Superset errors, code "unexpected" for anything else (a bug)."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        from .client import SupersetAPIError
+        from .profiles import ProfileError
+
+        try:
+            return fn(*args, **kwargs)
+        except ProfileError as e:
+            return json.dumps({"ok": False, "stage": "profile",
+                               "errors": [{"code": "profile", "detail": str(e)}]})
+        except SupersetAPIError as e:
+            return json.dumps({"ok": False, "stage": "error",
+                               "errors": [{"code": "api", "detail": str(e)}]})
+        except Exception as e:  # noqa: BLE001 - tool boundary, as at the CLI's
+            return json.dumps({"ok": False, "stage": "error", "errors": [{
+                "code": "unexpected",
+                "detail": f"{type(e).__name__}: {e} (please report this; it should have been a typed error)"}]})
+
+    return wrapper
 
 
 @mcp.tool()
@@ -82,6 +111,7 @@ def _bad_audience(audience: str) -> str | None:
 
 
 @mcp.tool()
+@_typed_errors
 def check_spec(spec_json: str, profile: str) -> str:
     """Pre-flight referential resolution against the live Superset instance:
     every dataset triple, column, and metric must exist. Returns typed errors
@@ -98,6 +128,7 @@ def check_spec(spec_json: str, profile: str) -> str:
 
 
 @mcp.tool()
+@_typed_errors
 def build_dashboard(spec_json: str, profile: str) -> str:
     """Compile the spec and apply it to the live Superset instance
     (resolve -> import -> linkage -> data smoke). Returns the full apply report
@@ -111,6 +142,7 @@ def build_dashboard(spec_json: str, profile: str) -> str:
 
 
 @mcp.tool()
+@_typed_errors
 def plan_dashboard(spec_json: str, profile: str) -> str:
     """Diff a spec against the live dashboard at its slug: what would apply
     change? clean=true means no drift."""
@@ -139,6 +171,7 @@ def design_brief(audience: str = "analytical") -> str:
 
 
 @mcp.tool()
+@_typed_errors
 def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
     """Design review of a spec against the design-brain rulebook (offline;
     pass a profile for data-aware rules: column types and cardinality).
@@ -190,6 +223,7 @@ def fix_spec(spec_json: str, audience: str = "") -> str:
 
 
 @mcp.tool()
+@_typed_errors
 def decompile_dashboard(dashboard: str, profile: str) -> str:
     """Turn a live dashboard (slug or numeric id) into a spec + a named
     lossiness report. Use to pull UI-born dashboards under spec control."""
@@ -203,6 +237,7 @@ def decompile_dashboard(dashboard: str, profile: str) -> str:
 
 
 @mcp.tool()
+@_typed_errors
 def redesign_dashboard(dashboard: str, profile: str, audience: str = "") -> str:
     """One-shot redesign of a live dashboard (slug or numeric id): decompile,
     design-audit with data-aware rules, apply safe geometry fixes. Returns the
