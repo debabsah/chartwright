@@ -1,17 +1,18 @@
 # How Chartwright Compares
 
-Chartwright is one of several command-line tools for managing Apache Superset assets. They overlap less than the category name suggests: each automates a different job, and most shops could reasonably run more than one. This page states what each tool does so you can pick by the job in front of you.
+Chartwright is one of several tools for managing Apache Superset assets from outside the UI. They overlap less than the category name suggests: each automates a different job, and most shops could reasonably run more than one. This page states what each tool does so you can pick by the job in front of you.
 
-Facts checked 2026-07-24 against each project's public README and docs. If something here has gone stale, open an issue and it will be corrected.
+Facts checked 2026-10-03 against each project's public README and docs, and Superset's MCP service against its source at the 6.1.0 tag. If something here has gone stale, open an issue and it will be corrected.
 
 ## The short version
 
 | Tool | Where a dashboard starts | What gets checked | Built for |
 |---|---|---|---|
-| [Chartwright](https://github.com/debabsah/chartwright) | a spec you (or an AI) write: a small JSON description of the dashboard you want | every dataset, column, and metric confirmed to exist before anything is built; every chart compared to the spec and its query run once after; drift diff on demand | authoring dashboards as reviewable code on open-source Superset |
-| [preset-cli / superset-cli](https://github.com/preset-io/backend-sdk) | the Superset UI; you export the built dashboard as YAML and optionally add Jinja templates | warns when target files already exist (pass `--overwrite` to replace); `delete-assets` dry-runs by default | syncing exported assets and dbt projects into Preset workspaces or standalone Superset |
+| [Chartwright](https://github.com/debabsah/chartwright) | a spec you (or an AI) write: a small JSON description of the dashboard you want | every dataset, column, and metric confirmed to exist before anything is built (a wrong column comes back with the closest real names); every chart compared to the spec and its query run once after; drift diff on demand | authoring dashboards as reviewable code on open-source Superset |
+| [preset-cli / superset-cli](https://github.com/preset-io/backend-sdk) | the Superset UI; you export the built dashboard as YAML and optionally add Jinja templates | warns when target files already exist (pass `--overwrite` to replace); `delete-assets` dry-runs by default, with optional best-effort rollback | syncing exported assets and dbt projects into Preset workspaces or standalone Superset |
 | [sup](https://github.com/preset-io/superset-sup) | the Superset UI; sync configs point at source and target workspaces | `sync run --dry-run` previews the sync operations | power-user and agent workflows: SQL from the terminal, asset search, backup and restore, cross-workspace sync (beta, per its README) |
 | [terraform-provider-superset](https://github.com/platacard/terraform-provider-superset) | Terraform HCL | Terraform's own plan and apply lifecycle | databases, datasets, roles, and users; dashboards and charts are not among its resources |
+| [Superset's MCP service](https://github.com/apache/superset/tree/6.1.0/superset/mcp_service) (built into Superset 6.1.0) | an AI agent's tool calls: charts first, then a dashboard made from them | `generate_chart` checks a chart's columns against its dataset as it creates that chart | letting an AI agent create charts and dashboards from inside Superset; in 6.1.0, building again creates a new dashboard, and no tool changes an existing dashboard's layout, filters or title |
 
 ## The deepest difference: which way the dashboard flows
 
@@ -25,17 +26,19 @@ Neither direction is better in general. If your dashboards are built by analysts
 
 The export-and-sync tools check transport concerns: existing targets, previewable operations. Chartwright's job is compilation, so what it verifies is content, at three points:
 
-- **Before writing:** `chartwright check` signs in read-only and confirms every dataset, column, and metric the spec names actually exists. A misspelled column is a clear error before anything is created, which matters most when an AI wrote the spec.
-- **After writing:** `chartwright apply` compares the finished dashboard chart-by-chart against the spec and runs each chart's query once to prove it loads data.
-- **On demand:** `chartwright plan` diffs the spec against the live dashboard, field by field: charts, filters, scopes, title, layout. It passes when they match and fails when they drifted, ready as a CI gate.
+- **Before writing:** `chartwright check` signs in read-only and confirms every dataset, column, and metric the spec names actually exists. A misspelled column is a clear error before anything is created, with the closest real column names suggested, which matters most when an AI wrote the spec.
+- **After writing:** `chartwright apply` compares the finished dashboard chart-by-chart against the spec and runs each chart's query once: an error fails the build, and a chart with no rows is named.
+- **On demand:** `chartwright plan` diffs the spec against the live dashboard: the charts and filters added, changed or removed, plus title, layout, cross-filter and series-colour changes. It passes when they match and fails when they drifted, ready as a CI gate.
 
-`chartwright decompile` closes the loop from the other side: it turns a dashboard built in the UI into a spec, listing anything it could not carry over.
+`chartwright decompile` closes the loop from the other side: it turns a dashboard built in the UI into a spec, listing most of what it couldn't carry over, and you build that spec as a copy at a new slug.
 
 ## Tool notes
 
 **preset-cli / superset-cli** is maintained by Preset, the company behind much of Superset's development. Beyond native asset sync it exports RLS rules, roles, users, and ownership, and can build datasets straight from a dbt Core or dbt Cloud project. It runs against Preset workspaces (`preset-cli`) or any standalone Superset (`superset-cli`).
 
 **sup** is Preset's newer CLI, self-described as beta, with a strong terminal experience: run SQL against any workspace database, search charts and datasets server-side, export chart data, back up and restore assets with dependency tracking, and machine-readable output modes aimed at scripts and AI agents.
+
+**Superset's MCP service** ships with Superset 6.1.0 and gives an AI agent tools to create charts, create a dashboard from them, add charts to an existing dashboard, and update one chart. Superset's master branch adds tools that change existing dashboards, not yet in a release. Chartwright's own MCP server works the other way: the agent writes a spec, and every build updates the same dashboard in place.
 
 **terraform-provider-superset** brings the databases-datasets-roles-users layer of a Superset instance under Terraform. If your platform team already lives in Terraform, it can own that layer while a dashboard tool owns the dashboards.
 
@@ -46,4 +49,4 @@ The tools compose because they hold different ends of the stack:
 - Manage connections, roles, and users with Terraform; author the dashboards on top of them as Chartwright specs.
 - Sync dataset definitions from your dbt project with preset-cli; point Chartwright specs at those datasets.
 - Keep ad-hoc SQL, asset search, and scheduled backups on sup; keep the dashboards you want under PR review on Chartwright specs, with `plan` as the merge gate.
-- Migrating instances? `superset-cli export-assets` moves everything wholesale; `chartwright decompile` adopts the dashboards you want to manage as code from then on.
+- Migrating instances? `superset-cli export-assets` moves everything wholesale; `chartwright decompile` turns the dashboards you want to manage as code into specs from then on.
