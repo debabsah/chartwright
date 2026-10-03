@@ -10,7 +10,8 @@ import json
 from dataclasses import dataclass, field
 
 from .client import SupersetClient
-from .decompile import decompile_live
+from .compiler import native_filter_id
+from .decompile import SETTINGS_LOSS, decompile_live
 from .spec import DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec
 
 
@@ -28,6 +29,7 @@ class Plan:
     layout_changed: bool = False
     cross_filters_changed: bool = False   # live setting flipped in the UI, or the spec changed
     label_colors_changed: bool = False    # the pinned series colours differ
+    settings_changed: list[str] = field(default_factory=list)  # dashboard settings apply overwrites
     decompile_losses: list[dict] = field(default_factory=list)
 
     @property
@@ -36,7 +38,7 @@ class Plan:
             self.charts_added or self.charts_changed or self.charts_removed
             or self.filters_added or self.filters_changed or self.filters_removed
             or self.title_changed or self.layout_changed or self.cross_filters_changed
-            or self.label_colors_changed
+            or self.label_colors_changed or self.settings_changed
         )
 
     def to_json(self) -> str:
@@ -55,6 +57,7 @@ class Plan:
                 "layout_changed": self.layout_changed,
                 "cross_filters_changed": self.cross_filters_changed,
                 "label_colors_changed": self.label_colors_changed,
+                "settings_changed": self.settings_changed,
                 "decompile_losses": self.decompile_losses,
             },
             indent=2,
@@ -131,6 +134,12 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
 
     existing = client.find_dashboard_by_slug(target.dashboard.slug)
     if existing is None:
+        if target.dashboard.adopted:
+            # apply refuses this case too: the importer would overwrite the adopted
+            # dashboard wherever it now lives.
+            return Plan(dashboard="blocked",
+                        detail=f"the dashboard this spec adopted is no longer at {target.dashboard.slug!r}; "
+                               "run `chartwright adopt` on it where it is now")
         return Plan(dashboard="create", detail="no dashboard at this slug",
                     charts_added=[c.name for c in target.charts])
 
@@ -141,7 +150,10 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
         f"/api/v1/dashboard/{existing['id']}")["result"].get("uuid")
     if str(live_uuid) != str(target.dashboard_uuid()):
         return Plan(dashboard="blocked",
-                    detail=f"slug {target.dashboard.slug!r} exists but is not owned by this tool")
+                    detail=(f"the dashboard at {target.dashboard.slug!r} is not the one this spec adopted"
+                            if target.dashboard.adopted else
+                            f"slug {target.dashboard.slug!r} exists but is not owned by this tool; "
+                            "take it over with `chartwright adopt`"))
 
     resolution = resolve(target, client)
     if not resolution.ok:
@@ -223,6 +235,17 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     # Whole-layout compare: a tabs layout has no "rows" key after
     # exclude_none dumping, so keyed access would KeyError.
     p.layout_changed = t["layout"] != l["layout"]
+    # Settings the spec doesn't carry but apply writes (CSS, colour scheme, refresh,
+    # draft): only ever set on dashboards built or edited outside the tool.
+    p.settings_changed = [l_["what"] for l_ in live_result.losses_json() if l_["where"] == SETTINGS_LOSS]
+    if target.filters:
+        meta = json.loads(client.get(f"/api/v1/dashboard/{existing['id']}")["result"].get("json_metadata") or "{}")
+        live_ids = {nf.get("name"): nf.get("id") for nf in meta.get("native_filter_configuration") or []}
+        renumbered = sorted(f.name for f in target.filters
+                            if f.name in live_ids and live_ids[f.name] != native_filter_id(target, f.name))
+        if renumbered:
+            p.settings_changed.append(
+                f"native filters {renumbered} get new ids; links that saved a filter state may not carry over")
     if not p.clean:
         p.dashboard = "update"
     return p

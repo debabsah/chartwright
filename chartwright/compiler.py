@@ -613,12 +613,14 @@ def _position(spec: DashboardSpec) -> dict:
     return pos
 
 
+def native_filter_id(spec: DashboardSpec, name: str) -> str:
+    return "NATIVE_FILTER-sdc-" + uuid.uuid5(ids.NAMESPACE, f"{spec.dashboard.slug}/filter/{name}").hex[:12]
+
+
 def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
     out = []
     for f in spec.filters:
-        fid = "NATIVE_FILTER-sdc-" + uuid.uuid5(
-            ids.NAMESPACE, f"{spec.dashboard.slug}/filter/{f.name}"
-        ).hex[:12]
+        fid = native_filter_id(spec, f.name)
         base = {
             "id": fid,
             "name": f.name,

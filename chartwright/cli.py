@@ -431,7 +431,7 @@ def _main(argv: list[str] | None = None) -> None:
         except ValueError as e:
             _die({"stage": "adopt", "errors": [{"code": "decompile", "detail": str(e)}]})
         if not result.ok:
-            _die({**result.payload(), "errors": [{"code": "refused", "detail": result.detail}]})
+            _die(result.payload())
         if args.output:
             Path(args.output).write_text(json.dumps(result.spec, indent=2) + "\n", encoding="utf-8")
             print(json.dumps({**result.payload(), "output": args.output,
@@ -464,8 +464,15 @@ def _main(argv: list[str] | None = None) -> None:
         # Also restorable: a backup this tool took itself (its own backup folder for
         # this profile and slug), which covers the first backup of an adopted
         # dashboard, taken while it still had its original, hand-built identity.
-        own_backup = bool(slug) and Path(args.bundle).resolve().is_relative_to(
-            backup_dir_for(args.profile, slug).resolve())
+        import re
+
+        from .adopt import SLUG_PATTERN
+
+        # The slug comes from inside the bundle: check its shape before building a
+        # path from it ("..", "/" or anything else would widen the folder matched).
+        own_backup = (bool(slug) and bool(re.fullmatch(SLUG_PATTERN, str(slug)))
+                      and Path(args.bundle).resolve().is_relative_to(
+                          backup_dir_for(args.profile, slug).resolve()))
         if not slug or (u != str(ids.dashboard_uuid(slug)) and not own_backup):
             _die({"stage": "restore", "errors": [{"code": "not_owned",
                   "detail": f"bundle dashboard (slug={slug!r}) is not owned by this tool and is not "

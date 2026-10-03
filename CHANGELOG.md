@@ -12,20 +12,29 @@ The design brain, plus the fixes found reviewing it.
 - **`chartwright adopt <dashboard>`**: take over a dashboard built in the UI in
   place. It writes a spec that names that dashboard and its charts by their own
   ids (`dashboard.adopted`), so applying it updates the same dashboard: its
-  address, id and chart ids stay, and links, embeds and scheduled reports keep
-  pointing at it. Adopt changes nothing in Superset; `plan` shows what the first
-  apply will change, and apply backs up first. It refuses when some charts can't
-  be represented (applying would take them off the dashboard) unless `--force`.
-  Charts that leave an adopted dashboard's spec are taken off that dashboard,
-  never deleted, since a hand-made chart may sit on other dashboards too.
-  `restore` also accepts the tool's own backups, which covers the first backup
-  of an adopted dashboard. The adopted block also records the dashboard's
-  address, and a spec whose address differs from it fails validation, so a
-  copy of an adopted spec made to build a new dashboard can't overwrite the
-  original. Also an MCP tool (`adopt_dashboard`). Known limit:
-  native filters get the tool's own ids on the first apply, so saved filter-state
-  links made before adoption may not carry over. Checked live on 4.1.4, 5.0.0
-  and 6.1.0 by `tools/ci_live_adopt.py`.
+  address, id and chart ids stay, so links and scheduled reports pointing at it
+  keep working. Adopt changes nothing in Superset; `plan` lists what the first
+  apply will change (including settings the spec doesn't hold, such as CSS, and
+  native filters that get new ids), and apply backs up first.
+  - Adopt refuses, saying what to do instead, when the dashboard has no URL name
+    or one a spec can't hold, when two charts share a title, when some charts
+    can't be represented (`--force` takes them off the dashboard, never deletes
+    them), and when some charts also sit on other dashboards (applying would
+    change them there too; `--force` to go ahead).
+  - Apply refuses an adopted spec unless the adopted dashboard is at the spec's
+    address, and only touches charts that are on that dashboard. Charts are
+    matched by id, so renaming a chart in the spec renames it in Superset.
+  - A chart that was on the dashboard when it was adopted is taken off when it
+    leaves the spec, never deleted; charts the tool created later are deleted as
+    on any tool-built dashboard.
+  - A copy of an adopted spec saved under a new address fails validation, so it
+    can't overwrite the original.
+  - `restore` also accepts the tool's own backups (by folder, for that profile
+    and dashboard), which covers the first backup of an adopted dashboard.
+  - Also an MCP tool (`adopt_dashboard`). Checked live on 4.1.4, 5.0.0 and 6.1.0
+    by `tools/ci_live_adopt.py`.
+  - Known limit: filter and tab ids are replaced on the first apply, so a link
+    that saved a filter state or opened a specific tab may need saving again.
 - **`layout.footer`**: rows below the rows, tabs, or sketch, outside any tab,
   so a tabbed dashboard shows them under every tab. Round-trips through
   decompile and `plan`; rows below a dashboard's tabs, including ones placed

@@ -3,7 +3,9 @@
 Flow: import a dashboard that looks hand-built (random uuids) -> a plain spec at
 its slug is refused -> `adopt` it -> plan is clean -> apply updates the SAME
 dashboard (same id, same chart ids) -> a chart dropped from the spec is taken off
-the dashboard but still exists -> re-apply keeps ids stable. Used by CI per
+the dashboard but still exists -> a renamed chart keeps its id -> a chart shared
+with another dashboard makes adopt refuse, and dropping it takes it off this
+dashboard only -> re-apply keeps ids stable. Used by CI per
 Superset version; runnable by hand against any sandbox:
 
     SDC_CI_PASSWORD=admin python tools/ci_live_adopt.py --base-url http://host:8098
@@ -141,24 +143,49 @@ def main(argv: list[str] | None = None) -> int:
               f"charts {before_charts} -> {_linked(client, r1.dashboard_id)}")
         return 1
 
-    # 5. A chart dropped from the spec leaves the dashboard but is not deleted.
+    # 5. Renaming an adopted chart in the spec renames that chart; its id stays.
+    first = adopted_spec.charts[0].name
+    renamed_data = json.loads(json.dumps(adopted.spec).replace(json.dumps(first), json.dumps(first + " (renamed)")))
+    r_ren = run_apply(load_spec(renamed_data), client, "ci")
+    if not r_ren.ok or _linked(client, r_ren.dashboard_id).get(first + " (renamed)") != before_charts[first]:
+        print(f"FAIL: rename did not keep the chart: {r_ren.to_json()}")
+        return 1
+
+    # 6. A chart that also sits on another dashboard: adopt refuses by default, and
+    #    dropping it from the spec takes it off THIS dashboard only.
+    other = load_spec({**json.loads(json.dumps(data)), "dashboard": {
+        "title": "Adopt check (other)", "slug": f"{slug}-other"}})
+    r_other = run_apply(other, client, "ci")
+    if not r_other.ok:
+        print(f"FAIL: could not build the second dashboard: {r_other.to_json()}")
+        return 1
     dropped = adopted_spec.charts[-1].name
-    smaller = load_spec(_drop_chart(adopted.spec, dropped))
+    shared_id = before_charts[dropped]
+    detail = client.get(f"/api/v1/chart/{shared_id}")["result"]
+    keep = sorted({d["id"] for d in detail.get("dashboards") or []} | {r_other.dashboard_id})
+    client.put_json(f"/api/v1/chart/{shared_id}", {"dashboards": keep})
+    if adopt_live(slug, client).ok:
+        print("FAIL: adopt did not refuse a dashboard with a shared chart")
+        return 1
+    smaller = load_spec(_drop_chart(renamed_data, dropped))
     r2 = run_apply(smaller, client, "ci")
     print(r2.to_json())
     if not r2.ok:
         print(f"FAIL: apply after dropping {dropped!r} ended at stage {r2.stage!r}")
         return 1
     if dropped in _linked(client, r2.dashboard_id):
-        print(f"FAIL: {dropped!r} is still on the dashboard")
+        print(f"FAIL: {dropped!r} is still on the adopted dashboard")
         return 1
     try:
-        client.get(f"/api/v1/chart/{before_charts[dropped]}")
+        still = {d["id"] for d in client.get(f"/api/v1/chart/{shared_id}")["result"].get("dashboards") or []}
     except Exception as e:  # noqa: BLE001 - any failure here means the chart is gone
         print(f"FAIL: {dropped!r} was deleted ({e})")
         return 1
+    if r_other.dashboard_id not in still:
+        print(f"FAIL: {dropped!r} was taken off the other dashboard too")
+        return 1
 
-    # 6. Re-apply keeps ids stable.
+    # 7. Re-apply keeps ids stable.
     ids_a = _linked(client, r2.dashboard_id)
     r3 = run_apply(smaller, client, "ci")
     if not r3.ok or _linked(client, r3.dashboard_id) != ids_a or r3.dashboard_id != before["id"]:
@@ -166,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"ADOPT CHECK PASS: dashboard {before['id']} kept its id and {len(before_charts)} chart ids; "
-          f"{dropped!r} taken off, not deleted")
+          f"a renamed chart kept its id; shared chart {dropped!r} taken off this dashboard only")
     return 0
 
 

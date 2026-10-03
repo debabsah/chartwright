@@ -49,7 +49,7 @@ into one. Everything below works from that one file.
 
 ## Dashboards as Code
 - **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, layout.
-- **Take Over Existing Dashboards in Place**: `chartwright adopt` turns a dashboard built in the UI into a spec that manages that same dashboard: its address, id and chart ids stay, so links, embeds and scheduled reports keep working. Anything it cannot carry over is listed, and `plan` shows what the first apply will change.
+- **Take Over Existing Dashboards in Place**: `chartwright adopt` turns a dashboard built in the UI into a spec that manages that same dashboard: its address, id and chart ids stay, so links and scheduled reports pointing at the dashboard keep working. Filter and tab ids are replaced on the first apply, so a link that saved a filter state or opened a specific tab may need saving again. `plan` lists everything the first apply will change, including settings the spec doesn't hold, such as CSS.
 - **Lossless Round-Trips**: Tool-built dashboards decompile back to their exact spec.
 - **Targeted Edits**: Replace, rename, resize, or remove one chart and re-apply; old charts are cleaned up, never orphaned.
 - **Stable Identity**: Chart ids never change across re-applies, so links, scopes, and open browser tabs stay valid.
@@ -67,7 +67,7 @@ into one. Everything below works from that one file.
 - **Self-Healing Applies**: A failed apply restores the previous state automatically.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once to prove it shows data; any failure says what went wrong and where.
-- **Ownership Guard**: The tool only changes dashboards it created or that you adopted with `chartwright adopt`. Charts that leave an adopted dashboard's spec are taken off that dashboard, never deleted.
+- **Ownership Guard**: The tool only changes dashboards it created or that you adopted with `chartwright adopt`, and an adopted one only at the address it was adopted from. A chart that was on the dashboard when you adopted it is taken off when it leaves the spec, never deleted; charts the tool created are deleted.
 
 ## Enterprise Ready
 - **Multiple Instances**: Sandbox, staging, and production as profiles in one file.

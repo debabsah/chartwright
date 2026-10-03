@@ -615,11 +615,13 @@ class AdoptedIdentity(BaseModel):
     dashboard_uuid: str = Field(description="uuid of the adopted dashboard")
     slug: str = Field(
         min_length=1,
-        description="The adopted dashboard's address (URL name). Must equal dashboard.slug: copying an "
-                    "adopted spec to make a new dashboard means removing this whole block.")
+        description="The adopted dashboard's address (URL name), as recorded by adopt. Must equal "
+                    "dashboard.slug: copying an adopted spec to make a new dashboard means removing this "
+                    "whole block; moving the dashboard means changing its address in Superset and adopting again.")
     charts: dict[str, str] = Field(
         default_factory=dict,
-        description="Chart name -> uuid of the adopted chart. Rename a key together with its chart.",
+        description="Chart name -> uuid of the adopted chart. Renaming a chart in the spec renames it in "
+                    "Superset; rename its key here too.",
     )
 
     @model_validator(mode="after")
@@ -676,7 +678,8 @@ class DashboardMeta(BaseModel):
             raise ValueError(
                 f"dashboard.slug {self.slug!r} differs from dashboard.adopted.slug "
                 f"{self.adopted.slug!r}. Making a new dashboard from a copy of this spec? Remove "
-                f"dashboard.adopted. Moving the adopted dashboard to a new address? Change both.")
+                f"dashboard.adopted. Moving the adopted dashboard to a new address? Change it in "
+                f"Superset, then run `chartwright adopt` on it again.")
         return self
 
     @model_validator(mode="after")
@@ -915,10 +918,6 @@ class DashboardSpec(BaseModel):
         if adopted and name in adopted.charts:
             return _uuid.UUID(adopted.charts[name])
         return ids.chart_uuid(self.dashboard.slug, name)
-
-    def owns_chart_uuid(self, value: str) -> bool:
-        """A chart this spec may update or delete: one of its own charts by uuid."""
-        return any(str(self.chart_uuid(c.name)) == str(value) for c in self.charts)
 
     def resolved_height(self, name: str) -> float:
         chart = next(c for c in self.charts if c.name == name)

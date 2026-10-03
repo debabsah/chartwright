@@ -119,6 +119,7 @@ class DecompileResult:
     chart_uuids: dict[str, str] = field(default_factory=dict)  # chart name -> chart uuid
     skipped_charts: list[str] = field(default_factory=list)  # charts the spec can't represent
     dashboard_uuid: str | None = None
+    source_slug: str | None = None  # the live dashboard's own slug (None when it has none)
 
     def losses_json(self) -> list[dict]:
         return [loss.as_dict() for loss in self.losses]
@@ -698,6 +699,9 @@ def _leaf_tabs(layout: dict) -> list[dict]:
     return [leaf for tab in layout.get("tabs") or [] for leaf in (tab.get("tabs") or [tab])]
 
 
+SETTINGS_LOSS = "dashboard settings"  # Loss.where for settings apply overwrites; plan lists them
+
+
 def _dashboard_settings_losses(dash: dict, losses: list[Loss]) -> None:
     """Dashboard-level settings the spec doesn't carry. Apply writes its own values
     for them (no CSS, the default colour scheme, no auto-refresh, published), so a
@@ -713,7 +717,7 @@ def _dashboard_settings_losses(dash: dict, losses: list[Loss]) -> None:
     ]
     for value, what in checks:
         if value:
-            losses.append(Loss("dashboard", what))
+            losses.append(Loss(SETTINGS_LOSS, what))
 
 
 def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult:
@@ -737,7 +741,10 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             if spec_chart:
                 if spec_chart["name"] in charts_by_name:
                     losses.append(Loss(spec_chart["name"], "duplicate slice_name in bundle; suffixed to keep uuid seeds unique"))
-                    spec_chart["name"] = f"{spec_chart['name']} (2)"
+                    n = 2
+                    while f"{spec_chart['name']} ({n})" in charts_by_name:
+                        n += 1
+                    spec_chart["name"] = f"{spec_chart['name']} ({n})"
                 charts_by_name[spec_chart["name"]] = spec_chart
                 dataset_uuids[spec_chart["name"]] = str(cy.get("dataset_uuid"))
                 if cy.get("uuid"):
@@ -888,11 +895,12 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             f"the dataset index stopped at {truncated} datasets (page cap); any "
             f"'dataset uuid not resolvable' loss above may be a dataset past the cap "
             f"rather than a missing one -- re-check those charts before trusting this spec"))
+    kept_names = {c["name"] for c in spec.get("charts", [])}
     return DecompileResult(spec=spec, losses=losses, dataset_uuids=dataset_uuids,
-                           chart_uuids={n: u for n, u in chart_uuids.items()
-                                        if n in {c["name"] for c in spec.get("charts", [])}},
+                           chart_uuids={n: u for n, u in chart_uuids.items() if n in kept_names},
                            skipped_charts=skipped,
-                           dashboard_uuid=str(dash["uuid"]) if dash.get("uuid") else None)
+                           dashboard_uuid=str(dash["uuid"]) if dash.get("uuid") else None,
+                           source_slug=dash.get("slug") or None)
 
 
 PAGE_CAP = 200  # 20,000 datasets; a runaway guard, not an expected ceiling

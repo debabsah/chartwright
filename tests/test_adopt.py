@@ -1,6 +1,6 @@
 """Adopt in place: a spec that takes over an existing, hand-built dashboard and
 updates that same dashboard (same uuid, so the same id and address) instead of
-building a copy (offline)."""
+building a copy (offline; apply and plan run against tests/fake_superset.py)."""
 
 import io
 import json
@@ -12,17 +12,20 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from chartwright import cli, ids
+from chartwright import apply as apply_mod
+from chartwright import cli, dashdiff, ids, resolver
 from chartwright.adopt import adopted_spec
-from chartwright.apply import _ownership_guard, _unlink_charts
+from chartwright.apply import _ownership_guard, _unlink_charts, backup_dir_for
 from chartwright.compiler import compile_bundle
 from chartwright.decompile import decompile_bundle
 from chartwright.spec import load_spec
 from chartwright.testing import edit_bundle, stub_resolution
 
+from fake_superset import FakeSuperset
 from test_decompile import _stub_lookup_for
 
 FIXTURES = Path(__file__).parent / "fixtures"
+SLUG = "sdc-sales-overview"
 HAND_DASH = "11111111-2222-3333-4444-555555555555"
 
 
@@ -30,16 +33,16 @@ def _fixture() -> dict:
     return json.loads((FIXTURES / "sales_overview.json").read_text())
 
 
-def _hand_built(extra_chart: bool = False) -> tuple[bytes, dict, object]:
+def _hand_built(extra_chart=False, slug=SLUG, edit=None, data=None) -> tuple[bytes, dict, object]:
     """A compiled bundle made to look built in the UI: every uuid random
     (deterministic here), optionally plus a chart type the spec can't hold."""
-    spec = load_spec(_fixture())
-    bundle = compile_bundle(spec, stub_resolution(spec))
+    spec = load_spec(data or _fixture())
     chart_uuids: dict[str, str] = {}
 
     def rewrite(path, doc):
         if "/dashboards/" in path:
             doc["uuid"] = HAND_DASH
+            doc["slug"] = slug
             for node in doc["position"].values():
                 if isinstance(node, dict) and node.get("type") == "CHART":
                     node["meta"]["uuid"] = chart_uuids.setdefault(
@@ -47,65 +50,99 @@ def _hand_built(extra_chart: bool = False) -> tuple[bytes, dict, object]:
         elif "/charts/" in path:
             doc["uuid"] = chart_uuids.setdefault(
                 doc["slice_name"], str(uuid.uuid5(uuid.NAMESPACE_DNS, doc["slice_name"])))
+        if edit:
+            edit(path, doc)
 
     add = {}
     if extra_chart:
         add["sdc_bundle/charts/Sunburst.yaml"] = {
             "slice_name": "Sunburst", "viz_type": "sunburst_v2", "params": {},
             "uuid": "99999999-0000-0000-0000-000000000001", "dataset_uuid": "x"}
-    hand = edit_bundle(bundle, rewrite, add=add)
-    return hand, chart_uuids, spec
+    return edit_bundle(compile_bundle(spec, stub_resolution(spec)), rewrite, add=add), chart_uuids, spec
 
 
-def test_decompile_reports_identity_and_skipped_charts():
+# -- adopt (pure core) ----------------------------------------------------------
+
+
+def test_decompile_reports_identity_skipped_charts_and_slug():
     hand, chart_uuids, spec = _hand_built(extra_chart=True)
     result = decompile_bundle(hand, _stub_lookup_for(spec))
-    assert result.dashboard_uuid == HAND_DASH
+    assert result.dashboard_uuid == HAND_DASH and result.source_slug == SLUG
     assert result.chart_uuids == chart_uuids
     assert result.skipped_charts == ["Sunburst"]
 
 
-def test_adopt_refuses_when_charts_would_leave_the_dashboard_unless_forced():
+def test_adopt_refuses_unrepresentable_charts_unless_forced():
     hand, _, spec = _hand_built(extra_chart=True)
     result = decompile_bundle(hand, _stub_lookup_for(spec))
     refused = adopted_spec(result)
-    assert not refused.ok and refused.skipped_charts == ["Sunburst"]
-    assert "not be deleted" in refused.detail
-    forced = adopted_spec(result, force=True)
-    assert forced.ok and forced.skipped_charts == ["Sunburst"]
+    assert not refused.ok and "not be deleted" in refused.detail
+    assert refused.payload()["errors"][0]["code"] == "refused"
+    assert adopted_spec(result, force=True).ok
+
+
+def test_adopt_refuses_charts_shared_with_other_dashboards_unless_forced():
+    hand, _, spec = _hand_built()
+    result = decompile_bundle(hand, _stub_lookup_for(spec))
+    refused = adopted_spec(result, shared_charts=["Total Sales"])
+    assert not refused.ok and "other dashboards" in refused.detail and refused.shared_charts == ["Total Sales"]
+    assert adopted_spec(result, force=True, shared_charts=["Total Sales"]).ok
+
+
+@pytest.mark.parametrize("slug, message", [(None, "no URL name"), ("Sales_Overview", "isn't one a spec can hold")])
+def test_adopt_refuses_a_dashboard_without_a_usable_address(slug, message):
+    hand, _, spec = _hand_built(slug=slug)
+    refused = adopted_spec(decompile_bundle(hand, _stub_lookup_for(spec)))
+    assert not refused.ok and message in refused.detail
+
+
+def test_adopt_refuses_charts_that_share_a_title():
+    def same_title(path, doc):
+        if "/charts/" in path and doc["slice_name"] == "Total Sales":
+            doc["slice_name"] = "Total Orders"
+    hand, _, spec = _hand_built(edit=same_title)
+    refused = adopted_spec(decompile_bundle(hand, _stub_lookup_for(spec)))
+    assert not refused.ok and "share a title" in refused.detail
+
+
+def test_three_charts_with_one_title_get_distinct_names():
+    def same_title(path, doc):
+        if "/charts/" in path and doc["slice_name"] in ("Total Sales", "Average Order Value"):
+            doc["slice_name"] = "Total Orders"
+    hand, _, spec = _hand_built(edit=same_title)
+    names = [c["name"] for c in decompile_bundle(hand, _stub_lookup_for(spec)).spec["charts"]]
+    assert sorted(n for n in names if n.startswith("Total Orders")) == [
+        "Total Orders", "Total Orders (2)", "Total Orders (3)"]
 
 
 def test_adopted_spec_compiles_to_the_same_dashboard_and_charts():
     hand, chart_uuids, spec = _hand_built()
     adopted = adopted_spec(decompile_bundle(hand, _stub_lookup_for(spec)))
     assert adopted.ok
-    assert adopted.spec["dashboard"]["adopted"] == {"dashboard_uuid": HAND_DASH, "slug": "sdc-sales-overview",
+    assert adopted.spec["dashboard"]["adopted"] == {"dashboard_uuid": HAND_DASH, "slug": SLUG,
                                                     "charts": chart_uuids}
     live = load_spec(adopted.spec)
     zf = zipfile.ZipFile(io.BytesIO(compile_bundle(live, stub_resolution(live))))
     docs = {n: yaml.safe_load(zf.read(n)) for n in zf.namelist() if n.endswith(".yaml")}
     dash = next(d for n, d in docs.items() if "/dashboards/" in n)
-    assert dash["uuid"] == HAND_DASH  # the importer overwrites THIS dashboard, in place
+    assert dash["uuid"] == HAND_DASH
     assert {d["slice_name"]: d["uuid"] for n, d in docs.items() if "/charts/" in n} == chart_uuids
-    placed = {n["meta"]["uuid"] for n in dash["position"].values()
-              if isinstance(n, dict) and n.get("type") == "CHART"}
-    assert placed == set(chart_uuids.values())
 
 
 def test_a_chart_added_after_adoption_gets_a_derived_id():
     data = _fixture()
-    data["dashboard"]["adopted"] = {"dashboard_uuid": HAND_DASH, "slug": "sdc-sales-overview",
+    data["dashboard"]["adopted"] = {"dashboard_uuid": HAND_DASH, "slug": SLUG,
                                    "charts": {"Total Orders": "aaaaaaaa-0000-0000-0000-000000000001"}}
     spec = load_spec(data)
     assert str(spec.chart_uuid("Total Orders")) == "aaaaaaaa-0000-0000-0000-000000000001"
-    assert spec.chart_uuid("Total Sales") == ids.chart_uuid("sdc-sales-overview", "Total Sales")
+    assert spec.chart_uuid("Total Sales") == ids.chart_uuid(SLUG, "Total Sales")
     assert str(spec.dashboard_uuid()) == HAND_DASH
 
 
 @pytest.mark.parametrize("adopted, message", [
-    ({"dashboard_uuid": "not-a-uuid", "slug": "sdc-sales-overview"}, "not a uuid"),
-    ({"dashboard_uuid": HAND_DASH, "slug": "sdc-sales-overview", "charts": {"Gone": HAND_DASH}}, "not in the spec"),
-    ({"dashboard_uuid": HAND_DASH, "slug": "sdc-sales-overview",
+    ({"dashboard_uuid": "not-a-uuid", "slug": SLUG}, "not a uuid"),
+    ({"dashboard_uuid": HAND_DASH, "slug": SLUG, "charts": {"Gone": HAND_DASH}}, "not in the spec"),
+    ({"dashboard_uuid": HAND_DASH, "slug": SLUG,
       "charts": {"Total Orders": HAND_DASH, "Total Sales": HAND_DASH}}, "several names"),
     ({"dashboard_uuid": HAND_DASH, "slug": "the-original"}, "Remove dashboard.adopted"),
 ])
@@ -116,57 +153,223 @@ def test_adopted_block_is_validated(adopted, message):
         load_spec(data)
 
 
-class _Client:
-    def __init__(self, live_uuid):
-        self.live_uuid = live_uuid
+def test_a_copy_of_an_adopted_spec_cannot_point_at_the_original():
+    hand, _, spec = _hand_built()
+    clone = json.loads(json.dumps(adopted_spec(decompile_bundle(hand, _stub_lookup_for(spec))).spec))
+    clone["dashboard"]["slug"] = "sales-overview-emea"
+    with pytest.raises(ValidationError, match="Remove dashboard.adopted"):
+        load_spec(clone)
+    del clone["dashboard"]["adopted"]
+    assert load_spec(clone).dashboard_uuid() == ids.dashboard_uuid("sales-overview-emea")
 
-    def find_dashboard_by_slug(self, slug):
-        return {"id": 7}
 
-    def get(self, path):
-        return {"result": {"uuid": self.live_uuid}}
+def test_dashboard_settings_the_spec_cannot_carry_are_reported():
+    def styled(path, doc):
+        if "/dashboards/" in path:
+            doc["css"] = ".header { color: red; }"
+            doc["published"] = False
+            doc["metadata"]["color_scheme"] = "supersetColors"
+            doc["metadata"]["refresh_frequency"] = 300
+    hand, _, spec = _hand_built(edit=styled)
+    whats = [l.what for l in decompile_bundle(hand, _stub_lookup_for(spec)).losses
+             if l.where == "dashboard settings"]
+    assert any("CSS" in w for w in whats) and any("colour scheme" in w for w in whats)
+    assert any("auto-refresh" in w for w in whats) and any("draft" in w for w in whats)
 
 
-def test_ownership_guard_accepts_only_the_adopted_dashboard():
-    plain = load_spec(_fixture())
-    assert "chartwright adopt" in _ownership_guard(plain, _Client(HAND_DASH))
+# -- apply / plan against a fake Superset ----------------------------------------
+
+
+@pytest.fixture
+def live(monkeypatch, tmp_path):
+    """A fake Superset holding the hand-built dashboard, plus its adopted spec."""
+    monkeypatch.setenv("CHARTWRIGHT_BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setattr(apply_mod, "resolve", lambda spec, client: stub_resolution(spec))
+    monkeypatch.setattr(resolver, "resolve", lambda spec, client: stub_resolution(spec))
+    monkeypatch.setattr(apply_mod, "_roundtrip_dataset_files", lambda res, client: {})
+    monkeypatch.setattr(apply_mod, "smoke", lambda *a, **k: [])
+
+    def setup(edit=None, data=None, merge_links=False):
+        hand, chart_uuids, spec = _hand_built(edit=edit, data=data)
+        ds = stub_resolution(spec).for_chart(spec.charts[0].dataset)
+        fake = FakeSuperset({ds.uuid: {"table_name": "cleaned_sales_data", "database_name": "examples"}},
+                            merge_links=merge_links)
+        fake.import_dashboard_bundle(hand)
+        fake.log.clear()
+        adopted = adopted_spec(decompile_bundle(hand, _stub_lookup_for(spec)))
+        assert adopted.ok, adopted.detail
+        return fake, adopted.spec
+    return setup
+
+
+def _dash_id(fake):
+    return fake.dashboards[HAND_DASH]["id"]
+
+
+@pytest.mark.parametrize("merge_links", [False, True])
+def test_apply_updates_the_same_dashboard_and_charts(live, merge_links):
+    fake, data = live(merge_links=merge_links)
+    before = fake.linked(_dash_id(fake))
+    report = apply_mod.apply(load_spec(data), fake, "prod")
+    assert report.ok, report.import_detail
+    assert report.dashboard_id == _dash_id(fake) and report.backup
+    assert fake.linked(_dash_id(fake)) == before
+    assert fake.log == [f"overwrote dashboard {_dash_id(fake)}"]
+
+
+def test_nothing_changes_when_the_adopted_dashboard_has_moved(live):
+    fake, data = live()
+    fake.dashboards[HAND_DASH]["slug"] = "moved-elsewhere"
+    spec = load_spec(data)
+    report = apply_mod.apply(spec, fake, "prod")
+    assert not report.ok and "no longer at" in report.import_detail
+    assert fake.log == [] and report.backup is None
+    assert dashdiff.plan(spec, fake).dashboard == "blocked"
+
+
+def test_a_moved_copy_cannot_reach_the_original(live):
+    """A find-and-replace of the slug changes adopted.slug too, which passes
+    validation; apply must still refuse, since nothing is at the new address."""
+    fake, data = live()
+    text = json.dumps(data).replace(f'"{SLUG}"', '"sales-v2"')
+    report = apply_mod.apply(load_spec(json.loads(text)), fake, "prod")
+    assert not report.ok and "no longer at" in report.import_detail and fake.log == []
+
+
+def test_renaming_an_adopted_chart_keeps_the_chart(live):
+    fake, data = live()
+    old, new = "Total Orders", "Orders (all time)"
+    chart_id = fake.linked(_dash_id(fake))[old]
+    data = json.loads(json.dumps(data).replace(f'"{old}"', f'"{new}"'))
+    report = apply_mod.apply(load_spec(data), fake, "prod")
+    assert report.ok, report.import_detail
+    assert fake.linked(_dash_id(fake))[new] == chart_id and old not in fake.linked(_dash_id(fake))
+    assert not any("took charts" in w for w in report.warnings)
+
+
+def _drop(data, name):
+    data["charts"] = [c for c in data["charts"] if c["name"] != name]
+    data["layout"]["rows"] = [r for r in ([x for x in row if x != name] for row in data["layout"]["rows"]) if r]
+    data["dashboard"]["adopted"]["charts"].pop(name, None)
+    return data
+
+
+def test_a_dropped_chart_leaves_the_dashboard_but_not_other_dashboards(live):
+    fake, data = live()
+    chart_id = fake.linked(_dash_id(fake))["Sales by Product Line"]
+    fake.charts[chart_id]["dashboards"].add(999)  # also on another dashboard
+    report = apply_mod.apply(load_spec(_drop(data, "Sales by Product Line")), fake, "prod")
+    assert report.ok, report.import_detail
+    assert chart_id in fake.charts and fake.charts[chart_id]["dashboards"] == {999}
+    assert any("not deleted" in w for w in report.warnings)
+
+
+def test_a_chart_added_after_adoption_is_deleted_when_dropped(live):
+    fake, data = live()
+    data["charts"].append(dict(next(c for c in data["charts"] if c["name"] == "Total Sales"), name="Extra"))
+    data["layout"]["rows"].append(["Extra"])
+    assert apply_mod.apply(load_spec(data), fake, "prod").ok
+    extra_id = fake.linked(_dash_id(fake))["Extra"]
+    report = apply_mod.apply(load_spec(_drop(data, "Extra")), fake, "prod")
+    assert report.ok and extra_id not in fake.charts
+
+
+def test_a_chart_uuid_from_elsewhere_is_refused(live):
+    fake, data = live()
+    fake.next_id += 1
+    fake.charts[fake.next_id] = {"uuid": "abababab-0000-0000-0000-000000000001", "slice_name": "Elsewhere",
+                                 "params": {}, "viz_type": "pie", "dataset_uuid": None, "dashboards": {999}}
+    data["dashboard"]["adopted"]["charts"]["Total Sales"] = "abababab-0000-0000-0000-000000000001"
+    report = apply_mod.apply(load_spec(data), fake, "prod")
+    assert not report.ok and "not on the adopted dashboard" in report.import_detail
+    assert fake.log == [] and fake.charts[fake.next_id]["dashboards"] == {999}
+
+
+def test_a_failed_unlink_stops_before_the_import(live):
+    fake, data = live()
+    fake.refuse_chart_puts = True
+    report = apply_mod.apply(load_spec(_drop(data, "Sales by Product Line")), fake, "prod")
+    assert not report.ok and "could not take charts off" in report.import_detail
+    assert "HTTP 403" in report.import_detail
+
+
+def test_plan_lists_settings_the_first_apply_changes(live):
+    def styled(path, doc):
+        if "/dashboards/" in path:
+            doc["css"] = ".header { color: red; }"
+    fake, data = live(edit=styled)
+    p = dashdiff.plan(load_spec(data), fake)
+    assert not p.clean and any("CSS" in s for s in p.settings_changed)
+
+
+def test_plan_of_a_freshly_adopted_dashboard_is_clean(live):
+    fake, data = live()
+    p = dashdiff.plan(load_spec(data), fake)
+    assert p.clean, p.to_json()
+
+
+def test_plan_lists_native_filters_that_get_new_ids(live):
     data = _fixture()
-    data["dashboard"]["adopted"] = {"dashboard_uuid": HAND_DASH, "slug": "sdc-sales-overview"}
-    adopted = load_spec(data)
-    assert _ownership_guard(adopted, _Client(HAND_DASH)) is None
-    other = _ownership_guard(adopted, _Client("22222222-2222-2222-2222-222222222222"))
-    assert "different dashboard" in other
+    data["filters"] = [{"type": "select", "name": "Deal", "column": "deal_size",
+                        "dataset": data["charts"][0]["dataset"]}]
+
+    def renumber(path, doc):
+        if "/dashboards/" in path:
+            doc["metadata"]["native_filter_configuration"][0]["id"] = "NATIVE_FILTER-made-in-the-ui"
+    fake, spec_data = live(edit=renumber, data=data)
+    p = dashdiff.plan(load_spec(spec_data), fake)
+    assert any("new ids" in s for s in p.settings_changed)
+
+
+def test_refusals_never_print_a_uuid(live):
+    fake, data = live()
+    plain = json.loads(json.dumps(data))
+    del plain["dashboard"]["adopted"]
+    message = _ownership_guard(load_spec(plain), fake)
+    assert "chartwright adopt" in message and HAND_DASH not in message
 
 
 def test_unlink_takes_a_chart_off_one_dashboard_only():
-    sent = []
-
-    class Client:
-        def get(self, path):
-            return {"result": {"dashboards": [{"id": 7}, {"id": 9}]}}
-
-        def put_json(self, path, payload):
-            sent.append((path, payload))
-            return type("R", (), {"status_code": 200})()
-
-    assert _unlink_charts(Client(), 7, [{"id": 3, "slice_name": "Old"}]) == ["Old"]
-    assert sent == [("/api/v1/chart/3", {"dashboards": [9]})]
+    fake = FakeSuperset()
+    fake.charts[3] = {"uuid": "u", "slice_name": "Old", "params": {}, "viz_type": "pie",
+                      "dataset_uuid": None, "dashboards": {7, 9}}
+    assert _unlink_charts(fake, 7, [{"id": 3, "slice_name": "Old"}]) == (["Old"], [])
+    assert fake.charts[3]["dashboards"] == {9}
 
 
-def test_restore_accepts_the_tools_own_backup_of_an_adopted_dashboard(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("CHARTWRIGHT_BACKUP_DIR", str(tmp_path / "backups"))
-    hand, _, _ = _hand_built()  # uuid is random: not tool-owned by derivation
-    outside = tmp_path / "elsewhere.zip"
-    outside.write_bytes(hand)
+# -- restore --------------------------------------------------------------------
+
+
+def _restore_dies_not_owned(capsys, path) -> bool:
     with pytest.raises(SystemExit):
-        cli.main(["restore", str(outside), "--profile", "prod"])
-    assert "not_owned" in capsys.readouterr().out
+        cli.main(["restore", str(path), "--profile", "prod"])
+    return "not_owned" in capsys.readouterr().out
 
-    from chartwright.apply import backup_dir_for
 
-    inside = backup_dir_for("prod", "sdc-sales-overview")
-    inside.mkdir(parents=True)
-    (inside / "20261002T120000.zip").write_bytes(hand)
+def test_restore_accepts_only_the_tools_own_backup_of_that_dashboard(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CHARTWRIGHT_BACKUP_DIR", str(tmp_path / "backups"))
+    hand, _, _ = _hand_built()  # random uuid: not tool-owned by derivation
+
+    elsewhere = tmp_path / "elsewhere.zip"
+    elsewhere.write_bytes(hand)
+    assert _restore_dies_not_owned(capsys, elsewhere)
+    for profile, slug in [("staging", SLUG), ("prod", "another-dashboard")]:
+        folder = backup_dir_for(profile, slug)
+        folder.mkdir(parents=True)
+        (folder / "b.zip").write_bytes(hand)
+        assert _restore_dies_not_owned(capsys, folder / "b.zip"), (profile, slug)
+
+    def dotdot(path, doc):
+        if "/dashboards/" in path:
+            doc["slug"] = ".."
+    profile_root = backup_dir_for("prod", "x").parent
+    profile_root.mkdir(parents=True, exist_ok=True)
+    (profile_root / "s.zip").write_bytes(edit_bundle(hand, dotdot))
+    assert _restore_dies_not_owned(capsys, profile_root / "s.zip")
+
+    own = backup_dir_for("prod", SLUG)
+    own.mkdir(parents=True)
+    (own / "20261002T120000.zip").write_bytes(hand)
 
     class Reached(Exception):
         pass
@@ -176,35 +379,6 @@ def test_restore_accepts_the_tools_own_backup_of_an_adopted_dashboard(tmp_path, 
 
     monkeypatch.setattr(cli, "_client", no_network)
     with pytest.raises(SystemExit):  # passed the ownership check, went on to sign in
-        cli.main(["restore", str(inside / "20261002T120000.zip"), "--profile", "prod"])
+        cli.main(["restore", str(own / "20261002T120000.zip"), "--profile", "prod"])
     out = capsys.readouterr().out
     assert "Reached" in out and "not_owned" not in out
-
-
-def test_a_copy_of_an_adopted_spec_cannot_point_at_the_original():
-    """Cloning = copy the spec, change the slug. Left alone, the copy would carry the
-    original's uuid and overwrite it; validation stops that offline."""
-    hand, _, spec = _hand_built()
-    adopted = adopted_spec(decompile_bundle(hand, _stub_lookup_for(spec))).spec
-    clone = json.loads(json.dumps(adopted))
-    clone["dashboard"]["slug"] = "sales-overview-emea"
-    with pytest.raises(ValidationError, match="Remove dashboard.adopted"):
-        load_spec(clone)
-    del clone["dashboard"]["adopted"]
-    assert load_spec(clone).dashboard_uuid() == ids.dashboard_uuid("sales-overview-emea")
-
-
-def test_dashboard_settings_the_spec_cannot_carry_are_reported():
-    spec = load_spec(_fixture())
-
-    def styled(path, doc):
-        if "/dashboards/" in path:
-            doc["css"] = ".header { color: red; }"
-            doc["published"] = False
-            doc["metadata"]["color_scheme"] = "supersetColors"
-            doc["metadata"]["refresh_frequency"] = 300
-
-    bundle = edit_bundle(compile_bundle(spec, stub_resolution(spec)), styled)
-    whats = [l.what for l in decompile_bundle(bundle, _stub_lookup_for(spec)).losses if l.where == "dashboard"]
-    assert any("CSS" in w for w in whats) and any("colour scheme" in w for w in whats)
-    assert any("auto-refresh" in w for w in whats) and any("draft" in w for w in whats)
