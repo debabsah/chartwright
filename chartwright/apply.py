@@ -253,6 +253,14 @@ def _unlink_charts(client: SupersetClient, dashboard_id: int,
     return done, failed
 
 
+def charts_on_other_dashboards(client: SupersetClient, dashboard_id: int, charts: list[dict]) -> list[str]:
+    """Titles of the given charts that also sit on a dashboard other than this one."""
+    return sorted(
+        c["slice_name"] for c in charts
+        if any(d.get("id") != dashboard_id
+               for d in client.get(f"/api/v1/chart/{c['id']}")["result"].get("dashboards") or []))
+
+
 def _update_owned_charts_in_place(
     spec: DashboardSpec, client: SupersetClient, bundle: bytes,
     existing_by_uuid: dict[str, dict], resolution: Resolution | None = None,
@@ -317,10 +325,15 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
         # A chart renamed since the backup (an adopted chart keeps its uuid when its
         # name changes) isn't found by its backed-up name: find it by uuid among the
         # restored dashboard's own charts.
-        restored_dash = client.find_dashboard_by_slug(slug)
-        if restored_dash is not None and len(existing) < len(payloads):
-            by_uuid, _ = _adopted_live_charts(
-                client, restored_dash["id"], client.export_dashboard(restored_dash["id"]))
+        if len(existing) < len(payloads):
+            try:
+                restored_dash = client.find_dashboard_by_slug(slug)
+                by_uuid = _adopted_live_charts(
+                    client, restored_dash["id"], client.export_dashboard(restored_dash["id"]))[0] \
+                    if restored_dash else {}
+            except SupersetAPIError as e:  # best effort, like the dataset lookup above
+                by_uuid = {}
+                report.warnings.append(f"charts renamed since the backup not looked up ({e})")
             for u in payloads:
                 if u not in existing and u in by_uuid:
                     existing[u] = by_uuid[u]
@@ -422,7 +435,11 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
         # The guard guarantees the adopted dashboard is at the slug, so a backup exists.
         # Charts are matched by uuid, not title: a chart renamed in the spec is still
         # the same chart, and only charts ON this dashboard can be touched.
-        adopted_live, ambiguous = _adopted_live_charts(client, existing["id"], backup_bytes)
+        try:
+            adopted_live, ambiguous = _adopted_live_charts(client, existing["id"], backup_bytes)
+        except SupersetAPIError as e:
+            report.import_detail = f"{e} (status={e.status}); nothing was changed"
+            return report
         if ambiguous:
             report.import_detail = (
                 f"charts share a title on the adopted dashboard: {ambiguous}; nothing was changed. "
@@ -471,10 +488,8 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
             derived = {u: n for u, n in owned_names.items()
                        if u not in adopted_live and u == str(ids.chart_uuid(spec.dashboard.slug, n))}
             existing_by_uuid.update(client.charts_by_uuids(derived))
-            shared = sorted(
-                row["slice_name"] for u, row in existing_by_uuid.items() if u in adopted_live
-                and any(d.get("id") != existing["id"] for d in
-                        client.get(f"/api/v1/chart/{row['id']}")["result"].get("dashboards") or []))
+            shared = charts_on_other_dashboards(
+                client, existing["id"], [r for u, r in existing_by_uuid.items() if u in adopted_live])
             if shared:
                 report.warnings.append(
                     f"these charts also appear on other dashboards and change there too: {shared}")
@@ -495,6 +510,7 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
                 spec, client, bundle, existing_by_uuid, resolution)
             if update_errors:
                 report.import_detail = "; ".join(update_errors)
+                _auto_restore("updating charts in place failed after the import")
                 return report
             if updated:
                 report.warnings.append(
@@ -512,6 +528,8 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
             # this one, never delete them.
             made_here = {u: r for u, r in stale.items()
                          if u == str(ids.chart_uuid(spec.dashboard.slug, r["slice_name"]))}
+            elsewhere = set(charts_on_other_dashboards(client, existing["id"], list(made_here.values())))
+            made_here = {u: r for u, r in made_here.items() if r["slice_name"] not in elsewhere}
             unlinked, failed = _unlink_charts(
                 client, existing["id"], [r for u, r in stale.items() if u not in made_here])
             if failed:

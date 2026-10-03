@@ -298,7 +298,7 @@ def test_a_chart_uuid_from_elsewhere_is_refused(live):
     assert fake.log == [] and fake.charts[fake.next_id]["dashboards"] == {999}
 
 
-def test_a_failed_unlink_stops_before_the_import(live):
+def test_a_failed_unlink_restores_the_backup(live):
     fake, data = live()
     fake.refuse_unlinks = True
     report = apply_mod.apply(load_spec(_drop(data, "Sales by Product Line")), fake, "prod")
@@ -376,16 +376,97 @@ def test_restore_finds_a_chart_renamed_since_the_backup(live):
     assert fake.charts[chart_id]["slice_name"] == "Total Orders"
 
 
-def test_adopt_live_reads_an_all_digit_slug_as_a_slug_and_spots_shared_charts(live):
+def test_adopt_live_spots_shared_charts(live):
     from chartwright.adopt import adopt_live
 
     fake, _ = live()
-    fake.dashboards[HAND_DASH]["slug"] = "2024"
-    fake.dashboards[HAND_DASH]["yaml"]["slug"] = "2024"
     fake.charts[fake.linked(_dash_id(fake))["Total Sales"]]["dashboards"].add(999)
-    result = adopt_live("2024", fake)
+    result = adopt_live(SLUG, fake)
     assert not result.ok and result.shared_charts == ["Total Sales"]
-    assert adopt_live("2024", fake, allow_shared=True).spec["dashboard"]["slug"] == "2024"
+    assert adopt_live(SLUG, fake, allow_shared=True).ok
+
+
+def test_adopt_refuses_an_all_digit_address():
+    """Superset reads /dashboard/2024/ as dashboard id 2024, not the slug "2024"."""
+    hand, _, spec = _hand_built(slug="2024")
+    refused = adopted_spec(decompile_bundle(hand, _stub_lookup_for(spec)))
+    assert not refused.ok and "all digits" in refused.detail
+
+
+def test_plan_sees_chart_options_decompile_ignores(live):
+    """Rolling sums, forecasts and annotations change the numbers shown; apply would
+    drop them, so plan must not call the dashboard clean."""
+    def analytics(path, doc):
+        if "/charts/" in path and doc["slice_name"] == "Sales Over Time":
+            doc["params"].update(rolling_type="cumsum", forecastEnabled=True,
+                                 annotation_layers=[{"name": "launch"}], show_legend=False)
+    fake, data = live(edit=analytics)
+    p = dashdiff.plan(load_spec(data), fake)
+    assert "Sales Over Time" in p.charts_changed and not p.clean
+
+
+def test_plan_counts_filters_and_layout_apply_would_remove(live):
+    def extras(path, doc):
+        if "/dashboards/" in path:
+            doc["metadata"]["native_filter_configuration"] = [
+                {"id": "NATIVE_FILTER-ui", "name": "Grain", "filterType": "filter_timegrain", "targets": [{}]}]
+            grid = doc["position"]["GRID_ID"]
+            doc["position"]["HEADER-ui"] = {"type": "HEADER", "id": "HEADER-ui", "children": [],
+                                           "parents": ["ROOT_ID", "GRID_ID"], "meta": {"text": "Sales"}}
+            grid["children"].insert(0, "HEADER-ui")
+    fake, data = live(edit=extras)
+    p = dashdiff.plan(load_spec(data), fake)
+    assert "Grain" in p.filters_removed and p.layout_changed and not p.clean
+
+
+def test_plan_reads_a_renamed_adopted_chart_as_a_change(live):
+    fake, data = live()
+    renamed = json.loads(json.dumps(data).replace('"Total Orders"', '"Orders (all time)"'))
+    p = dashdiff.plan(load_spec(renamed), fake)
+    assert p.charts_changed == ["Orders (all time)"] and not p.charts_added and not p.charts_removed
+
+
+def test_plan_blocks_where_apply_would_refuse(live):
+    fake, data = live()
+    fake.charts[fake.linked(_dash_id(fake))["Total Sales"]]["dashboards"].clear()  # taken off in the UI
+    p = dashdiff.plan(load_spec(data), fake)
+    assert p.dashboard == "blocked" and "not on the adopted dashboard" in p.detail
+
+
+def test_a_derived_id_cannot_collide_with_an_adopted_one():
+    data = _fixture()
+    data["dashboard"]["adopted"] = {"dashboard_uuid": HAND_DASH, "slug": SLUG,
+                                   "charts": {"Total Orders": str(ids.chart_uuid(SLUG, "Total Sales"))}}
+    with pytest.raises(ValidationError, match="same id as an adopted chart"):
+        load_spec(data)
+
+
+def test_adopted_uuids_are_normalised():
+    data = _fixture()
+    data["dashboard"]["adopted"] = {"dashboard_uuid": HAND_DASH.upper().replace("-", ""), "slug": SLUG,
+                                   "charts": {"Total Orders": "AAAAAAAA-0000-0000-0000-000000000001"}}
+    adopted = load_spec(data).dashboard.adopted
+    assert adopted.dashboard_uuid == HAND_DASH
+    assert adopted.charts["Total Orders"] == "aaaaaaaa-0000-0000-0000-000000000001"
+
+
+def test_a_failed_chart_update_after_the_import_restores(live):
+    fake, data = live()
+    fake.refuse_chart_puts = True
+    report = apply_mod.apply(load_spec(data), fake, "prod")
+    assert not report.ok and "HTTP 403" in report.import_detail
+    assert any("restore" in w.lower() for w in report.warnings)
+
+
+def test_a_tool_chart_used_elsewhere_is_taken_off_not_deleted(live):
+    fake, data = live()
+    data["charts"].append(dict(next(c for c in data["charts"] if c["name"] == "Total Sales"), name="Extra"))
+    data["layout"]["rows"].append(["Extra"])
+    assert apply_mod.apply(load_spec(data), fake, "prod").ok
+    extra_id = fake.linked(_dash_id(fake))["Extra"]
+    fake.charts[extra_id]["dashboards"].add(999)
+    report = apply_mod.apply(load_spec(_drop(data, "Extra")), fake, "prod")
+    assert report.ok and extra_id in fake.charts and fake.charts[extra_id]["dashboards"] == {999}
 
 
 def test_refusals_never_print_a_uuid(live):

@@ -6,12 +6,16 @@ Exit contract (CLI): 0 = no changes (clean), 1 = changes pending / drift.
 
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from dataclasses import dataclass, field
 
+import yaml
+
 from .client import SupersetClient
-from .compiler import native_filter_id
-from .decompile import SETTINGS_LOSS, decompile_live
+from .compiler import compile_bundle, native_filter_id
+from .decompile import SETTINGS_LOSS, decompile_bundle, live_dataset_lookup
 from .spec import DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec
 
 
@@ -129,6 +133,51 @@ def _normalize(spec: DashboardSpec) -> dict:
     return data
 
 
+# Keys Superset keeps in a chart's params for its own bookkeeping, not chart options.
+_SERVER_PARAM_KEYS = {"slice_id", "dashboards", "url_params"}
+
+
+def _bundle_charts(bundle: bytes) -> dict[str, dict]:
+    """uuid -> chart yaml, for every chart in an import/export bundle."""
+    zf = zipfile.ZipFile(io.BytesIO(bundle))
+    out = {}
+    for n in zf.namelist():
+        if "/charts/" in n and n.endswith(".yaml"):
+            cy = yaml.safe_load(zf.read(n)) or {}
+            out[str(cy.get("uuid"))] = cy
+    return out
+
+
+def _adopted_blocks(target: DashboardSpec, live_bundle: bytes) -> str | None:
+    """The cases apply refuses for an adopted spec, so plan can't promise otherwise."""
+    live = _bundle_charts(live_bundle)
+    titles = [cy.get("slice_name") for cy in live.values()]
+    dupes = sorted({t for t in titles if titles.count(t) > 1})
+    if dupes:
+        return (f"charts share a title on the adopted dashboard: {dupes}; apply would refuse. "
+                "Give each a distinct title in Superset, then run `chartwright adopt` again.")
+    absent = sorted(n for n, u in target.dashboard.adopted.charts.items() if u not in live)
+    if absent:
+        return (f"adopted charts {absent} are not on the adopted dashboard; apply would refuse. "
+                "Remove their entries from dashboard.adopted.charts, or run `chartwright adopt` again.")
+    return None
+
+
+def _rewritten_charts(target: DashboardSpec, resolution, live_bundle: bytes) -> set[str]:
+    """Adopted charts whose stored options differ from what apply will write."""
+    compiled = _bundle_charts(compile_bundle(target, resolution))
+    live = _bundle_charts(live_bundle)
+    changed = set()
+    for chart in target.charts:
+        u = str(target.chart_uuid(chart.name))
+        if u in live and u in compiled:
+            want = {k: v for k, v in (compiled[u].get("params") or {}).items() if k not in _SERVER_PARAM_KEYS}
+            have = {k: v for k, v in (live[u].get("params") or {}).items() if k not in _SERVER_PARAM_KEYS}
+            if want != have or compiled[u].get("viz_type") != live[u].get("viz_type"):
+                changed.add(chart.name)
+    return changed
+
+
 def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     from .resolver import resolve
 
@@ -160,7 +209,13 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
         return Plan(dashboard="blocked",
                     detail=f"target spec has referential errors: {[e.as_dict() for e in resolution.errors]}")
 
-    live_result = decompile_live(target.dashboard.slug, client)
+    # By id, not slug: an all-digit slug would be read as an id by decompile_live.
+    live_bundle = client.export_dashboard(existing["id"])
+    live_result = decompile_bundle(live_bundle, live_dataset_lookup(client))
+    if target.dashboard.adopted:
+        blocked = _adopted_blocks(target, live_bundle)
+        if blocked:
+            return Plan(dashboard="blocked", detail=blocked, decompile_losses=live_result.losses_json())
     try:
         live_spec = load_spec(live_result.spec)
     except Exception as e:  # noqa: BLE001 - decompiled live state can be arbitrarily degraded
@@ -173,6 +228,15 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
 
     t_charts = {c["name"]: c for c in t["charts"]}
     l_charts = {c["name"]: c for c in l["charts"]}
+    if target.dashboard.adopted:
+        # apply matches adopted charts by uuid, so a chart renamed in the spec is the
+        # same chart under a new title (a change), not one removed and one added.
+        spec_name = {str(target.chart_uuid(c.name)): c.name for c in target.charts}
+        for live_name, u in live_result.chart_uuids.items():
+            new = spec_name.get(u)
+            if new and new != live_name and live_name in l_charts and new not in l_charts:
+                l_charts[new] = l_charts.pop(live_name)
+                live_result.dataset_uuids[new] = live_result.dataset_uuids.get(live_name)
     # Dataset identity compares by resolved uuid, not by literal triple:
     # an omitted schema in the spec means "unambiguous", not "different".
     for chart in target.charts:
@@ -185,11 +249,10 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
         n for n in set(t_charts) & set(l_charts) if t_charts[n] != l_charts[n]
     )
     if target.dashboard.adopted:
-        # A chart decompile couldn't carry over completely gets its options reset by
-        # the next apply, and a chart the spec can't represent leaves the dashboard;
-        # neither shows in a spec-to-spec comparison, so name them here.
-        lossy = {l_["where"] for l_ in live_result.losses_json()} & set(t_charts)
-        p.charts_changed = sorted(set(p.charts_changed) | lossy)
+        # A spec-to-spec comparison can't see what decompile leaves out (options it
+        # ignores, charts it can't hold), and on a dashboard built in the UI that is
+        # real content. Compare what apply will WRITE with what is there instead.
+        p.charts_changed = sorted(set(p.charts_changed) | _rewritten_charts(target, resolution, live_bundle))
         p.charts_removed = sorted(set(p.charts_removed) | set(live_result.skipped_charts))
     # Filters: same identity model as charts (name-keyed, dataset by resolved
     # uuid). Without this, the primary real-world drift (a stale browser tab
@@ -242,6 +305,16 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     # Whole-layout compare: a tabs layout has no "rows" key after
     # exclude_none dumping, so keyed access would KeyError.
     p.layout_changed = t["layout"] != l["layout"]
+    if target.dashboard.adopted:
+        for loss in live_result.losses_json():
+            where = loss["where"]
+            if where.startswith("filter:"):
+                name = where.split(":", 1)[1]
+                (p.filters_changed if name in t_filters else p.filters_removed).append(name)
+            elif where == "layout":
+                p.layout_changed = True
+        p.filters_changed = sorted(set(p.filters_changed))
+        p.filters_removed = sorted(set(p.filters_removed))
     # Settings the spec doesn't carry but apply writes (CSS, colour scheme, refresh,
     # draft): only ever set on dashboards built or edited outside the tool.
     p.settings_changed = [l_["what"] for l_ in live_result.losses_json() if l_["where"] == SETTINGS_LOSS]

@@ -4,12 +4,13 @@
 spec that names THAT dashboard and its charts by their own uuids
 (`dashboard.adopted`). Applying the spec then updates the same dashboard: same
 id, same address, same chart ids. Adopt itself changes nothing in Superset;
-`plan` shows what the first apply would change, and apply backs up before it
-does.
+`plan` compares what the first apply would write with what each chart has now,
+and apply backs up before it changes anything.
 
 Adopt refuses, each time saying what to do instead, when the result could not be
 applied safely:
-- the dashboard has no URL name (slug), or one the spec format can't hold;
+- the dashboard has no URL name (slug), or one the spec format can't hold, or an
+  all-digit one (Superset reads those as an id);
 - two of its charts share a title (they couldn't be told apart by name);
 - some charts can't be represented (applying would take them off the dashboard);
 - some charts also sit on other dashboards (applying would change them there too).
@@ -24,6 +25,7 @@ from dataclasses import dataclass, field
 
 from pydantic import ValidationError
 
+from .apply import charts_on_other_dashboards
 from .decompile import DecompileResult, decompile_bundle, live_dataset_lookup
 from .spec import SLUG_PATTERN, load_spec
 
@@ -65,6 +67,10 @@ def adopted_spec(result: DecompileResult, force: bool = False,
     if not result.source_slug:
         return refuse("this dashboard has no URL name (slug). Give it one in Superset (dashboard "
                       "properties), using lowercase letters, digits and hyphens, then run adopt again.")
+    if result.source_slug.isdigit():
+        return refuse(f"this dashboard's URL name {result.source_slug!r} is all digits, which Superset "
+                      "reads as a dashboard id. Give it a name with a letter in Superset (dashboard "
+                      "properties), then run adopt again.")
     if not re.fullmatch(SLUG_PATTERN, result.source_slug):
         return refuse(f"this dashboard's URL name {result.source_slug!r} isn't one a spec can hold "
                       "(lowercase letters, digits and hyphens, starting with a letter or digit). "
@@ -99,7 +105,6 @@ def adopted_spec(result: DecompileResult, force: bool = False,
 
 
 def adopt_live(slug_or_id: str, client, force: bool = False, allow_shared: bool = False) -> AdoptResult:
-    # A slug may be all digits ("2024"): try it as a slug first, then as an id.
     dash = client.find_dashboard_by_slug(slug_or_id)
     if dash is not None:
         dashboard_id = dash["id"]
@@ -108,9 +113,5 @@ def adopt_live(slug_or_id: str, client, force: bool = False, allow_shared: bool 
     else:
         raise ValueError(f"no dashboard with slug {slug_or_id!r}")
     result = decompile_bundle(client.export_dashboard(dashboard_id), live_dataset_lookup(client))
-    shared = []
-    for chart in client.dashboard_charts(dashboard_id):
-        detail = client.get(f"/api/v1/chart/{chart['id']}")["result"]
-        if any(d.get("id") != dashboard_id for d in detail.get("dashboards") or []):
-            shared.append(chart["slice_name"])
+    shared = charts_on_other_dashboards(client, dashboard_id, client.dashboard_charts(dashboard_id))
     return adopted_spec(result, force=force, shared_charts=shared, allow_shared=allow_shared)

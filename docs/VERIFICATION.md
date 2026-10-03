@@ -34,10 +34,10 @@ scenarios, and fault injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (379 tests, 36 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows, mcp 1 and 2 |
+| Offline suite (388 tests, 36 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every push |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every push, all 3 versions |
-| Adopt-in-place check | A hand-built dashboard is taken over with its id and chart ids kept; a dropped chart leaves the dashboard but is not deleted | every push, all 3 versions |
+| Adopt-in-place check | A hand-built dashboard is taken over with its id and chart ids kept; renames keep ids; dropped charts leave the dashboard but are not deleted | every push, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every push |
 | Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every push, all 3 versions |
 | Fault injection | A typed failure at every stage boundary; complete restore | every push, all 3 versions |
@@ -121,9 +121,11 @@ stale browser tab into a writer that corrupts filter scopes.
 built in the UI (every dashboard and chart uuid random), then checks, in
 order: a plain spec at that address is refused; `adopt` writes a spec and
 `plan` of it against the live dashboard is clean; applying it updates the
-same dashboard, with the same dashboard id and the same chart ids; a chart
-dropped from the spec is taken off the dashboard and still exists; a
-second apply keeps every id.
+same dashboard, with the same dashboard id and the same chart ids, and `plan`
+stays clean afterwards; renaming a chart keeps its id; a chart that also sits
+on a second dashboard makes `adopt` refuse, and dropping it takes it off this
+dashboard only; an unshared chart dropped from the spec is kept, on no
+dashboard; a further apply keeps every id.
 
 ## 4. Lifecycle soak (`tools/soak.py`)
 

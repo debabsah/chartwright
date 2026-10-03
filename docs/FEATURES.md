@@ -49,9 +49,9 @@ into one. Everything below works from that one file.
 
 ## Dashboards as Code
 - **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, layout.
-- **Take Over Existing Dashboards in Place**: `chartwright adopt` turns a dashboard built in the UI into a spec that manages that same dashboard: its address, id and chart ids stay, so links and scheduled reports pointing at the dashboard keep working. Filter and tab ids are replaced on the first apply, so a link that saved a filter state or opened a specific tab may need saving again. The first apply rewrites each chart to what its spec produces, so chart options a spec can't hold go back to the tool's defaults; `plan` names the charts and dashboard settings (such as CSS) it can see changing.
+- **Take Over Existing Dashboards in Place**: `chartwright adopt` turns a dashboard built in the UI into a spec that manages that same dashboard: its address, id and chart ids stay, so links and scheduled reports pointing at the dashboard keep working. Filter and tab ids are replaced on the first apply, so a link that saved a filter state or opened a specific tab may need saving again. The first apply rewrites each chart to what its spec produces, so chart options a spec can't hold (a rolling sum, a forecast, annotations) are dropped; `plan` compares what apply will write with what each chart has, and lists every chart, filter, layout element and setting (such as CSS) that will change.
 - **Lossless Round-Trips**: Tool-built dashboards decompile back to their exact spec.
-- **Targeted Edits**: Replace, rename, resize, or remove one chart and re-apply; old charts are cleaned up, never orphaned.
+- **Targeted Edits**: Replace, rename, resize, or remove one chart and re-apply; charts the tool created are cleaned up, never orphaned. On an adopted dashboard, a chart made by hand is only taken off, so it stays available to reuse.
 - **Stable Identity**: Chart ids never change across re-applies, so links, scopes, and open browser tabs stay valid.
 
 ## CI/CD and Promotion
@@ -67,7 +67,7 @@ into one. Everything below works from that one file.
 - **Self-Healing Applies**: A failed apply restores the previous state automatically.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once to prove it shows data; any failure says what went wrong and where.
-- **Ownership Guard**: The tool only changes dashboards it created or that you adopted with `chartwright adopt`. An adopted dashboard is changed only at the address it was adopted from; if it moves, run `chartwright adopt` on it again. A chart that was on the dashboard when you adopted it is taken off when it leaves the spec, never deleted; charts the tool created are deleted.
+- **Ownership Guard**: The tool only changes dashboards it created or that you adopted with `chartwright adopt`. An adopted dashboard is changed only at the address it was adopted from; if it moves, run `chartwright adopt` on it again. A chart that leaves an adopted dashboard's spec is taken off it, and deleted only if the tool created it and no other dashboard uses it.
 
 ## Enterprise Ready
 - **Multiple Instances**: Sandbox, staging, and production as profiles in one file.

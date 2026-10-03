@@ -14,25 +14,31 @@ The design brain, plus the fixes found reviewing it.
   ids (`dashboard.adopted`), so applying it updates the same dashboard: its
   address, id and chart ids stay, so links and scheduled reports pointing at it
   keep working. Adopt changes nothing in Superset, and apply backs up first.
-  The first apply rewrites each chart to what its spec produces: `plan` names
-  charts decompile couldn't carry over completely, charts that will leave the
-  dashboard, settings the spec doesn't hold (such as CSS) and native filters that
-  get new ids; chart options outside the spec go back to the tool's defaults.
+  The first apply rewrites each chart to what its spec produces, so chart
+  options a spec can't hold (a rolling sum, a forecast, annotations) are dropped.
+  For an adopted spec, `plan` compares the options apply will write with the
+  ones stored on each chart, and also lists charts, filters and layout elements
+  that will leave the dashboard, settings the spec doesn't hold (such as CSS) and
+  native filters that get new ids; it is clean only when apply changes nothing.
   - Adopt refuses, saying what to do instead, when the dashboard has no URL name
-    or one a spec can't hold, when two charts share a title, when some charts
+    or one a spec can't hold (all digits included: Superset reads those as an
+    id), when two charts share a title, when some charts
     can't be represented (`--force` takes them off the dashboard, never deletes
     them), and when some charts also sit on other dashboards (applying would
     change them there too; `--allow-shared` to go ahead). Every apply also warns
     when an adopted chart sits on another dashboard.
   - Apply refuses an adopted spec unless the adopted dashboard is at the spec's
-    address, and only touches charts that are on that dashboard. Adopted charts
+    address, and only touches the adopted charts that are on that dashboard
+    (plus charts it created there itself). Adopted charts
     are matched by id, so renaming one in the spec (and its key in
     `dashboard.adopted.charts`) renames it in Superset; a chart the tool created
     after adoption gets a new id when renamed, as on any tool-built dashboard.
   - `restore` puts back charts renamed since the backup (found by id).
-  - A chart that was on the dashboard when it was adopted is taken off when it
-    leaves the spec, never deleted; charts the tool created later are deleted as
-    on any tool-built dashboard.
+  - A chart that leaves an adopted dashboard's spec is taken off that dashboard.
+    It is deleted only if the tool created it and no other dashboard uses it;
+    every other chart is kept, even if no dashboard uses it any more.
+  - A failed chart update after the import now restores the backup, on every
+    dashboard, as a failed import already did.
   - A copy of an adopted spec saved under a new address fails validation, so it
     can't overwrite the original.
   - `restore` also accepts the tool's own backups (by folder, for that profile

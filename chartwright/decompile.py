@@ -744,10 +744,10 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             if spec_chart:
                 if spec_chart["name"] in charts_by_name:
                     losses.append(Loss(spec_chart["name"], "duplicate slice_name in bundle; suffixed to keep uuid seeds unique"))
-                    n = 2
-                    while f"{spec_chart['name']} ({n})" in charts_by_name:
-                        n += 1
-                    spec_chart["name"] = f"{spec_chart['name']} ({n})"
+                    k = 2
+                    while f"{spec_chart['name']} ({k})" in charts_by_name:
+                        k += 1
+                    spec_chart["name"] = f"{spec_chart['name']} ({k})"
                 charts_by_name[spec_chart["name"]] = spec_chart
                 dataset_uuids[spec_chart["name"]] = str(cy.get("dataset_uuid"))
                 if cy.get("uuid"):

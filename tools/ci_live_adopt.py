@@ -142,6 +142,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL: not in place: dashboard {before['id']} -> {r1.dashboard_id}, "
               f"charts {before_charts} -> {_linked(client, r1.dashboard_id)}")
         return 1
+    # The settings comparison must hold on a real instance: once applied, the
+    # options stored on each chart are exactly what the spec writes.
+    p_after = plan(adopted_spec, client)
+    if not p_after.clean:
+        print(f"FAIL: plan right after the first apply is not clean: {p_after.to_json()}")
+        return 1
 
     # 5. Renaming an adopted chart in the spec renames that chart; its id stays.
     first = adopted_spec.charts[0].name
@@ -167,7 +173,8 @@ def main(argv: list[str] | None = None) -> int:
     if adopt_live(slug, client).ok:
         print("FAIL: adopt did not refuse a dashboard with a shared chart")
         return 1
-    smaller = load_spec(_drop_chart(renamed_data, dropped))
+    smaller_data = _drop_chart(renamed_data, dropped)
+    smaller = load_spec(smaller_data)
     r2 = run_apply(smaller, client, "ci")
     print(r2.to_json())
     if not r2.ok:
@@ -185,7 +192,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL: {dropped!r} was taken off the other dashboard too")
         return 1
 
-    # 7. Re-apply keeps ids stable.
+    # 7. An adopted chart no other dashboard uses is taken off and kept, on no dashboard.
+    lone = smaller.charts[-1].name
+    lone_id = _linked(client, r2.dashboard_id)[lone]
+    smaller_data = _drop_chart(smaller_data, lone)
+    r_lone = run_apply(load_spec(smaller_data), client, "ci")
+    if not r_lone.ok:
+        print(f"FAIL: apply after dropping {lone!r} ended at stage {r_lone.stage!r}: {r_lone.import_detail}")
+        return 1
+    try:
+        on = client.get(f"/api/v1/chart/{lone_id}")["result"].get("dashboards") or []
+    except Exception as e:  # noqa: BLE001
+        print(f"FAIL: {lone!r} was deleted ({e})")
+        return 1
+    if on:
+        print(f"FAIL: {lone!r} is still on dashboards {on}")
+        return 1
+    smaller = load_spec(smaller_data)
+
+    # 8. Re-apply keeps ids stable.
     ids_a = _linked(client, r2.dashboard_id)
     r3 = run_apply(smaller, client, "ci")
     if not r3.ok or _linked(client, r3.dashboard_id) != ids_a or r3.dashboard_id != before["id"]:
@@ -193,7 +218,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"ADOPT CHECK PASS: dashboard {before['id']} kept its id and {len(before_charts)} chart ids; "
-          f"a renamed chart kept its id; shared chart {dropped!r} taken off this dashboard only")
+          f"plan clean after apply; a renamed chart kept its id; shared chart {dropped!r} taken off this "
+          f"dashboard only; unshared chart {lone!r} kept on no dashboard")
     return 0
 
 

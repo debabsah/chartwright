@@ -115,9 +115,8 @@ as-is.
   the live dashboard, ready as a CI gate; `chartwright compile` builds the import
   bundle offline, no server needed.
 - **Recoverable by default**: every apply backs up the previous state first,
-  and a failed apply restores it. Dashboards Chartwright did not create are
-  never overwritten; to bring a hand-built one under a spec in place, run
-  `chartwright adopt` on it.
+  and a failed apply restores it. Chartwright changes only dashboards it
+  created, and ones you take over in place with `chartwright adopt`.
 - **What a spec can express**: 15 chart types, metrics as you write them,
   per-chart filters, a native filter bar, tabs, markdown notes, a footer shown
   under every tab, and layouts you can draw as ASCII sketches.

@@ -629,11 +629,13 @@ class AdoptedIdentity(BaseModel):
 
     @model_validator(mode="after")
     def _uuids(self) -> "AdoptedIdentity":
-        for label, value in [("dashboard_uuid", self.dashboard_uuid), *self.charts.items()]:
+        def canonical(label: str, value: str) -> str:
             try:
-                _uuid.UUID(value)
+                return str(_uuid.UUID(value))  # one spelling, as Superset exports it
             except ValueError:
                 raise ValueError(f"adopted: {label!r} is not a uuid: {value!r}") from None
+        self.dashboard_uuid = canonical("dashboard_uuid", self.dashboard_uuid)
+        self.charts = {k: canonical(k, v) for k, v in self.charts.items()}
         dupes = {v for v in self.charts.values() if list(self.charts.values()).count(v) > 1}
         if dupes:
             raise ValueError(f"adopted: one chart uuid mapped to several names: {sorted(dupes)}")
@@ -764,6 +766,8 @@ class DashboardSpec(BaseModel):
 
     @model_validator(mode="after")
     def _adopted_names(self) -> "DashboardSpec":
+        from . import ids
+
         adopted = self.dashboard.adopted
         if adopted:
             unknown = sorted(set(adopted.charts) - {c.name for c in self.charts})
@@ -771,6 +775,15 @@ class DashboardSpec(BaseModel):
                 raise ValueError(
                     f"dashboard.adopted.charts names charts not in the spec: {unknown}; "
                     "rename the key together with its chart, or drop the entry")
+            # A chart outside the adopted map gets a uuid derived from its name; if that
+            # equals an adopted chart's uuid, two charts would share one identity.
+            taken = set(adopted.charts.values())
+            clash = sorted(c.name for c in self.charts if c.name not in adopted.charts
+                           and str(ids.chart_uuid(self.dashboard.slug, c.name)) in taken)
+            if clash:
+                raise ValueError(
+                    f"charts {clash} would get the same id as an adopted chart; give them "
+                    "another name, or run `chartwright adopt` again")
         return self
 
     @field_validator("charts")
