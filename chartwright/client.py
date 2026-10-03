@@ -126,8 +126,9 @@ class SupersetClient:
         except (ValueError, KeyError) as e:
             raise SupersetAPIError(
                 "login returned a non-JSON or tokenless response; usually an SSO portal "
-                "or proxy login page intercepting the API. If this instance is SSO-only, "
-                "the password login API is disabled (known limitation).",
+                "or proxy login page intercepting the API. Chartwright signs in with a "
+                "Superset account's own password (database or LDAP) or Preset API tokens, "
+                "never through SSO or OAuth; ask the instance's admin for such an account.",
                 r.status_code, r.text[:300],
             ) from e
         self.session.headers["Authorization"] = f"Bearer {token}"

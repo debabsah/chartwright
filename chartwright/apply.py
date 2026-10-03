@@ -349,11 +349,11 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
             else:
                 report.warnings.append(
                     f"{reason}; auto-restore also failed ({rr.import_detail}); "
-                    f"restore manually: chartwright restore {report.backup}"
+                    f"restore manually: chartwright restore {report.backup} --profile {profile}"
                 )
         except Exception as e:  # noqa: BLE001 - restore is best-effort recovery
             report.warnings.append(
-                f"{reason}; auto-restore errored ({e}); restore manually: chartwright restore {report.backup}"
+                f"{reason}; auto-restore errored ({e}); restore manually: chartwright restore {report.backup} --profile {profile}"
             )
 
     # Everything below mutates the instance; any failure must still return a
