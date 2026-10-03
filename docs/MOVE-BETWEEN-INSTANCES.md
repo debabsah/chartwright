@@ -109,8 +109,8 @@ The first apply on an instance creates the dashboard; each later apply of a spec
 | scope | Filters limited to named charts are pointed at those charts' ids on this instance |
 | smoke | Every chart's query runs. An error fails the apply; a chart that returns no rows is a warning naming it |
 
-- If Superset refuses the import, or returns an error during the prepare or import stage, the backup is restored automatically.
-- If the in-place chart update, linkage, scope or smoke fails, the new version stays live. Run `chartwright restore <backup.zip> --profile prod` to put the backup back, chart settings and filter scopes included.
+- If anything fails during the prepare or import stage, including the in-place chart updates, the backup is restored automatically, whatever the error.
+- If linkage, scope or smoke fails, the new version stays live. Run `chartwright restore <backup.zip> --profile prod` to put the backup back, chart settings and filter scopes included.
 - Backups are saved at `~/.config/chartwright/backups/<profile>/<slug>/<timestamp>.zip`, or under the folder `CHARTWRIGHT_BACKUP_DIR` names.
 
 Ownership comes from the slug alone: the dashboard's uuid is derived from its slug, and each chart's from the slug and the chart's name. Two specs with the same slug manage the same dashboard, so give each team its own slug prefix.

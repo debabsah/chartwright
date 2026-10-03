@@ -80,7 +80,7 @@ After the import, `build_dashboard`:
 - applies each filter's chart scope;
 - runs every chart's query, and names any chart whose query fails or returns no rows.
 
-When the dashboard already exists, a backup is taken first. If the import is refused, or Superset returns an API error before or during it, that backup is put back automatically. A failure at the chart-update, linkage, scope or query step leaves the new version live; restore the backup from the CLI (see [What the MCP server leaves to the CLI](#what-the-mcp-server-leaves-to-the-cli)).
+When the dashboard already exists, a backup is taken first. If anything fails before or during the import, including the in-place chart updates, that backup is put back automatically. A failure at the linkage, scope or query step leaves the new version live; restore the backup from the CLI (see [What the MCP server leaves to the CLI](#what-the-mcp-server-leaves-to-the-cli)).
 
 ## Updated in place
 

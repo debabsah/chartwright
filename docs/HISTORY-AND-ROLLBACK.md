@@ -10,7 +10,7 @@ Each backup is saved at:
 ~/.config/chartwright/backups/<profile>/<slug>/<timestamp>.zip
 ```
 
-- The timestamp is the local time of the apply, such as `20261003T141502.zip`, so the newest backup sorts last.
+- The timestamp is the local time of the apply, to the microsecond, such as `20261003T141502.123456.zip`, so the newest backup sorts last and no backup is ever overwritten.
 - Set `CHARTWRIGHT_BACKUP_DIR` to keep backups somewhere else; the `<profile>/<slug>/` folders are added under it.
 - The folders are named after the profile, not the instance: keep one profile name per instance, and take a backup from the folder of the profile you restore to.
 - The JSON report from `apply` gives the file's path in its `backup` field.
@@ -25,8 +25,8 @@ Each backup is saved at:
 | What fails | What's live afterwards |
 |---|---|
 | Superset refuses the import | The backup, restored automatically |
-| A Superset request fails while charts that left the spec are deleted, while datasets are read, or during the import | The backup, restored automatically |
-| Superset rejects an update to a chart that already existed | The new state; restore the backup by hand |
+| Anything fails while charts that left the spec are deleted, while datasets are read, or during the import, whether Superset rejects a request, the connection drops or Chartwright hits a bug | The backup, restored automatically |
+| Superset rejects an update to a chart that already existed, or the connection drops during it | The backup, restored automatically |
 | The linkage step finds charts missing from the dashboard, or charts the spec doesn't name | The new state; restore the backup by hand |
 | Filter scopes can't be set, or a chart's query fails in the smoke step | The new state; restore the backup by hand |
 
@@ -36,7 +36,7 @@ An automatic restore is noted in the report's `warnings`. If the automatic resto
 
 ```bash
 ls ~/.config/chartwright/backups/prod/orders/
-chartwright restore ~/.config/chartwright/backups/prod/orders/20261003T141502.zip --profile prod
+chartwright restore ~/.config/chartwright/backups/prod/orders/20261003T141502.123456.zip --profile prod
 ```
 
 `restore` does more than re-import the ZIP:

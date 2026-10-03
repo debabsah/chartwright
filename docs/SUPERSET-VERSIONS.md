@@ -38,7 +38,7 @@ done
 | `check` | Confirms that every dataset, column and saved metric the spec names still exists on the upgraded instance, and lists every missing one at once |
 | `apply` | Saves a backup of the live dashboard. Updates each chart in place, so chart ids and links stay the same, writing every setting from the spec. Confirms every chart is linked to the dashboard, sets filter scopes, and queries every chart: a query error fails the run, and a chart with no rows is reported as a warning |
 
-When `apply` fails after the import step, the new version stays live. The report gives the backup's path, and `chartwright restore <backup.zip> --profile prod` puts the backup back.
+When `apply` fails after the import and the chart updates, the new version stays live. The report gives the backup's path, and `chartwright restore <backup.zip> --profile prod` puts the backup back.
 
 ## What CI builds on each release
 
@@ -108,7 +108,7 @@ A dashboard with no spec gets none of this. Generate its spec with `chartwright 
 | `plan` names changed charts but not the setting that changed | Run `chartwright decompile <slug> --profile prod -o live.json` and diff `live.json` against your spec |
 | `plan` compares only settings a spec can express, so changes to things like dashboard CSS don't show | Expect `apply` to reset them anyway, and keep styling in the spec (`label_colors`, colour rules, text blocks) |
 | Every `apply` overwrites edits made in the UI | Run `plan` before the upgrade and copy the edits you want into the spec |
-| A failure after the import step leaves the new version live | Run `chartwright restore` with the backup path from the report |
+| A failure after the import and the chart updates leaves the new version live | Run `chartwright restore` with the backup path from the report |
 
 ## Related
 
