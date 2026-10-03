@@ -21,8 +21,8 @@ covers the other direction, and lists anything it could not carry over.
 
 Write the file yourself, or describe the dashboard you want and have an AI
 write it. The same checks run either way. After the build, each chart's query
-runs once to prove it shows data, and `chartwright advise` reviews the layout
-for readability.
+runs once (an error fails the build, an empty chart is named), and
+`chartwright advise` reviews the layout for readability.
 
 ## What a spec looks like
 
@@ -54,8 +54,8 @@ The file is called a spec:
 `chartwright apply` on this file signs in to your Superset, confirms the
 `cleaned_sales_data` table and the `sales` and `order_date` columns exist,
 builds a KPI card above a line chart, and finishes by running each chart's
-query once to prove it shows data. A misspelled column or a missing table is a
-clear error naming the problem, before anything is created.
+query once. A misspelled column or a missing table is a clear error naming the
+problem, with the closest real names suggested, before anything is created.
 
 ## Creating dashboards with AI
 
@@ -108,21 +108,23 @@ as-is.
 - **Deterministic dashboards**: the same spec always produces the identical
   dashboard. Diff it in git, review it in a PR.
 - **Verified at every step**: every reference is checked before anything is
-  written, and every chart's query runs once to prove it shows data; failures
-  say what went wrong and where.
+  written, and every chart's query runs once (an error fails the build, an
+  empty chart is named); failures say what went wrong and where.
 - **Dashboards as code, in both directions**: `chartwright decompile` turns any live
   dashboard into a spec; `chartwright plan` shows what differs between the spec and
   the live dashboard, ready as a CI gate; `chartwright compile` builds the import
   bundle offline, no server needed.
 - **Recoverable by default**: every apply backs up the previous state first,
-  and a failed apply restores it. Dashboards Chartwright did not create are
-  never overwritten; to bring a hand-built one under a spec, decompile it
-  first.
+  and an apply that fails while importing or updating charts restores it
+  automatically. Dashboards Chartwright did not create are never overwritten;
+  to bring a hand-built one under a spec, decompile it and build it at a new
+  slug.
 - **What a spec can express**: 15 chart types, metrics as you write them,
   per-chart filters, a native filter bar, tabs, markdown notes, a footer shown
   under every tab, and layouts you can draw as ASCII sketches.
 - **Environment promotion**: specs name their data (connection, schema,
-  table), so the same file applies to dev, staging, and production unchanged.
+  table), so the same file applies to dev, staging, and production when they
+  share connection names.
 
 Every capability, with the CLI verb reference: [docs/FEATURES.md](https://github.com/debabsah/chartwright/blob/main/docs/FEATURES.md).
 
