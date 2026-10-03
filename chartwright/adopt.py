@@ -51,7 +51,8 @@ def adopted_spec(result: DecompileResult, force: bool = False) -> AdoptResult:
     spec = dict(result.spec)
     spec["dashboard"] = {
         **spec["dashboard"],
-        "adopted": {"dashboard_uuid": result.dashboard_uuid, "charts": dict(result.chart_uuids)},
+        "adopted": {"dashboard_uuid": result.dashboard_uuid, "slug": spec["dashboard"]["slug"],
+                    "charts": dict(result.chart_uuids)},
     }
     return AdoptResult(True, spec=spec, losses=losses, skipped_charts=result.skipped_charts)
 

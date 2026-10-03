@@ -698,6 +698,24 @@ def _leaf_tabs(layout: dict) -> list[dict]:
     return [leaf for tab in layout.get("tabs") or [] for leaf in (tab.get("tabs") or [tab])]
 
 
+def _dashboard_settings_losses(dash: dict, losses: list[Loss]) -> None:
+    """Dashboard-level settings the spec doesn't carry. Apply writes its own values
+    for them (no CSS, the default colour scheme, no auto-refresh, published), so a
+    set value is a change the reader must see, not a silent drop."""
+    meta = dash.get("metadata") or {}
+    checks = [
+        (dash.get("css"), "dashboard CSS not preserved; apply clears it"),
+        (dash.get("description"), "dashboard description not preserved"),
+        (dash.get("certified_by"), "dashboard certification not preserved"),
+        (meta.get("color_scheme"), f"colour scheme {meta.get('color_scheme')!r} not preserved; apply uses the default"),
+        (meta.get("refresh_frequency"), f"auto-refresh every {meta.get('refresh_frequency')}s not preserved; apply turns it off"),
+        (dash.get("published") is False, "dashboard is a draft; apply publishes it"),
+    ]
+    for value, what in checks:
+        if value:
+            losses.append(Loss("dashboard", what))
+
+
 def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult:
     losses: list[Loss] = []
     zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
@@ -727,6 +745,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             else:
                 skipped.append(cy.get("slice_name") or "Unnamed")
 
+    _dashboard_settings_losses(dash, losses)
     title = dash.get("dashboard_title") or "Untitled"
     slug = dash.get("slug")
     if not slug:

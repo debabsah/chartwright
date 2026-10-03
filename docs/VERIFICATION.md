@@ -34,7 +34,7 @@ scenarios, and fault injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (353 tests, 36 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows, mcp 1 and 2 |
+| Offline suite (356 tests, 36 modules) | Contract, determinism, round-trips, credentials | every push and every PR, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every push |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every push, all 3 versions |
 | Adopt-in-place check | A hand-built dashboard is taken over with its id and chart ids kept; a dropped chart leaves the dashboard but is not deleted | every push, all 3 versions |

@@ -19,7 +19,10 @@ The design brain, plus the fixes found reviewing it.
   Charts that leave an adopted dashboard's spec are taken off that dashboard,
   never deleted, since a hand-made chart may sit on other dashboards too.
   `restore` also accepts the tool's own backups, which covers the first backup
-  of an adopted dashboard. Also an MCP tool (`adopt_dashboard`). Known limit:
+  of an adopted dashboard. The adopted block also records the dashboard's
+  address, and a spec whose address differs from it fails validation, so a
+  copy of an adopted spec made to build a new dashboard can't overwrite the
+  original. Also an MCP tool (`adopt_dashboard`). Known limit:
   native filters get the tool's own ids on the first apply, so saved filter-state
   links made before adoption may not carry over. Checked live on 4.1.4, 5.0.0
   and 6.1.0 by `tools/ci_live_adopt.py`.
@@ -88,6 +91,9 @@ The design brain, plus the fixes found reviewing it.
 
 ### Fixed
 
+- Decompile dropped dashboard-level settings without a word: CSS, description,
+  certification, colour scheme, auto-refresh and draft status. Apply writes its
+  own values for those, so each set value is now listed as a loss.
 - `pip install "chartwright[mcp]"` installed mcp 2, which renamed `mcp.server.fastmcp`,
   so `chartwright-mcp` failed to start. It now runs on mcp 1 and mcp 2 (the extra
   allows `mcp>=1.0,<3`), and CI tests both.

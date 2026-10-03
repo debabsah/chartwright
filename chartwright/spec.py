@@ -613,6 +613,10 @@ class AdoptedIdentity(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     dashboard_uuid: str = Field(description="uuid of the adopted dashboard")
+    slug: str = Field(
+        min_length=1,
+        description="The adopted dashboard's address (URL name). Must equal dashboard.slug: copying an "
+                    "adopted spec to make a new dashboard means removing this whole block.")
     charts: dict[str, str] = Field(
         default_factory=dict,
         description="Chart name -> uuid of the adopted chart. Rename a key together with its chart.",
@@ -662,6 +666,18 @@ class DashboardMeta(BaseModel):
             "manages in place. Leave it out for dashboards the tool creates."
         ),
     )
+
+    @model_validator(mode="after")
+    def _adopted_slug(self) -> "DashboardMeta":
+        # The adopted uuid points at one existing dashboard. A copy of the spec under
+        # a new slug would still carry it and overwrite the ORIGINAL on apply, so the
+        # two must move together; this fails offline, at validate, before any import.
+        if self.adopted and self.adopted.slug != self.slug:
+            raise ValueError(
+                f"dashboard.slug {self.slug!r} differs from dashboard.adopted.slug "
+                f"{self.adopted.slug!r}. Making a new dashboard from a copy of this spec? Remove "
+                f"dashboard.adopted. Moving the adopted dashboard to a new address? Change both.")
+        return self
 
     @model_validator(mode="after")
     def _hex_colours(self) -> "DashboardMeta":
