@@ -18,7 +18,12 @@ into one. Everything below works from that one file.
 - **Deterministic Dashboards**: The same spec always produces the identical dashboard. Diff it in git, review it in a PR.
 - **15 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, and mixed (bars and a line on two value axes, over time or over categories).
 - **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`).
-- **Filters and Formatting**: Per-chart WHERE conditions, a native filter bar (value pickers, a time range with an optional starting range, and numeric sliders; value pickers and sliders can be scoped to specific charts, while the time range applies to the whole dashboard), solid green/amber/red rules on pivot and table cells (a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it; Superset 6.1+), hidden table columns, a fixed ascending table sort, d3 number and date formats.
+- **Filters and Formatting**: Per-chart WHERE conditions, a native filter bar, and formatting for table and pivot cells.
+    - Filter bar: value pickers, a time range with an optional starting range, and numeric sliders.
+    - Scope value pickers and sliders to specific charts; the time range applies to the whole dashboard.
+    - Solid green/amber/red colour rules on pivot and table cells.
+    - On Superset 6.1+, a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it.
+    - Hidden table columns, a fixed ascending table sort, d3 number and date formats.
 - **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs.
 - **No Empty First Load**: New charts open on your full data range, so a narrow default time window never hides everything on the first paint. On a large dataset that full range is a lot to draw, so give the filter bar a time range with a default; `chartwright advise` tells you when a dashboard has nothing bounding its dates.
 
@@ -66,7 +71,9 @@ into one. Everything below works from that one file.
 
 ## Enterprise Ready
 - **Multiple Instances**: Sandbox, staging, and production as profiles in one file.
-- **Credentials Stay Out of Files**: Usernames and passwords from env vars (any names) or your credential manager (1Password, macOS Keychain, sops).
+- **Secrets Stay Out of Your Profiles**: Point each profile at where its secret already lives.
+    - Self-hosted Superset signs in with a username and password (database or LDAP provider): take the password from an env var (any name) or your credential manager (1Password, macOS Keychain, sops). On SSO-only Superset, ask your admin for a service account with password login enabled.
+    - Preset-hosted workspaces (preset.io) sign in with an API token and secret: take them from env vars, or reuse the credentials preset-cli already stored.
 - **What the AI Can See**: The AI proposes; the tool verifies, using your own Superset login. Verification reads names (datasets, columns, metrics), not rows; the AI never queries your warehouse.
     - The post-apply data check keeps a row count and discards the rows.
 - **Corporate Networks**: Custom CA bundles, proxies, LDAP auth, internal pip mirrors (only 3 dependencies).
@@ -106,5 +113,4 @@ into one. Everything below works from that one file.
 
 ## Deliberately Not Included
 - Exotic chart types (maps, sankey, gauge): added when a real dashboard needs one (ask); until then those dashboards live on in the UI, untouched.
-- API keys: open-source Superset has none (Preset does); its API signs in with a username and password, which is exactly what the tool uses (database or LDAP providers). On SSO-only shops, ask your admin for a service account with password login enabled.
 - Per-chart cross-filter scoping (which charts emit or receive): the on/off switch is in the spec; finer scoping waits for real demand.
