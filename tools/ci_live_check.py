@@ -46,6 +46,20 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps([e.as_dict() for e in res.errors], indent=2))
         return 2
 
+    # A misspelled column must come back with the real one suggested, from
+    # the column list this version's dataset API returns.
+    raw = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+    target = next((c for c in raw["charts"] if isinstance(c.get("x_column"), str)), None)
+    if target is not None:
+        real_col = target["x_column"]
+        target["x_column"] = real_col.upper() if real_col != real_col.upper() else real_col.lower()
+        bad = [e for e in resolve(load_spec(raw), client).errors if e.code == "column_not_found"]
+        if not bad or bad[0].candidates[:1] != [real_col]:
+            print(f"FAIL: misspelled column {target['x_column']!r} did not suggest {real_col!r}: "
+                  f"{[e.as_dict() for e in bad]}")
+            return 1
+        print(f"column suggestion OK: {target['x_column']!r} -> {real_col!r}")
+
     r1 = run_apply(spec, client, "ci")
     print(r1.to_json())
     if not r1.ok:

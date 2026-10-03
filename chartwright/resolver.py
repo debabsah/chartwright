@@ -43,6 +43,9 @@ class ResolutionError:
     chart: str | None
     ref: str
     detail: str
+    # column_not_found only: the dataset's closest column names, best first, so
+    # an agent can correct the spec without parsing `detail` or asking Superset.
+    candidates: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -147,18 +150,41 @@ def _check_metric(metric: str, chart_name: str, ds: ResolvedDataset, res: Resolu
         return
     col = adhoc["column"]
     if col != "*" and col not in ds.columns:
-        res.errors.append(ResolutionError(
-            "column_not_found", chart_name, col,
-            f"ad-hoc metric {metric!r}: column {col!r} not on dataset {ds.table!r}",
-        ))
+        _missing_column(col, chart_name, ds, res, f"ad-hoc metric {metric!r}: column {col!r}")
+
+
+SUGGESTIONS = 3       # close matches named per missing column
+LISTED_COLUMNS = 50   # the dataset's columns listed in the message, then "and N more"
+
+
+def close_columns(col: str, columns: list[str]) -> list[str]:
+    """Up to SUGGESTIONS column names closest to `col`, best first. A match
+    that differs only in case always comes first; the rest are by spelling
+    similarity (difflib, ignoring case)."""
+    import difflib
+
+    exact = [c for c in columns if c.lower() == col.lower()]
+    lowered = {c.lower(): c for c in columns}
+    near = difflib.get_close_matches(col.lower(), list(lowered), n=SUGGESTIONS, cutoff=0.6)
+    out = exact + [lowered[n] for n in near if lowered[n] not in exact]
+    return out[:SUGGESTIONS]
+
+
+def _missing_column(col: str, chart_name: str, ds: ResolvedDataset, res: Resolution, lead: str) -> None:
+    candidates = close_columns(col, ds.columns)
+    hint = f"; did you mean {', '.join(repr(c) for c in candidates)}?" if candidates else "."
+    shown = ds.columns[:LISTED_COLUMNS]
+    more = f", and {len(ds.columns) - LISTED_COLUMNS} more" if len(ds.columns) > LISTED_COLUMNS else ""
+    res.errors.append(ResolutionError(
+        "column_not_found", chart_name, col,
+        f"{lead} not on dataset {ds.table!r}{hint} Columns: {', '.join(shown)}{more}",
+        candidates,
+    ))
 
 
 def _check_column(col: str, chart_name: str, ds: ResolvedDataset, res: Resolution, what: str = "column") -> None:
     if col not in ds.columns:
-        res.errors.append(ResolutionError(
-            "column_not_found", chart_name, col,
-            f"{what} {col!r} not on dataset {ds.table!r} (has {len(ds.columns)} columns)",
-        ))
+        _missing_column(col, chart_name, ds, res, f"{what} {col!r}")
 
 
 def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
