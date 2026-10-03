@@ -3,7 +3,7 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-10-03)
 
 The design brain, plus the fixes found reviewing it.
 
