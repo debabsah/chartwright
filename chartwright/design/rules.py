@@ -420,7 +420,7 @@ def section_headers(ctx: RuleContext):
     if len(body) != 1 or body[0].mode != "rows" or body[0].title:
         return
     n = len(ctx.spec.charts)
-    has_md = any(i.is_markdown for sec in ctx.sections for b in sec.bands for i in b.items)
+    has_md = any(i.is_markdown for b in body[0].bands for i in b.items)  # a footer note is no signpost
     if n > 8 and not has_md:
         yield Finding(
             "layout.section-headers", "info", None, "layout",

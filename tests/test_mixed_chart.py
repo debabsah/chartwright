@@ -222,3 +222,12 @@ def test_a_reported_temporal_column_is_a_time_axis_without_a_grain():
         ds.column_types["month_start"] = 2  # TEMPORAL
     _, p = _params(spec, res)["Revenue and revenue per order"]
     assert p["time_grain_sqla"] == "P1D" and "granularity_sqla" not in p
+
+
+def test_smoke_queries_the_axis_the_chart_draws():
+    spec = _spec({**BY_CAUSE, "time_grain": "P1D"})
+    res = stub_resolution(spec)
+    ds = res.for_chart(spec.charts[0].dataset)
+    ds.column_types["category"] = 1  # STRING
+    qa, qb = _mixed_queries(spec.charts[0], spec, ds)
+    assert qa["columns"] == ["category"] and qb["columns"] == ["category"]
