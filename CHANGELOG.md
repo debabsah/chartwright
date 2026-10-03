@@ -189,6 +189,12 @@ The design brain, plus the fixes found reviewing it.
 
 ### Changed
 
+- **The MCP tools return typed errors.** A tool that signs in (`check_spec`,
+  `build_dashboard`, `plan_dashboard`, `advise_spec` with a profile,
+  `decompile_dashboard`, `redesign_dashboard`) used to raise on a profile, password,
+  sign-in or Superset error, which reached the agent as a bare tool failure. They now
+  return the CLI's JSON: stage `profile` for profile and password problems, code `api`
+  for sign-in and Superset errors, code `unexpected` for anything else.
 - **`plan` reports missing references as data.** When the spec names something the
   instance doesn't have, `plan` is `blocked` and returns the same typed
   `resolution_errors` list as `check` and `apply`; `detail` is a short sentence. It
