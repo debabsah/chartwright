@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import json
 
-from mcp.server.fastmcp import FastMCP
+try:  # mcp 2 renamed FastMCP to MCPServer; the tool API chartwright uses is the same
+    from mcp.server.mcpserver import MCPServer
+except ImportError:  # mcp 1
+    from mcp.server.fastmcp import FastMCP as MCPServer
 
 from .spec import json_schema, load_spec
 
-mcp = FastMCP("chartwright")
+mcp = MCPServer("chartwright")
 
 
 def _parse_spec(spec_json: str):

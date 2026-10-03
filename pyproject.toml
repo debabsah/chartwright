@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-mcp = ["mcp>=1.0,<2"]  # mcp 2 renamed FastMCP (mcp.server.fastmcp) to MCPServer
+mcp = ["mcp>=1.0,<3"]  # 1 and 2 both tested in CI (mcp_server.py imports either)
 
 [project.scripts]
 chartwright = "chartwright.cli:main"

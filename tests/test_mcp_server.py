@@ -1,5 +1,5 @@
 """The MCP server must stay a 1:1 mirror of the core; these tests pin the
-tool surface and exercise the offline tools through the real FastMCP layer."""
+tool surface and exercise the offline tools through the real MCP server layer."""
 
 import asyncio
 import json
@@ -35,9 +35,17 @@ def test_tool_surface():
     ]
 
 
+def _text(out):
+    """The tool's text, whichever shape call_tool returns: mcp 2 a CallToolResult,
+    mcp 1 a content list, or (with structured output) a (content, structured) pair."""
+    if hasattr(out, "content"):
+        return out.content[0].text
+    return out[0][0].text if isinstance(out, tuple) else out[0].text
+
+
 def test_validate_spec_ok():
     out = _run(mcp.call_tool("validate_spec", {"spec_json": FIXTURE}))
-    payload = json.loads(out[0][0].text if isinstance(out, tuple) else out[0].text)
+    payload = json.loads(_text(out))
     assert payload["ok"] is True
 
 
@@ -45,7 +53,7 @@ def test_validate_spec_schema_error():
     bad = json.loads(FIXTURE)
     bad["charts"][0]["type"] = "sunburst"
     out = _run(mcp.call_tool("validate_spec", {"spec_json": json.dumps(bad)}))
-    payload = json.loads(out[0][0].text if isinstance(out, tuple) else out[0].text)
+    payload = json.loads(_text(out))
     assert payload["ok"] is False
     assert payload["stage"] == "schema"
 
@@ -54,12 +62,8 @@ def test_get_spec_schema_matches_generator():
     from chartwright.spec import json_schema
 
     out = _run(mcp.call_tool("get_spec_schema", {}))
-    payload = json.loads(out[0][0].text if isinstance(out, tuple) else out[0].text)
+    payload = json.loads(_text(out))
     assert payload == json_schema()
-
-
-def _text(out):
-    return out[0][0].text if isinstance(out, tuple) else out[0].text
 
 
 def test_design_brief_offline():
