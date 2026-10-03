@@ -74,7 +74,7 @@ chartwright plan  orders.json --profile prod
 
 - a missing dataset comes with any tables of the same name in other connections or schemas, which usually points at a naming difference;
 - a missing saved metric comes with the metrics the dataset does have;
-- a missing column comes with the dataset's column count, not its column names, so open the dataset in Superset to see them.
+- a missing column comes with up to three close matches, such as `region` for `Region`, and the dataset's columns.
 
 `plan` shows what an apply would change on that instance: `create` when the dashboard isn't there yet, `blocked` when the slug belongs to a dashboard Chartwright didn't build, and otherwise the charts and filters added, changed and removed, plus title, layout, cross-filter and series-colour changes, including edits someone made in the UI there. It exits 0 when there's nothing to change and 1 otherwise. For a dashboard that doesn't exist yet, `plan` skips the reference lookup, so run `check` first.
 

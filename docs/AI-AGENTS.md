@@ -105,12 +105,12 @@ Every build rewrites the whole dashboard from the spec, so edits made in the UI 
 
 Through Chartwright, the agent sees names and counts:
 
-- each missing dataset, column or metric by name; a missing saved metric lists the dataset's saved metrics, and a missing column gives the dataset's column count;
+- each missing dataset, column or metric by name; a missing saved metric lists the dataset's saved metrics, and a missing column suggests up to three close matches (in the error's `candidates` field) and lists the dataset's columns;
 - specs of existing dashboards, including titles, markdown text and filter default values;
 - distinct-value counts per column, capped, when `advise_spec` or `redesign_dashboard` runs with a profile;
 - the number of rows each chart's test query returned.
 
-No tool returns query rows. Because no tool lists a dataset's columns, put the dataset's column names in your request, or let the agent read them from the dataset in Superset. The agent passes only a profile name; the password stays in the environment variable or password command the profile names, and no tool returns it.
+No tool returns query rows. No tool lists a dataset's columns up front: the agent learns them from `check_spec`, whose error for a wrong column names the closest matches and the dataset's columns. To skip that round, put the column names in your request. The agent passes only a profile name; the password stays in the environment variable or password command the profile names, and no tool returns it.
 
 ## Keep production out of reach
 
