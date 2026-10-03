@@ -225,3 +225,31 @@ def test_restore_finds_the_backed_up_dataset_ids():
     assert bundle_dataset_ids(backup, Client()) == {str(ds.uuid): 5}
     payloads = chart_payloads_from_bundle(backup, bundle_dataset_ids(backup, Client()))
     assert payloads[str(_ids.chart_uuid("sdc-t", "A"))]["datasource_id"] == 5
+
+
+def test_restore_goes_on_when_the_dataset_lookup_fails():
+    from chartwright.apply import restore_bundle
+    from chartwright.client import SupersetAPIError
+
+    spec = _spec([])
+    res = stub_resolution(spec)
+    ds = next(iter(res.datasets.values()))
+    backup = edit_bundle(compile_bundle(spec, res), lambda path, doc: None, add={
+        "sdc_bundle/datasets/db/t.yaml": {"uuid": str(ds.uuid), "table_name": DS["table"]}})
+
+    class Client:
+        def import_dashboard_bundle(self, blob, overwrite=True):
+            return type("R", (), {"status_code": 200, "text": ""})()
+
+        def find_datasets(self, table):
+            raise SupersetAPIError("HTTP 500", status=500)
+
+        def charts_by_uuids(self, uuid_to_name):
+            return {}
+
+        def find_dashboard_by_slug(self, slug):
+            return None
+
+    report = restore_bundle(backup, "sdc-t", Client())
+    assert any("dataset lookup failed" in w for w in report.warnings)
+    assert report.import_detail == "restore imported but dashboard not found at slug"
