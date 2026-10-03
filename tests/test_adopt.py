@@ -81,12 +81,25 @@ def test_adopt_refuses_unrepresentable_charts_unless_forced():
     assert adopted_spec(result, force=True).ok
 
 
-def test_adopt_refuses_charts_shared_with_other_dashboards_unless_forced():
+def test_adopt_refuses_shared_charts_unless_allowed_and_force_does_not_allow_them():
     hand, _, spec = _hand_built()
     result = decompile_bundle(hand, _stub_lookup_for(spec))
     refused = adopted_spec(result, shared_charts=["Total Sales"])
-    assert not refused.ok and "other dashboards" in refused.detail and refused.shared_charts == ["Total Sales"]
-    assert adopted_spec(result, force=True, shared_charts=["Total Sales"]).ok
+    assert not refused.ok and "--allow-shared" in refused.detail and refused.shared_charts == ["Total Sales"]
+    assert not adopted_spec(result, force=True, shared_charts=["Total Sales"]).ok
+    assert adopted_spec(result, shared_charts=["Total Sales"], allow_shared=True).ok
+
+
+def test_adopt_refuses_a_skipped_chart_that_shares_a_title_even_when_forced():
+    """apply tells charts apart by title, so a repeat that includes a chart the spec
+    can't hold would make every apply refuse."""
+    def twin(path, doc):
+        if path.endswith("Sunburst.yaml"):
+            doc["slice_name"] = "Total Orders"
+    hand, _, spec = _hand_built(extra_chart=True)
+    hand = edit_bundle(hand, twin)
+    refused = adopted_spec(decompile_bundle(hand, _stub_lookup_for(spec)), force=True)
+    assert not refused.ok and "share a title" in refused.detail
 
 
 @pytest.mark.parametrize("slug, message", [(None, "no URL name"), ("Sales_Overview", "isn't one a spec can hold")])
@@ -287,10 +300,11 @@ def test_a_chart_uuid_from_elsewhere_is_refused(live):
 
 def test_a_failed_unlink_stops_before_the_import(live):
     fake, data = live()
-    fake.refuse_chart_puts = True
+    fake.refuse_unlinks = True
     report = apply_mod.apply(load_spec(_drop(data, "Sales by Product Line")), fake, "prod")
     assert not report.ok and "could not take charts off" in report.import_detail
     assert "HTTP 403" in report.import_detail
+    assert any("restore" in w.lower() for w in report.warnings)
 
 
 def test_plan_lists_settings_the_first_apply_changes(live):
@@ -319,6 +333,59 @@ def test_plan_lists_native_filters_that_get_new_ids(live):
     fake, spec_data = live(edit=renumber, data=data)
     p = dashdiff.plan(load_spec(spec_data), fake)
     assert any("new ids" in s for s in p.settings_changed)
+
+
+def test_plan_names_charts_whose_options_the_first_apply_resets(live):
+    def custom(path, doc):
+        if "/charts/" in path and doc["slice_name"] == "Sales Over Time":
+            doc["params"]["my_custom_option"] = 1
+    fake, data = live(edit=custom)
+    p = dashdiff.plan(load_spec(data), fake)
+    assert "Sales Over Time" in p.charts_changed and not p.clean
+
+
+def test_apply_warns_when_an_adopted_chart_sits_on_another_dashboard(live):
+    fake, data = live()
+    fake.charts[fake.linked(_dash_id(fake))["Total Sales"]]["dashboards"].add(999)
+    report = apply_mod.apply(load_spec(data), fake, "prod")
+    assert report.ok and any("other dashboards" in w and "Total Sales" in w for w in report.warnings)
+
+
+def test_a_tool_chart_taken_off_in_the_ui_is_still_updated(live):
+    fake, data = live()
+    data["charts"].append(dict(next(c for c in data["charts"] if c["name"] == "Total Sales"), name="Extra"))
+    data["layout"]["rows"].append(["Extra"])
+    assert apply_mod.apply(load_spec(data), fake, "prod").ok
+    extra_id = fake.linked(_dash_id(fake))["Extra"]
+    fake.charts[extra_id]["dashboards"].discard(_dash_id(fake))  # removed from the dashboard in the UI
+    next(c for c in data["charts"] if c["name"] == "Extra")["metric"] = "MAX(sales)"
+    report = apply_mod.apply(load_spec(data), fake, "prod")
+    assert report.ok, report.import_detail
+    assert "MAX(sales)" in json.dumps(fake.charts[extra_id]["params"])
+
+
+def test_restore_finds_a_chart_renamed_since_the_backup(live):
+    fake, data = live()
+    assert apply_mod.apply(load_spec(data), fake, "prod").ok
+    chart_id = fake.linked(_dash_id(fake))["Total Orders"]
+    renamed = json.loads(json.dumps(data).replace('"Total Orders"', '"Orders (all time)"'))
+    report = apply_mod.apply(load_spec(renamed), fake, "prod")
+    assert report.ok and fake.charts[chart_id]["slice_name"] == "Orders (all time)"
+    restored = apply_mod.restore_bundle(Path(report.backup).read_bytes(), SLUG, fake)
+    assert restored.ok
+    assert fake.charts[chart_id]["slice_name"] == "Total Orders"
+
+
+def test_adopt_live_reads_an_all_digit_slug_as_a_slug_and_spots_shared_charts(live):
+    from chartwright.adopt import adopt_live
+
+    fake, _ = live()
+    fake.dashboards[HAND_DASH]["slug"] = "2024"
+    fake.dashboards[HAND_DASH]["yaml"]["slug"] = "2024"
+    fake.charts[fake.linked(_dash_id(fake))["Total Sales"]]["dashboards"].add(999)
+    result = adopt_live("2024", fake)
+    assert not result.ok and result.shared_charts == ["Total Sales"]
+    assert adopt_live("2024", fake, allow_shared=True).spec["dashboard"]["slug"] == "2024"
 
 
 def test_refusals_never_print_a_uuid(live):

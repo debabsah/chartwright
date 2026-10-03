@@ -35,6 +35,7 @@ class FakeSuperset:
         self.next_id = 100
         self.log: list[str] = []
         self.refuse_chart_puts = False
+        self.refuse_unlinks = False
 
     # -- import / export ------------------------------------------------------
 
@@ -116,7 +117,7 @@ class FakeSuperset:
     def put_json(self, path: str, payload: dict) -> Resp:
         kind, ident = path.rstrip("/").rsplit("/", 2)[-2:]
         if kind == "chart":
-            if self.refuse_chart_puts:
+            if self.refuse_chart_puts or (self.refuse_unlinks and "dashboards" in payload):
                 return Resp(403, "forbidden")
             c = self.charts[int(ident)]
             if "dashboards" in payload:

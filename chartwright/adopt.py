@@ -13,7 +13,8 @@ applied safely:
 - two of its charts share a title (they couldn't be told apart by name);
 - some charts can't be represented (applying would take them off the dashboard);
 - some charts also sit on other dashboards (applying would change them there too).
-The last two can be overridden with `force`.
+The last two can be overridden, separately: `force` for charts a spec can't
+represent, `allow_shared` for charts on other dashboards.
 """
 
 from __future__ import annotations
@@ -24,9 +25,7 @@ from dataclasses import dataclass, field
 from pydantic import ValidationError
 
 from .decompile import DecompileResult, decompile_bundle, live_dataset_lookup
-from .spec import load_spec
-
-SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]*$"
+from .spec import SLUG_PATTERN, load_spec
 
 
 @dataclass
@@ -52,7 +51,7 @@ class AdoptResult:
 
 
 def adopted_spec(result: DecompileResult, force: bool = False,
-                 shared_charts: list[str] | None = None) -> AdoptResult:
+                 shared_charts: list[str] | None = None, allow_shared: bool = False) -> AdoptResult:
     """Pure core: a decompiled dashboard -> an adopting spec (or a refusal)."""
     losses = result.losses_json()
     shared = sorted(shared_charts or [])
@@ -70,7 +69,9 @@ def adopted_spec(result: DecompileResult, force: bool = False,
         return refuse(f"this dashboard's URL name {result.source_slug!r} isn't one a spec can hold "
                       "(lowercase letters, digits and hyphens, starting with a letter or digit). "
                       "Change it in Superset (dashboard properties), then run adopt again.")
-    dupes = sorted({l["where"] for l in losses if "duplicate slice_name" in l["what"]})
+    # Over every chart, skipped ones too: apply tells charts apart by title, so a
+    # repeat anywhere on the dashboard would make every apply refuse.
+    dupes = sorted({t for t in result.chart_titles if result.chart_titles.count(t) > 1})
     if dupes:
         return refuse(f"charts share a title on this dashboard: {dupes}. Give each a distinct title "
                       "in Superset, then run adopt again.")
@@ -78,10 +79,10 @@ def adopted_spec(result: DecompileResult, force: bool = False,
         return refuse(f"{len(result.skipped_charts)} chart(s) can't be represented in a spec, so "
                       "applying would take them off this dashboard (they would not be deleted). "
                       "Remove or replace them in Superset first, or pass --force to adopt anyway.")
-    if shared and not force:
+    if shared and not allow_shared:
         return refuse(f"{len(shared)} chart(s) also appear on other dashboards: {shared}. Applying "
                       "updates a chart everywhere it appears, so those dashboards would change too. "
-                      "Copy them in Superset first (Save as), or pass --force to adopt anyway.")
+                      "Copy them in Superset first (Save as), or pass --allow-shared to adopt anyway.")
 
     spec = dict(result.spec)
     spec["dashboard"] = {
@@ -97,18 +98,19 @@ def adopted_spec(result: DecompileResult, force: bool = False,
                        shared_charts=shared)
 
 
-def adopt_live(slug_or_id: str, client, force: bool = False) -> AdoptResult:
-    if slug_or_id.isdigit():
+def adopt_live(slug_or_id: str, client, force: bool = False, allow_shared: bool = False) -> AdoptResult:
+    # A slug may be all digits ("2024"): try it as a slug first, then as an id.
+    dash = client.find_dashboard_by_slug(slug_or_id)
+    if dash is not None:
+        dashboard_id = dash["id"]
+    elif slug_or_id.isdigit():
         dashboard_id = int(slug_or_id)
     else:
-        dash = client.find_dashboard_by_slug(slug_or_id)
-        if dash is None:
-            raise ValueError(f"no dashboard with slug {slug_or_id!r}")
-        dashboard_id = dash["id"]
+        raise ValueError(f"no dashboard with slug {slug_or_id!r}")
     result = decompile_bundle(client.export_dashboard(dashboard_id), live_dataset_lookup(client))
     shared = []
     for chart in client.dashboard_charts(dashboard_id):
         detail = client.get(f"/api/v1/chart/{chart['id']}")["result"]
         if any(d.get("id") != dashboard_id for d in detail.get("dashboards") or []):
             shared.append(chart["slice_name"])
-    return adopted_spec(result, force=force, shared_charts=shared)
+    return adopted_spec(result, force=force, shared_charts=shared, allow_shared=allow_shared)

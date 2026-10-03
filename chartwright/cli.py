@@ -176,6 +176,9 @@ def _main(argv: list[str] | None = None) -> None:
     ado.add_argument("--force", action="store_true",
                      help="adopt even if some charts can't be represented (apply takes them off "
                           "this dashboard; it never deletes them)")
+    ado.add_argument("--allow-shared", action="store_true",
+                     help="adopt even if some charts also sit on other dashboards (apply updates "
+                          "those charts everywhere they appear)")
 
     ab = sub.add_parser("absorb", help="patch LIVE UI height polish back into the spec (heights only)")
     ab.add_argument("spec")
@@ -425,10 +428,11 @@ def _main(argv: list[str] | None = None) -> None:
     if args.cmd == "adopt":
         client = _client(args.profile)
         from .adopt import adopt_live
+        from .client import SupersetAPIError
 
         try:
-            result = adopt_live(args.dashboard, client, force=args.force)
-        except ValueError as e:
+            result = adopt_live(args.dashboard, client, force=args.force, allow_shared=args.allow_shared)
+        except (ValueError, SupersetAPIError) as e:
             _die({"stage": "adopt", "errors": [{"code": "decompile", "detail": str(e)}]})
         if not result.ok:
             _die(result.payload())
@@ -466,7 +470,7 @@ def _main(argv: list[str] | None = None) -> None:
         # dashboard, taken while it still had its original, hand-built identity.
         import re
 
-        from .adopt import SLUG_PATTERN
+        from .spec import SLUG_PATTERN
 
         # The slug comes from inside the bundle: check its shape before building a
         # path from it ("..", "/" or anything else would widen the folder matched).

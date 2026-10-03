@@ -15,13 +15,12 @@ import io
 import json
 import zipfile
 from dataclasses import asdict, dataclass, field
-from uuid import uuid5
 
 import yaml
 
 from . import ids
 from .client import SupersetClient, SupersetAPIError
-from .compiler import compile_bundle
+from .compiler import compile_bundle, native_filter_id
 from .resolver import Resolution, resolve
 from .smoke import SmokeResult, smoke
 from .spec import DashboardSpec
@@ -126,11 +125,7 @@ def scoped_filter_fixup(
     if not scoped:
         return metadata, errors
     meta = copy.deepcopy(metadata)
-    by_id = {
-        "NATIVE_FILTER-sdc-"
-        + uuid5(ids.NAMESPACE, f"{spec.dashboard.slug}/filter/{f.name}").hex[:12]: f.name
-        for f in spec.filters
-    }
+    by_id = {native_filter_id(spec, f.name): f.name for f in spec.filters}
     seen: set[str] = set()
     for nf in meta.get("native_filter_configuration") or []:
         name = by_id.get(nf.get("id"))
@@ -319,6 +314,16 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
         payloads = chart_payloads_from_bundle(zip_bytes, dataset_ids)
         existing = client.charts_by_uuids(
             {u: p["slice_name"] for u, p in payloads.items()})
+        # A chart renamed since the backup (an adopted chart keeps its uuid when its
+        # name changes) isn't found by its backed-up name: find it by uuid among the
+        # restored dashboard's own charts.
+        restored_dash = client.find_dashboard_by_slug(slug)
+        if restored_dash is not None and len(existing) < len(payloads):
+            by_uuid, _ = _adopted_live_charts(
+                client, restored_dash["id"], client.export_dashboard(restored_dash["id"]))
+            for u in payloads:
+                if u not in existing and u in by_uuid:
+                    existing[u] = by_uuid[u]
         restored = []
         for u, row in existing.items():
             rr = client.put_json(f"/api/v1/chart/{row['id']}", payloads[u])
@@ -433,30 +438,7 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
     # Everything below mutates the instance; any failure must still return a
     # report (it carries the backup path) rather than a traceback.
     try:
-        if spec.dashboard.adopted:
-            spec_uuids = {str(spec.chart_uuid(c.name)) for c in spec.charts}
-            stale = {u: row for u, row in adopted_live.items() if u not in spec_uuids}
-            # Charts the tool created after adoption carry its derived uuid: delete
-            # those as on any tool-built dashboard. The rest were there when the
-            # dashboard was adopted and may sit on other dashboards: take them off
-            # this one, never delete them.
-            made_here = {u: r for u, r in stale.items()
-                         if u == str(ids.chart_uuid(spec.dashboard.slug, r["slice_name"]))}
-            unlinked, failed = _unlink_charts(
-                client, existing["id"], [r for u, r in stale.items() if u not in made_here])
-            if failed:
-                report.import_detail = f"could not take charts off the adopted dashboard: {failed}"
-                _auto_restore("taking charts off the adopted dashboard failed")
-                return report
-            if unlinked:
-                report.warnings.append(
-                    f"took charts no longer in the spec off the adopted dashboard (not deleted): {sorted(unlinked)}")
-            for row in made_here.values():
-                client.delete_chart(row["id"])
-            if made_here:
-                report.warnings.append(
-                    f"deleted owned charts no longer in spec: {sorted(r['slice_name'] for r in made_here.values())}")
-        elif existing is not None:
+        if existing is not None and not spec.dashboard.adopted:
             # Owned charts that fell OUT of the spec (removed or renamed away)
             # must be deleted, not left behind: pre-6.1 importers MERGE
             # dashboard_slices, so a lingering owned chart stays linked and
@@ -483,6 +465,19 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
         owned_names = {str(spec.chart_uuid(c.name)): c.name for c in spec.charts}
         if spec.dashboard.adopted:
             existing_by_uuid = {u: adopted_live[u] for u in owned_names if u in adopted_live}
+            # A chart the tool created after adoption may have been taken off the
+            # dashboard in the UI: find those by their derived uuid, as on any
+            # tool-built dashboard (never foreign uuids: the adopted ones are all here).
+            derived = {u: n for u, n in owned_names.items()
+                       if u not in adopted_live and u == str(ids.chart_uuid(spec.dashboard.slug, n))}
+            existing_by_uuid.update(client.charts_by_uuids(derived))
+            shared = sorted(
+                row["slice_name"] for u, row in existing_by_uuid.items() if u in adopted_live
+                and any(d.get("id") != existing["id"] for d in
+                        client.get(f"/api/v1/chart/{row['id']}")["result"].get("dashboards") or []))
+            if shared:
+                report.warnings.append(
+                    f"these charts also appear on other dashboards and change there too: {shared}")
         else:
             existing_by_uuid = client.charts_by_uuids(owned_names)
 
@@ -505,6 +500,32 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default")
                 report.warnings.append(
                     f"re-apply: updated owned charts in place (ids stable): {sorted(updated)}"
                 )
+
+        if spec.dashboard.adopted:
+            # After the import, so a failure here never leaves the dashboard half-changed
+            # before it (6.1's importer has already relinked; older ones merge links).
+            spec_uuids = set(owned_names)
+            stale = {u: row for u, row in adopted_live.items() if u not in spec_uuids}
+            # Charts the tool created after adoption carry its derived uuid: delete
+            # those as on any tool-built dashboard. The rest were there when the
+            # dashboard was adopted and may sit on other dashboards: take them off
+            # this one, never delete them.
+            made_here = {u: r for u, r in stale.items()
+                         if u == str(ids.chart_uuid(spec.dashboard.slug, r["slice_name"]))}
+            unlinked, failed = _unlink_charts(
+                client, existing["id"], [r for u, r in stale.items() if u not in made_here])
+            if failed:
+                report.import_detail = f"could not take charts off the adopted dashboard: {failed}"
+                _auto_restore("taking charts off the adopted dashboard failed")
+                return report
+            if unlinked:
+                report.warnings.append(
+                    f"took charts no longer in the spec off the adopted dashboard (not deleted): {sorted(unlinked)}")
+            for row in made_here.values():
+                client.delete_chart(row["id"])
+            if made_here:
+                report.warnings.append(
+                    f"deleted owned charts no longer in spec: {sorted(r['slice_name'] for r in made_here.values())}")
 
         dash = client.find_dashboard_by_slug(spec.dashboard.slug)
         if dash:

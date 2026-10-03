@@ -203,18 +203,21 @@ def decompile_dashboard(dashboard: str, profile: str) -> str:
 
 
 @mcp.tool()
-def adopt_dashboard(dashboard: str, profile: str, force: bool = False) -> str:
+def adopt_dashboard(dashboard: str, profile: str, force: bool = False, allow_shared: bool = False) -> str:
     """Take over an existing dashboard (slug or numeric id) in place: returns a spec
     that names that dashboard and its charts by their own ids, so applying it
-    updates the same dashboard (same address, links and reports keep working).
-    Changes nothing in Superset itself; run plan_dashboard on the spec before
-    build_dashboard. Refuses when some charts can't be represented (applying would
-    take them off the dashboard) unless force is true."""
+    updates the same dashboard (same address and id). Changes nothing in Superset
+    itself; run plan_dashboard on the spec before build_dashboard. Refuses when some
+    charts can't be represented (applying would take them off the dashboard) unless
+    force is true, and when some charts also sit on other dashboards (applying would
+    change them there too) unless allow_shared is true. Ask the user before setting
+    either."""
     from .adopt import adopt_live
+    from .client import SupersetAPIError
 
     try:
-        result = adopt_live(dashboard, _client(profile), force=force)
-    except ValueError as e:
+        result = adopt_live(dashboard, _client(profile), force=force, allow_shared=allow_shared)
+    except (ValueError, SupersetAPIError) as e:
         return json.dumps({"ok": False, "stage": "adopt", "errors": [{"code": "decompile", "detail": str(e)}]})
     return json.dumps({**result.payload(), "spec": result.spec})
 

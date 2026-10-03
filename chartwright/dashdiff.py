@@ -184,6 +184,13 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     p.charts_changed = sorted(
         n for n in set(t_charts) & set(l_charts) if t_charts[n] != l_charts[n]
     )
+    if target.dashboard.adopted:
+        # A chart decompile couldn't carry over completely gets its options reset by
+        # the next apply, and a chart the spec can't represent leaves the dashboard;
+        # neither shows in a spec-to-spec comparison, so name them here.
+        lossy = {l_["where"] for l_ in live_result.losses_json()} & set(t_charts)
+        p.charts_changed = sorted(set(p.charts_changed) | lossy)
+        p.charts_removed = sorted(set(p.charts_removed) | set(live_result.skipped_charts))
     # Filters: same identity model as charts (name-keyed, dataset by resolved
     # uuid). Without this, the primary real-world drift (a stale browser tab
     # writing back metadata without our native filters) is invisible.

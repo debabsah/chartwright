@@ -120,6 +120,7 @@ class DecompileResult:
     skipped_charts: list[str] = field(default_factory=list)  # charts the spec can't represent
     dashboard_uuid: str | None = None
     source_slug: str | None = None  # the live dashboard's own slug (None when it has none)
+    chart_titles: list[str] = field(default_factory=list)  # every chart's title, skipped ones too
 
     def losses_json(self) -> list[dict]:
         return [loss.as_dict() for loss in self.losses]
@@ -734,9 +735,11 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
     dataset_uuids: dict[str, str] = {}
     chart_uuids: dict[str, str] = {}
     skipped: list[str] = []
+    titles: list[str] = []
     for n in zf.namelist():
         if "/charts/" in n and n.endswith(".yaml"):
             cy = yaml.safe_load(zf.read(n))
+            titles.append(cy.get("slice_name") or "Unnamed")
             spec_chart = _chart_to_spec(cy, lookup, losses)
             if spec_chart:
                 if spec_chart["name"] in charts_by_name:
@@ -900,7 +903,8 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
                            chart_uuids={n: u for n, u in chart_uuids.items() if n in kept_names},
                            skipped_charts=skipped,
                            dashboard_uuid=str(dash["uuid"]) if dash.get("uuid") else None,
-                           source_slug=dash.get("slug") or None)
+                           source_slug=dash.get("slug") or None,
+                           chart_titles=titles)
 
 
 PAGE_CAP = 200  # 20,000 datasets; a runaway guard, not an expected ceiling

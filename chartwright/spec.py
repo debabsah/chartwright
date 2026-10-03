@@ -604,6 +604,9 @@ class Tab(_SketchHolder):
         return self
 
 
+SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]*$"  # a dashboard's URL name, as a spec holds it
+
+
 class AdoptedIdentity(BaseModel):
     """The existing dashboard this spec takes over in place, written by `chartwright
     adopt`. Without it, a spec's dashboard and charts get ids derived from the slug,
@@ -641,7 +644,7 @@ class DashboardMeta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1)
-    slug: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9-]*$", description="uuid seed input; lowercase kebab-case")
+    slug: str = Field(min_length=1, pattern=SLUG_PATTERN, description="uuid seed input; lowercase kebab-case")
     cross_filters: bool = Field(
         default=False,
         description=(

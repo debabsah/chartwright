@@ -13,17 +13,23 @@ The design brain, plus the fixes found reviewing it.
   place. It writes a spec that names that dashboard and its charts by their own
   ids (`dashboard.adopted`), so applying it updates the same dashboard: its
   address, id and chart ids stay, so links and scheduled reports pointing at it
-  keep working. Adopt changes nothing in Superset; `plan` lists what the first
-  apply will change (including settings the spec doesn't hold, such as CSS, and
-  native filters that get new ids), and apply backs up first.
+  keep working. Adopt changes nothing in Superset, and apply backs up first.
+  The first apply rewrites each chart to what its spec produces: `plan` names
+  charts decompile couldn't carry over completely, charts that will leave the
+  dashboard, settings the spec doesn't hold (such as CSS) and native filters that
+  get new ids; chart options outside the spec go back to the tool's defaults.
   - Adopt refuses, saying what to do instead, when the dashboard has no URL name
     or one a spec can't hold, when two charts share a title, when some charts
     can't be represented (`--force` takes them off the dashboard, never deletes
     them), and when some charts also sit on other dashboards (applying would
-    change them there too; `--force` to go ahead).
+    change them there too; `--allow-shared` to go ahead). Every apply also warns
+    when an adopted chart sits on another dashboard.
   - Apply refuses an adopted spec unless the adopted dashboard is at the spec's
-    address, and only touches charts that are on that dashboard. Charts are
-    matched by id, so renaming a chart in the spec renames it in Superset.
+    address, and only touches charts that are on that dashboard. Adopted charts
+    are matched by id, so renaming one in the spec (and its key in
+    `dashboard.adopted.charts`) renames it in Superset; a chart the tool created
+    after adoption gets a new id when renamed, as on any tool-built dashboard.
+  - `restore` puts back charts renamed since the backup (found by id).
   - A chart that was on the dashboard when it was adopted is taken off when it
     leaves the spec, never deleted; charts the tool created later are deleted as
     on any tool-built dashboard.
@@ -100,6 +106,9 @@ The design brain, plus the fixes found reviewing it.
 
 ### Fixed
 
+- `plan` now lists dashboard settings that `apply` overwrites (CSS, colour scheme,
+  auto-refresh, draft status) under `settings_changed`, so a tool-built dashboard
+  whose CSS or colour scheme was edited in the UI no longer plans as clean.
 - Decompile dropped dashboard-level settings without a word: CSS, description,
   certification, colour scheme, auto-refresh and draft status. Apply writes its
   own values for those, so each set value is now listed as a loss.
