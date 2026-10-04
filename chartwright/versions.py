@@ -49,6 +49,9 @@ class GatedField:
     before: str                             # what a release before `since` does with it
     source: str                             # where Superset's source shows it
     used_by: Callable[[DashboardSpec], list[str | None]]  # chart names using it; None = the dashboard
+    # A warning's own sentence, for a field whose effect is not "taken or ignored":
+    # str.format with where, since, runs (who runs what) and that (the release).
+    warning: str | None = None
 
 
 def _tags(spec: DashboardSpec) -> list[str | None]:
@@ -106,13 +109,18 @@ GATED_FIELDS: tuple[GatedField, ...] = (
         _charts(lambda c: c.type == "table" and c.column_headers),
     ),
     GatedField(
-        "only_total", "6.0.0", "warn",
-        "labels every segment of a stacked mixed-chart query with show_value; "
-        "only_total (each stack's total only, the default) needs 6.0.0",
+        # Keyed on what the author writes: show_value on a stacked query. only_total
+        # defaults to true, so naming it would point at a field the spec never set;
+        # written false, it asks for every segment, which every release draws.
+        "show_value", "6.0.0", "warn",
+        "labels every segment of a stacked mixed chart",
         "onlyTotal / onlyTotalB read at 6.0.0 MixedTimeseries/transformProps.ts:178-179 "
         "(6.1.0 :186-187); absent at 4.1.4 and 5.0.0",
         _charts(lambda c: c.type == "mixed" and any(
             s.show_value and s.stack and s.only_total for s in (c.a, c.b))),
+        warning="show_value on a stacked query of {where} labels each stack's total from "
+                "Superset {since}; {runs}, and {that} labels every segment of a stacked "
+                "mixed chart. Set only_total: false for the same labels on every release.",
     ),
 )
 
@@ -164,9 +172,14 @@ def check_spec_version(spec: DashboardSpec, version: str | None,
                                   f"for this instance."})
             else:
                 runs = f"this instance runs {shown}" if release else "the instance did not report its version"
+                if g.warning:
+                    detail = g.warning.format(
+                        where=where, since=g.since, runs=runs,
+                        that="this release" if release else f"a release before {g.since}")
+                else:
+                    detail = (f"{g.field} on {where} takes effect on Superset {g.since} or "
+                              f"later; {runs}, and a release before {g.since} {g.before}.")
                 out.warnings.append({
                     "code": "field_ignored_before_version", "chart": chart, "field": g.field,
-                    "since": g.since,
-                    "detail": f"{g.field} on {where} takes effect on Superset {g.since} or later; "
-                              f"{runs}, and a release before {g.since} {g.before}."})
+                    "since": g.since, "detail": detail})
     return out

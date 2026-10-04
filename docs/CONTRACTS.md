@@ -163,9 +163,10 @@ running the tool against real instances of all three releases.
   A stacked mixed query with `show_value` labels every segment before
   6.0.0, because the Mixed Chart reads `onlyTotal` from 6.0.0 on
   (`MixedTimeseries/transformProps.ts`, 6.0.0 `:178-179`, 6.1.0
-  `:186-187`); `only_total: false` asks for exactly that, so it raises
-  nothing. These come back in `version_warnings`, and the dashboard still
-  builds.
+  `:186-187`). That warning names `show_value`, the field the spec wrote,
+  since `only_total` is on by default; `only_total: false` asks for every
+  segment on every release, so it raises nothing. These come back in
+  `version_warnings`, and the dashboard still builds.
 - **6.0.x is checked against its source, not tested live.** Each field's
   first release, 6.0.0 or 6.1.0, was read from the 6.0.0 tag, so `check`,
   `apply` and `plan` hold a 6.0.x instance to what that release takes. 6.0.x

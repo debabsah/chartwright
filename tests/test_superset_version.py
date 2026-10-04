@@ -86,7 +86,7 @@ def test_the_registry_gates_the_unsafe_fields_and_warns_for_the_ignored_ones():
         "x_label_every": ("6.1.0", "warn"),  # a time axis needs force_max_interval (6.1.0)
         "subtitle": ("6.0.0", "warn"),
         "column_headers": ("6.0.0", "warn"),
-        "only_total": ("6.0.0", "warn"),
+        "show_value": ("6.0.0", "warn"),  # on a stacked mixed query: only_total's labels
     }
     schema = json.dumps(json_schema())
     for g in GATED_FIELDS:
@@ -146,11 +146,11 @@ def test_fields_older_releases_ignore_warn_and_never_block():
     out = check_spec_version(_ignored_fields_spec(), "5.0.0")
     assert out.ok
     assert sorted((w["field"], w["chart"]) for w in out.warnings) == [
-        ("column_headers", "Table"), ("only_total", "Mixed"), ("subtitle", "Trend"),
+        ("column_headers", "Table"), ("show_value", "Mixed"), ("subtitle", "Trend"),
         ("x_label_every", "Line")]
     assert all(w["code"] == "field_ignored_before_version" for w in out.warnings)
     assert {w["field"]: w["since"] for w in out.warnings} == {
-        "column_headers": "6.0.0", "only_total": "6.0.0", "subtitle": "6.0.0",
+        "column_headers": "6.0.0", "show_value": "6.0.0", "subtitle": "6.0.0",
         "x_label_every": "6.1.0"}
     # 6.0.0 takes all but x_label_every on a time axis, which needs 6.1.0's force_max_interval.
     assert [w["field"] for w in check_spec_version(_ignored_fields_spec(), "6.0.0").warnings] == [
@@ -158,6 +158,19 @@ def test_fields_older_releases_ignore_warn_and_never_block():
     assert check_spec_version(_ignored_fields_spec(), "6.1.0").warnings == []
     unknown = check_spec_version(_ignored_fields_spec(), None)
     assert unknown.ok and len(unknown.warnings) == 4
+
+
+def test_stacked_value_labels_warn_on_what_the_author_wrote():
+    """only_total defaults to true, so the warning names show_value on the stacked
+    query, which the author wrote, and says what the older release draws."""
+    stacked = {**MIXED, "a": {**MIXED["a"], "show_value": True, "stack": True}}
+    [w] = check_spec_version(spec(charts=[stacked]), "5.0.0").warnings
+    assert (w["field"], w["chart"], w["since"]) == ("show_value", "Mixed", "6.0.0")
+    assert "only_total on" not in w["detail"] and "this instance runs 5.0.0" in w["detail"]
+    assert "this release labels every segment of a stacked mixed chart" in w["detail"]
+    [w] = check_spec_version(spec(charts=[stacked]), None).warnings
+    assert "a release before 6.0.0 labels every segment" in w["detail"]
+    assert check_spec_version(spec(charts=[stacked]), "6.0.0").warnings == []
 
 
 def test_only_total_warns_only_where_older_releases_differ():
