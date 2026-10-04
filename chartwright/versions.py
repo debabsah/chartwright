@@ -41,6 +41,17 @@ def format_version(release: Release) -> str:
     return ".".join(str(n) for n in release)
 
 
+def stated_release(text) -> str | None:
+    """A release someone stated (--superset-version, the MCP tools' superset_version)
+    in canonical form, "v5.0" -> "5.0.0", or None when the text names no release."""
+    release = parse_version(text)
+    return format_version(release) if release else None
+
+
+def not_a_release(text) -> str:
+    return f"{text!r} is not a Superset release, e.g. 5.0.0"
+
+
 @dataclass(frozen=True)
 class GatedField:
     field: str                              # the spec field, as a spec writes it
