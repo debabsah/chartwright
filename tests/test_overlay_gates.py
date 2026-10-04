@@ -70,7 +70,7 @@ def test_advise_strict_ignores_an_overlay_that_loosens_it(kind, design_dir, tmp_
     assert [f["rule"] for f in payload["findings"] if f["severity"] == "warn"] == [RULE]
     assert payload["errors"][0]["code"] == "design_gate"
     overlay = payload["overlay"]
-    assert overlay == {"path": str(path), "strict": True, "set_aside": overlay["set_aside"]}
+    assert overlay == {"path": path.as_posix(), "strict": True, "set_aside": overlay["set_aside"]}
     expected = {"disable": [RULE]} if kind == "disable" else (
         {"severity": {RULE: "info"}} if kind == "severity" else {"params": ["min_axis_height"]})
     assert overlay["set_aside"] == expected
@@ -84,7 +84,7 @@ def test_advise_without_strict_keeps_the_overlay_and_says_what_it_changed(
     assert code == 0
     assert not [f for f in payload["findings"] if f["severity"] == "warn"]
     overlay = payload["overlay"]
-    assert overlay["path"] == str(path) and overlay["strict"] is False
+    assert overlay["path"] == path.as_posix() and overlay["strict"] is False
     assert "set_aside" not in overlay
     if kind == "disable":
         assert overlay["disable"] == [RULE]

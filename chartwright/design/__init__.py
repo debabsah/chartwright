@@ -12,6 +12,8 @@ untouched.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..resolver import Resolution
 from ..spec import DashboardSpec, load_spec
 from .fix import apply_fixes
@@ -178,7 +180,7 @@ def _overlay_report(overlay: Overlay, audience: str, strict: bool,
         return None
     params = overlay.param_names(audience)
     severity = dict(sorted(overlay.severity.items()))
-    out: dict = {"path": str(overlay.source) if overlay.source else None, "strict": strict}
+    out: dict = {"path": Path(overlay.source).as_posix() if overlay.source else None, "strict": strict}
     if strict:
         set_aside = {"params": params, "disable": sorted(overlay.disable),
                      "severity": severity}

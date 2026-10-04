@@ -652,7 +652,7 @@ def _standards_cmd(args) -> None:
 
     if overlay_path().exists():
         # Named, never read: a per-machine file must not decide a fleet check.
-        payload["overlay"] = {"path": str(overlay_path()), "set_aside": True}
+        payload["overlay"] = {"path": overlay_path().as_posix(), "set_aside": True}
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     sys.exit(0 if payload["ok"] else 1)
 

@@ -700,7 +700,7 @@ def test_standards_check_reads_nothing_from_design_yaml(repo, no_overlay, capsys
     _, clean = run(capsys, "standards", "check", str(repo / "specs"))
     (no_overlay / "design.yaml").write_text(overlay, encoding="utf-8")
     code, payload = run(capsys, "standards", "check", str(repo / "specs"))
-    assert payload.pop("overlay") == {"path": str(no_overlay / "design.yaml"), "set_aside": True}
+    assert payload.pop("overlay") == {"path": (no_overlay / "design.yaml").as_posix(), "set_aside": True}
     assert payload == clean and code == 1
 
 
@@ -743,8 +743,8 @@ def test_json_files_that_are_not_specs_are_skipped_and_listed(repo, capsys, othe
     assert payload["totals"] == {"specs": 1, "passed": 1, "failed": 0}
     before = pkg.read_bytes()
     code, payload = run(capsys, "standards", "assign", str(repo / "specs"), "--standard", "finance")
-    assert code == 0 and payload["skipped"] == [str(pkg)]
-    assert [w["spec"] for w in payload["written"]] == [str(spec)]
+    assert code == 0 and payload["skipped"] == [pkg.as_posix()]
+    assert [w["spec"] for w in payload["written"]] == [spec.as_posix()]
     assert pkg.read_bytes() == before
 
 
@@ -767,7 +767,7 @@ def test_the_fleet_report(repo, capsys):
     assert payload["skipped"] == [(repo / "specs" / "package.json").as_posix()]
     rows = {Path(r["spec"]).name: r for r in payload["specs"]}
     assert rows["fin.json"] == {
-        "spec": str(repo / "specs" / "fin.json"), "standard": "finance", "ok": False,
+        "spec": (repo / "specs" / "fin.json").as_posix(), "standard": "finance", "ok": False,
         "counts": {"error": 1, "warn": 0, "info": 1},
         "by_rule": {COUNT: {"info": 1}, AXIS: {"error": 1}}, "locks_hit": [AXIS]}
     assert rows["org.json"]["ok"] is True and rows["org.json"]["by_rule"] == {
