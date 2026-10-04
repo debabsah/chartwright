@@ -254,7 +254,10 @@ running the tool against real instances of all three releases.
   `superset_version_unknown`: state the release with `--superset-version`
   (the MCP tools' `superset_version`), which also skips the lookup.
   `compile --superset-version` runs the same check offline; without it,
-  `compile` writes the same bundle for every release.
+  `compile` writes the same bundle for every release. Compile checks the spec
+  as written: it refuses a standard's theme for 5.0.0 where `apply`, which
+  checks the instance, would hold that theme back first (next point). Preview
+  what an instance gets with `standards check --superset-version`.
 - **A standard's content a release can't take is held back, not refused.**
   A spec carries its standard's content for every instance it deploys to, so
   a theme the standard writes, or content from a standards file that
@@ -473,8 +476,9 @@ pipeline depends on them the same way.
   `ignore`, `filled` and `standard` steer the design review only; compile
   never reads them, so a spec builds the same bytes with or without them, and
   `plan` doesn't compare them. Repository standards
-  (`docs/DESIGN-BRAIN.md` §18) are read by the review alone, never by compile,
-  `plan` or decompile. A test compiles every example and fixture with and
+  (`docs/DESIGN-BRAIN.md` §18) are never read by compile or decompile;
+  `check`, `apply` and `plan` read them only to hold back a standard's content
+  an instance's release can't take (below). A test compiles every example and fixture with and
   without `design.standard` and compares the bytes. `design.standard_written`,
   the record `standards apply` keeps of the content it wrote, is the same: a
   test compiles every example and fixture with and without it.
@@ -487,10 +491,11 @@ pipeline depends on them the same way.
   reads them back as written: verified on 4.1.4, 5.0.0 and 6.1.0 by applying
   a spec with an org footer, a team header and two CSS blocks, with `plan`
   clean afterwards and on a second apply.
-- **`standards/waivers.yaml` is read by the review alone.** `standards
+- **`standards/waivers.yaml` reaches no spec and no bundle.** `standards
   check`, `advise`, `standards apply` and the advice `check` and `apply`
-  carry read it; compile, `plan`, decompile and `restore` never do, and
-  nothing in it reaches a spec or a bundle.
+  carry apply it; `check`, `apply` and `plan` also parse it whenever they load
+  the standards folder to hold content back, so a malformed file is reported
+  there too; compile, decompile and `restore` never read it.
 - **`dashboard.lifecycle` and `dashboard.classification` are spec-only.**
   Compile, `plan` and decompile ignore them; Superset's dashboard model has
   no column for either (`superset/models/dashboard.py`, `class Dashboard`, at

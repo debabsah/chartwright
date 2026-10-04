@@ -14,8 +14,11 @@ plus `name`, `extends`, `default` and `locked`:
     locked: {rules: [size.min-width], params: [fold_units]}
 
 A spec names its standard in `design.standard`; a spec that names none follows the file
-marked `default: true`, if there is one. Standards change advice only: compile, plan and
-decompile never read them, so a bundle depends on the spec alone.
+marked `default: true`, if there is one. Compile and decompile never read standards, so
+`chartwright compile` builds a spec's bundle from the spec alone. What they change is
+advice, the content `standards apply` writes into specs, and, in check, apply and plan,
+the standard's content held back from an instance whose release can't take it
+(for_instance), for which those three read this folder, waivers.yaml included.
 
 Layers, root first: the org file, then optionally a unit file and a team file, each
 extending the one before, then the dashboard's own design block. A chain holds at most

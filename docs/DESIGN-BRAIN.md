@@ -1033,6 +1033,17 @@ onwards):
     edit (so a deleted edited fill is filled again), and design.filled still
     refuses entries for a renamed chart. Both are design-defaults work, not
     standards work, and stay as they were.
+41. **`chartwright compile` doesn't vary; the bundle `apply` sends does.**
+    The defaults decision says nothing is decided at compile time, and
+    `compile` keeps that: it builds one bundle from the spec alone, and
+    `compile --superset-version` only refuses fields the release can't take,
+    standard content included. `apply` (and `check` and `plan`) hold back the
+    standard's content per instance before compiling, as the fleet decision's
+    #9 asks, so on an older instance the bundle `apply` sends is the spec less
+    the held items. The fleet decision takes precedence for that case; the
+    held items are listed in every payload, and `plan` compares the same held
+    spec, so nothing shows as drift. `standards check --superset-version`
+    previews the holding offline.
 
 ## 16. Design defaults (fills)
 
@@ -1355,10 +1366,13 @@ personal file below it loosens them. A standard can also carry content (header
 and footer rows, CSS, colours, certification, number formats, a Superset theme,
 a classification) that `standards apply` writes into its specs ("Content",
 below). One dashboard may deviate from a lock only through the waivers file,
-with an owner, a reason and an expiry ("Waivers", below). Compile, `plan`
-and decompile never read a standards file, and a spec builds the same bundle
-with or without one (§14.15); content reaches a dashboard only as fields
-written in its spec. Rule settings also change what `advise --fix` writes,
+with an owner, a reason and an expiry ("Waivers", below). Compile and
+decompile never read a standards file, and `chartwright compile` builds the
+same bundle for a spec with or without one (§14.15); content reaches a
+dashboard only as fields written in its spec. `check`, `apply` and `plan` read
+the folder, the waivers file included, for one more thing: to hold back the
+standard's content an instance's release can't take ("Mixed Superset
+releases", below), so what they send can be the spec less those items. Rule settings also change what `advise --fix` writes,
 since height repairs and fills read its parameters (§15.25).
 
 ### The files
@@ -1614,8 +1628,9 @@ chain file's `min_superset` when it declares one.
 A standard can carry spec content for a closed list of slots, and
 `chartwright standards apply` writes it into every spec that follows the
 standard. The content becomes ordinary fields of the spec, reviewed in the
-diff like any edit; compile, `plan` and decompile never read the standards
-files (§14.16).
+diff like any edit; compile and decompile never read the standards files,
+and `plan` reads them only to hold back what an instance's release can't take
+(§14.16, "Mixed Superset releases").
 
 ```yaml
 # standards/acme.yaml
@@ -2093,8 +2108,12 @@ holds locked content lists it with `locked_by` and a warning that its lock does
 not apply there. Content every release must show belongs in a file without
 `min_superset`.
 
-`standards check --superset-version 5.0.0` (MCP `standards_check`'s
-`superset_version`) shows the same offline: each spec's entry gains
+`chartwright compile --superset-version 5.0.0` doesn't hold anything back:
+compile checks the spec, and refuses a field the release can't take wherever
+it came from, while `apply` checks the instance and holds the standard's own
+content first. To preview what an instance gets, use `standards check
+--superset-version 5.0.0` (MCP `standards_check`'s `superset_version`), which
+shows the same holding offline: each spec's entry gains
 `superset_version` and `held`, and held items are not expected, so a spec
 that lacks one isn't reported for it on that release. Their records in
 `design.standard_written` are kept as they are, never read as items the

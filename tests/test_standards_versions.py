@@ -11,6 +11,7 @@ a field the author wrote meets the version check as before.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -349,3 +350,17 @@ def test_holding_locked_content_names_it_and_says_the_lock_is_off(tmp_path, caps
     assert {h["item"]: h.get("locked_by") for h in inst.held} == {
         "dashboard.label_colors[Revenue]": "org", "layout.footer[org][0]": "org"}
     assert "its lock does not apply here" in inst.warning
+
+
+def test_no_doc_says_plan_never_reads_the_standards():
+    """plan reads the standards folder, waivers.yaml included, to hold content back; four
+    places still said it never did."""
+    import re
+
+    root = Path(__file__).resolve().parent.parent
+    for rel in ("chartwright/design/standards.py", "docs/DESIGN-BRAIN.md", "docs/CONTRACTS.md"):
+        text = " ".join((root / rel).read_text(encoding="utf-8").split())
+        assert not re.search(r"plan`?,? (?:and|or) decompile never read", text), rel
+        assert not re.search(r"compile, `?plan`?,? decompile and `?restore`? never", text), rel
+    compile_vs_apply = " ".join((root / "docs/CONTRACTS.md").read_text().split())
+    assert "Compile checks the spec as written" in compile_vs_apply
