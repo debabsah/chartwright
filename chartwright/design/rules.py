@@ -650,12 +650,13 @@ def format_bands(ctx: RuleContext):
             lo, hi = ((r.target_left, r.target_right) if r.operator == "between"
                       else (float("-inf"), r.target) if r.operator == "<"
                       else (r.target, float("inf")))
-            by_metric.setdefault(r.metric, []).append((lo, hi, r.color))
+            # compared by the shade painted, so "green" and its own hex agree
+            by_metric.setdefault(r.metric, []).append((lo, hi, r.color, r.paint_hex()))
         for metric, bands in by_metric.items():
             for i in range(len(bands)):
                 for j in range(i + 1, len(bands)):
-                    (a0, a1, ca), (b0, b1, cb) = bands[i], bands[j]
-                    if a0 < b1 and b0 < a1 and ca != cb:
+                    (a0, a1, ca, ha), (b0, b1, cb, hb) = bands[i], bands[j]
+                    if a0 < b1 and b0 < a1 and ha != hb:
                         yield Finding(
                             "chart.format-bands", "warn", c.name, ctx.where(c.name),
                             f"metric {metric!r}: {ca} and {cb} bands overlap "

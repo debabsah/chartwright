@@ -20,8 +20,6 @@ from .resolver import Resolution
 from .spec import (
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
-    FORMAT_COLOR_HEX,
-    FORMAT_TEXT_HEX,
     DashboardSpec,
     MarkdownBlock,
     _AxisChart,
@@ -97,7 +95,7 @@ FORMAT_OPERATOR = {"<": "<", ">": ">", "=": "=", "between": "< x <"}
 def _format_rule_payload(rule) -> dict:
     out = {
         "column": rule.metric,
-        "colorScheme": (FORMAT_TEXT_HEX if rule.paint == "text" else FORMAT_COLOR_HEX)[rule.color],
+        "colorScheme": rule.paint_hex(),
         "operator": FORMAT_OPERATOR[rule.operator],
         # A rule is a solid band. Left unset, Superset fades '<' / '>' / range
         # colours by distance from the threshold (getColorFormatters.getOpacity);

@@ -17,7 +17,9 @@ from typing import Callable, get_args
 import yaml
 
 from .compiler import FOOTER_PREFIX, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, VIZ_TYPE
-from .spec import ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FilterOp, metric_label
+from .spec import (
+    ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, HEX_COLOUR_RE, FilterOp, metric_label,
+)
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
 _FILTER_OPS = set(get_args(FilterOp))
@@ -129,7 +131,11 @@ def _format_to_spec(cf: dict) -> dict | None:
     """Superset conditional_formatting entry -> FormatRule dict, None if outside surface."""
     text = cf.get("objectFormatting") == "TEXT_COLOR"
     palette = FORMAT_TEXT_HEX if text else FORMAT_COLOR_HEX
-    color = {v.upper(): k for k, v in palette.items()}.get((cf.get("colorScheme") or "").upper())
+    scheme = cf.get("colorScheme") if isinstance(cf.get("colorScheme"), str) else ""
+    # A named shade for this paint reads back as its name; any other #RRGGBB as itself.
+    color = {v.upper(): k for k, v in palette.items()}.get(scheme.upper())
+    if color is None and HEX_COLOUR_RE.fullmatch(scheme):
+        color = scheme.upper()
     # '< x <' is Superset's range comparator; the bare "between" older
     # chartwright builds wrote (and Superset never matched) reads back the same.
     op = {"< x <": "between"}.get(cf.get("operator"), cf.get("operator"))

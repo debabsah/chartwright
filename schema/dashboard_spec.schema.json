@@ -527,7 +527,7 @@
     },
     "FormatRule": {
       "additionalProperties": false,
-      "description": "One solid RAG band on one metric. A pivot colours a cell by its OWN\nvalue only, so band a normalized metric (e.g. a %-of-goal ratio) when\nthresholds differ per row. A table can read one column and paint another\n(apply_to): colour a number by a status column beside it.",
+      "description": "One solid colour band on one metric: green / amber / red, or any\n#RRGGBB. A pivot colours a cell by its OWN value only, so band a\nnormalized metric (e.g. a %-of-goal ratio) when thresholds differ per\nrow. A table can read one column and paint another (apply_to): colour a\nnumber by a status column beside it.",
       "properties": {
         "metric": {
           "description": "Display label of the metric (table: or column) whose value is tested",
@@ -584,13 +584,22 @@
           "title": "Target Right"
         },
         "color": {
-          "enum": [
-            "green",
-            "amber",
-            "red"
+          "anyOf": [
+            {
+              "enum": [
+                "green",
+                "amber",
+                "red"
+              ],
+              "type": "string"
+            },
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            }
           ],
-          "title": "Color",
-          "type": "string"
+          "description": "green, amber or red (Superset's own picker colours; text paint uses a darker shade of each), or any #RRGGBB, used as written for cell and text",
+          "title": "Color"
         },
         "apply_to": {
           "anyOf": [

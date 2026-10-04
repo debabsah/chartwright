@@ -3,6 +3,15 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
+## Unreleased
+
+### Added
+
+- Colour rules take any `#RRGGBB` besides `green` / `amber` / `red`, e.g.
+  `"color": "#0057B8"`, painted as written for cells and text alike (stored upper case).
+  The names keep their shades. Decompile reads a named shade for the rule's paint back as
+  its name and any other hex as itself, where it used to drop the rule as a loss.
+
 ## 0.2.0 (2026-10-03)
 
 The design brain, plus the fixes found reviewing it.

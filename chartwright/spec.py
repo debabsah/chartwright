@@ -50,6 +50,7 @@ _ADHOC_RE = re.compile(r"^(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((.+?)\)(?:\s+A
 FORMAT_COLOR_HEX = {"green": "#ACE1C4", "amber": "#FDE380", "red": "#EFA1AA"}
 # Text needs darker shades of the same three: each is >= 4.5:1 on white (WCAG AA).
 FORMAT_TEXT_HEX = {"green": "#1B7F3B", "amber": "#8A6100", "red": "#B3261E"}
+HEX_COLOUR_RE = re.compile(r"#[0-9A-F]{6}", re.IGNORECASE)
 
 FilterOp = Literal["==", "!=", ">", ">=", "<", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL"]
 _LIST_OPS = ("IN", "NOT IN")
@@ -222,10 +223,11 @@ class PieChart(_ChartBase):
 
 
 class FormatRule(BaseModel):
-    """One solid RAG band on one metric. A pivot colours a cell by its OWN
-    value only, so band a normalized metric (e.g. a %-of-goal ratio) when
-    thresholds differ per row. A table can read one column and paint another
-    (apply_to): colour a number by a status column beside it."""
+    """One solid colour band on one metric: green / amber / red, or any
+    #RRGGBB. A pivot colours a cell by its OWN value only, so band a
+    normalized metric (e.g. a %-of-goal ratio) when thresholds differ per
+    row. A table can read one column and paint another (apply_to): colour a
+    number by a status column beside it."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -234,13 +236,33 @@ class FormatRule(BaseModel):
     target: float | None = Field(default=None, description="Threshold for <, > or =")
     target_left: float | None = Field(default=None, description="Lower bound for 'between'")
     target_right: float | None = Field(default=None, description="Upper bound for 'between'")
-    color: Literal["green", "amber", "red"]
+    color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = Field(
+        description="green, amber or red (Superset's own picker colours; text paint uses a darker "
+                    "shade of each), or any #RRGGBB, used as written for cell and text",
+    )
     apply_to: str | None = Field(
         default=None,
         description="Table only: the label of the column to paint, or \"row\"; default the metric's own cells",
     )
     paint: Literal["cell", "text"] = Field(
         default="cell", description="Paint the cell background (default) or the text, e.g. an arrow")
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _colour(cls, v):
+        if not isinstance(v, str):
+            raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
+        if v in FORMAT_COLOR_HEX:
+            return v
+        if HEX_COLOUR_RE.fullmatch(v):
+            return v.upper()
+        raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
+
+    def paint_hex(self) -> str:
+        """The colour Superset paints: a name's shade for this paint, or the hex as written."""
+        if self.color in FORMAT_COLOR_HEX:
+            return (FORMAT_TEXT_HEX if self.paint == "text" else FORMAT_COLOR_HEX)[self.color]
+        return self.color
 
     @model_validator(mode="after")
     def _target_shape(self) -> "FormatRule":

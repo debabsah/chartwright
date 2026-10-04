@@ -21,7 +21,7 @@ into one. Everything below works from that one file.
 - **Filters and Formatting**: Per-chart WHERE conditions, a native filter bar, and formatting for table and pivot cells.
     - Filter bar: value pickers, a time range with an optional starting range, and numeric sliders.
     - Scope value pickers and sliders to specific charts; the time range applies to the whole dashboard.
-    - Solid green/amber/red colour rules on pivot and table cells.
+    - Solid colour rules on pivot and table cells: green, amber or red (Superset's own picker colours), or any hex colour such as `#0057B8`.
     - On Superset 6.1+, a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it.
     - Hidden table columns, a fixed ascending table sort, d3 number and date formats.
 - **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs.
