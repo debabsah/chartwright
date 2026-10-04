@@ -78,13 +78,25 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
 
     lines += [
         "",
-        "## Defaults the compiler fills in (the critic flags the ones that matter)",
+        "## What an omitted field means (the critic flags the ones that matter)",
         "",
         "- Omitted height -> 8 units (KPIs 4, markdown 4). Omitted width -> the row splits evenly.",
         "- Omitted row_limit -> 10,000 (pie 100, table 1,000, funnel 10): set it deliberately on bar/pie/table/pivot.",
         "- Omitted time_grain -> P1D. Grains: PT1H P1D P1W P1M P3M P1Y. Points ~= range/grain; budget ~40 for bars, ~300 for lines.",
         "- number_format is d3: ',.0f' thousands, '.1%' percent, '.3s' SI units, '$,.2f' money. One measure, one format.",
         "- Native filter bar: select pickers (few, they query on load), a time_range WITH a default, numeric range sliders.",
+        "",
+        "## Design defaults: `advise --fix` fills these, so leave them unset unless the user asks",
+        "",
+        "- x_label_format, compare_suffix, number_format of COUNT metrics, and on tables cell_bars,",
+        "  page_length and search_box; show_legend on a single named series; show_value on few bars.",
+        "  Set one yourself only when the user asks for it, and say so in your reply.",
+        "- Run `chartwright advise <spec> --fix` (MCP: fix_spec) before you build. It writes each value",
+        "  into the spec file and lists it in design.filled; its `fixed` entries say kind \"fill\" and why.",
+        "- Edit the spec it wrote; never regenerate the spec from your own copy, or the fills are lost.",
+        "  A value you change becomes yours: remove the field from design.filled to keep it.",
+        "- Never filled, set them only on request: category_sort, y_axis_truncate, compare_lag,",
+        "  series_limit, show_totals, and currency formats.",
     ]
 
     lines += ["", _guideline("chart-choice.md").strip(), "", _guideline("composition.md").strip()]
