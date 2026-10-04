@@ -141,6 +141,18 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- A `design.yaml` on one machine (`~/.config/chartwright/` or `$CHARTWRIGHT_DESIGN_DIR`)
+  could loosen `advise --strict` and `check`/`apply --design strict` with no trace in the
+  output: its `disable` list hid findings, its `severity` map could lower them, and its
+  parameters could move thresholds. A strict gate now takes only the severities it
+  raises and sets the rest aside, so the gate passes or fails the same on every machine.
+  - Every advice block names the overlay in a new `overlay` entry: its path, what it
+    set, each finding it changed in this run and, under a strict gate, what it set
+    aside.
+  - Without a strict gate the overlay applies as before.
+  - MCP: `check_spec` and `build_dashboard` take `design` (`off`, `warn`, `strict`), the
+    CLI's `--design`, and `build_dashboard` now carries the advice block `apply`
+    carries; `advise_spec` and `fix_spec` take `strict`.
 - Line, bar, area and scatter charts, trendline KPIs, and mixed charts over time ignored
   both their own `time_range` and the dashboard's time filter, on Superset 4.1.4, 5.0.0
   and 6.1.0. They drew every date while the filter bar counted them as filtered. They

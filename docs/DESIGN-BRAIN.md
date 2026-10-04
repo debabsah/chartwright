@@ -146,14 +146,17 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
   - `warn`: advice rides along in the payload under `"advice"`, never blocks.
   - `strict`: `error`/`warn` findings block (a `design_gate` entry lands in
     `errors` and the exit code is 1); apply blocks BEFORE anything on the
-    instance is touched.
+    instance is touched. Like `advise --strict`, it takes only raised
+    severities from the per-machine `design.yaml` (§6).
   - `off`: byte-identical to the pre-brain behavior, advice machinery never
     runs.
 - `calibrate`: the learning loop (§13 phase 3). Mines absorb history into
   per-audience recommended heights; `--since` is the decay knob.
-- MCP server: `design_brief`, `advise_spec` (with `chart`), `fix_spec`,
-  `explain_spec` (the `explain --json` payload) and `redesign_dashboard`
-  mirror the CLI verbs; `check_spec` carries the advice block.
+- MCP server: `design_brief`, `advise_spec` (with `chart` and `strict`),
+  `fix_spec` (with `strict`), `explain_spec` (the `explain --json` payload)
+  and `redesign_dashboard` mirror the CLI verbs; `check_spec` and
+  `build_dashboard` carry the advice block and take `design`
+  (`off`/`warn`/`strict`, the CLI's `--design`).
 
 ## 5. Spec surface
 
@@ -232,6 +235,20 @@ brief_extra: |
 
 `recommended_heights` merges per key across preset -> overlay -> per-audience
 layers; the brief prints the merged values and height autofixes target them.
+
+The file lives on one machine, so it must not decide a gate (§14.14). Under
+a strict gate (`advise --strict`, `advise --fix --strict`, `check`/`apply
+--design strict`, and the MCP tools' `strict` and `design: "strict"`) the
+overlay may only **raise** a finding's severity. Its `disable` list, any
+`severity` entry that would lower a finding, and its parameters are set aside,
+so the gate passes or fails the same on every machine. Parameters are set
+aside whole because a parameter has no direction: a larger `fold_units` is
+looser, a larger `min_axis_height` stricter. Without a strict gate the overlay
+applies as before. Either way, every advice payload carries an `overlay` block
+naming the file and what it did (§10), so a run the overlay changed never
+reads as the rulebook's verdict. The repo-level, reviewable place for rule
+settings is the coming `standards/` directory; until then the spec's
+`design.ignore` is the visible way to except a rule from a strict gate.
 
 ## 7. The rulebook
 
@@ -394,7 +411,13 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   ],
   "ignored": ["layout.fold-budget"],
   "unmatched_ignores": ["size.pie-geometri"],
-  "polished": ["size.axis-min-height@Weekly Orders"]
+  "polished": ["size.axis-min-height@Weekly Orders"],
+  "overlay": {
+    "path": "/home/me/.config/chartwright/design.yaml", "strict": true,
+    "severity": {"filters.time-default": "warn"},
+    "changed": [{"finding": "filters.time-default@filters", "severity": ["info", "warn"]}],
+    "set_aside": {"disable": ["narrative.title-style"], "params": ["fold_units"]}
+  }
 }
 ```
 
@@ -413,6 +436,14 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   `ignored` is the user's *explicit* intent; `polished` is the brain's own
   *inference*, and an inference that silences a rule invisibly reads exactly
   like the rule having passed. Present only when non-empty.
+- `overlay` is present whenever a `design.yaml` is in play (§6): its `path`,
+  whether the run was a `strict` gate, the `severity` entries it applied,
+  and `changed`, each finding it changed in this run (`severity: [from, to]`,
+  or `disabled: true`). Outside a strict gate it also lists the `params` it
+  set and its `disable` list; under one, `set_aside` names the `params`, the
+  `disable` entries and the lowering `severity` entries the gate did not take.
+  An overlay typo in `disable` is an `unmatched_ignores` entry only where the
+  list applies, outside a strict gate.
 - Under `apply --design warn`, this object is embedded in the apply report
   as `"advice"` and never affects `apply`'s own `ok`. Under
   `--design strict` the gate fails CLOSED: if advice could not be evaluated
@@ -549,6 +580,20 @@ reversible and none is load-bearing enough to block on:
     newer brain changes a spec only when someone runs `--fix`, and then
     only fields left unset or still holding the value `design.filled` records. The catalogue, the
     ownership rule and the conditions each fill honours are §16.
+14. **Strict gates take nothing from the per-machine overlay but raised
+    severities** (2026-10-03, the first groundwork item of the project's
+    fleet-standards decision, kept with its research notes outside the
+    repository). `design.yaml` lives in a home directory or
+    `$CHARTWRIGHT_DESIGN_DIR`, so its `disable` list and a lowered `severity`
+    could pass `advise --strict` or `--design strict` on one machine while
+    CI failed, with nothing in the payload to say why; a verifier reproduced
+    both. Under a strict gate the overlay may now only raise a severity: a
+    stricter local gate is harmless, a looser one is the hole. Its
+    parameters are set aside too, since a parameter has no direction to
+    check. Outside a strict gate nothing changes, and every advice payload
+    names the overlay and what it changed (§6, §10). Repo-level rule
+    settings, reviewable in a pull request, are the fleet-standards
+    decision's next phase.
 
 ## 15. Implementation deviations (recorded, not silent)
 
@@ -652,6 +697,17 @@ Recorded during the post-merge review burn-down:
     stops at a page cap; past it, a real dataset became "uuid not resolvable"
     and its chart was dropped: a wrong answer wearing the costume of an
     honest loss, which is the one failure this decompiler must never produce.
+
+Recorded during the fleet-standards groundwork:
+
+20. **The MCP tools gained the CLI's gates.** §4 said the MCP tools mirror
+    the CLI, but `build_dashboard` ran no advice at all and no MCP tool had a
+    strict mode, so an agent could not run the gate CI runs. `check_spec`
+    and `build_dashboard` now take `design` (`off`, `warn` by default,
+    `strict`) exactly as `--design` does, `build_dashboard` carries the
+    advice block `apply` carries, and `advise_spec` and `fix_spec` take
+    `strict`. Both surfaces build the block through one function
+    (`design.advice_payload`), so they cannot report an overlay differently.
 
 ## 16. Design defaults (fills)
 

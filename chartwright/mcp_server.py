@@ -98,20 +98,31 @@ def validate_spec(spec_json: str) -> str:
     return json.dumps(err or {"ok": True, "stage": "schema"})
 
 
-def _advice(spec, resolution=None, audience: str | None = None) -> dict:
-    """Advice riding along MCP responses degrades, never raises (mirrors the CLI)."""
-    from .design import advise
+def _advice(spec, resolution=None, audience: str | None = None, strict: bool = False) -> dict:
+    """Advice riding along MCP responses degrades, never raises (the CLI's own helper)."""
+    from .design import advice_payload
 
-    try:
-        return advise(spec, audience=audience, resolution=resolution).payload()
-    except Exception as e:  # noqa: BLE001
-        from .design import DESIGN_BRAIN_VERSION
+    return advice_payload(spec, resolution, audience=audience, strict=strict)
 
-        return {"stage": "design", "ok": True, "design_brain": DESIGN_BRAIN_VERSION,
-                "counts": {"error": 0, "warn": 0, "info": 0}, "findings": [],
-                "fixed": [], "ignored": [],
-                "errors": [{"code": "overlay" if isinstance(e, ValueError) else "advice",
-                            "detail": str(e)}]}
+
+def _bad_design(design: str) -> str | None:
+    if design not in ("off", "warn", "strict"):
+        return json.dumps({"ok": False, "stage": "design", "errors": [{
+            "code": "design", "detail": f"design must be off, warn or strict, not {design!r}"}]})
+    return None
+
+
+def _gate(out: dict, advice: dict, design: str) -> bool:
+    """Attach the advice block; under design="strict", block the way the CLI's
+    --design strict does (ok false, a design_gate error). True when it blocked."""
+    from .design import gate_block
+
+    out["advice"] = advice
+    blocked = gate_block(advice) if design == "strict" else None
+    if blocked:
+        out["ok"] = False
+        out.setdefault("errors", []).append({"code": "design_gate", "detail": blocked})
+    return blocked is not None
 
 
 def _bad_audience(audience: str) -> str | None:
@@ -135,12 +146,18 @@ def _bad_chart(spec, chart: str) -> str | None:
 
 @mcp.tool()
 @_typed_errors
-def check_spec(spec_json: str, profile: str, superset_version: str = "") -> str:
+def check_spec(spec_json: str, profile: str, superset_version: str = "",
+               design: str = "warn") -> str:
     """Pre-flight referential resolution against the live Superset instance:
     every dataset triple, column, and metric must exist, and every field must
     suit the instance's Superset release. Returns typed errors plus a
     design-brain advice block. superset_version (optional, e.g. "5.0.0") names the
-    instance's Superset release; omitted, the instance is asked."""
+    instance's Superset release; omitted, the instance is asked. design is the CLI's
+    --design: warn (advice rides along), strict (error and warn findings fail the check;
+    the per-machine design.yaml may only raise severities), off (no advice)."""
+    bad = _bad_design(design)
+    if bad:
+        return bad
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
@@ -158,27 +175,46 @@ def check_spec(spec_json: str, profile: str, superset_version: str = "") -> str:
     if res.unchecked_sql:
         # Custom SQL is not checkable by name; say so instead of passing it silently.
         out["unchecked_sql"] = res.unchecked_sql
-    out["advice"] = _advice(spec, resolution=res if res.ok else None)
+    if design != "off":
+        _gate(out, _advice(spec, resolution=res if res.ok else None,
+                           strict=design == "strict"), design)
     return json.dumps(out)
 
 
 @mcp.tool()
 @_typed_errors
-def build_dashboard(spec_json: str, profile: str, superset_version: str = "") -> str:
+def build_dashboard(spec_json: str, profile: str, superset_version: str = "",
+                    design: str = "warn") -> str:
     """Compile the spec and apply it to the live Superset instance
     (resolve -> import -> linkage -> data smoke). Returns the full apply report
     including the dashboard URL. A field the instance's release can't take
     stops the build at resolve, before anything is written. superset_version (optional, e.g. "5.0.0") names the
-    instance's Superset release; omitted, the instance is asked."""
+    instance's Superset release; omitted, the instance is asked. design is the CLI's
+    apply --design: warn (offline advice rides along), strict (error and warn findings
+    stop the build before anything is written; the per-machine design.yaml may only
+    raise severities), off."""
+    bad = _bad_design(design)
+    if bad:
+        return bad
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
     version, err = _stated_version(superset_version)
     if err:
         return err
+    advice = None
+    if design != "off":
+        # Offline, before signing in, as the CLI's apply does: strict blocks first.
+        advice = _advice(spec, strict=design == "strict")
+        blocked: dict = {"stage": "design", "ok": False}
+        if _gate(blocked, advice, design):
+            return json.dumps(blocked)
     from .apply import apply as run_apply
 
-    return run_apply(spec, _client(profile), profile, version).to_json()
+    out = json.loads(run_apply(spec, _client(profile), profile, version).to_json())
+    if advice is not None:
+        out["advice"] = advice
+    return json.dumps(out, indent=2)
 
 
 @mcp.tool()
@@ -216,11 +252,14 @@ def design_brief(audience: str = "analytical") -> str:
 
 @mcp.tool()
 @_typed_errors
-def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: str = "") -> str:
+def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: str = "",
+                strict: bool = False) -> str:
     """Design review of a spec against the design-brain rulebook (offline;
     pass a profile for data-aware rules: column types and cardinality).
     Audiences: executive | analytical | operational. `chart` keeps one chart's
-    findings (the CLI's advise --chart)."""
+    findings (the CLI's advise --chart). `strict` is advise --strict: warn findings
+    fail too (a design_gate error), and the per-machine design.yaml may only raise
+    severities; the `overlay` block says what it set aside."""
     bad = _bad_audience(audience)
     if bad:
         return bad
@@ -242,24 +281,30 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: st
         prober = CardinalityProber(client)
     try:
         report = advise(spec, audience=audience or None, resolution=resolution, prober=prober,
-                        chart=chart or None)
+                        chart=chart or None, strict=strict)
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
     payload = report.payload()
     if resolution is not None and resolution.errors:
         payload["resolution_errors"] = [e.as_dict() for e in resolution.errors]
+    if report.gate(strict):
+        from .design import advise_gate_detail
+
+        payload.setdefault("errors", []).append({"code": "design_gate",
+                                                 "detail": advise_gate_detail(report)})
     return json.dumps(payload)
 
 
 @mcp.tool()
-def fix_spec(spec_json: str, audience: str = "") -> str:
+def fix_spec(spec_json: str, audience: str = "", strict: bool = False) -> str:
     """Apply the design brain's safe, presentation-only fixes to a spec: repairs
     (heights, bar orientation), then design defaults it fills into fields left
     unset (time-axis label format, count number format, table paging, ...),
     recorded in design.filled. Returns {spec, advice}: the patched spec JSON and
     the advice report; each .fixed entry has kind "fill" or "repair" and a why.
     Run it before build_dashboard; keep the returned spec and edit THAT, never a
-    regenerated one. Offline."""
+    regenerated one. Offline. `strict` fixes as advise --fix --strict does: the
+    per-machine design.yaml may only raise severities, and its parameters are set aside."""
     bad = _bad_audience(audience)
     if bad:
         return bad
@@ -269,7 +314,8 @@ def fix_spec(spec_json: str, audience: str = "") -> str:
     from .design import advise_and_fix
 
     try:
-        new_data, report = advise_and_fix(json.loads(spec_json), audience=audience or None)
+        new_data, report = advise_and_fix(json.loads(spec_json), audience=audience or None,
+                                          strict=strict)
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
     return json.dumps({"ok": True, "stage": "design", "spec": new_data, "advice": report.payload()})

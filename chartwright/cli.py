@@ -57,40 +57,18 @@ def _die(payload: dict, code: int = 1) -> None:
 
 
 def _design_blocks(advice: dict) -> str | None:
-    """Why `--design strict` should block, or None. A gate that cannot EVALUATE
-    must fail closed: advice degrades to counts of zero when the overlay is
-    broken (see _advice_payload), and a silent pass there would turn one typo
-    in an org-wide design.yaml into a disarmed gate everywhere it is used."""
-    if advice.get("errors"):
-        return ("design advice could not be evaluated: "
-                + "; ".join(e.get("detail", "") for e in advice["errors"])
-                + " -- fix it or pass --design off")
-    if advice["counts"]["error"] or advice["counts"]["warn"]:
-        return ("design findings block under --design strict; fix them, run "
-                "`chartwright advise --fix`, or record deliberate exceptions "
-                "in the spec's design.ignore")
-    return None
+    """Why `--design strict` should block, or None (design.gate_block)."""
+    from .design import gate_block
+
+    return gate_block(advice)
 
 
-def _advice_payload(spec, resolution=None) -> dict:
-    """Advice riding along check/apply must never break the pipeline: a bad
-    overlay degrades to an error note inside the advice block, not a crash.
-    Under --design strict that error block BLOCKS (see _design_blocks); under
-    warn it is reported and the pipeline continues."""
-    from .design import advise
+def _advice_payload(spec, resolution=None, strict: bool = False) -> dict:
+    """The advice block check/apply carry (design.advice_payload). `strict` is
+    `--design strict`: the per-machine design.yaml may then only raise severities."""
+    from .design import advice_payload
 
-    try:
-        return advise(spec, resolution=resolution).payload()
-    except Exception as e:  # noqa: BLE001 - advice must NEVER break check/apply
-        from .design import DESIGN_BRAIN_VERSION
-        from .design.presets import DEFAULT_AUDIENCE
-
-        return {"stage": "design", "ok": True, "design_brain": DESIGN_BRAIN_VERSION,
-                "audience": DEFAULT_AUDIENCE,
-                "counts": {"error": 0, "warn": 0, "info": 0}, "findings": [],
-                "fixed": [], "ignored": [],
-                "errors": [{"code": "overlay" if isinstance(e, ValueError) else "advice",
-                            "detail": str(e)}]}
+    return advice_payload(spec, resolution, strict=strict)
 
 
 def _client(profile_name: str):
@@ -157,7 +135,9 @@ def _main(argv: list[str] | None = None) -> None:
     adv.add_argument("--profile", default=None, help="enable data-aware rules (types, cardinality)")
     adv.add_argument("--audience", choices=AUDIENCE_NAMES, default=None)
     adv.add_argument("--fix", action="store_true", help="apply safe presentation-only fixes to the spec file")
-    adv.add_argument("--strict", action="store_true", help="exit 1 on warnings, not just errors")
+    adv.add_argument("--strict", action="store_true",
+                     help="exit 1 on warnings, not just errors; the per-machine design.yaml "
+                          "may then only raise severities")
     adv.add_argument("--ignore", default=None, help="comma-separated rule ids to suppress")
     adv.add_argument("--no-probe", action="store_true", help="skip cardinality queries (metadata only)")
     adv.add_argument("--chart", default=None, metavar="NAME",
@@ -253,7 +233,8 @@ def _main(argv: list[str] | None = None) -> None:
             payload["unchecked_sql"] = res.unchecked_sql
         gate = False
         if args.design != "off":
-            advice = _advice_payload(spec, resolution=res if res.ok else None)
+            advice = _advice_payload(spec, resolution=res if res.ok else None,
+                                     strict=args.design == "strict")
             payload["advice"] = advice
             blocked = _design_blocks(advice) if args.design == "strict" else None
             gate = blocked is not None
@@ -270,7 +251,7 @@ def _main(argv: list[str] | None = None) -> None:
             # Pre-flight, offline (no probes: applies stay fast; data-aware
             # advice is `chartwright advise --profile`). Strict blocks BEFORE
             # anything on the instance is touched.
-            advice = _advice_payload(spec)
+            advice = _advice_payload(spec, strict=args.design == "strict")
             blocked = _design_blocks(advice) if args.design == "strict" else None
             if blocked:
                 _die({"stage": "design", "ok": False, "advice": advice,
@@ -325,7 +306,8 @@ def _main(argv: list[str] | None = None) -> None:
                 spec_data = json.loads(Path(args.spec).read_text(encoding="utf-8"))
                 new_data, report = advise_and_fix(
                     spec_data, audience=args.audience, ignore=ignore,
-                    resolution=resolution, prober=prober, chart=args.chart)
+                    resolution=resolution, prober=prober, chart=args.chart,
+                    strict=args.strict)
                 if report.fixed:
                     # --fix rewrites the whole file (normalized JSON formatting,
                     # same as absorb); the payload discloses the path.
@@ -334,7 +316,8 @@ def _main(argv: list[str] | None = None) -> None:
                     written = str(args.spec)
             else:
                 report = advise(spec, audience=args.audience, ignore=ignore,
-                                resolution=resolution, prober=prober, chart=args.chart)
+                                resolution=resolution, prober=prober, chart=args.chart,
+                                strict=args.strict)
         except ValueError as e:
             _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
         payload = report.payload()
@@ -346,14 +329,10 @@ def _main(argv: list[str] | None = None) -> None:
             # `ok` stays error-driven by contract (§10), so the exit code was
             # the ONLY signal that --strict blocked. Name the cause the way
             # check/apply do, or a caller sees exit 1 with nothing to read.
+            from .design import advise_gate_detail
+
             payload.setdefault("errors", []).append({
-                "code": "design_gate",
-                "detail": "warn-severity findings block under --strict; fix them, run "
-                          "`chartwright advise --fix`, or record deliberate exceptions "
-                          "in the spec's design.ignore"
-                          if report.counts["error"] == 0 else
-                          "error-severity findings block; fix them or record deliberate "
-                          "exceptions in the spec's design.ignore"})
+                "code": "design_gate", "detail": advise_gate_detail(report)})
         print(json.dumps(payload, indent=2))
         sys.exit(1 if report.gate(args.strict) else 0)
 

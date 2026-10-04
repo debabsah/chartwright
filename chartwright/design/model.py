@@ -109,6 +109,9 @@ class AdviceReport:
     # height. Reported, never silent: a rule that stands down on an INFERRED
     # signal has to say so, or the user reads the silence as approval.
     polished: list[str] = field(default_factory=list)
+    # The per-machine design.yaml this run read and what it changed (design/__init__.py
+    # _overlay_report); None when no overlay is in play.
+    overlay: dict | None = None
 
     def payload(self) -> dict:
         out = {
@@ -125,6 +128,8 @@ class AdviceReport:
             out["unmatched_ignores"] = self.unmatched_ignores
         if self.polished:
             out["polished"] = self.polished
+        if self.overlay is not None:
+            out["overlay"] = self.overlay
         return out
 
 
