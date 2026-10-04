@@ -587,7 +587,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         if p.get("orientation") == "horizontal":
             out["orientation"] = "horizontal"
         # Sorted by the category: on the x column (one series), or by name (several
-        # series: x_axis_sort at 6.1.0, x_axis_sort_series at 4.1.4 and 5.0.0).
+        # series: x_axis_sort from 6.0.0, x_axis_sort_series at 4.1.4 and 5.0.0).
         several = bool(p.get("groupby")) or len(ms) > 1
         sort, stored_asc = p.get("x_axis_sort"), p.get("x_axis_sort_asc")
         if several and sort in (None, "") and p.get("x_axis_sort_series") == "name":

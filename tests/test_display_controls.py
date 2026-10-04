@@ -169,7 +169,7 @@ def test_category_sort_reads_in_order_on_both_orientations():
         assert (p["x_axis_sort"], p["x_axis_sort_asc"]) == ("hour", stored_asc)
         assert "x_axis_sort_series" not in p  # one series: sortOperator sorts on the column
         # Several series: sortOperator.ts skips a groupby, so the plugin sorts by name,
-        # read from x_axis_sort at 6.1.0 and x_axis_sort_series at 4.1.4 and 5.0.0.
+        # read from x_axis_sort from 6.0.0 and x_axis_sort_series at 4.1.4 and 5.0.0.
         for extra in ({"groupby": "region"}, {"metrics": ["COUNT(*)", "SUM(x)"]}):
             p = _params(_spec({**bar, **extra, "orientation": orientation,
                                "category_sort": order}))["B"]
@@ -258,14 +258,14 @@ def test_heatmap_scheme_and_defaults_are_unchanged_when_omitted():
 # -- version gating ------------------------------------------------------------------
 
 
-def test_6_1_only_keys_are_excused_only_where_they_were_added():
+def test_later_release_keys_are_excused_only_where_they_were_added():
     contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
     assert check("4.1.4", contract, {"big_number": {"subtitle"}}) == []
     assert check("4.1.4", contract, {"mixed_timeseries": {"only_total", "only_totalB"}}) == []
     assert check("4.1.4", contract, {"big_number_total": {"subtitle"}}) != []
     assert check("4.1.4", contract, {"pie": {"only_totalB"}}) != []
     assert check("6.1.0", contract, {"mixed_timeseries": {"only_total", "only_totalB"}}) == []
-    # and the reverse: the series sort keys 6.1.0 dropped, written for 4.1.4 and 5.0.0
+    # and the reverse: the series sort keys 6.0.0 dropped, written for 4.1.4 and 5.0.0
     for version in contract:
         assert check(version, contract, {"echarts_timeseries_bar": {"x_axis_sort_series"}}) == []
     assert check("6.1.0", contract, {"echarts_timeseries_line": {"x_axis_sort_series"}}) != []

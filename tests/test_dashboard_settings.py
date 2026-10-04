@@ -222,6 +222,21 @@ def test_plan_names_each_changed_setting(key, live, monkeypatch):
     assert out["charts_changed"] == [] and out["layout_changed"] is False
 
 
+def test_plan_ignores_tag_order(monkeypatch):
+    """Tags are a set: Superset keeps no order, so the same tags listed in another
+    order, on the dashboard or on a chart, are not drift."""
+    def reorder(path, doc):
+        if "/dashboards/" in path:
+            doc["tags"] = ["weekly", "finance"]
+        if "/charts/" in path:
+            doc["tags"] = ["ops", "finance"]
+    data = spec_data(SETTINGS)
+    for chart in data["charts"]:
+        chart["tags"] = ["finance", "ops"]
+    out = plan_against(load_spec(data), reorder, monkeypatch)
+    assert out["clean"] is True, out
+
+
 def test_plan_treats_empty_tags_as_none(monkeypatch):
     out = plan_against(load_spec(spec_data({"tags": []})), None, monkeypatch)
     assert out["clean"] is True

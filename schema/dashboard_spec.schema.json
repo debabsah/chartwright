@@ -254,7 +254,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "x_axis_title": {
@@ -336,7 +336,7 @@
         },
         "x_label_every": {
           "default": false,
-          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0 or later; 6.0.0 takes it on a mixed chart's category axis only, and older releases ignore it)",
           "title": "X Label Every",
           "type": "boolean"
         },
@@ -721,7 +721,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "type": {
@@ -913,7 +913,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "type": {
@@ -990,7 +990,7 @@
             }
           ],
           "default": null,
-          "description": "A line of context under the number (Superset 6.1.0+; older releases ignore it)",
+          "description": "A line of context under the number (Superset 6.0.0 or later; older releases ignore it)",
           "title": "Subtitle"
         },
         "trend_color": {
@@ -1251,7 +1251,7 @@
         },
         "show_chart_timestamps": {
           "default": false,
-          "description": "Show each chart's last-queried time on its card. Superset 6.1.0+ only: 4.1.4 and 5.0.0 import it, then refuse to save the dashboard's settings (their metadata schema rejects the key), so check, apply and plan refuse it there before anything is written.",
+          "description": "Show each chart's last-queried time on its card. Superset 6.1.0 or later: 4.1.4, 5.0.0 and 6.0.0 import it, then refuse to save the dashboard's settings (their metadata schema rejects the key), so check, apply and plan refuse it there before anything is written.",
           "title": "Show Chart Timestamps",
           "type": "boolean"
         },
@@ -1268,7 +1268,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "owners": {
@@ -1656,7 +1656,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "show_legend": {
@@ -1956,7 +1956,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "type": {
@@ -2272,7 +2272,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "type": {
@@ -2743,7 +2743,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "x_axis_title": {
@@ -2825,7 +2825,7 @@
         },
         "x_label_every": {
           "default": false,
-          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0 or later; 6.0.0 takes it on a mixed chart's category axis only, and older releases ignore it)",
           "title": "X Label Every",
           "type": "boolean"
         },
@@ -3081,7 +3081,7 @@
         },
         "only_total": {
           "default": true,
-          "description": "With show_value and stack, label each stack's total only (Superset 6.1.0+, its default); false labels every segment, as older releases always do",
+          "description": "With show_value and stack, label each stack's total only (Superset 6.0.0 or later, its default); false labels every segment, as older releases always do",
           "title": "Only Total",
           "type": "boolean"
         },
@@ -3284,7 +3284,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "show_legend": {
@@ -3563,7 +3563,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "type": {
@@ -4362,7 +4362,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "type": {
@@ -4457,7 +4457,7 @@
           "type": "array"
         },
         "hidden": {
-          "description": "Labels queried but not displayed, e.g. a status only a colour rule reads (Superset 6.1+)",
+          "description": "Labels queried but not displayed, e.g. a status only a colour rule reads (Superset 6.0+)",
           "items": {
             "type": "string"
           },
@@ -4550,7 +4550,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "Header text per label, e.g. {\"SUM(revenue)\": \"Revenue\"} (Superset 6.1.0+; older releases show the label)",
+          "description": "Header text per label, e.g. {\"SUM(revenue)\": \"Revenue\"} (Superset 6.0.0 or later; older releases show the label)",
           "title": "Column Headers",
           "type": "object"
         }
@@ -4938,7 +4938,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "x_axis_title": {
@@ -5020,7 +5020,7 @@
         },
         "x_label_every": {
           "default": false,
-          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0 or later; 6.0.0 takes it on a mixed chart's category axis only, and older releases ignore it)",
           "title": "X Label Every",
           "type": "boolean"
         },
@@ -5443,7 +5443,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "x_axis_title": {
@@ -5525,7 +5525,7 @@
         },
         "x_label_every": {
           "default": false,
-          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0 or later; 6.0.0 takes it on a mixed chart's category axis only, and older releases ignore it)",
           "title": "X Label Every",
           "type": "boolean"
         },
@@ -5912,7 +5912,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "x_axis_title": {
@@ -5994,7 +5994,7 @@
         },
         "x_label_every": {
           "default": false,
-          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0 or later; 6.0.0 takes it on a mixed chart's category axis only, and older releases ignore it)",
           "title": "X Label Every",
           "type": "boolean"
         },
@@ -6423,7 +6423,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "x_axis_title": {
@@ -6505,7 +6505,7 @@
         },
         "x_label_every": {
           "default": false,
-          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0+ controls; older releases ignore them)",
+          "description": "A label at every x value: every time-grain step, or every category (Superset 6.1.0 or later; 6.0.0 takes it on a mixed chart's category axis only, and older releases ignore it)",
           "title": "X Label Every",
           "type": "boolean"
         },
@@ -6907,7 +6907,7 @@
             }
           ],
           "default": null,
-          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.1.0 without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
         "type": {

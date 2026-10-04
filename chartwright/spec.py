@@ -219,12 +219,12 @@ def _tag_list(tags: list[str], where: str) -> list[str]:
 
 
 TAGS_DESCRIPTION = (
-    "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM "
-    "feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, "
-    "apply and plan refuse the field there before anything is written; 6.1.0 without the "
-    "flag ignores them, so plan keeps reporting them. An apply replaces the object's tags "
-    "with this list, so [] removes them all, tags added in the UI included; omit the field "
-    "to leave tags alone, in apply and in plan."
+    "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the "
+    "TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries "
+    "tags, so check, apply and plan refuse the field there before anything is written; "
+    "6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply "
+    "replaces the object's tags with this list, so [] removes them all, tags added in the "
+    "UI included; omit the field to leave tags alone, in apply and in plan."
 )
 
 
@@ -393,8 +393,8 @@ class BigNumberTrendChart(_ChartBase):
                     "unless asked: `advise --fix` fills it from the grain and compare_lag")
     subtitle: str | None = Field(
         default=None,
-        description="A line of context under the number (Superset 6.1.0+; older releases "
-                    "ignore it)",
+        description="A line of context under the number (Superset 6.0.0 or later; older "
+                    "releases ignore it)",
     )
     trend_color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] | None = Field(
         default=None,
@@ -462,7 +462,8 @@ class _AxisChart(_ChartBase):
     x_label_every: bool = Field(
         default=False,
         description="A label at every x value: every time-grain step, or every category "
-                    "(Superset 6.1.0+ controls; older releases ignore them)",
+                    "(Superset 6.1.0 or later; 6.0.0 takes it on a mixed chart's category axis "
+                    "only, and older releases ignore it)",
     )
     x_label_rotation: int | None = Field(
         default=None, ge=-90, le=90,
@@ -737,7 +738,7 @@ class TableChart(_ChartBase):
     )
     hidden: list[str] = Field(
         default_factory=list,
-        description="Labels queried but not displayed, e.g. a status only a colour rule reads (Superset 6.1+)",
+        description="Labels queried but not displayed, e.g. a status only a colour rule reads (Superset 6.0+)",
     )
     number_formats: dict[str, str] = Field(
         default_factory=dict, description="d3 format per label, e.g. {\"Rate\": \".3f\"}",
@@ -776,7 +777,7 @@ class TableChart(_ChartBase):
     column_headers: dict[str, str] = Field(
         default_factory=dict,
         description="Header text per label, e.g. {\"SUM(revenue)\": \"Revenue\"} "
-                    "(Superset 6.1.0+; older releases show the label)",
+                    "(Superset 6.0.0 or later; older releases show the label)",
     )
 
     def labels(self) -> list[str]:
@@ -987,8 +988,8 @@ class MixedSeries(BaseModel):
     stack: bool = Field(default=False, description="Stack this query's series (needs groupby or several metrics)")
     only_total: bool = Field(
         default=True,
-        description="With show_value and stack, label each stack's total only (Superset 6.1.0+, "
-                    "its default); false labels every segment, as older releases always do",
+        description="With show_value and stack, label each stack's total only (Superset 6.0.0 or "
+                    "later, its default); false labels every segment, as older releases always do",
     )
     series_limit: int | None = Field(
         default=None, ge=1,
@@ -1445,10 +1446,10 @@ class DashboardMeta(BaseModel):
     )
     show_chart_timestamps: bool = Field(
         default=False,
-        description="Show each chart's last-queried time on its card. Superset 6.1.0+ only: "
-                    "4.1.4 and 5.0.0 import it, then refuse to save the dashboard's settings "
-                    "(their metadata schema rejects the key), so check, apply and plan refuse "
-                    "it there before anything is written.",
+        description="Show each chart's last-queried time on its card. Superset 6.1.0 or "
+                    "later: 4.1.4, 5.0.0 and 6.0.0 import it, then refuse to save the "
+                    "dashboard's settings (their metadata schema rejects the key), so check, "
+                    "apply and plan refuse it there before anything is written.",
     )
     tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
     owners: list[str] | None = Field(

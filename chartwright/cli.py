@@ -39,12 +39,12 @@ def _load(path: str):
 
 def _release(text: str) -> str:
     """argparse type for --superset-version: a release such as 5.0.0."""
-    from .versions import format_version, parse_version
+    from .versions import not_a_release, stated_release
 
-    release = parse_version(text)
+    release = stated_release(text)
     if release is None:
-        raise argparse.ArgumentTypeError(f"{text!r} is not a Superset release, e.g. 5.0.0")
-    return format_version(release)
+        raise argparse.ArgumentTypeError(not_a_release(text))
+    return release
 
 
 _VERSION_HELP = ("the Superset release to hold the spec to, e.g. 5.0.0; fields that release "

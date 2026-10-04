@@ -41,6 +41,17 @@ def format_version(release: Release) -> str:
     return ".".join(str(n) for n in release)
 
 
+def stated_release(text) -> str | None:
+    """A release someone stated (--superset-version, the MCP tools' superset_version)
+    in canonical form, "v5.0" -> "5.0.0", or None when the text names no release."""
+    release = parse_version(text)
+    return format_version(release) if release else None
+
+
+def not_a_release(text) -> str:
+    return f"{text!r} is not a Superset release, e.g. 5.0.0"
+
+
 @dataclass(frozen=True)
 class GatedField:
     field: str                              # the spec field, as a spec writes it
@@ -49,6 +60,9 @@ class GatedField:
     before: str                             # what a release before `since` does with it
     source: str                             # where Superset's source shows it
     used_by: Callable[[DashboardSpec], list[str | None]]  # chart names using it; None = the dashboard
+    # A warning's own sentence, for a field whose effect is not "taken or ignored":
+    # str.format with where, since, runs (who runs what) and that (the release).
+    warning: str | None = None
 
 
 def _tags(spec: DashboardSpec) -> list[str | None]:
@@ -75,36 +89,49 @@ GATED_FIELDS: tuple[GatedField, ...] = (
         "imports it, then refuses every later save of the dashboard's settings (its "
         "metadata schema rejects the key), apply's filter-scope step included",
         "DashboardJSONMetadataSchema declares show_chart_timestamps at 6.1.0 "
-        "dashboards/schemas.py:167 only; validate_json_metadata :107-116 at 4.1.4",
+        "dashboards/schemas.py:167, not at 4.1.4, 5.0.0 or 6.0.0; validate_json_metadata "
+        ":107-116 at 4.1.4",
         lambda spec: [None] if spec.dashboard.show_chart_timestamps else [],
     ),
     GatedField(
+        # A time axis (every timeseries chart, a mixed chart over a time column) needs
+        # force_max_interval, new in 6.1.0; a mixed chart's category axis needs only
+        # xAxisLabelInterval, which 6.0.0 reads. The gate takes the later release.
         "x_label_every", "6.1.0", "warn",
-        "ignores it: the x axis keeps Superset's automatic label spacing",
-        "force_max_interval and xAxisLabelInterval are 6.1.0 controls "
-        "(Timeseries and MixedTimeseries controlPanel.tsx)",
+        "ignores it on a time axis: the axis keeps Superset's automatic label spacing "
+        "(a mixed chart's category axis takes it from 6.0.0)",
+        "force_max_interval is a 6.1.0 control (controls.tsx:389, Timeseries and "
+        "MixedTimeseries controlPanel.tsx); xAxisLabelInterval is at 6.0.0 controls.tsx:305; "
+        "neither at 4.1.4 or 5.0.0",
         _charts(lambda c: getattr(c, "x_label_every", False)),
     ),
     GatedField(
-        "subtitle", "6.1.0", "warn",
+        "subtitle", "6.0.0", "warn",
         "ignores a trendline KPI's subtitle: nothing shows under the number",
-        "BigNumberWithTrendline controlPanel.tsx subtitleControl at 6.1.0",
+        "BigNumberWithTrendline controlPanel.tsx subtitleControl at 6.0.0 :33,144 "
+        "(read at transformProps.ts:96); absent at 4.1.4 and 5.0.0",
         _charts(lambda c: c.type == "big_number_trend" and c.subtitle),
     ),
     GatedField(
-        "column_headers", "6.1.0", "warn",
+        "column_headers", "6.0.0", "warn",
         "ignores it: the table's headers show the labels",
-        "customColumnName read at 6.1.0 plugin-chart-table/src/TableChart.tsx:859",
+        "customColumnName read at 6.0.0 plugin-chart-table/src/TableChart.tsx:806 "
+        "(6.1.0 :859); absent at 4.1.4 and 5.0.0",
         _charts(lambda c: c.type == "table" and c.column_headers),
     ),
     GatedField(
-        "only_total", "6.1.0", "warn",
-        "labels every segment of a stacked mixed-chart query with show_value; "
-        "only_total (each stack's total only, the default) needs 6.1.0",
-        "onlyTotal / onlyTotalB read at 6.1.0 MixedTimeseries/transformProps.ts:186-187; "
-        "absent at 4.1.4 and 5.0.0",
+        # Keyed on what the author writes: show_value on a stacked query. only_total
+        # defaults to true, so naming it would point at a field the spec never set;
+        # written false, it asks for every segment, which every release draws.
+        "show_value", "6.0.0", "warn",
+        "labels every segment of a stacked mixed chart",
+        "onlyTotal / onlyTotalB read at 6.0.0 MixedTimeseries/transformProps.ts:178-179 "
+        "(6.1.0 :186-187); absent at 4.1.4 and 5.0.0",
         _charts(lambda c: c.type == "mixed" and any(
             s.show_value and s.stack and s.only_total for s in (c.a, c.b))),
+        warning="show_value on a stacked query of {where} labels each stack's total from "
+                "Superset {since}; {runs}, and {that} labels every segment of a stacked "
+                "mixed chart. Set only_total: false for the same labels on every release.",
     ),
 )
 
@@ -156,9 +183,14 @@ def check_spec_version(spec: DashboardSpec, version: str | None,
                                   f"for this instance."})
             else:
                 runs = f"this instance runs {shown}" if release else "the instance did not report its version"
+                if g.warning:
+                    detail = g.warning.format(
+                        where=where, since=g.since, runs=runs,
+                        that="this release" if release else f"a release before {g.since}")
+                else:
+                    detail = (f"{g.field} on {where} takes effect on Superset {g.since} or "
+                              f"later; {runs}, and a release before {g.since} {g.before}.")
                 out.warnings.append({
                     "code": "field_ignored_before_version", "chart": chart, "field": g.field,
-                    "since": g.since,
-                    "detail": f"{g.field} on {where} takes effect on Superset {g.since} or later; "
-                              f"{runs}, and a release before {g.since} {g.before}."})
+                    "since": g.since, "detail": detail})
     return out
