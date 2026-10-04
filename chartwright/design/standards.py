@@ -115,11 +115,12 @@ class Standards:
 
 def display(path: Path) -> str:
     """A path as a person would type it here: relative to the working directory when
-    it lies under it, absolute otherwise."""
+    it lies under it, absolute otherwise. Forward slashes on every platform, so
+    output and messages read the same on Windows as on Linux and macOS."""
     try:
-        return str(Path(os.path.relpath(path)))
+        return Path(os.path.relpath(path)).as_posix()
     except ValueError:  # another drive on Windows
-        return str(path)
+        return path.as_posix()
 
 
 # -- parsing ------------------------------------------------------------------
