@@ -391,15 +391,31 @@ def load_standards(directory: Path) -> Standards:
 # -- discovery ----------------------------------------------------------------
 
 
+def _declares_a_standard(path: Path) -> bool:
+    """The file is a YAML mapping with a `name` key: what makes a folder a standards
+    folder. Unreadable or broken files declare nothing."""
+    import yaml
+
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return False
+    return isinstance(data, dict) and "name" in data
+
+
 def _has_standards(d: Path) -> bool:
-    return d.is_dir() and bool(_standard_files(d))
+    """A `standards` folder counts only once one of its YAML files declares a standard,
+    so a repository's unrelated standards/ (linters, style guides) never opts its
+    dashboards in. Once it counts, every file in it is validated (load_standards)."""
+    return d.is_dir() and any(_declares_a_standard(p) for p in _standard_files(d))
 
 
 def discover(start: Path) -> Path | None:
-    """The standards directory for a spec in folder `start`: a `standards` folder of
-    YAML files in `start` or a folder above it, up to the repository root (the first
-    folder holding `.git`). Exactly one is used and nothing merges: two on the way is
-    an error. Outside a repository nothing is found."""
+    """The standards directory for a spec in folder `start`: a `standards` folder in
+    `start` or a folder above it, up to the repository root (the first folder holding
+    `.git`), with at least one YAML file declaring a standard (a mapping with `name`).
+    Exactly one is used and nothing merges: two on the way is an error. Outside a
+    repository nothing is found."""
     start = start.resolve()
     found: list[Path] = []
     for d in (start, *start.parents):

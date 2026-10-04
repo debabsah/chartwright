@@ -1226,9 +1226,13 @@ unknown fields), so CI must run a release that knows it.
 ### Finding the folder
 
 `--standards DIR` names it. Without the flag, chartwright looks for a
-`standards` folder holding YAML files in the spec's own folder and each folder
-above it, up to the repository root, the first folder holding `.git`:
+`standards` folder in the spec's own folder and each folder above it, up to
+the repository root, the first folder holding `.git`:
 
+- a folder counts only when at least one of its YAML files declares a
+  standard (a mapping with a `name` key), so a repository's unrelated
+  `standards/` (linter settings, style guides) changes nothing. Once a folder
+  counts, every YAML file in it must be a valid standard;
 - it uses the one it finds; nothing merges;
 - two on the way up is an error, so a stray `specs/finance/standards/` can't
   quietly take over the specs beneath it;

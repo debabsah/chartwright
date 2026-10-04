@@ -322,6 +322,38 @@ def test_two_standards_directories_on_the_way_up_are_an_error(repo):
         discover(repo / "specs")
 
 
+UNRELATED = "# the team's coding standards\nlinters: [ruff, mypy]\nline_length: 100\n"
+
+
+def test_an_unrelated_standards_folder_changes_nothing(tmp_path, capsys):
+    """A repo whose standards/ holds other YAML (linters, style guides) never opted in:
+    no folder is found, and advise and the strict check gate behave as without it."""
+    repo = make_repo(tmp_path / "r", {"coding.yaml": UNRELATED, "ci/lint.yml": "- a\n- b\n"}).parent
+    assert discover(repo) is None
+    spec = write_spec(repo / "specs" / "s.json")
+    code, payload = run(capsys, "advise", str(spec))
+    assert code == 0 and payload == advise(load_spec(DATA)).payload()
+    advice = _advice_payload(load_spec(DATA), strict=True,
+                             standards=StandardsSource.for_cli(None, spec))
+    assert advice == _advice_payload(load_spec(DATA), strict=True)
+
+
+def test_a_standards_folder_still_fails_closed_on_any_other_yaml(tmp_path, capsys):
+    """One file with a `name` makes the folder a standards folder; from then on every
+    YAML file in it must be a valid standard."""
+    repo = make_repo(tmp_path / "r", {"org.yaml": "name: org\n", "coding.yaml": UNRELATED}).parent
+    assert discover(repo) == (repo / "standards").resolve()
+    spec = write_spec(repo / "specs" / "s.json")
+    code, payload = run(capsys, "advise", str(spec))
+    assert code == 1 and payload["stage"] == "standards"
+    assert "coding.yaml" in payload["errors"][0]["detail"]
+
+
+def test_a_broken_yaml_file_alone_doesnt_qualify_a_folder(tmp_path):
+    repo = make_repo(tmp_path / "r", {"x.yaml": "name: [a\n"}).parent
+    assert discover(repo) is None
+
+
 def test_a_folder_named_standards_without_yaml_is_not_a_standards_directory(tmp_path):
     (tmp_path / ".git").mkdir()
     (tmp_path / "standards").mkdir()

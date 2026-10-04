@@ -22,7 +22,9 @@ while the major version is 0, minor bumps may include breaking changes and say s
     a lock on an unset parameter, and a lower file loosening a lock are errors that name
     the file.
   - The folder is `--standards DIR`, or the one `standards/` folder at or above the spec
-    inside its git repository; the MCP server reads `$CHARTWRIGHT_STANDARDS_DIR`.
+    inside its git repository; the MCP server reads `$CHARTWRIGHT_STANDARDS_DIR`. A
+    `standards/` folder counts only when one of its YAML files has a `name` key, so a
+    repository's unrelated standards folder changes nothing.
 - `design.standard`: the standard a spec follows. **An older chartwright (0.2.1 and
   earlier) rejects a spec that sets it** (`extra_forbidden`), so run CI on a release that
   knows it. The field never reaches the bundle: a spec compiles to the same bytes with or
