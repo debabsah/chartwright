@@ -586,6 +586,79 @@ def test_the_overlay_still_tunes_what_no_standard_locks(repo, no_overlay, capsys
                                               "severity": ["info", "warn"]}]
 
 
+# -- lock edges ----------------------------------------------------------------
+
+
+def test_a_renamed_rule_id_cant_slip_past_a_lock(repo, no_overlay, monkeypatch, capsys):
+    """The ignore and disable lists resolve aliases, so the lock check must too."""
+    monkeypatch.setitem(model.RULE_ALIASES, "size.axis-height", AXIS)
+    (no_overlay / "design.yaml").write_text("disable: [size.axis-height]\n", encoding="utf-8")
+    spec = write_spec(repo / "specs" / "s.json", standard="finance",
+                      ignore=["size.axis-height@L"])
+    code, payload = run(capsys, "advise", str(spec))
+    assert code == 1 and AXIS in [f["rule"] for f in payload["findings"]]
+    assert payload["standard"]["refused_ignores"] == [
+        {"entry": "size.axis-height@L", "locked_by": "org"}]
+    assert payload["overlay"]["set_aside"] == {"disable": ["size.axis-height"]}
+
+
+@pytest.mark.parametrize("team", [
+    "severity: {narrative.title-style: warn}",   # the level the org set
+    "severity: {size.axis-min-height: warn}",    # the rule's own (most severe) level
+])
+def test_restating_a_locked_level_is_allowed(tmp_path, team):
+    std = make_repo(tmp_path / "r", {"org.yaml": ORG_LOCKS,
+                                     "team.yaml": f"name: team\nextends: org\n{team}\n"})
+    assert load_standards(std).get("team")
+
+
+def test_the_overlays_heights_cant_move_locked_recommended_heights(tmp_path):
+    std = make_repo(tmp_path / "r", {"org.yaml": ORG_LOCKS})
+    org = load_standards(std).get("org")
+    overlay = Overlay(recommended_heights={"table": 3, "pie": 4},
+                      params={"recommended_heights": {"table": 5}},
+                      audiences={"executive": {"recommended_heights": {"table": 6}}})
+    assert params_for("executive", overlay, org).recommended_heights == {"table": 10}
+    assert params_for("executive", overlay).recommended_heights == {"table": 6, "pie": 4}
+
+
+def test_the_overlays_audience_block_cant_move_a_locked_parameter(repo):
+    fin = load_standards(repo / "standards").get("finance")
+    overlay = Overlay(audiences={"executive": {"fold_units": 3, "kpi_height": 2}})
+    p = params_for("executive", overlay, fin)
+    assert p.fold_units == 40 and p.kpi_height == 2
+
+
+def test_a_fleet_run_over_two_repositories_is_refused(repo, tmp_path, capsys):
+    other = make_repo(tmp_path / "other", {"org.yaml": "name: org\n"}).parent
+    a = write_spec(repo / "specs" / "a.json")
+    b = write_spec(other / "specs" / "b.json")
+    code, payload = run(capsys, "standards", "check", str(a), str(b))
+    assert code == 1 and payload["errors"][0]["code"] == "standards_dir"
+    assert "different standards directories" in payload["errors"][0]["detail"]
+    loose = write_spec(tmp_path / "loose" / "c.json")
+    code, payload = run(capsys, "standards", "check", str(a), str(loose))
+    assert code == 1 and "none for" in payload["errors"][0]["detail"]
+
+
+def test_the_highest_layer_owns_a_repeated_disable_or_lock(tmp_path, capsys):
+    """Below the first layer to disable or lock a rule, repeating it changes nothing,
+    so the first layer is the one named."""
+    std = make_repo(tmp_path / "r", {
+        "org.yaml": "name: org\ndisable: [chart.dupe]\nlocked: {rules: [size.axis-min-height]}\n",
+        "team.yaml": "name: team\nextends: org\ndefault: true\ndisable: [chart.dupe]\n"
+                     "locked: {rules: [size.axis-min-height]}\n"})
+    team = load_standards(std).get("team")
+    assert team.disable == {"chart.dupe": "org"}
+    assert team.locked_rules == {AXIS: "org"}
+    spec = write_spec(std.parent / "specs" / "s.json", ignore=[AXIS])
+    _, payload = run(capsys, "advise", str(spec))
+    assert payload["standard"]["refused_ignores"] == [{"entry": AXIS, "locked_by": "org"}]
+    shown = run_ok(capsys, "standards", "show", "team", "--standards", str(std), "--json")
+    assert shown["disable"] == {"chart.dupe": {"layer": "org"}}
+    assert shown["locked"]["rules"] == {AXIS: "org"}
+
+
 # -- standards check: exit codes, immunity, MCP parity, the report ------------
 
 
