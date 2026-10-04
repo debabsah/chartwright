@@ -794,6 +794,19 @@ Recorded during the rules-only standards (§18):
     rules seed `design.standard`; `standards assign` takes folders and globs
     as its arguments, which seeds it the same way without a third file whose
     overlapping patterns would need their own precedence rule.
+25. **A standard reaches the spec through `--fix`.** A standard writes no field
+    itself, but `advise --fix` and `fix_spec` read its parameters: a height
+    repair targets the standard's `min_axis_height` or `recommended_heights`,
+    and the fills read its thresholds. Those values land in the spec as
+    ordinary repairs and fills, with no record that a standard chose them.
+    The content standards of the next phase, whose provenance tells a
+    standard's writes from an author's edits, must account for these too, or
+    a later change to the standard will read the old repair as the author's.
+26. **`design.standard` stays a name.** The decision's next phase records
+    which standard wrote each item of spec content. That per-item provenance
+    goes in a sibling field of the `design` block, not in `design.standard`,
+    which stays the standard's name as a string, so specs written now stay
+    valid and an assignment remains a one-line diff.
 
 ## 16. Design defaults (fills)
 
@@ -1111,7 +1124,9 @@ instead, where a pull request reviews them and every machine reads the same
 files. A standard can lock rules and parameters so that no team, spec or
 personal file below it loosens them. Standards change advice only: compile,
 `plan` and decompile never read them, and a spec builds the same bundle with
-or without one (§14.15). They write nothing into a spec.
+or without one (§14.15). A standard sets nothing in the spec itself; it
+changes what `advise --fix` writes, since height repairs and fills read its
+parameters (§15.25).
 
 ### The files
 
@@ -1269,6 +1284,10 @@ from the last of these layers that sets it:
 
 A standard applies in strict gates too, since its files are the same on every
 machine. `brief` and `redesign` take no spec, so they don't apply one.
+Calibrated heights belong in the org standard's `params.recommended_heights`:
+`calibrate --write` still writes `design.yaml`, which strict gates and
+`standards check` set aside, so copy its proposals into the standard in a
+pull request.
 
 The advice payload (§10) gains, only when a standard applies:
 
@@ -1296,9 +1315,13 @@ result, and the payload names the file it set aside. The specs must find one
 standards folder between them. A JSON file without a top-level `spec_version`
 (a `package.json` beside the specs) is no spec: it is listed under `skipped`
 and never fails the run, here and in `standards assign`; a file that isn't
-valid JSON is still reported as unreadable. It exits 1 when any spec has an error finding,
-or a warn under `--strict`, or can't be read, or names a standard the folder
-lacks; a broken standards folder fails the whole run.
+valid JSON is still reported as unreadable. It exits 1 when any spec has an
+error finding, or a warn under `--strict`, or can't be read, or names a
+standard the folder lacks; a broken standards folder fails the whole run.
+
+It runs offline, so the data-aware rules (§8) don't run in it: a locked
+data-aware rule is enforced only where advice has a live resolution, by
+`check --design strict` or `advise --profile --strict`.
 
 Per spec it reports `ok`, `standard`, `chain`, `via`, `audience`, `counts`,
 `findings` (each with `layer` and `locked`), `ignored`, and `locks` (the
@@ -1310,8 +1333,8 @@ locked rules and parameters, and `refused_ignores`); a failing spec carries a
 `counts`, `by_rule` (findings counted by rule and severity) and `locks_hit`
 (locked rules with a finding or a refused ignore); then `totals` across the
 fleet: specs passed and failed, counts, `by_rule`, `by_standard` and
-`locks_hit`. It reads the repository's specs; it doesn't read a live
-instance.
+`locks_hit`. Its exit code is the check's: 1 when any spec fails. It reads
+the repository's specs; it doesn't read a live instance.
 
 ### standards show
 
