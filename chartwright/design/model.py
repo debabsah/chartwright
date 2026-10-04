@@ -50,10 +50,16 @@ class Finding:
     # Why the fix is right, one line, carried into the `fixed` record. A fill sets it;
     # a repair's reason is its detail.
     why: str | None = None
+    # A default.* finding that hands a field to the author (an edit or a deletion of a
+    # fill) is a 'release', not a fill.
+    release: bool = False
 
     @property
     def kind(self) -> str:
-        """'fill' for a design default (the default.* family), 'repair' otherwise."""
+        """'fill' for a design default (the default.* family), 'release' when one hands a
+        filled field to the author, 'repair' otherwise."""
+        if self.release:
+            return "release"
         return "fill" if self.rule.startswith("default.") else "repair"
 
     @property
@@ -73,6 +79,7 @@ class Finding:
         d.pop("fix")
         d.pop("height_driven")
         d.pop("why")
+        d.pop("release")
         d["fixable"] = self.fix is not None
         return d
 
@@ -223,14 +230,18 @@ class RuleContext:
         reads it."""
         return field in chart.model_fields_set and getattr(chart, field) is not None
 
-    def filled(self, name: str) -> set[str]:
-        """Fields of this chart the brain filled itself (design.filled)."""
+    def filled(self, name: str) -> dict:
+        """design.filled for this chart: field -> the value the brain wrote, or None
+        for a fill the author deleted (the brain fills that field no more)."""
         design = self.spec.design
-        return set(design.filled.get(name, ())) if design else set()
+        return dict(design.filled.get(name, {})) if design else {}
 
-    def authored(self, chart, field: str) -> bool:
-        """Written and not the brain's fill: the author's value, never touched."""
-        return self.written(chart, field) and field not in self.filled(chart.name)
+    def brain_owns(self, chart, field: str) -> bool:
+        """The chart still holds exactly the value the brain wrote: its fill, which
+        --fix keeps up to date. Any other value is the author's."""
+        rec = self.filled(chart.name)
+        return (rec.get(field) is not None and self.written(chart, field)
+                and getattr(chart, field) == rec[field])
 
     def dataset_for(self, chart) -> ResolvedDataset | None:
         if self.resolution is None:

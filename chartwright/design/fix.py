@@ -34,22 +34,26 @@ def _md_block(data: dict, addr, ri, ii):
 
 def _record(f: Finding, **rest) -> dict:
     """One applied fix: what changed, from what, and why. `kind` tells a design
-    default the brain filled (`fill`) from a repair of something wrong (`repair`)."""
+    default the brain filled (`fill`) or handed back to the author (`release`)
+    from a repair of something wrong (`repair`)."""
     return {"finding": f.key, "rule": f.rule, "kind": f.kind, **rest,
             "why": f.why or f.detail}
 
 
-def _update_filled(out: dict, order: list[str], listed: dict, unlisted: dict) -> None:
-    """Record fills in design.filled: chart order, sorted fields, empty entries
+def _update_filled(out: dict, order: list[str], recorded: dict, unrecorded: dict) -> None:
+    """Write the brain's records into design.filled ({chart: {field: value written}},
+    null for a fill the author deleted): chart order, sorted fields, empty entries
     (and an emptied block) removed, so a spec without fills carries no trace."""
     design = out.get("design") or {}
-    filled = {k: list(v) for k, v in (design.get("filled") or {}).items()}
-    for name in set(listed) | set(unlisted):
-        fields = (set(filled.get(name, ())) | listed.get(name, set())) - unlisted.get(name, set())
-        filled[name] = sorted(fields)
+    filled = {k: dict(v) for k, v in (design.get("filled") or {}).items()}
+    for name in set(recorded) | set(unrecorded):
+        rec = {**filled.get(name, {}), **recorded.get(name, {})}
+        for field in unrecorded.get(name, ()):
+            rec.pop(field, None)
+        filled[name] = rec
     rank = {n: i for i, n in enumerate(order)}
-    filled = {n: filled[n] for n in sorted(filled, key=lambda n: rank.get(n, len(rank)))
-              if filled[n]}
+    filled = {n: dict(sorted(filled[n].items()))
+              for n in sorted(filled, key=lambda n: rank.get(n, len(rank))) if filled[n]}
     if filled:
         out["design"] = {**design, "filled": filled}
     elif "design" in out:
@@ -65,14 +69,15 @@ def apply_fixes(spec_data: dict, findings: list[Finding]) -> tuple[dict, list[di
     what changed and from what: {finding, rule, kind, chart, set: {field: new},
     was: {field: old}, why} -- an autofix that can't show its diff is a mutation
     the user has to trust blind. A fill may also remove a field (`unset`, shown
-    as null in `set`) and records its fields in design.filled (`list`/`unlist`).
+    as null in `set`) and keeps design.filled in step: `record` writes the value
+    it filled (null for a fill the author deleted), `unrecord` drops the record.
     Unknown chart names / stale markdown indices are skipped, not errors."""
     out = copy.deepcopy(spec_data)
     by_name = {c.get("name"): c for c in out.get("charts", [])}
     merged: dict[str, dict] = {}
     unset: dict[str, set] = {}
-    listed: dict[str, set] = {}
-    unlisted: dict[str, set] = {}
+    recorded: dict[str, dict] = {}
+    unrecorded: dict[str, set] = {}
     chart_findings: list[Finding] = []
     applied: list[dict] = []
     for f in findings:
@@ -96,8 +101,8 @@ def apply_fixes(spec_data: dict, findings: list[Finding]) -> tuple[dict, list[di
             else:
                 tgt[k] = v
         unset.setdefault(name, set()).update(f.fix.get("unset", ()))
-        listed.setdefault(name, set()).update(f.fix.get("list", ()))
-        unlisted.setdefault(name, set()).update(f.fix.get("unlist", ()))
+        recorded.setdefault(name, {}).update(f.fix.get("record", {}))
+        unrecorded.setdefault(name, set()).update(f.fix.get("unrecord", ()))
         chart_findings.append(f)
     for f in chart_findings:  # report the FINAL merged value per touched field
         name = f.fix["chart"]
@@ -112,8 +117,8 @@ def apply_fixes(spec_data: dict, findings: list[Finding]) -> tuple[dict, list[di
     for name, fields in unset.items():
         for k in fields:
             by_name[name].pop(k, None)
-    if any(listed.values()) or any(unlisted.values()):
+    if any(recorded.values()) or any(unrecorded.values()):
         _update_filled(out, [c.get("name") for c in out.get("charts", [])],
-                       {k: v for k, v in listed.items() if v},
-                       {k: v for k, v in unlisted.items() if v})
+                       {k: v for k, v in recorded.items() if v},
+                       {k: v for k, v in unrecorded.items() if v})
     return out, applied

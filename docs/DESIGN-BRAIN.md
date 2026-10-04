@@ -129,8 +129,8 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
 - `advise --fix`: applies the safe-fix subset in place (same file-rewrite
   mechanics as `absorb`; formatting normalizes), re-validates, and reports
   each change as `{rule, kind, chart, set: {field: new}, was: {field: old},
-  why}` plus the `written` path. `kind` is `repair` or `fill` (a design
-  default, §16). Idempotent: a second `--fix` run is a no-op.
+  why}` plus the `written` path. `kind` is `repair`, `fill` (a design
+  default, §16) or `release` (a fill the author edited or deleted). Idempotent: a second `--fix` run is a no-op.
 - `advise --chart NAME`: only that chart's findings; with `--fix`, only its
   fixes. An unknown name is an `unknown_chart` error.
 - `explain`: offline, per chart, one row per field a design default
@@ -148,7 +148,8 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
     runs.
 - `calibrate`: the learning loop (§13 phase 3). Mines absorb history into
   per-audience recommended heights; `--since` is the decay knob.
-- MCP server: `design_brief`, `advise_spec`, `fix_spec`, `redesign_dashboard`
+- MCP server: `design_brief`, `advise_spec` (with `chart`), `fix_spec`,
+  `explain_spec` (the `explain --json` payload) and `redesign_dashboard`
   mirror the CLI verbs; `check_spec` carries the advice block.
 
 ## 5. Spec surface
@@ -159,14 +160,9 @@ One additive optional block (models stay `extra="forbid"`):
 "design": {
   "audience": "executive",
   "ignore": ["size.pie-geometry", "layout.fold-budget@Ops Detail"],
-  "filled": {"Orders": ["page_length", "search_box"]}
+  "filled": {"Orders": {"page_length": 8, "search_box": true}}
 }
 ```
-
-- `filled`: written by `advise --fix`, never by hand except to delete an
-  entry: per chart, the fields the brain filled with a design default (§16).
-  Validated against the charts (a renamed chart carries its entry along).
-  Compile, plan and decompile ignore it.
 
 - `audience`: this dashboard's preset; CLI `--audience` overrides it, the
   built-in default (`analytical`) applies when both are absent.
@@ -176,6 +172,11 @@ One additive optional block (models stay `extra="forbid"`):
   are reported in every AdviceReport (`"ignored"`), so silence is always
   visible; entries whose rule id doesn't exist come back as
   `unmatched_ignores` instead of silently suppressing nothing.
+- `filled`: written by `advise --fix`, not by hand: per chart, each field the
+  brain filled with a design default and the value it wrote, or null for a
+  fill the author deleted (§16). Validated against the charts (a renamed
+  chart carries its entry along) and each value against its field's type.
+  Compile, plan and decompile ignore it.
 
 Precedence everywhere: CLI flag > spec `design` block > built-in default.
 
@@ -343,7 +344,8 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   (`{"chart": "Top Products", "set": {"height": 8}}`), `fix.py` applies them
   to the raw spec JSON, the result is re-validated before writing, and the
   report lists every applied fix with its `set`/`was` diff, its `kind`
-  (`repair` or `fill`) and a `why` line (a repair's why is its finding).
+  (`repair`, `fill`, or `release` when a fill passes to the author) and a
+  `why` line (a repair's why is its finding).
 - **Two phases:** repairs run until none is left; fills run only then,
   because some read the geometry repairs settle (a page size reads the
   height). A fill never writes geometry or a field a repair writes, so the
@@ -541,7 +543,7 @@ reversible and none is load-bearing enough to block on:
     after `apply`, and upgrading chartwright restyles nothing. Provenance
     is `design.filled`, and there is no per-spec brain version pin: a
     newer brain changes a spec only when someone runs `--fix`, and then
-    only fields left unset or listed in `design.filled`. The catalogue, the
+    only fields left unset or still holding the value `design.filled` records. The catalogue, the
     ownership rule and the conditions each fill honours are §16.
 
 ## 15. Implementation deviations (recorded, not silent)
@@ -685,47 +687,51 @@ brief tells an author to set these only on request.
 
 ### Who owns a field
 
-`design.filled` maps a chart name to the fields the brain filled. Per chart
-and field:
+`design.filled` records, per chart, each field the brain filled and the value
+it wrote: `{"Orders": {"page_length": 8}}`. That recorded value is what tells
+the brain's work from the author's. Per chart and field, on every `--fix`:
 
-- **Written and not listed:** the author's. No fill ever touches it, even
-  when it holds Superset's own value (`show_legend: true` keeps a legend).
-  Rules know what was written from validation's `model_fields_set`
-  (`RuleContext.written`); an explicit `null` counts as unset.
-- **Listed:** the brain's. Every `--fix` recomputes it from the chart as it
-  is now, so a new height, grain, `row_limit` or groupby refreshes it, and
-  removes it (and the entry) when its rule stops applying: a groupby added
-  later brings the legend back.
-- **Unset:** filled when the rule applies, and listed.
+- **Written, no record:** the author's. No fill ever touches it, even when it
+  holds Superset's own value (`show_legend: true` keeps a legend). Rules know
+  what was written from validation's `model_fields_set` (`RuleContext.written`);
+  an explicit `null` counts as unset.
+- **Recorded, and the chart still holds that value:** the brain's. It is
+  recomputed from the chart as it is now, so a new height, grain, `row_limit`
+  or groupby refreshes field and record together, and both are removed when
+  the rule stops applying: a groupby added later brings the legend back.
+- **Recorded, and the chart holds another value:** the author edited it. The
+  record is dropped (a `fixed` entry of kind `release`) and the value kept; from
+  then on it is written with no record, so the author's.
+- **Recorded, and the field is gone:** the author deleted it. The record becomes
+  `null` (kind `release`), and a null record means the brain never fills that
+  field again. A deliberate deletion sticks; deleting the null entry lets the
+  brain fill it once more. A value the author later writes there is theirs,
+  and its null record is dropped.
+- **Unset, no record:** filled when the rule applies, and recorded.
 
-The author takes a filled field over in either of two ways: delete it from
-`design.filled`, or edit it to a value the rule never writes (`page_length:
-0`, `show_legend: true`, a format of their own). The next `--fix` sees the
-second case, drops the field from the list and keeps the value. An edit to
-a value the rule could also have written (a page of 10 where the panel fits
-5) is indistinguishable from a stale fill, so it stays the brain's until
-delisted; `advise` shows the refresh before `--fix` runs, with the delisting
-it would take. To keep a field unset for good, ignore the rule for that
-chart (`"default.page-length@Orders"`); deleting the value only brings it
-back.
+So the author takes a fill over by doing the obvious thing, editing or deleting
+the field, and never needs to touch `design.filled`. To keep a field unset
+before anything was filled, ignore the rule for that chart
+(`"default.page-length@Orders"`).
 
-Why not "a fill whose value differs from what the brain would now choose
-becomes the author's"? That rule cannot tell an edit from a change of
-input, so it would freeze every stale fill as the author's: a legend
-hidden for one series would stay hidden after a groupby added five, and
-a "vs previous month" would survive a switch to weekly data. Refreshing
-stale fills is the reason provenance exists, so the brain keeps what it
-wrote until the value says otherwise.
+The record is what makes both halves sound. Without it, an edit and a change
+of input look alike: either every stale fill would freeze as the author's (a
+legend hidden for one series staying hidden after a groupby adds five), or an
+author's edit would be overwritten on the next `--fix`. Comparing the chart's
+value with the value written tells them apart exactly. The list form
+`{chart: [fields]}`, which never shipped in a release, is refused with a
+message naming the new form.
 
-`design.filled` is the brain's record of its own writes, the same
-direction as §15.13, which names explicit provenance as the real fix for
-inferred signals. It is validated (every key a chart, every field one the
-brain fills and the chart has), so a renamed chart must carry its entry.
-Brain output never silences a rule: `size.table-window` and `size.grid-fit`
-still report a brain-filled page that no longer fits, but leave the height
-alone, because that page follows the height and the fill phase refits it.
-Decompile cannot recover provenance, so every field of a decompiled spec
-reads as the author's.
+`design.filled` is the brain's record of its own writes, the same direction as
+§15.13, which names explicit provenance as the real fix for inferred signals.
+It is validated: every key a chart, every field one the brain fills and the
+chart has, every value one that field takes (or null). A renamed chart must
+carry its entry. Brain output never silences a rule: `size.table-window` and
+`size.grid-fit` still report a page the brain filled that no longer fits, but
+leave the height alone, because that page follows the height and the fill
+phase refits it; an author's page gets the ordinary height fix. Decompile
+cannot recover provenance, so every field of a decompiled spec reads as the
+author's.
 
 ### The loop, sketches, and redesign
 
@@ -742,8 +748,10 @@ its `next` line names `advise --fix` when some are waiting.
 - `advise`, and the advice `check` and `apply` carry, list each waiting
   fill as an `info` finding with `fixable: true`. Info never blocks
   `--design strict`.
-- Each `fixed` record says `kind: "fill"` and why.
+- Each `fixed` record says `kind: "fill"` (or `"release"` when it hands a field
+  to the author) and why.
 - `chartwright explain <spec> [--chart NAME] [--json]` shows, per chart,
   every field a fill governs: its value, whether it came from the spec, a
-  fill, or Superset's own default, the rule, the reason, and how to change
-  it.
+  fill, or Superset's own default, the value `design.filled` recorded, the
+  rule, the reason, and how to change it. MCP `explain_spec` returns the same
+  JSON.

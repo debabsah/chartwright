@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Annotated, ClassVar, Literal, Union
+from typing import Annotated, Any, ClassVar, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator,
+                      model_validator)
 
 GRID_WIDTH = 12
 DEFAULT_HEIGHT = {"big_number_total": 4, "big_number_trend": 5, "markdown": 4, "default": 8}
@@ -1443,24 +1444,26 @@ class DesignConfig(BaseModel):
         default=None, description="Design preset; CLI --audience overrides")
     ignore: list[str] = Field(
         default_factory=list, description="Design rule ids to suppress")
-    filled: dict[str, list[str]] = Field(
+    filled: dict[str, dict[str, Any]] = Field(
         default_factory=dict,
-        description="Written by `chartwright advise --fix`: per chart name, the fields it "
-                    "filled with a design default. It keeps those fields up to date and "
-                    "never touches a field not listed here. Remove a field from its list "
-                    "to keep the value as yours. Compile ignores this block.",
+        description="Written by `chartwright advise --fix`, not by hand: per chart name, each "
+                    "field it filled with a design default and the value it wrote. While the "
+                    "chart still holds that value, --fix keeps it up to date. Edit the field "
+                    "and it is yours; delete it and --fix records null here and fills it no "
+                    "more, until you delete that entry. Compile ignores this block.",
     )
 
-    @field_validator("filled")
+    @field_validator("filled", mode="before")
     @classmethod
-    def _filled_fields(cls, filled: dict[str, list[str]]) -> dict[str, list[str]]:
-        for chart, names in filled.items():
-            bad = sorted(set(names) - set(BRAIN_FILLABLE_FIELDS))
+    def _filled_fields(cls, filled):
+        for chart, record in (filled or {}).items() if isinstance(filled, dict) else ():
+            if not isinstance(record, dict):
+                raise ValueError(f"design.filled[{chart!r}] must map each filled field to the "
+                                 f"value --fix wrote, e.g. {{\"page_length\": 8}}")
+            bad = sorted(set(record) - set(BRAIN_FILLABLE_FIELDS))
             if bad:
                 raise ValueError(f"design.filled[{chart!r}]: {bad} are not fields the design "
                                  f"brain fills (it fills {list(BRAIN_FILLABLE_FIELDS)})")
-            if len(set(names)) != len(names):
-                raise ValueError(f"design.filled[{chart!r}] lists a field twice")
         return filled
 
 
@@ -1533,19 +1536,33 @@ class DashboardSpec(BaseModel):
 
     @model_validator(mode="after")
     def _filled_names_charts(self) -> "DashboardSpec":
-        """design.filled names real charts and fields that chart has: a renamed chart
-        must carry its entry along, or the brain would lose track of its own fills."""
+        """design.filled names real charts, fields that chart has, and values that field
+        takes (or null: a fill the author deleted). A renamed chart must carry its entry
+        along, or the brain would lose track of its own fills."""
         by_name = {c.name: c for c in self.charts}
-        for name, fields in (self.design.filled if self.design else {}).items():
+        for name, record in (self.design.filled if self.design else {}).items():
             chart = by_name.get(name)
             if chart is None:
                 raise ValueError(f"design.filled names chart {name!r}, which is not in charts; "
                                  "rename its entry with the chart, or delete the entry")
-            foreign = [f for f in fields if f not in type(chart).model_fields]
+            fields = type(chart).model_fields
+            foreign = [f for f in record if f not in fields]
             if foreign:
                 raise ValueError(f"design.filled[{name!r}]: a {chart.type} chart has no "
-                                 f"{foreign}; delete them from the list")
+                                 f"{foreign}; delete them from the entry")
+            for field, value in record.items():
+                if value is None:
+                    continue
+                info = fields[field]
+                kind = (Annotated[(info.annotation, *info.metadata)] if info.metadata
+                        else info.annotation)
+                try:
+                    TypeAdapter(kind, config=ConfigDict(strict=True)).validate_python(value)
+                except ValidationError as e:
+                    raise ValueError(f"design.filled[{name!r}][{field!r}]: {value!r} is not a "
+                                     f"value {field} takes ({e.errors()[0]['msg']})") from None
         return self
+
     @field_validator("filters")
     @classmethod
     def _unique_filter_names(cls, filters: list[DashboardFilter]) -> list[DashboardFilter]:

@@ -154,14 +154,13 @@ def _table_page(c) -> int | None:
 
 
 def _brain_page(ctx: RuleContext, c) -> bool:
-    """The page is default.page-length's own fill (listed in design.filled, a page it
-    could write). That page follows the height, so a sizing rule must not raise the
+    """The page is default.page-length's own fill (the value design.filled records for
+    it). That page follows the height, so a sizing rule must not raise the
     height to fit a stale one: the fill phase refreshes it to the panel instead. The
     rule still REPORTS a page that doesn't fit, without a height fix: brain output must
     never silence a rule (the v2 echo chamber), and a stale page whose fill is ignored
     would otherwise pass unseen."""
-    return ("page_length" in ctx.filled(c.name) and isinstance(c.page_length, int)
-            and c.page_length >= 1)
+    return ctx.brain_owns(c, "page_length")
 
 
 @rule("size.table-window", "warn", "a table's height should show a meaningful share of its row_limit")

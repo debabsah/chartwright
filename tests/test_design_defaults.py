@@ -87,9 +87,13 @@ def test_every_fill_is_info_fixable_and_governs_a_fillable_field():
         assert r.since == "5"
 
 
-def test_no_fill_can_write_superset_own_default():
-    for fill in FILLS.values():
-        assert not fill.could_write(fill.superset), fill.rule
+@pytest.mark.parametrize("path", FIXTURES, ids=lambda p: p.name)
+def test_no_fill_writes_superset_own_default(path):
+    rep = advise(load_spec(json.loads(path.read_text(encoding="utf-8"))), overlay=EMPTY)
+    for f in rep.findings:
+        if f.kind == "fill" and f.fix.get("set"):
+            fill = FILLS[f.rule]
+            assert f.fix["set"][fill.field] != fill.superset, f.key
 
 
 def test_a_decision_equal_to_superset_default_is_never_written():
@@ -156,7 +160,6 @@ def test_x_label_format_respects_the_overlay_span():
 def test_compare_suffix_names_the_comparison(grain, lag, want):
     kw = {"compare_lag": lag, **({"time_grain": grain} if grain else {})}
     assert filled_value(mk([trend(**kw)]), "default.compare-suffix", "K") == want
-    assert FILLS["default.compare-suffix"].could_write(want)
 
 
 def test_compare_suffix_needs_compare_lag_and_respects_the_author():
@@ -351,12 +354,13 @@ def test_value_labels(kw, want):
 # -- provenance: design.filled -------------------------------------------------------------
 
 
-def test_fix_records_its_fills_and_a_second_run_is_a_no_op():
+def test_fix_records_the_values_it_wrote_and_a_second_run_is_a_no_op():
     data = mk([line(time_grain="P1M", metrics=["COUNT(*)"])])
     fixed, rep = fix(data)
     assert fixed["charts"][0]["x_label_format"] == "%b %Y"
     assert fixed["charts"][0]["number_format"] == ",.0f"
-    assert fixed["design"] == {"filled": {"L": ["number_format", "x_label_format"]}}
+    assert fixed["design"] == {"filled": {"L": {"number_format": ",.0f",
+                                                "x_label_format": "%b %Y"}}}
     entry = next(e for e in rep.fixed if e["rule"] == "default.x-label-format")
     assert entry["kind"] == "fill" and entry["was"] == {"x_label_format": None}
     assert entry["set"] == {"x_label_format": "%b %Y"} and "P1M" in entry["why"]
@@ -365,12 +369,48 @@ def test_fix_records_its_fills_and_a_second_run_is_a_no_op():
     assert not any(f.rule.startswith("default.") for f in rep2.findings)
 
 
-def test_a_filled_field_follows_the_chart():
-    """The brain refreshes its own fill when the inputs move (here the grain)."""
+def _paged(row_limit=400, height=10, **kw):
+    return mk([raw_table(row_limit=row_limit, height=height, search_box=False, **kw)])
+
+
+def test_an_author_edit_to_a_filled_value_is_kept():
+    """The reported case: a page the brain filled at 8, set to 5 by the author and
+    left in design.filled, must stay 5. The record says the brain wrote 8, so 5 is
+    the author's: --fix releases the record and keeps the value."""
+    filled, _ = fix(_paged())
+    assert filled["charts"][0]["page_length"] == 8
+    assert filled["design"]["filled"] == {"T": {"page_length": 8}}
+    filled["charts"][0]["page_length"] = 5
+    kept, rep = fix(filled)
+    assert kept["charts"][0]["page_length"] == 5 and "design" not in kept
+    assert [(e["kind"], e["set"]) for e in rep.fixed] == [("release", {})]
+    assert "8" in rep.fixed[0]["why"] and "5" in rep.fixed[0]["why"]
+    # ...and from then on it is the author's: nothing to fill, nothing to release.
+    again, rep2 = fix(kept)
+    assert again == kept and rep2.fixed == []
+
+
+@pytest.mark.parametrize("change,want", [
+    ({"height": 14}, 13),        # a taller panel: 14 units fits 14 rows, one for the pager
+    ({"row_limit": 6}, None),    # every row now fits: the fill and its record go
+])
+def test_an_untouched_fill_follows_its_inputs(change, want):
+    filled, _ = fix(_paged())
+    filled["charts"][0].update(change)
+    refreshed, rep = fix(filled)
+    t = refreshed["charts"][0]
+    assert t.get("page_length") == want
+    assert (refreshed.get("design") or {}).get("filled", {}).get("T", {}).get("page_length") == want
+    assert {e["kind"] for e in rep.fixed} == {"fill"}
+    assert fix(refreshed)[0] == refreshed
+
+
+def test_a_filled_label_format_follows_the_grain():
     data = mk([line(time_grain="P1Y", x_label_format="%b %Y")],
-              design={"filled": {"L": ["x_label_format"]}})
+              design={"filled": {"L": {"x_label_format": "%b %Y"}}})
     fixed, rep = fix(data)
     assert fixed["charts"][0]["x_label_format"] == "%Y"
+    assert fixed["design"]["filled"] == {"L": {"x_label_format": "%Y"}}
     assert rep.fixed[0]["was"] == {"x_label_format": "%b %Y"}
 
 
@@ -378,38 +418,35 @@ def test_a_fill_that_no_longer_applies_is_removed():
     """C#10: a groupby added later must bring the legend back, not leave a
     brain-hidden legend that looks like the author's choice."""
     data = mk([line(name="Revenue", metrics=["SUM(x) AS Revenue"], groupby="region",
-                    show_legend=False)], design={"filled": {"Revenue": ["show_legend"]}})
+                    show_legend=False)],
+              design={"filled": {"Revenue": {"show_legend": False}}})
     fixed, rep = fix(data)
     assert "show_legend" not in fixed["charts"][0] and "design" not in fixed
-    assert rep.fixed[0]["set"] == {"show_legend": None}
+    assert rep.fixed[0]["kind"] == "fill" and rep.fixed[0]["set"] == {"show_legend": None}
     assert rep.fixed[0]["was"] == {"show_legend": False}
 
 
-def test_an_edit_the_brain_would_never_write_makes_the_field_the_authors():
-    data = mk([raw_table(row_limit=400, page_length=0)],
-              design={"filled": {"T": ["page_length"]}})
-    fixed, rep = fix(data)
-    assert fixed["charts"][0]["page_length"] == 0
-    assert "page_length" not in fixed["design"]["filled"]["T"]  # search_box is filled, though
-    entry = next(e for e in rep.fixed if e["rule"] == "default.page-length")
-    assert entry["set"] == {} and entry["kind"] == "fill"
-    # ...and from then on the brain leaves it alone.
-    assert fills(fixed, "default.page-length") == {}
+def test_a_deleted_fill_stays_deleted_until_its_record_goes():
+    filled, _ = fix(_paged())
+    del filled["charts"][0]["page_length"]
+    tomb, rep = fix(filled)
+    assert "page_length" not in tomb["charts"][0]
+    assert tomb["design"]["filled"] == {"T": {"page_length": None}}
+    assert [e["kind"] for e in rep.fixed] == ["release"]
+    again, rep2 = fix(tomb)
+    assert again == tomb and rep2.fixed == []          # never refilled while it stands
+    assert fills(tomb, "default.page-length") == {}
+    del tomb["design"]                                 # the author lifts it...
+    refilled, _ = fix(tomb)
+    assert refilled["charts"][0]["page_length"] == 8   # ...and the fill comes back
 
 
-def test_a_listed_value_the_brain_could_write_stays_the_brains():
-    """Documented limit: an edit to another value the rule itself produces is
-    indistinguishable from a stale fill. Taking it over means delisting it."""
-    data = mk([raw_table(row_limit=400, page_length=10, search_box=False)],
-              design={"filled": {"T": ["page_length"]}})
+def test_a_value_written_after_deleting_a_fill_is_the_authors():
+    data = _paged(page_length=6)
+    data["design"] = {"filled": {"T": {"page_length": None}}}
     fixed, rep = fix(data)
-    # The stale page follows the panel; the height does not grow to fit it.
-    assert fixed["charts"][0]["page_length"] == 5 and fixed["charts"][0]["height"] == 8
-    assert [e["kind"] for e in rep.fixed] == ["fill"]
-    del data["design"]
-    kept, rep = fix(data)
-    assert kept["charts"][0]["page_length"] == 10  # the author's: table-window raises the height
-    assert rep.fixed and all(e["kind"] == "repair" for e in rep.fixed)
+    assert fixed["charts"][0]["page_length"] == 6 and "design" not in fixed
+    assert [e["kind"] for e in rep.fixed] == ["release"]
 
 
 def test_a_brain_page_never_silences_table_window():
@@ -418,12 +455,18 @@ def test_a_brain_page_never_silences_table_window():
     withheld, because the fill refits the page instead. With the fill ignored the
     warning stays, visible."""
     data = mk([raw_table(row_limit=400, page_length=10, search_box=False)],
-              design={"filled": {"T": ["page_length"]}, "ignore": ["default.page-length@T"]})
+              design={"filled": {"T": {"page_length": 10}},
+                      "ignore": ["default.page-length@T"]})
     rep = advise(load_spec(data), overlay=EMPTY)
     tw = next(f for f in rep.findings if f.rule == "size.table-window")
     assert tw.fix is None and "design default" in tw.detail
     fixed, _ = fix(data)
     assert fixed["charts"][0] == data["charts"][0]  # nothing moves the height for it
+    # An author's page (not the recorded value) gets the ordinary height fix.
+    data["design"]["filled"]["T"]["page_length"] = 7
+    tw = next(f for f in advise(load_spec(data), overlay=EMPTY).findings
+              if f.rule == "size.table-window")
+    assert tw.fix is not None
 
 
 def test_fills_keep_the_fix_loop_convergence_invariant():
@@ -470,16 +513,10 @@ def test_fills_apply_to_sketch_charts_and_leave_the_drawing_true():
     assert t["page_length"] == math.floor(grid_rows_visible(sketch_height)) - 1
 
 
-def test_an_unlisted_written_field_is_never_touched_even_at_superset_default():
+def test_an_unrecorded_written_field_is_never_touched_even_at_superset_default():
     data = mk([line(name="Revenue", metrics=["SUM(x) AS Revenue"], show_legend=True,
                     time_grain="P1M", x_label_format="%B", number_format=".3s")])
     assert fills(data) == {}
-
-
-def test_a_listed_field_the_chart_dropped_leaves_the_list():
-    data = mk([line(metrics=["SUM(x)"])], design={"filled": {"L": ["number_format"]}})
-    fixed, rep = fix(data)
-    assert "design" not in fixed and rep.fixed[0]["set"] == {}
 
 
 def test_ignore_keeps_a_field_unset():
@@ -490,14 +527,23 @@ def test_ignore_keeps_a_field_unset():
 
 
 @pytest.mark.parametrize("filled,match", [
-    ({"Nope": ["x_label_format"]}, "not in charts"),
-    ({"L": ["height"]}, "not fields the design brain fills"),
-    ({"L": ["cell_bars"]}, "has no"),
-    ({"L": ["x_label_format", "x_label_format"]}, "twice"),
+    ({"Nope": {"x_label_format": "%Y"}}, "not in charts"),
+    ({"L": {"height": 8}}, "not fields the design brain fills"),
+    ({"L": {"cell_bars": False}}, "has no"),
+    ({"L": ["x_label_format"]}, "must map each filled field"),   # the unreleased list form
+    ({"L": {"x_label_format": 5}}, "is not a value x_label_format takes"),
+    ({"L": {"show_legend": "no"}}, "is not a value show_legend takes"),
 ])
 def test_design_filled_is_validated(filled, match):
     with pytest.raises(ValidationError, match=match):
         load_spec(mk([line()], design={"filled": filled}))
+
+
+def test_design_filled_values_validate_as_their_field():
+    table = raw_table(row_limit=50)
+    with pytest.raises(ValidationError, match="page_length takes"):
+        load_spec(mk([table], design={"filled": {"T": {"page_length": -1}}}))  # ge=0
+    load_spec(mk([table], design={"filled": {"T": {"page_length": 5, "search_box": None}}}))
 
 
 # -- compile never sees the design block ----------------------------------------------------
@@ -583,12 +629,13 @@ def test_advise_chart_filters_findings_and_fixes(monkeypatch, tmp_path, capsys):
 
 def test_explain_shows_every_governed_field_and_its_source(monkeypatch, tmp_path, capsys):
     data = mk([line("A", time_grain="P1M", metrics=["COUNT(*)"], x_label_format="%b %Y",
-                    show_legend=True)], design={"filled": {"A": ["x_label_format"]}})
+                    show_legend=True)], design={"filled": {"A": {"x_label_format": "%b %Y"}}})
     payload = explain(load_spec(data), overlay=EMPTY)
     rows = {r["field"]: r for r in payload["charts"][0]["fields"]}
     assert set(rows) == {"x_label_format", "number_format", "show_legend"}
     assert rows["x_label_format"]["source"] == "filled"
     assert rows["x_label_format"]["value"] == "%b %Y" and "P1M" in rows["x_label_format"]["reason"]
+    assert rows["x_label_format"]["recorded"] == "%b %Y" and "recorded" not in rows["show_legend"]
     assert rows["show_legend"]["source"] == "spec" and rows["show_legend"]["value"] is True
     assert rows["number_format"]["source"] == "superset default"
     assert rows["number_format"]["reason"].startswith("advise --fix fills ',.0f'")
@@ -626,7 +673,7 @@ def test_mcp_fix_spec_reports_fills(monkeypatch, tmp_path):
     payload = json.loads(text)
     entry = payload["advice"]["fixed"][0]
     assert entry["kind"] == "fill" and entry["why"]
-    assert payload["spec"]["design"]["filled"] == {"L": ["x_label_format"]}
+    assert payload["spec"]["design"]["filled"] == {"L": {"x_label_format": "%b %Y"}}
 
 
 def test_brief_tells_the_author_to_leave_design_defaults_unset():

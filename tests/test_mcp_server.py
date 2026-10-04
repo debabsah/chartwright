@@ -27,6 +27,7 @@ def test_tool_surface():
         "check_spec",
         "decompile_dashboard",
         "design_brief",
+        "explain_spec",
         "fix_spec",
         "get_spec_schema",
         "plan_dashboard",
@@ -79,6 +80,33 @@ def test_advise_spec_offline(monkeypatch, tmp_path):
     out = _run(mcp.call_tool("advise_spec", {"spec_json": FIXTURE}))
     payload = json.loads(_text(out))
     assert payload["stage"] == "design" and "findings" in payload
+
+
+def test_advise_spec_narrows_to_one_chart(monkeypatch, tmp_path):
+    """The CLI's advise --chart, for agents."""
+    monkeypatch.setenv("CHARTWRIGHT_DESIGN_DIR", str(tmp_path))
+    name = json.loads(FIXTURE)["charts"][0]["name"]
+    out = _run(mcp.call_tool("advise_spec", {"spec_json": FIXTURE, "chart": name}))
+    payload = json.loads(_text(out))
+    assert payload["findings"] and {f["chart"] for f in payload["findings"]} == {name}
+    out = _run(mcp.call_tool("advise_spec", {"spec_json": FIXTURE, "chart": "Nope"}))
+    assert json.loads(_text(out))["errors"][0]["code"] == "unknown_chart"
+
+
+def test_explain_spec_returns_the_cli_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("CHARTWRIGHT_DESIGN_DIR", str(tmp_path))
+    from chartwright.design.explain import explain
+    from chartwright.spec import load_spec
+
+    out = _run(mcp.call_tool("explain_spec", {"spec_json": FIXTURE}))
+    assert json.loads(_text(out)) == explain(load_spec(json.loads(FIXTURE)))
+    name = json.loads(FIXTURE)["charts"][0]["name"]
+    one = json.loads(_text(_run(mcp.call_tool("explain_spec",
+                                              {"spec_json": FIXTURE, "chart": name}))))
+    assert [c["chart"] for c in one["charts"]] == [name]
+    bad = json.loads(_text(_run(mcp.call_tool("explain_spec",
+                                              {"spec_json": FIXTURE, "chart": "Nope"}))))
+    assert bad["errors"][0]["code"] == "unknown_chart"
 
 
 def test_fix_spec_offline(monkeypatch, tmp_path):

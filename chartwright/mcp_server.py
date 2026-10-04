@@ -124,6 +124,15 @@ def _bad_audience(audience: str) -> str | None:
     return None
 
 
+def _bad_chart(spec, chart: str) -> str | None:
+    names = [c.name for c in spec.charts]
+    if chart and chart not in names:
+        return json.dumps({"ok": False, "stage": "design", "errors": [{
+            "code": "unknown_chart",
+            "detail": f"no chart named {chart!r} in the spec; charts: {names}"}]})
+    return None
+
+
 @mcp.tool()
 @_typed_errors
 def check_spec(spec_json: str, profile: str, superset_version: str = "") -> str:
@@ -207,16 +216,20 @@ def design_brief(audience: str = "analytical") -> str:
 
 @mcp.tool()
 @_typed_errors
-def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
+def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: str = "") -> str:
     """Design review of a spec against the design-brain rulebook (offline;
     pass a profile for data-aware rules: column types and cardinality).
-    Audiences: executive | analytical | operational."""
+    Audiences: executive | analytical | operational. `chart` keeps one chart's
+    findings (the CLI's advise --chart)."""
     bad = _bad_audience(audience)
     if bad:
         return bad
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    bad = _bad_chart(spec, chart)
+    if bad:
+        return bad
     from .design import advise
 
     resolution = prober = None
@@ -228,7 +241,8 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
         resolution = resolve(spec, client)
         prober = CardinalityProber(client)
     try:
-        report = advise(spec, audience=audience or None, resolution=resolution, prober=prober)
+        report = advise(spec, audience=audience or None, resolution=resolution, prober=prober,
+                        chart=chart or None)
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
     payload = report.payload()
@@ -259,6 +273,29 @@ def fix_spec(spec_json: str, audience: str = "") -> str:
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
     return json.dumps({"ok": True, "stage": "design", "spec": new_data, "advice": report.payload()})
+
+
+@mcp.tool()
+def explain_spec(spec_json: str, chart: str = "", audience: str = "") -> str:
+    """Where each design-default field's value comes from (the CLI's `explain
+    --json`), offline: per chart, one row per field a default.* rule governs with
+    its value, source (spec | filled | superset default), the rule, a reason, and
+    how to override it; a filled field also shows the value design.filled recorded."""
+    bad = _bad_audience(audience)
+    if bad:
+        return bad
+    spec, err = _parse_spec(spec_json)
+    if err:
+        return json.dumps(err)
+    bad = _bad_chart(spec, chart)
+    if bad:
+        return bad
+    from .design.explain import explain
+
+    try:
+        return json.dumps(explain(spec, audience=audience or None, chart=chart or None))
+    except ValueError as e:
+        return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
 
 
 @mcp.tool()

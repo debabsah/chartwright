@@ -5,14 +5,19 @@ and MCP `fix_spec` only: an explicit field the author reads in the diff and can
 edit or take over. Compile, plan and decompile see an ordinary field; nothing here
 runs at compile time, so a spec that was never fixed builds the same bytes.
 
-Who owns a field, per chart (design.filled is the record):
-- written in the spec and not listed in design.filled: the author's. Never touched.
-- listed in design.filled: the brain's. Every --fix recomputes it from the chart as
-  it is now (a new height, row_limit, grain or groupby), and removes it when the
-  rule no longer applies. The author takes it over by removing it from the list,
-  or by editing it to a value this rule never writes (`could_write`): the next
-  --fix then drops it from the list and leaves the value alone.
-- not written: unset; filled when the rule applies.
+design.filled records, per chart, each field the brain filled and the VALUE it
+wrote. That value is what tells the brain's work from the author's:
+- not recorded and written: the author's. Never touched.
+- recorded, and the chart holds exactly that value: the brain's. Every --fix
+  recomputes it from the chart as it is now (a new height, row_limit, grain or
+  groupby) and updates field and record together, or removes both when the rule
+  no longer applies.
+- recorded, and the chart holds another value: the author edited it. --fix
+  releases it (drops the record, keeps the value); from then on it is the author's.
+- recorded, and the chart no longer holds it: the author deleted it. --fix records
+  null, and a null record means "never fill this field" until the author deletes
+  the record. A deliberate deletion sticks.
+- not recorded and not written: unset; filled when the rule applies.
 
 Every rule is info severity, fixable, presentation-only (the query is unchanged),
 and never writes Superset's own default: that draws nothing new, and an empty
@@ -40,7 +45,6 @@ class Fill:
     decide: Callable[[RuleContext, Any], tuple[Any, str]]
     superset: Any            # Superset's own value for the unset field: never filled
     superset_text: str       # what Superset draws when the field is unset
-    could_write: Callable[[Any], bool]  # a value this rule can produce
     override: str            # how the author takes the field over
 
 
@@ -51,67 +55,89 @@ def _show(v) -> str:
     return "true" if v is True else "false" if v is False else repr(v)
 
 
+def _release(ctx: RuleContext, fill: Fill, c, detail: str, why: str, *, tombstone: bool) -> Finding:
+    """A fix that hands a field to the author and leaves the chart's value alone:
+    the record is dropped, or (tombstone) kept as null so the field is never filled
+    again until the author deletes it."""
+    fix: dict = {"chart": c.name, "set": {}}
+    if tombstone:
+        fix["record"] = {fill.field: None}
+    else:
+        fix["unrecord"] = [fill.field]
+    return Finding(fill.rule, "info", c.name, ctx.where(c.name), detail, fix=fix,
+                   why=why, release=True)
+
+
 def _findings(ctx: RuleContext, fill: Fill):
     for c in ctx.spec.charts:
         if c.type not in fill.types:
             continue
         field = fill.field
-        listed = field in ctx.filled(c.name)
+        rec = ctx.filled(c.name)
+        recorded = field in rec
         present = ctx.written(c, field)
-        if present and not listed:
-            continue  # the author's value
         current = getattr(c, field) if present else None
-        if listed and present and not fill.could_write(current):
-            yield Finding(
-                fill.rule, "info", c.name, ctx.where(c.name),
-                f"{field} {_show(current)} is not a value the brain fills, so it is yours "
-                f"now; --fix drops {field!r} from design.filled and keeps the value",
-                fix={"chart": c.name, "set": {}, "unlist": [field]},
-                why="the author edited the filled value; it is theirs now",
-            )
+        where = f"design.filled[{c.name!r}][{field!r}]"
+        if not recorded:
+            if present:
+                continue  # the author's value
+        elif rec[field] is None:  # the author deleted this fill earlier
+            if present:  # ...and has since written a value of their own
+                yield _release(
+                    ctx, fill, c,
+                    f"{field} {_show(current)} is yours (you deleted the fill earlier); "
+                    f"--fix drops {where}",
+                    "the author wrote the field after deleting its fill", tombstone=False)
+            continue  # a null record: never filled again while it stands
+        elif not present:
+            yield _release(
+                ctx, fill, c,
+                f"{field} was filled and you deleted it; --fix records {where} as null "
+                f"and fills it no more (delete that entry to let it)",
+                "the author deleted the filled value", tombstone=True)
             continue
+        elif current != rec[field]:
+            yield _release(
+                ctx, fill, c,
+                f"{field} {_show(current)} is not the {_show(rec[field])} the brain filled, "
+                f"so it is yours; --fix drops {where} and keeps your value",
+                f"the author changed the filled {_show(rec[field])} to {_show(current)}",
+                tombstone=False)
+            continue
+        # Unset, or still exactly the brain's fill: decide from the chart as it is now.
         value, reason = fill.decide(ctx, c)
         if value is not None and value == fill.superset:
             value = None  # never write Superset's own default
         if value is None:
-            if listed and present:
+            if recorded:
                 yield Finding(
                     fill.rule, "info", c.name, ctx.where(c.name),
                     f"{field} {_show(current)} was filled and no longer applies ({reason}); "
-                    f"--fix removes it, back to {fill.superset_text}",
-                    fix={"chart": c.name, "set": {}, "unset": [field], "unlist": [field]},
+                    f"--fix removes it and its record, back to {fill.superset_text}",
+                    fix={"chart": c.name, "set": {}, "unset": [field], "unrecord": [field]},
                     why=f"no longer applies: {reason}",
-                )
-            elif listed:
-                yield Finding(
-                    fill.rule, "info", c.name, ctx.where(c.name),
-                    f"design.filled lists {field!r}, which the chart no longer holds; "
-                    f"--fix drops the entry",
-                    fix={"chart": c.name, "set": {}, "unlist": [field]},
-                    why="the filled field is gone from the spec",
                 )
             continue
         if present and current == value:
             continue  # the fill is up to date
         if present:
             detail = (f"{field} {_show(current)} was filled for the chart as it was; --fix "
-                      f"refreshes it to {_show(value)}: {reason}. To keep "
-                      f"{_show(current)}, remove {field!r} from design.filled[{c.name!r}]")
+                      f"refreshes it to {_show(value)}: {reason}. Change it yourself to "
+                      f"keep a value of your own")
         else:
             detail = (f"{field} is unset; --fix fills {_show(value)}: {reason}. "
                       f"To keep {fill.superset_text}, ignore {fill.rule}@{c.name}")
         yield Finding(
             fill.rule, "info", c.name, ctx.where(c.name), detail,
-            fix={"chart": c.name, "set": {field: value}, "list": [field]},
+            fix={"chart": c.name, "set": {field: value}, "record": {field: value}},
             why=reason,
         )
 
 
 def _fill(rule_id: str, field: str, types, doc: str, *, superset, superset_text: str,
-          could_write: Callable[[Any], bool], override: str):
+          override: str):
     def deco(decide):
-        f = Fill(rule_id, field, frozenset(types), decide, superset, superset_text,
-                 could_write, override)
+        f = Fill(rule_id, field, frozenset(types), decide, superset, superset_text, override)
         FILLS[rule_id] = f
 
         def fn(ctx: RuleContext):
@@ -141,7 +167,6 @@ def _grain(c) -> tuple[str, str]:
        "a time axis labels its points in its grain's own format ('Sep 2026' by month); "
        "day and week labels only over a year or less",
        superset="smart_date", superset_text="Superset's adaptive labels",
-       could_write=lambda v: v in {fmt for fmt, _ in _LABEL_FORMATS.values()},
        override="write x_label_format yourself, e.g. '%b'")
 def _x_label_format(ctx: RuleContext, c):
     key, label = _grain(c)
@@ -163,14 +188,11 @@ def _x_label_format(ctx: RuleContext, c):
 
 _UNITS = {"PT1H": "hour", "P1D": "day", "P1W": "week", "P1M": "month",
           "P3M": "quarter", "P1Y": "year"}
-_SUFFIX_RE = re.compile(r"vs (previous (hour|day|week|month|quarter|year)"
-                        r"|\d+ (hour|day|week|month|quarter|year)s earlier)")
 
 
 @_fill("default.compare-suffix", "compare_suffix", {"big_number_trend"},
        "a trendline KPI's change says what it compares against ('vs previous month')",
        superset="", superset_text="Superset's bare percentage",
-       could_write=lambda v: isinstance(v, str) and bool(_SUFFIX_RE.fullmatch(v)),
        override="write compare_suffix yourself, e.g. 'vs last month'")
 def _compare_suffix(ctx: RuleContext, c):
     if c.compare_lag is None:
@@ -196,7 +218,6 @@ COUNT_FORMAT_TYPES = (KPI_TYPES | TIMESERIES_TYPES
 @_fill("default.count-format", "number_format", COUNT_FORMAT_TYPES,
        "counts read as whole numbers with thousands separators (',.0f')",
        superset="SMART_NUMBER", superset_text="Superset's SMART_NUMBER ('12.3k')",
-       could_write=lambda v: v == ",.0f",
        override="write number_format yourself, e.g. '.3s'")
 def _count_format(ctx: RuleContext, c):
     shown = [c.metric] if hasattr(c, "metric") else list(c.metrics)
@@ -224,7 +245,6 @@ ID_LIKE = re.compile(r"(?:^|_)(?:id|code|year|zip|zipcode|postcode)$", re.I)
        "a raw table with id, code, year or zip columns draws no cell bars (a bar behind "
        "an identifier reads as an amount)",
        superset=True, superset_text="Superset's bars behind every number",
-       could_write=lambda v: v is False,
        override="write cell_bars: true to keep the bars")
 def _cell_bars(ctx: RuleContext, c):
     if not c.columns:
@@ -243,7 +263,6 @@ def _cell_bars(ctx: RuleContext, c):
        "a table whose row_limit outgrows its panel pages by what fits, one row left for "
        "the pager",
        superset=None, superset_text="Superset's own paging (200 rows once past 5,000 cells)",
-       could_write=lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 1,
        override="write page_length yourself (0 shows every row on one page)")
 def _page_length(ctx: RuleContext, c):
     if not ctx.written(c, "row_limit"):
@@ -264,7 +283,6 @@ def _page_length(ctx: RuleContext, c):
 @_fill("default.search-box", "search_box", {"table"},
        "a raw table of more than ~20 rows gets a search box (threshold unsourced)",
        superset=False, superset_text="no search box",
-       could_write=lambda v: v is True,
        override="write search_box: false")
 def _search_box(ctx: RuleContext, c):
     if not c.columns:
@@ -284,7 +302,6 @@ def _search_box(ctx: RuleContext, c):
 @_fill("default.single-series-legend", "show_legend", TIMESERIES_TYPES | {"bar"},
        "a single series named by the chart or y-axis title needs no legend",
        superset=True, superset_text="Superset's legend",
-       could_write=lambda v: v is False,
        override="write show_legend: true")
 def _single_series_legend(ctx: RuleContext, c):
     if len(c.metrics) != 1 or c.groupby or c.series_limit is not None:
@@ -306,7 +323,6 @@ def _single_series_legend(ctx: RuleContext, c):
        "few bars on a wide panel carry their values (<= 12 bars, >= 6/12 wide; "
        "thresholds unsourced)",
        superset=False, superset_text="no values on the bars",
-       could_write=lambda v: v is True,
        override="write show_value: false")
 def _value_labels(ctx: RuleContext, c):
     if len(c.metrics) != 1 or c.groupby:

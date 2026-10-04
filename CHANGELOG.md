@@ -110,24 +110,26 @@ while the major version is 0, minor bumps may include breaking changes and say s
   None writes Superset's own value; the thresholds are audience parameters
   (`search_min_rows`, `value_label_max_bars`, `value_label_min_width`, `page_min_rows`,
   `day_label_max_span_days`), tunable in `design.yaml`.
-- `design.filled` records which fields `--fix` filled, per chart. `--fix` keeps those up to
-  date as the chart changes and removes them when they stop applying. A field you write
-  is never touched; a filled field becomes yours when you remove it from the list, or
-  when you change it to a value the rule never writes (`page_length: 0`, say).
+- `design.filled` records, per chart, each field `--fix` filled and the value it wrote.
+  While the chart still holds that value, `--fix` keeps it up to date as the chart changes
+  and removes it when it stops applying. A field you write is never touched. Edit a filled
+  value and it is yours; delete it and it stays deleted (`--fix` records null and fills it
+  no more, until you delete that record).
 - `chartwright explain <spec> [--chart NAME] [--json]`: per chart, each design-default
-  field's value, whether it came from the spec, a fill or Superset, why, and how to change
-  it. `advise --chart NAME` narrows a review, or a `--fix`, to one chart.
+  field's value, whether it came from the spec, a fill or Superset, the value
+  `design.filled` recorded, why, and how to change it. `advise --chart NAME` narrows a
+  review, or a `--fix`, to one chart. MCP: `advise_spec` takes `chart`, and the new
+  `explain_spec` tool returns the `explain --json` payload (eleven tools).
 
 ### Changed
 
-- Each `fixed` entry from `advise --fix` and `fix_spec` gains `kind` (`"fill"` or
-  `"repair"`) and a `why` line. `redesign` still applies repairs only and names
-  `advise --fix` when fills are waiting. The brief and the skill tell an AI author to leave
-  design defaults unset, run `--fix` before building, and edit the file it wrote. The design
-  brain's version is now 5.
+- Each `fixed` entry from `advise --fix` and `fix_spec` gains `kind` (`"fill"`, `"repair"`,
+  or `"release"` when a fill passes to the author) and a `why` line. `redesign` still
+  applies repairs only and names `advise --fix` when fills are waiting. The brief and the
+  skill tell an AI author to leave design defaults unset, run `--fix` before building, and
+  edit the file it wrote. The design brain's version is now 5.
 - `narrative.big-number-format` no longer fires on a COUNT KPI, where
   `default.count-format` offers the same fix.
-
 - `y_axis_max` now applies on Superset 4.1.4 and 5.0.0 as well as 6.1.0, and on every
   chart with a value axis, not only lines. It was written into the ECharts Options,
   which only 6.1.0 reads, and is now the axis bound every release reads

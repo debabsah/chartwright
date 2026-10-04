@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (860 tests, 51 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (872 tests, 51 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
@@ -104,8 +104,9 @@ collects, the same "generated, not hand-maintained" rule the rule table in
 - **Design defaults** (`test_design_defaults.py`): each `default.*` fill
   fires where its conditions hold and nowhere else, never touches a field
   the author wrote (a written Superset default included), keeps its own
-  fills current through `design.filled` and hands a field over when the
-  author edits it, and never writes Superset's own value. Filling every
+  fills current through the values `design.filled` records, keeps an
+  author's edit to a filled value, never refills a deleted one, and never
+  writes Superset's own value. Filling every
   fixture converges, a second `--fix` is a no-op, a paged table never
   ratchets `size.table-window` across heights 6-20, fills never write
   geometry or a field a repair writes, and a fixed spec compiles to the

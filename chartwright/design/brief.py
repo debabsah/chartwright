@@ -92,9 +92,9 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "  page_length and search_box; show_legend on a single named series; show_value on few bars.",
         "  Set one yourself only when the user asks for it, and say so in your reply.",
         "- Run `chartwright advise <spec> --fix` (MCP: fix_spec) before you build. It writes each value",
-        "  into the spec file and lists it in design.filled; its `fixed` entries say kind \"fill\" and why.",
+        "  into the spec file and records it in design.filled; its `fixed` entries say kind \"fill\" and why.",
         "- Edit the spec it wrote; never regenerate the spec from your own copy, or the fills are lost.",
-        "  A value you change becomes yours: remove the field from design.filled to keep it.",
+        "  A filled value you change or delete is yours from then on (kind \"release\"); never edit design.filled.",
         "- Never filled, set them only on request: category_sort, y_axis_truncate, compare_lag,",
         "  series_limit, show_totals, and currency formats.",
     ]

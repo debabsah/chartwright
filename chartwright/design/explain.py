@@ -1,9 +1,10 @@
 """`chartwright explain`: where each design-default field's value comes from.
 
 Per chart, one row per field a default.* rule governs: its value, its source
-(`spec` = the author's, `filled` = the brain's fill, listed in design.filled,
-`superset default` = unset, so Superset draws its own), the rule, a one-line
-reason, and how to take it over. Offline and deterministic: the same advise
+(`spec` = the author's, `filled` = the brain's fill, still holding the value
+design.filled records, which the row shows as `recorded`, `superset default` =
+unset, so Superset draws its own), the rule, a one-line reason, and how to take
+it over. Offline and deterministic: the same advise
 run `check` and `apply` carry, read field by field (docs/DESIGN-BRAIN.md sec.16).
 """
 
@@ -20,20 +21,27 @@ from .presets import DEFAULT_AUDIENCE, Overlay, load_overlay, params_for
 
 def _row(ctx: RuleContext, chart, fill, pending: dict, ignored: set[str]) -> dict:
     field, key = fill.field, f"{fill.rule}@{chart.name}"
-    listed, present = field in ctx.filled(chart.name), ctx.written(chart, field)
-    source = "filled" if listed and present else "spec" if present else "superset default"
+    rec = ctx.filled(chart.name)
+    present = ctx.written(chart, field)
+    # `filled` only while the chart still holds exactly the value the brain wrote;
+    # an edited fill is already the author's (the next --fix releases its record).
+    source = ("filled" if ctx.brain_owns(chart, field)
+              else "spec" if present else "superset default")
     f = pending.get(key)
     if key in ignored or fill.rule in ignored:
         reason = f"design.ignore holds {key}: the brain leaves this field alone"
+    elif f is not None and f.kind == "release":
+        reason = f"yours: {f.why}; advise --fix updates design.filled to match"
     elif f is not None:
         sets = f.fix.get("set", {})
         if field in sets:
             verb = "refreshes it to" if present else "fills"
             reason = f"advise --fix {verb} {_show(sets[field])}: {f.why}"
-        elif field in f.fix.get("unset", ()):
-            reason = f"advise --fix removes it: {f.why}"
         else:
-            reason = f"advise --fix drops it from design.filled: {f.why}"
+            reason = f"advise --fix removes it: {f.why}"
+    elif field in rec and rec[field] is None:
+        reason = (f"{fill.superset_text}; you deleted the fill, so the brain fills it no "
+                  f"more while design.filled[{chart.name!r}] holds {field!r} as null")
     elif source == "spec":
         reason = "written in the spec, so the brain leaves it alone"
     else:
@@ -42,13 +50,16 @@ def _row(ctx: RuleContext, chart, fill, pending: dict, ignored: set[str]) -> dic
     if source == "spec":
         override = "it is yours: edit it freely"
     elif source == "filled":
-        override = f"{fill.override}, or remove {field!r} from design.filled to keep this value"
+        override = f"{fill.override}: any value you write is yours from then on"
     elif f is not None and field in f.fix.get("set", {}):
         override = f"{fill.override}, or ignore {key} to keep Superset's default"
     else:
         override = f"write {field} in the spec to choose it yourself"
-    return {"field": field, "value": getattr(chart, field) if present else None,
-            "source": source, "rule": fill.rule, "reason": reason, "override": override}
+    row = {"field": field, "value": getattr(chart, field) if present else None,
+           "source": source, "rule": fill.rule, "reason": reason, "override": override}
+    if field in rec:
+        row["recorded"] = rec[field]  # the value design.filled holds (null: deleted fill)
+    return row
 
 
 def explain(spec: DashboardSpec, *, audience: str | None = None, chart: str | None = None,
@@ -58,7 +69,7 @@ def explain(spec: DashboardSpec, *, audience: str | None = None, chart: str | No
     report = advise(spec, audience=audience, overlay=overlay, chart=chart)
     aud = report.audience
     ctx = RuleContext(spec, params_for(aud or DEFAULT_AUDIENCE, overlay))
-    pending = {f.key: f for f in report.findings if f.kind == "fill" and f.fix}
+    pending = {f.key: f for f in report.findings if f.kind != "repair" and f.fix}
     ignored = set(report.ignored)
     charts = []
     for c in spec.charts:

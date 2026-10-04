@@ -11,7 +11,7 @@ into one. Everything below works from that one file.
     - A screenshot of a dashboard in another BI tool, pointed at the same underlying data.
 - **Reviewable Checkpoint**: The AI's output is a small spec file you can read, edit, and version like code.
 - **Open AI Contract**: `chartwright schema` prints the full JSON Schema so any LLM or tool can generate valid specs.
-- **MCP Server**: Ten tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
+- **MCP Server**: Eleven tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
 - **Guardrails**: The dashboard is new; the data behind it must be real. Every dataset, column, and metric the AI references is confirmed to exist before anything is built, so a made-up column becomes a clear error message, never a broken chart. The error suggests the closest real column names and lists the dataset's columns, so the AI can correct itself in one round.
 
 ## Dashboard Design
@@ -63,7 +63,7 @@ into one. Everything below works from that one file.
     - Monthly time axes labelled `Sep 2026`, counts shown as `12,345`, "vs previous month" after a trendline KPI's change.
     - Tables that page by what fits their panel, a search box on long raw tables, no cell bars behind id, code, year or zip columns.
     - No legend on a single series the title already names, values written on a few bars.
-    - A field you write is never touched. Filled fields are listed in the spec's `design.filled` and kept up to date as the chart changes; to make one yours, remove it from that list. To keep Superset's default instead, add the rule to `design.ignore`.
+    - A field you write is never touched. A filled value is kept up to date as the chart changes until you edit or delete it; then it is yours, and a deleted one stays deleted. To keep Superset's default from the start, add the rule to `design.ignore`.
     - The bundle depends on the spec alone: compile, `plan` and decompile never add a value of their own.
 - **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
 - **House Style**: A `design.yaml` overlay tunes thresholds, disables rules, and appends org guidance to the brief, so a deployment can set its own standards without forking the rulebook.

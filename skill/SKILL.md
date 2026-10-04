@@ -76,12 +76,13 @@ approximate it with a different mechanism.
    data-aware rules (column types, cardinality). Apply what it suggests:
    run `CW advise <abs-spec-path> --fix` before any hand edit and before
    apply (MCP: `fix_spec`). It rewrites the file in place: safe geometry
-   repairs, plus the design defaults it fills into unset fields, listed in
-   the spec's `design.filled`. Each `fixed` entry says `kind: "fill"` or
-   `"repair"` and why; keep the fills unless the user asked otherwise. Make
-   the rest of your changes by editing THAT file; never regenerate the spec
-   from your own copy, or the fills are lost. To keep a value of your own in
-   a filled field, change it and remove the field from `design.filled`.
+   repairs, plus the design defaults it fills into unset fields, recorded in
+   the spec's `design.filled` with the value written. Each `fixed` entry says
+   `kind: "fill"`, `"repair"` or `"release"` and why; keep the fills unless
+   the user asked otherwise. Make the rest of your changes by editing THAT
+   file; never regenerate the spec from your own copy, or the fills are lost.
+   A filled value you change or delete is yours from then on: the next
+   `--fix` releases it and never refills it. Never edit `design.filled`.
    `CW explain <abs-spec-path> [--chart NAME]` says where each value came
    from. A finding that is a deliberate exception goes in the spec's
    `design.ignore` as `"rule.id@Chart Name"`, and you tell the user. At most
@@ -127,6 +128,6 @@ learns from them over time (`CW calibrate`).
 | User wants a chart type outside the 15 | Say it's out of surface; offer the nearest supported type |
 | Retry apply a 4th time with random changes | Stop; surface all errors verbatim |
 | Advice finding seems wrong; hand-tune to dodge it | Record it in the spec's `design.ignore` and tell the user, or report a rule bug |
-| A design default you'd rather not have; delete it, or rewrite the spec without it | `--fix` would fill it again: add `"default.rule@Chart Name"` to `design.ignore` and tell the user |
+| A design default you'd rather not have; rewrite the spec without it | Delete the field from the file `--fix` wrote (a deleted fill stays deleted), or add `"default.rule@Chart Name"` to `design.ignore`; tell the user |
 | "Quick" dashboard via POST /api/v1/dashboard/ | Never; the guarantee only exists through chartwright |
 | Auth fails; hunt for password variables or files | Show the ProfileError; the user names their env var or password_cmd |

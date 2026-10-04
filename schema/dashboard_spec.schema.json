@@ -1346,12 +1346,10 @@
         },
         "filled": {
           "additionalProperties": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "additionalProperties": true,
+            "type": "object"
           },
-          "description": "Written by `chartwright advise --fix`: per chart name, the fields it filled with a design default. It keeps those fields up to date and never touches a field not listed here. Remove a field from its list to keep the value as yours. Compile ignores this block.",
+          "description": "Written by `chartwright advise --fix`, not by hand: per chart name, each field it filled with a design default and the value it wrote. While the chart still holds that value, --fix keeps it up to date. Edit the field and it is yours; delete it and --fix records null here and fills it no more, until you delete that entry. Compile ignores this block.",
           "title": "Filled",
           "type": "object"
         }
