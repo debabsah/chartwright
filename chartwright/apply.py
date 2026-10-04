@@ -151,6 +151,10 @@ def _roundtrip_dataset_files(resolution: Resolution, client: SupersetClient) -> 
     return extra
 
 
+# Chart fields beyond params that the spec owns (null when the spec omits them).
+CHART_PUT_FIELDS = ("description", "certified_by", "certification_details", "cache_timeout")
+
+
 def chart_payloads_from_bundle(bundle: bytes, dataset_ids: dict[str, int] | None = None) -> dict[str, dict]:
     """uuid -> ChartRestApi.put payload, from the compiled bundle's chart yamls.
 
@@ -176,6 +180,12 @@ def chart_payloads_from_bundle(bundle: bytes, dataset_ids: dict[str, int] | None
                 # params changed -> any stored query context is stale
                 "query_context": None,
             }
+            # The chart's own fields travel too: the importer never overwrites an
+            # existing chart, so without them a re-apply would leave a changed
+            # description or certification at its old value. ChartPutSchema takes
+            # each (allow_none) at 4.1.4, 5.0.0 and 6.1.0.
+            for key in CHART_PUT_FIELDS:
+                payload[key] = cy.get(key)
             ds_id = (dataset_ids or {}).get(str(cy.get("dataset_uuid")))
             if ds_id is not None:
                 payload["datasource_id"] = ds_id

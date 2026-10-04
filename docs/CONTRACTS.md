@@ -53,6 +53,22 @@ running the tool against real instances of all three releases.
   4.1.4/5.0.0, `:187` at 6.1.0). An apply therefore replaces CSS edited in
   the UI with the spec's `css`, or clears it when the spec has none; `plan`
   reports the difference first.
+- **Tags import on 6.1.0 only, and only with tagging turned on.** The
+  dashboard and chart import schemas gain `tags` at 6.1.0
+  (`superset/dashboards/schemas.py:519`, `superset/charts/schemas.py:1627`).
+  4.1.4 and 5.0.0 load every bundle file through schemas that reject a
+  field they don't declare (`superset/commands/importers/v1/utils.py:187`),
+  so a bundle carrying tags fails to import there. On 6.1.0 the importer
+  applies tags only with the `TAGGING_SYSTEM` feature flag
+  (`superset/commands/dashboard/importers/v1/__init__.py:152,207`) and
+  replaces the object's tags with the bundle's list
+  (`superset/commands/importers/v1/utils.py:335`). The tool writes `tags`
+  only when the spec sets them, and the field's description says all this.
+- **A chart's own settings change through the chart API.** Since the
+  importer never overwrites an existing chart, a re-apply sends a chart's
+  description, certification and cache timeout with its options in the
+  in-place update; the chart update schema takes each one, empty included,
+  in every release (4.1.4 `superset/charts/schemas.py:238,259,273,276`).
 - **An import is a single database transaction** (6.1.0
   `superset/commands/importers/v1/__init__.py:85`): a failed import leaves
   no partial dashboard behind.
@@ -73,6 +89,31 @@ running the tool against real instances of all three releases.
   From 5.0.0 the same hook writes only color settings. A stale tab left
   open on an older release is therefore a real overwrite source, and it is
   the exact scenario the tool's stale-tab protection is tested against.
+- **A dashboard setting a release doesn't know blocks later saves.** An
+  import stores the dashboard's settings as given, but every later update
+  checks them against the settings schema, which rejects keys it doesn't
+  declare (4.1.4 `superset/dashboards/schemas.py:107-116,403-406`; the
+  same in 5.0.0). `show_chart_timestamps` is declared from 6.1.0 (`:167`),
+  so on 4.1.4 and 5.0.0 a dashboard carrying it imports, then fails every
+  save, including apply's filter-scope step. The compiler writes it only
+  when the spec turns it on, and the field is documented as 6.1-only.
+- **The horizontal filter bar is behind a flag before 6.1.0.**
+  `filter_bar_orientation` is a declared setting in every release, but
+  4.1.4 and 5.0.0 draw the horizontal bar only with the
+  `HORIZONTAL_FILTER_BAR` feature flag, off by default (4.1.4
+  `superset/config.py:532`, 5.0.0 `:529`;
+  `src/dashboard/components/DashboardBuilder/DashboardBuilder.tsx:399-403`
+  at both); 6.1.0 reads the setting with no flag (`:381-382`).
+- **A select filter's sort metric moved in 6.1.0.** 4.1.4 and 5.0.0 save it
+  at the filter's top level (`FiltersConfigForm.tsx:1098` and `:1123`),
+  6.1.0 inside its control values (`:1262-1265`); every release merges both
+  into the filter's query (`src/dashboard/components/nativeFilters/utils.ts`,
+  4.1.4 `:80`, 5.0.0 `:81`, 6.1.0 `:83`). The tool writes both.
+- **Headers and dividers sit beside rows, never inside one.** The layout
+  allows a HEADER or DIVIDER under the grid, a tab or a column, and a row
+  holds only charts, markdown and columns (`src/dashboard/util/isValidChild.ts:64-104`,
+  all three releases). The spec therefore places a header or divider as a
+  row of its own.
 - **The server normalizes what it stores and accepts dangling references.**
   Omitted settings are filled with defaults on write (4.1.4
   `superset/daos/dashboard.py:258-265`), and filter scopes pointing at
@@ -88,12 +129,23 @@ running the tool against real instances of all three releases.
   (`tools/contracts/params-contract.json`), and CI fails if the tool ever
   emits an option a supported release does not declare
   (`tools/params_drift.py`).
-- **The `mixed_timeseries` entry lists every key the Mixed Chart panel declares**,
-  extracted from `plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx` at
-  4.1.4, 5.0.0 and 6.1.0 together with the shared sections it pulls in (title,
-  legend, tooltip, annotations, advanced analytics). Query B's query keys take
-  `_b` and its display keys `B`. 6.1.0 adds, among others, `only_total` and
+- **The `mixed_timeseries` entry is extracted from the plugin source** by
+  `tools/extract_mixed_contract.py`: `plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx`
+  at 4.1.4, 5.0.0 and 6.1.0, with the sections and controls it pulls in
+  (title, legend, tooltip, annotations, advanced analytics; query B's query
+  keys take `_b`, its display keys `B`). Like the other entries it lists
+  every control the panel declares, so the drift check sees the Mixed
+  controls the tool does not emit yet; `--check` fails when the JSON no
+  longer matches the source. 6.1.0 adds, among others, `only_total` and
   `only_totalB`.
+- **Formula annotation layers draw the same way in every release.** The line,
+  bar, area, scatter and mixed panels all include the annotation section
+  (`chart-controls/src/sections/annotationsAndLayers.tsx:31`), and both
+  plugins draw a FORMULA layer with `transformFormulaAnnotation`
+  (`plugin-chart-echarts/src/Timeseries/transformers.ts`, 4.1.4 `:356`,
+  5.0.0 `:362`, 6.1.0 `:457`, the same body in each). Its colour, opacity,
+  width and line style (solid, dashed or dotted) reach the chart; a formula
+  layer has no on-chart label, so the tool offers none.
 - **Options genuinely differ by release.** 6.1.0 renamed the big-number
   subtitle field (`subheader` became `subtitle`) and removed sort controls
   that older releases still have. The tool emits only options valid on all

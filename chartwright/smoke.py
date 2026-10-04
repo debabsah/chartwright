@@ -70,7 +70,21 @@ class SmokeResult:
 
 
 def _filters_payload(chart) -> list[dict]:
-    return [{"col": f.column, "op": f.op, "val": f.value} for f in chart.filters]
+    return [{"col": f.column, "op": f.op, "val": f.value} for f in chart.filters if f.sql is None]
+
+
+def _sql_where(chart) -> str | None:
+    """A chart's custom-SQL filters as the query's extra WHERE text (extras.where,
+    accepted by the chart data API in every supported release)."""
+    parts = [f"({f.sql})" for f in chart.filters if f.sql is not None]
+    return " AND ".join(parts) or None
+
+
+def _with_where(q: dict, chart) -> dict:
+    where = _sql_where(chart)
+    if where:
+        q["extras"]["where"] = where
+    return q
 
 
 def _time_axis(column: str, grain: str | None) -> dict:
@@ -136,7 +150,7 @@ def _query_for(chart, spec: DashboardSpec) -> dict:
     elif t == "treemap":
         q["metrics"] = [metric(chart.metric)]
         q["columns"] = list(chart.groupby)
-    return q
+    return _with_where(q, chart)
 
 
 def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
@@ -145,7 +159,7 @@ def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
          if mixed_time_axis(chart, ds) else chart.x_column)
     out = []
     for series in (chart.a, chart.b):
-        out.append({
+        out.append(_with_where({
             "filters": _filters_payload(chart),
             "extras": {"time_grain_sqla": chart.time_grain or "P1D"},
             "time_range": chart.time_range or "No filter",
@@ -153,7 +167,7 @@ def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
             "columns": [x] + ([series.groupby] if series.groupby else []),
             "metrics": [_metric_payload(m, spec.dashboard.slug, chart.name) for m in series.metrics],
             "orderby": [],
-        })
+        }, chart))
     return out
 
 

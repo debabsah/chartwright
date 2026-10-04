@@ -38,10 +38,15 @@ approximate it with a different mechanism.
 1. `CW schema`: read the contract. Surface: 15 chart types (big numbers,
    timeseries line/bar/area/scatter, categorical bar, pie/donut, table,
    pivot_table, heatmap, histogram, funnel, treemap, mixed: bars + a line on
-   two axes), per-chart `filters`
-   (WHERE), dashboard-level `filters` (select, time_range and numeric range native
-   filter bar, time_range with an optional `default`), layout as `rows`, `tabs`, or an
-   ASCII `sketch` with a `legend`, markdown blocks in rows, an optional
+   two axes), metrics as saved names, `AGG(col) [AS Label]` or
+   `SQL(expression) AS Label`, per-chart `filters` (WHERE: column/op/value
+   or `sql`), goal lines (`annotations`) on line/bar/area/scatter/mixed,
+   dashboard-level `filters` (select, time_range, numeric range, time_grain
+   and time_column native filter bar; `dependencies` for cascading; `charts`
+   to scope any of them), dashboard settings (colour scheme, description,
+   certification, draft, refresh), layout as `rows`, `tabs`, or an
+   ASCII `sketch` with a `legend`, markdown blocks in rows, `{"header": ...}`
+   and `{"divider": true}` entries between rows, an optional
    `layout.footer` (rows below everything, shown under every tab), an optional
    `design` block (audience + rule suppressions).
 2. Design brain, ON by default: run `CW brief --audience <a>` and follow it

@@ -10,14 +10,15 @@ from dataclasses import asdict, dataclass, field
 from typing import Callable, Iterator
 
 from ..resolver import ResolvedDataset, Resolution
-from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock
+from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 
 # "3" = the post-review batch: the reconciled grid model and stricter
 # table_visible_ratio, `polished` provenance in the payload, and the
 # data.unwindowed-history rule. Bumped because all three change what a spec
 # is told -- a new warn-severity rule can newly block a `--design strict`
 # pipeline, so consumers keying on this get an honest signal.
-DESIGN_BRAIN_VERSION = "3"
+# "4" = narrative.color-scheme, a new warn-severity rule (same reason).
+DESIGN_BRAIN_VERSION = "4"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
@@ -299,7 +300,7 @@ def _normalize(spec: DashboardSpec) -> list[Section]:
 
 def _bands_from_rows(spec: DashboardSpec, rows) -> list[Band]:
     bands = []
-    for row in rows:
+    for row in item_rows(rows):  # headers and dividers hold no charts
         items = []
         for item in row:
             w = spec.resolved_item_width(item)

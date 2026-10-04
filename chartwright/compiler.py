@@ -12,6 +12,7 @@ import io
 import json
 import uuid
 import zipfile
+from decimal import Decimal
 
 import yaml
 
@@ -24,10 +25,14 @@ from .spec import (
     HEATMAP_DEFAULT_SCHEME,
     PIVOT_ORDER,
     DashboardSpec,
+    DividerBlock,
+    HeaderBlock,
     MarkdownBlock,
     _AxisChart,
+    _ColorSchemeMixin,
     _SeriesDisplay,
     parse_metric,
+    row_items,
 )
 
 BUNDLE_ROOT = "sdc_bundle"
@@ -72,6 +77,15 @@ def _metric_payload(metric: str, slug: str, chart_name: str) -> str | dict:
         return metric
     option = "metric_sdc_" + uuid.uuid5(ids.NAMESPACE, f"{slug}/chart/{chart_name}/metric/{metric}").hex[:12]
     label = adhoc["label"] or metric
+    if adhoc.get("sql") is not None:
+        # Custom SQL (the metric popover's "Custom SQL" tab), in every release.
+        return {
+            "expressionType": "SQL",
+            "sqlExpression": adhoc["sql"],
+            "label": label,
+            "optionName": option,
+            "hasCustomLabel": True,
+        }
     if adhoc["column"] == "*":
         return {
             "expressionType": "SQL",
@@ -139,8 +153,17 @@ def _column_config(chart) -> dict:
 
 
 def _adhoc_filters(chart) -> list[dict]:
+    return _adhoc_filter_list(chart.filters)
+
+
+def _adhoc_filter_list(filters) -> list[dict]:
     out = []
-    for f in chart.filters:
+    for f in filters:
+        if f.sql is not None:
+            # The filter popover's "Custom SQL" tab: the backend ANDs the
+            # sqlExpression into WHERE (all three releases).
+            out.append({"clause": "WHERE", "expressionType": "SQL", "sqlExpression": f.sql})
+            continue
         out.append({
             "clause": "WHERE",
             "expressionType": "SIMPLE",
@@ -445,10 +468,16 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
 
     if isinstance(chart, _SeriesDisplay):
         _series_display_params(chart, p, metric)
+    # Emitted only when set, so pre-feature bundles stay byte-identical. A heatmap's
+    # color_scheme is its sequential scheme (linear_color_scheme above), not this one.
+    if isinstance(chart, _ColorSchemeMixin) and chart.color_scheme:
+        p["color_scheme"] = chart.color_scheme
     if isinstance(chart, _AxisChart):
         _x_label_params(chart, p)
         if t != "mixed":
             _y_axis_params(chart, p)
+        if chart.annotations:
+            p["annotation_layers"] = [_annotation_payload(a) for a in chart.annotations]
     if t in LEGEND_TYPES:
         _legend_params(chart, p)
     if "echart_options" in p:
@@ -544,6 +573,44 @@ def _legend_params(chart, p: dict) -> None:
         p["legendType"] = chart.legend_type
 
 
+# Spec opacity -> AnnotationOpacity (superset-ui-core query/types/AnnotationLayer.ts).
+_ANNOTATION_OPACITY = {"low": "opacityLow", "medium": "opacityMedium", "high": "opacityHigh"}
+
+
+def _num_text(v: float) -> str:
+    """A number as plain decimal text: the formula evaluator (math-expression-
+    evaluator) has no exponent notation, so 1e-07 is written 0.0000001."""
+    if float(v).is_integer():
+        return str(int(v))
+    return format(Decimal(repr(float(v))), "f")
+
+
+def _annotation_payload(a) -> dict:
+    """One FORMULA layer, shaped as the explore panel's AnnotationLayer editor
+    saves it (applyAnnotation, AnnotationLayer.jsx at 4.1.4/5.0.0, .tsx at
+    6.1.0). The ECharts timeseries and mixed plugins draw it with
+    transformFormulaAnnotation (color, opacity, style as the line type, width)."""
+    return {
+        "name": a.name,
+        "annotationType": "FORMULA",
+        "sourceType": "",
+        "value": _num_text(a.value) if a.value is not None else a.formula,
+        "color": a.color,
+        "opacity": _ANNOTATION_OPACITY.get(a.opacity, ""),
+        "style": a.style,
+        "width": int(a.width) if float(a.width).is_integer() else a.width,
+        "showMarkers": False,
+        "hideLine": False,
+        "overrides": {},
+        "show": True,
+        "showLabel": False,
+        "titleColumn": "",
+        "descriptionColumns": [],
+        "timeColumn": "",
+        "intervalEndColumn": "",
+    }
+
+
 def mixed_time_axis(chart, ds) -> bool:
     """Whether a mixed chart's x column draws a time axis: the column's reported type
     decides (a column flagged temporal counts), time_grain only when it is unknown.
@@ -590,26 +657,64 @@ def _has_bars(chart) -> bool:
 
 def _chart_yaml(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
     ds = resolution.for_chart(chart.dataset)
-    return {
+    out = {
         "slice_name": chart.name,
-        "description": None,
-        "certified_by": None,
-        "certification_details": None,
+        "description": chart.description,
+        "certified_by": chart.certified_by,
+        "certification_details": chart.certification_details,
         "viz_type": VIZ_TYPE[chart.type],
         "params": _chart_params(chart, spec, resolution),
         "query_context": None,
-        "cache_timeout": None,
+        "cache_timeout": chart.cache_timeout,
         "uuid": str(ids.chart_uuid(spec.dashboard.slug, chart.name)),
         "version": "1.0.0",
         "dataset_uuid": ds.uuid,
     }
+    if chart.tags is not None:
+        # ImportV1ChartSchema has `tags` from 6.1.0 only (docs/CONTRACTS.md).
+        out["tags"] = list(chart.tags)
+    return out
+
+
+HEADER_SIZE = {"small": "SMALL_HEADER", "medium": "MEDIUM_HEADER", "large": "LARGE_HEADER"}
+BACKGROUND = {"transparent": "BACKGROUND_TRANSPARENT", "white": "BACKGROUND_WHITE"}
+
+
+def _chart_meta(spec: DashboardSpec, name: str, cuuid, width: int, height: float, counter: list[int]) -> dict:
+    meta = {
+        "uuid": str(cuuid),
+        "sliceName": name,
+        "width": width,
+        "height": int(round(height * ROW_UNITS_PER_SPEC_UNIT)),
+        # Placeholder the importer requires and remaps via uuid.
+        "chartId": 100000 + counter[0],
+    }
+    override = next(c.display_name for c in spec.charts if c.name == name)
+    if override:
+        # The dashboard card's title (ChartHolder.tsx reads sliceNameOverride, all releases).
+        meta["sliceNameOverride"] = override
+    return meta
 
 
 def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix: str, counter: list[int]) -> list[str]:
-    """Emit ROW/CHART/MARKDOWN nodes for a list of rows; returns row ids."""
+    """Emit ROW/CHART/MARKDOWN nodes (and HEADER/DIVIDER beside them) for a list
+    of rows; returns the ids of the grid- or tab-level nodes, in order."""
     slug = spec.dashboard.slug
     row_ids: list[str] = []
-    for i, row in enumerate(rows):
+    for i, entry in enumerate(rows):
+        if isinstance(entry, (HeaderBlock, DividerBlock)):
+            # Superset nests headers and dividers in GRID, TAB or COLUMN, never in a
+            # ROW (dashboard/util/isValidChild.ts, all three releases).
+            kind = "HEADER" if isinstance(entry, HeaderBlock) else "DIVIDER"
+            node_id = f"{kind}-{prefix}{i + 1}"
+            meta = ({"text": entry.header, "headerSize": HEADER_SIZE[entry.size],
+                     "background": BACKGROUND[entry.background]}
+                    if kind == "HEADER" else {})
+            pos[node_id] = {"type": kind, "id": node_id, "children": [], "parents": parents, "meta": meta}
+            row_ids.append(node_id)
+            continue
+        row = row_items(entry)
+        background = BACKGROUND[getattr(entry, "background", "transparent")]
         row_id = f"ROW-{prefix}{i + 1}"
         child_ids: list[str] = []
         for j, item in enumerate(row):
@@ -637,21 +742,15 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
                 "id": chart_id,
                 "children": [],
                 "parents": [*parents, row_id],
-                "meta": {
-                    "uuid": str(cuuid),
-                    "sliceName": item,
-                    "width": spec.resolved_item_width(item),
-                    "height": int(round(spec.resolved_height(item) * ROW_UNITS_PER_SPEC_UNIT)),
-                    # Placeholder the importer requires and remaps via uuid.
-                    "chartId": 100000 + counter[0],
-                },
+                "meta": _chart_meta(spec, item, cuuid, spec.resolved_item_width(item),
+                                    spec.resolved_height(item), counter),
             }
         pos[row_id] = {
             "type": "ROW",
             "id": row_id,
             "children": child_ids,
             "parents": parents,
-            "meta": {"background": "BACKGROUND_TRANSPARENT"},
+            "meta": {"background": background},
         }
         row_ids.append(row_id)
     return row_ids
@@ -668,13 +767,7 @@ def _sketch_chart_node(pos, spec, sc, width, parents, counter) -> str:
         "id": chart_id,
         "children": [],
         "parents": parents,
-        "meta": {
-            "uuid": str(cuuid),
-            "sliceName": sc.name,
-            "width": width,
-            "height": int(round((explicit or sc.height) * ROW_UNITS_PER_SPEC_UNIT)),
-            "chartId": 100000 + counter[0],
-        },
+        "meta": _chart_meta(spec, sc.name, cuuid, width, explicit or sc.height, counter),
     }
     return chart_id
 
@@ -789,17 +882,32 @@ def _position(spec: DashboardSpec) -> dict:
     return pos
 
 
+def filter_id(slug: str, name: str) -> str:
+    """The native filter's deterministic id (apply's scope stage matches on it)."""
+    return "NATIVE_FILTER-sdc-" + uuid.uuid5(ids.NAMESPACE, f"{slug}/filter/{name}").hex[:12]
+
+
+def _pre_filter(f, base: dict) -> None:
+    """The filter form's "Pre-filter available values" (FiltersConfigModal/utils.ts
+    createHandleSave writes adhoc_filters, time_range and granularity_sqla at the
+    filter's top level; nativeFilters/utils.ts getFormData sends them with the
+    filter's query; all three releases). Emitted only when set."""
+    if f.pre_filter:
+        base["adhoc_filters"] = _adhoc_filter_list(f.pre_filter)
+    if f.time_range:
+        base["time_range"] = f.time_range
+        base["granularity_sqla"] = f.time_column
+
+
 def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
     out = []
+    slug = spec.dashboard.slug
     for f in spec.filters:
-        fid = "NATIVE_FILTER-sdc-" + uuid.uuid5(
-            ids.NAMESPACE, f"{spec.dashboard.slug}/filter/{f.name}"
-        ).hex[:12]
         base = {
-            "id": fid,
+            "id": filter_id(slug, f.name),
             "name": f.name,
-            "description": "",
-            "cascadeParentIds": [],
+            "description": f.description or "",
+            "cascadeParentIds": [filter_id(slug, p) for p in getattr(f, "dependencies", None) or []],
             "defaultDataMask": {"extraFormData": {}, "filterState": {}, "ownState": {}},
             "scope": {"rootPath": ["ROOT_ID"], "excluded": []},
             "type": "NATIVE_FILTER",
@@ -812,9 +920,17 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
                 "multiSelect": f.multi,
                 "defaultToFirstItem": f.default_to_first,
                 "enableEmptyFilter": f.required,
-                "inverseSelection": False,
-                "searchAllOptions": False,
+                "inverseSelection": f.inverse_selection,
+                "searchAllOptions": f.search_all_options,
             }
+            if f.sort_metric:
+                # 4.1.4/5.0.0 save the sort metric at the filter's top level, 6.1.0 in
+                # controlValues (FiltersConfigForm.tsx); getFormData spreads both into
+                # the query (nativeFilters/utils.ts), so write both and every release
+                # sorts by it and shows it in its form.
+                base["sortMetric"] = f.sort_metric
+                base["controlValues"]["sortMetric"] = f.sort_metric
+            _pre_filter(f, base)
             if f.default_to_first:
                 # Superset's filter form saves requiredFirst with "select first value"
                 # (Select/controlPanel.ts marks the control requiredFirst;
@@ -835,8 +951,6 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
                     "filterState": {"value": list(f.default), "label": ", ".join(str(v) for v in f.default)},
                     "ownState": {},
                 }
-            if f.charts:
-                base["sdc_scope_charts"] = list(f.charts)  # name-based; apply's scope stage maps ids
         elif f.type == "range":
             ds = resolution.datasets[f.dataset.key()]
             base["filterType"] = "filter_range"
@@ -845,12 +959,23 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
             mask = _range_default_mask(f)
             if mask:
                 base["defaultDataMask"] = mask
-            if f.charts:
-                # Tool-owned, name-based scope marker (filter entries are opaque
-                # dicts to Superset). The bundle ships ROOT scope; slice ids
-                # don't exist at compile time; apply's scope stage rewrites live
-                # ids, so without this the scope is unrecoverable on decompile.
-                base["sdc_scope_charts"] = list(f.charts)
+            _pre_filter(f, base)
+        elif f.type in ("time_grain", "time_column"):
+            # The TimeGrain / TimeColumn filter plugins (src/filters/components/, all
+            # three releases): a dataset target without a column; the value is a
+            # one-item list, and the query side is time_grain_sqla / granularity_sqla.
+            ds = resolution.datasets[f.dataset.key()]
+            grain = f.type == "time_grain"
+            base["filterType"] = "filter_timegrain" if grain else "filter_timecolumn"
+            base["targets"] = [{"datasetUuid": ds.uuid}]
+            base["controlValues"] = {"enableEmptyFilter": f.required}
+            if f.default:
+                key = "time_grain_sqla" if grain else "granularity_sqla"
+                base["defaultDataMask"] = {
+                    "extraFormData": {key: f.default},
+                    "filterState": {"value": [f.default]},
+                    "ownState": {},
+                }
         else:  # time_range
             base["filterType"] = "filter_time"
             base["targets"] = [{}]
@@ -864,6 +989,12 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
                     "filterState": {"value": f.default},
                     "ownState": {},
                 }
+        if getattr(f, "charts", None):
+            # Tool-owned, name-based scope marker (filter entries are opaque
+            # dicts to Superset). The bundle ships ROOT scope; slice ids
+            # don't exist at compile time; apply's scope stage rewrites live
+            # ids, so without this the scope is unrecoverable on decompile.
+            base["sdc_scope_charts"] = list(f.charts)
         out.append(base)
     return out
 
@@ -914,31 +1045,43 @@ def _range_default_mask(f) -> dict | None:
 
 
 def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
+    d = spec.dashboard
     metadata: dict = {
-        "color_scheme": "",
-        "cross_filters_enabled": spec.dashboard.cross_filters,
+        "color_scheme": d.color_scheme or "",
+        "cross_filters_enabled": d.cross_filters,
         "expanded_slices": {},
         # custom label colours (6.1.0 applyColors merges them last, over the scheme)
-        "label_colors": dict(spec.dashboard.label_colors),
-        "refresh_frequency": 0,
+        "label_colors": dict(d.label_colors),
+        "refresh_frequency": d.refresh_frequency or 0,
         "timed_refresh_immune_slices": [],
     }
+    # Emitted only when set, so pre-feature bundles stay byte-identical.
+    if d.filter_bar_orientation:
+        # FilterBarOrientation values (dashboard/types.ts, all three releases)
+        metadata["filter_bar_orientation"] = d.filter_bar_orientation.upper()
+    if d.show_chart_timestamps:
+        # DashboardJSONMetadataSchema declares it from 6.1.0 only (docs/CONTRACTS.md).
+        metadata["show_chart_timestamps"] = True
     if spec.filters:
         metadata["native_filter_configuration"] = _native_filters(spec, resolution)
-    return {
-        "dashboard_title": spec.dashboard.title,
-        "description": None,
+    out = {
+        "dashboard_title": d.title,
+        "description": d.description,
         # Superset's "Edit CSS"; "" (none) when the spec omits it.
-        "css": spec.dashboard.css or "",
-        "slug": spec.dashboard.slug,
-        "certified_by": None,
-        "certification_details": None,
-        "published": True,
-        "uuid": str(ids.dashboard_uuid(spec.dashboard.slug)),
+        "css": d.css or "",
+        "slug": d.slug,
+        "certified_by": d.certified_by,
+        "certification_details": d.certification_details,
+        "published": d.published,
+        "uuid": str(ids.dashboard_uuid(d.slug)),
         "position": _position(spec),
         "metadata": metadata,
         "version": "1.0.0",
     }
+    if d.tags is not None:
+        # ImportV1DashboardSchema has `tags` from 6.1.0 only (docs/CONTRACTS.md).
+        out["tags"] = list(d.tags)
+    return out
 
 
 def compile_bundle(

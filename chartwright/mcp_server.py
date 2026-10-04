@@ -122,9 +122,12 @@ def check_spec(spec_json: str, profile: str) -> str:
     from .apply import check
 
     res = check(spec, _client(profile))
-    return json.dumps({"ok": res.ok, "stage": "resolve",
-                       "errors": [e.as_dict() for e in res.errors],
-                       "advice": _advice(spec, resolution=res if res.ok else None)})
+    out = {"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]}
+    if res.unchecked_sql:
+        # Custom SQL is not checkable by name; say so instead of passing it silently.
+        out["unchecked_sql"] = res.unchecked_sql
+    out["advice"] = _advice(spec, resolution=res if res.ok else None)
+    return json.dumps(out)
 
 
 @mcp.tool()

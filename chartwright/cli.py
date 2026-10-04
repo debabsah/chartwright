@@ -204,6 +204,9 @@ def _main(argv: list[str] | None = None) -> None:
 
         res = check(spec, client)
         payload = {"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]}
+        if res.unchecked_sql:
+            # Custom SQL is not checkable by name; say so instead of passing it silently.
+            payload["unchecked_sql"] = res.unchecked_sql
         gate = False
         if args.design != "off":
             advice = _advice_payload(spec, resolution=res if res.ok else None)
