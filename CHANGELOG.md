@@ -141,6 +141,17 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- Line, bar, area and scatter charts, trendline KPIs, and mixed charts over time ignored
+  both their own `time_range` and the dashboard's time filter, on Superset 4.1.4, 5.0.0
+  and 6.1.0. They drew every date while the filter bar counted them as filtered. They
+  now carry the time-range filter that Superset's own charts put on their time axis,
+  so both ranges work. While the dashboard's time filter has a value, it replaces the
+  chart's own range, as it already did on every other chart type.
+  - The next `apply` rewrites those charts. `plan` does not list them as changed, so
+    run `apply` even when `plan` is clean.
+  - This fix changes the bundle only for these charts, which gain that filter.
+- `apply`'s data check queried every chart over all dates. It now uses each chart's own
+  `time_range`, so a range that matches no rows shows up as an empty-chart warning.
 - Tables and pivots that hid their last rows passed `size.table-window`,
   `size.pivot-window`, `size.grid-fit` and the apply-time smoke warning. Their shared
   grid model was a guess. It is now measured on rendered Superset 4.1.4, 5.0.0 and 6.1.0

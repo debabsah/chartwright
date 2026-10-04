@@ -297,15 +297,32 @@ running the tool against real instances of all three releases.
   emits the legacy pair with pinned sizes, which every release honors.
   Left unpinned, that fallback sizes the subtitle at the full card height,
   so short subtitles render huge and cropped.
-- **A dashboard time filter reaches a chart only through the chart's time
-  binding.** A chart with no time column of its own ignores the filter
-  while the filter bar still counts the chart as filtered (verified live
-  on 6.1.0: a one-week filter left a full-month total on screen). The
-  tool binds every chart that has no time axis to the dataset's main time
-  column, and a time filter default is written to both halves of
-  `defaultDataMask` (`src/filters/components/Time/TimeFilterPlugin.tsx:95`
-  at 6.1.0: queries read `extraFormData.time_range`, the pill reads
-  `filterState.value`).
+- **A time range reaches a chart only through the chart's time binding.**
+  This holds for a chart's own `time_range` and for a dashboard time
+  filter alike. Without a binding the chart ignores the range while the
+  filter bar still counts it as filtered. The backend applies a query's
+  `time_range` only through `granularity` (`get_sqla_query`,
+  `superset/models/helpers.py:1673` at 4.1.4, `:1684` at 5.0.0, `:2926`
+  at 6.1.0).
+  - A chart without a time axis binds the dataset's main time column as
+    `granularity_sqla`. This was verified live on 6.1.0: before the
+    binding, a one-week filter left a full-month total on screen.
+  - A chart drawn on a time axis (line, bar, area, scatter, trendline KPI,
+    and a mixed chart over time) gets the filter Superset's own charts
+    carry: an adhoc `TEMPORAL_RANGE` filter on the axis column, with the
+    chart's `time_range` as its value. A granularity there would replace
+    the axis column (`_apply_granularity`,
+    `superset/common/query_context_factory.py:115` at 4.1.4 and 5.0.0,
+    `:235` at 6.1.0). At query time `_apply_filters` (`:189`, `:311` at
+    6.1.0) overwrites the filter's value with the query's `time_range`
+    whenever that is set, "No filter" included. The tool therefore writes
+    the same value in both places, and a dashboard time filter replaces
+    it. Verified live on 4.1.4, 5.0.0 and 6.1.0: without that filter,
+    these charts ignored both ranges.
+  - A time filter default is written to both halves of `defaultDataMask`
+    (`src/filters/components/Time/TimeFilterPlugin.tsx:95` at 6.1.0:
+    queries read `extraFormData.time_range`, the pill reads
+    `filterState.value`).
 - **A 6.1.0 export does not import on older releases.** 6.1.0 bundles carry
   fields older importers reject as unknown, such as the dashboard's theme
   reference (6.1.0 `superset/commands/dashboard/export.py:165`) and newer
