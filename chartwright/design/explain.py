@@ -25,7 +25,7 @@ def _row(ctx: RuleContext, chart, fill, pending: dict, ignored: set[str]) -> dic
     rec = ctx.filled(chart.name)
     present = ctx.written(chart, field)
     # `filled` only while the chart still holds exactly the value the brain wrote;
-    # an edited fill is already the author's (the next --fix releases its record).
+    # an edited fill is already the author's (the next --fix records it as null).
     source = ("filled" if ctx.brain_owns(chart, field)
               else "spec" if present else "superset default")
     f = pending.get(key)
@@ -57,8 +57,10 @@ def _row(ctx: RuleContext, chart, fill, pending: dict, ignored: set[str]) -> dic
         else:
             reason = f"advise --fix removes it: {f.why}"
     elif field in rec and rec[field] is None:
-        reason = (f"{fill.superset_text}; you deleted the fill, so the brain fills it no "
-                  f"more while design.filled[{chart.name!r}] holds {field!r} as null")
+        took = (f"yours: you changed the fill" if present
+                else f"{fill.superset_text}; you deleted the fill")
+        reason = (f"{took}, so the brain fills it no more while "
+                  f"design.filled[{chart.name!r}] holds {field!r} as null")
     elif source == "spec":
         reason = "written in the spec, so the brain leaves it alone"
     else:

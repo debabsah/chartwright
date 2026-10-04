@@ -43,7 +43,7 @@ def _record(f: Finding, **rest) -> dict:
 
 def _update_filled(out: dict, order: list[str], recorded: dict, unrecorded: dict) -> None:
     """Write the brain's records into design.filled ({chart: {field: value written}},
-    null for a fill the author deleted): chart order, sorted fields, empty entries
+    null for a fill the author edited or deleted): chart order, sorted fields, empty entries
     (and an emptied block) removed, so a spec without fills carries no trace."""
     design = out.get("design") or {}
     filled = {k: dict(v) for k, v in (design.get("filled") or {}).items()}
@@ -71,7 +71,8 @@ def apply_fixes(spec_data: dict, findings: list[Finding]) -> tuple[dict, list[di
     was: {field: old}, why} -- an autofix that can't show its diff is a mutation
     the user has to trust blind. A fill may also remove a field (`unset`, shown
     as null in `set`) and keeps design.filled in step: `record` writes the value
-    it filled (null for a fill the author deleted), `unrecord` drops the record.
+    it filled (null for a fill the author edited or deleted), `unrecord` drops the
+    record, and `forget` names a chart the spec no longer has whose records go.
     Unknown chart names / stale markdown indices are skipped, not errors."""
     out = copy.deepcopy(spec_data)
     by_name = {c.get("name"): c for c in out.get("charts", [])}
@@ -91,6 +92,12 @@ def apply_fixes(spec_data: dict, findings: list[Finding]) -> tuple[dict, list[di
                 block.update(f.fix["set"])
                 applied.append(_record(f, chart=None, md=f.fix["md"],
                                        set=dict(f.fix["set"]), was=was))
+            continue
+        if "forget" in f.fix:  # a record for a chart the spec no longer has
+            name = f.fix["forget"]
+            if name not in by_name:
+                unrecorded.setdefault(name, set()).update(f.fix["unrecord"])
+                applied.append(_record(f, chart=name, set={}, was={}))
             continue
         name = f.fix.get("chart")
         if name not in by_name:

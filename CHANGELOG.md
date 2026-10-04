@@ -13,6 +13,8 @@ Standards gain recorded exceptions, a minimum Superset release per file, a locka
 - `check`, `apply` and `plan` now hold back a standard's content that the instance's release can't take instead of refusing the spec, and list it under `held`. They read the standards folder for this even with `--design off`; `plan` takes `--standards`.
 - `standards/waivers.yaml` is no longer read as a standards file. A repository that kept a standard in a file of that name at the top of the folder must rename it.
 - Printed paths use forward slashes everywhere, including `compile`'s and `redesign`'s `output`, `advise --fix`'s `written` and `apply`'s `backup`.
+- Table charts no longer carry `server_page_length: 10`, so every bundle with a table changes by that one line. Superset reads the key only with server pagination on, which chartwright never turns on; the page a viewer sees is still `page_length`. `plan` reports no drift for it; only a byte comparison of bundles shows the line going.
+- The design brain is version 7. When you edit a value `advise --fix` filled, `--fix` now records it as null in `design.filled` instead of dropping the record, so the field stays yours even if you delete it later. Delete the null entry to let the brain fill the field again.
 
 ### Added
 
@@ -28,6 +30,12 @@ Standards gain recorded exceptions, a minimum Superset release per file, a locka
 - `chartwright standards verify-visible <spec> --profile P`: opens the deployed dashboard in headless Chromium and checks every locked header and footer line is on the page and readable (rendered, sized, on the page and not indented off it, not clipped, transparent, blurred, tiny or covered, and with enough contrast); exits 1 naming each hidden line, and reports a timeout, an untrusted certificate or a browser failure as a typed error. A `ca_bundle` profile keeps certificate checks on, against the operating system's certificates. Needs the optional extra `pip install 'chartwright[visual]'` and `playwright install chromium`.
 - MCP: `as_of` on `standards_check`, `standards_apply`, `advise_spec`, `fix_spec`, `check_spec` and `build_dashboard` (`fix_spec`, like `advise --fix`, fails on an expired waiver); `superset_version` on `standards_check`; `held` on `check_spec`, `build_dashboard` and `plan_dashboard`. The tool count is unchanged.
 - `standards show` names each chain file's `min_superset`.
+- Rule `default.stale-record` (info, fixable): reports a `design.filled` entry for a chart you renamed or removed, or a field the chart no longer has, and `advise --fix` drops it. To keep the brain updating a renamed chart's fills, rename its entry with the chart.
+
+### Fixed
+
+- Renaming or removing a chart that had brain fills no longer makes the spec fail validation; you can still build it, and `advise --fix` removes the stale entry.
+- An edited fill that you later delete stays deleted; before, the next `advise --fix` filled it again.
 
 ## 0.3.0 (2026-10-04)
 

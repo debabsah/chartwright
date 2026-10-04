@@ -439,19 +439,34 @@ def _paged(row_limit=400, height=10, **kw):
 def test_an_author_edit_to_a_filled_value_is_kept():
     """The reported case: a page the brain filled (at 8 then; 6 since the measured
     grid), set to 5 by the author and left in design.filled, must stay 5. The record
-    says the brain wrote 6, so 5 is the author's: --fix releases the record and keeps
-    the value."""
+    says the brain wrote 6, so 5 is the author's: --fix records null and keeps the
+    value."""
     filled, _ = fix(_paged())
     assert filled["charts"][0]["page_length"] == 6
     assert filled["design"]["filled"] == {"T": {"page_length": 6}}
     filled["charts"][0]["page_length"] = 5
     kept, rep = fix(filled)
-    assert kept["charts"][0]["page_length"] == 5 and "design" not in kept
+    assert kept["charts"][0]["page_length"] == 5
+    assert kept["design"]["filled"] == {"T": {"page_length": None}}
     assert [(e["kind"], e["set"]) for e in rep.fixed] == [("release", {})]
     assert "6" in rep.fixed[0]["why"] and "5" in rep.fixed[0]["why"]
     # ...and from then on it is the author's: nothing to fill, nothing to release.
     again, rep2 = fix(kept)
     assert again == kept and rep2.fixed == []
+
+
+def test_an_edited_fill_deleted_later_stays_deleted():
+    """Parity with content standards' released record: the author edits a fill, then
+    deletes the field. The null record from the edit stands, so --fix never fills the
+    field again (before brain 7 the record was dropped and the fill came back)."""
+    filled, _ = fix(_paged())
+    filled["charts"][0]["page_length"] = 5
+    kept, _ = fix(filled)
+    del kept["charts"][0]["page_length"]
+    gone, rep = fix(kept)
+    assert "page_length" not in gone["charts"][0] and rep.fixed == []
+    assert gone["design"]["filled"] == {"T": {"page_length": None}}
+    assert fills(gone, "default.page-length") == {}
 
 
 @pytest.mark.parametrize("change,want", [
@@ -506,11 +521,13 @@ def test_a_deleted_fill_stays_deleted_until_its_record_goes():
 
 
 def test_a_value_written_after_deleting_a_fill_is_the_authors():
+    """The null record stays: delete the value again and it stays deleted."""
     data = _paged(page_length=6)
     data["design"] = {"filled": {"T": {"page_length": None}}}
     fixed, rep = fix(data)
-    assert fixed["charts"][0]["page_length"] == 6 and "design" not in fixed
-    assert [e["kind"] for e in rep.fixed] == ["release"]
+    assert fixed == data and rep.fixed == []
+    del data["charts"][0]["page_length"]
+    assert fix(data)[0] == data
 
 
 def test_a_brain_page_never_silences_table_window():
@@ -591,9 +608,8 @@ def test_ignore_keeps_a_field_unset():
 
 
 @pytest.mark.parametrize("filled,match", [
-    ({"Nope": {"x_label_format": "%Y"}}, "not in charts"),
     ({"L": {"height": 8}}, "not fields the design brain fills"),
-    ({"L": {"cell_bars": False}}, "has no"),
+    ({"Nope": {"height": 8}}, "not fields the design brain fills"),
     ({"L": ["x_label_format"]}, "must map each filled field"),   # the unreleased list form
     ({"L": {"x_label_format": 5}}, "is not a value x_label_format takes"),
     ({"L": {"show_legend": "no"}}, "is not a value show_legend takes"),
@@ -601,6 +617,33 @@ def test_ignore_keeps_a_field_unset():
 def test_design_filled_is_validated(filled, match):
     with pytest.raises(ValidationError, match=match):
         load_spec(mk([line()], design={"filled": filled}))
+
+
+def test_a_renamed_or_removed_charts_entry_validates_and_fix_drops_it():
+    """Renaming or deleting a chart left an entry that refused the whole spec, which only
+    a hand edit of design.filled could repair. It validates now; default.stale-record
+    reports it and --fix drops it. The renamed chart's value is the author's after."""
+    data = mk([line(name="Revenue", time_grain="P1M", x_label_format="%b %Y")],
+              design={"filled": {"Old": {"x_label_format": "%b %Y"}}})
+    rep = advise(load_spec(data), overlay=EMPTY)
+    stale = [f for f in rep.findings if f.rule == "default.stale-record"]
+    assert [(f.chart, f.severity, f.kind) for f in stale] == [("Old", "info", "release")]
+    assert "rename the entry" in stale[0].detail
+    fixed, rep = fix(data)
+    assert "design" not in fixed and fixed["charts"] == data["charts"]
+    assert [(e["rule"], e["chart"]) for e in rep.fixed] == [("default.stale-record", "Old")]
+    assert fix(fixed)[0] == fixed
+
+
+def test_a_field_the_chart_no_longer_has_is_dropped_from_its_entry():
+    """A chart given another type keeps its name, so only the foreign fields go."""
+    data = mk([line(time_grain="P1M", x_label_format="%b %Y")],
+              design={"filled": {"L": {"x_label_format": "%b %Y", "cell_bars": False}}})
+    load_spec(data)
+    fixed, rep = fix(data)
+    assert fixed["design"]["filled"] == {"L": {"x_label_format": "%b %Y"}}
+    assert [e["rule"] for e in rep.fixed] == ["default.stale-record"]
+    assert fix(fixed)[0] == fixed
 
 
 def test_design_filled_values_validate_as_their_field():
@@ -712,7 +755,7 @@ def test_explain_shows_every_governed_field_and_its_source(monkeypatch, tmp_path
     code, out = _cli(["explain", str(spec), "--json", "--chart", "A"], monkeypatch, tmp_path, capsys)
     assert code == 0 and json.loads(out)["charts"][0]["chart"] == "A"
     code, out = _cli(["explain", str(spec)], monkeypatch, tmp_path, capsys)
-    assert code == 0 and out.startswith("Design defaults (design brain 6")
+    assert code == 0 and out.startswith("Design defaults (design brain 7")
     code, out = _cli(["explain", str(spec), "--chart", "Z"], monkeypatch, tmp_path, capsys)
     assert code == 1 and "unknown_chart" in out
 

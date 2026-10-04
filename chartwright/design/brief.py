@@ -94,7 +94,8 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "- Run `chartwright advise <spec> --fix` (MCP: fix_spec) before you build. It writes each value",
         "  into the spec file and records it in design.filled; its `fixed` entries say kind \"fill\" and why.",
         "- Edit the spec it wrote; never regenerate the spec from your own copy, or the fills are lost.",
-        "  A filled value you change or delete is yours from then on (kind \"release\"); never edit design.filled.",
+        "  A filled value you change or delete is yours from then on (kind \"release\"); never edit design.filled,",
+        "  except to rename a chart's entry when you rename the chart, so its fills stay the brain's.",
         "- Never filled, set them only on request: category_sort, y_axis_truncate, compare_lag,",
         "  series_limit, show_totals, and currency formats.",
     ]

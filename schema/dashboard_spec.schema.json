@@ -1420,7 +1420,7 @@
             "additionalProperties": true,
             "type": "object"
           },
-          "description": "Written by `chartwright advise --fix`, not by hand: per chart name, each field it filled with a design default and the value it wrote. While the chart still holds that value, --fix keeps it up to date. Edit the field and it is yours; delete it and --fix records null here and fills it no more, until you delete that entry. Compile ignores this block.",
+          "description": "Written by `chartwright advise --fix`, not by hand: per chart name, each field it filled with a design default and the value it wrote. While the chart still holds that value, --fix keeps it up to date. Edit or delete the field and it is yours: --fix records null here and fills it no more, until you delete that entry. Compile ignores this block.",
           "title": "Filled",
           "type": "object"
         },
