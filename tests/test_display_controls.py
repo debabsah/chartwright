@@ -450,14 +450,19 @@ def test_wrong_combinations_are_named(chart, message):
     assert message in str(err.value)
 
 
-def test_explicit_defaults_normalize_to_omitted():
-    spec = _spec({**LINE, "legend_position": "top", "legend_type": "scroll"},
-                 {"name": "P", "type": "pie", "dataset": DS, "metric": "COUNT(*)", "groupby": "g",
-                  "label_type": "key_percent"},
-                 {"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
-                  "time_column": "ts", "trend_color": "#007a87"})
+def test_explicit_defaults_are_kept_as_written_and_normalize_to_omitted():
+    charts = ({**LINE, "legend_position": "top", "legend_type": "scroll"},
+              {"name": "P", "type": "pie", "dataset": DS, "metric": "COUNT(*)", "groupby": "g",
+               "label_type": "key_percent"},
+              {"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
+               "time_column": "ts", "trend_color": "#007a87"})
+    spec = _spec(*charts)
     line, pie, trend = spec.charts
-    assert (line.legend_position, line.legend_type, pie.label_type, trend.trend_color) == (None,) * 4
+    assert (line.legend_position, line.legend_type, pie.label_type, trend.trend_color) == (
+        "top", "scroll", "key_percent", "#007A87")
+    keys = ("legend_position", "legend_type", "label_type", "trend_color")
+    bare = [{k: v for k, v in c.items() if k not in keys} for c in charts]
+    assert _normalize(spec) == _normalize(_spec(*bare))
 
 
 # -- resolution ----------------------------------------------------------------------
@@ -475,3 +480,64 @@ def test_series_limit_metric_is_resolved_like_any_metric():
         res = Resolution()
         _check_chart_fields(_spec(chart).charts[0], ds, res)
         assert [(e.code, e.ref) for e in res.errors] == [("metric_not_found", "no_such_metric")]
+
+
+# -- a written Superset default --------------------------------------------------------
+
+PIE = {"name": "P", "type": "pie", "dataset": DS, "metric": "COUNT(*)", "groupby": "g"}
+EXPLICIT_DEFAULTS = [
+    (LINE, "legend_position", "top"),
+    (LINE, "legend_type", "scroll"),
+    ({**LINE, "markers": True}, "marker_size", 6),
+    ({**LINE, "area": True}, "opacity", 0.2),
+    ({**LINE, "type": "timeseries_area"}, "opacity", 0.2),
+    ({**LINE, "type": "timeseries_scatter"}, "marker_size", 6),
+    (PIE, "label_type", "key_percent"),
+    ({**PIE, "type": "funnel"}, "label_type", "key"),
+    ({**PIE, "type": "treemap", "groupby": ["g"]}, "label_type", "key_value"),
+    ({"name": "H", "type": "heatmap", "dataset": DS, "x_column": "a", "y_column": "b",
+      "metric": "COUNT(*)"}, "color_scheme", "superset_seq_1"),
+    ({"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
+      "time_column": "ts"}, "trend_color", "#007A87"),
+]
+
+
+@pytest.mark.parametrize("chart, field, value", EXPLICIT_DEFAULTS,
+                         ids=[f"{c['type']}.{f}" for c, f, _ in EXPLICIT_DEFAULTS])
+def test_a_written_superset_default_is_kept_compiles_as_omitted_and_plans_clean(
+        chart, field, value, monkeypatch):
+    """Writing Superset's own default (legend at the top, a pie's key_percent labels)
+    used to validate to None, so the author's choice vanished from the model. It is
+    kept as written; Superset draws it exactly as the omitted field, so the bundle is
+    the same bytes, and plan reads the two as equal (decompile can't tell them apart)."""
+    written, omitted = _spec({**chart, field: value}), _spec(chart)
+    c = written.charts[0]
+    assert getattr(c, field) == value and field in c.model_fields_set
+    assert compile_bundle(written, stub_resolution(written)) == \
+        compile_bundle(omitted, stub_resolution(omitted))
+    assert _normalize(written) == _normalize(omitted)
+    assert _plan(written, None, monkeypatch)["clean"] is True
+
+
+@pytest.mark.parametrize("field, value", [("refresh_frequency", 0),
+                                          ("filter_bar_orientation", "vertical")])
+def test_a_written_dashboard_default_is_kept_compiles_as_omitted_and_plans_clean(
+        field, value, monkeypatch):
+    def spec(**dash):
+        return load_spec({"spec_version": "1", "dashboard": {"title": "T", "slug": "sdc-t", **dash},
+                          "charts": [LINE], "layout": {"rows": [["L"]]}})
+    written, omitted = spec(**{field: value}), spec()
+    assert getattr(written.dashboard, field) == value
+    assert compile_bundle(written, stub_resolution(written)) == \
+        compile_bundle(omitted, stub_resolution(omitted))
+    assert _normalize(written) == _normalize(omitted)
+    assert _plan(written, None, monkeypatch)["clean"] is True
+
+
+def test_a_written_default_passes_the_checks_an_omitted_field_passes():
+    """The checks read a written default as unset, so nothing that validated before
+    is refused now."""
+    _spec({**LINE, "show_legend": False, "legend_position": "top", "legend_type": "scroll"})
+    _spec({**LINE, "marker_size": 6, "opacity": 0.2})
+    _spec({**LINE, "type": "timeseries_area", "marker_size": 6})
+    _spec({**PIE, "type": "funnel", "legend_type": "scroll"})

@@ -27,6 +27,7 @@ from ..spec import (
     grid_rows_visible,
     grid_units_for_rows,
     row_items,
+    without_superset_defaults,
 )
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 
@@ -776,7 +777,8 @@ def treemap_vs_bar(ctx: RuleContext):
 @rule("chart.dupe", "info", "two charts answering the identical question is redundancy")
 def chart_dupe(ctx: RuleContext):
     seen: dict[str, str] = {}
-    for c in ctx.spec.charts:
+    # A written Superset default (legend at the top) is the same chart as an omitted one.
+    for c in without_superset_defaults(ctx.spec).charts:
         fp = json.dumps(c.model_dump(exclude={"name", "width", "height"}),
                         sort_keys=True, default=str)
         if fp in seen:

@@ -14,6 +14,7 @@ from .client import SupersetClient
 from .decompile import decompile_live
 from .spec import (
     DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
+    without_superset_defaults,
 )
 
 # Dashboard settings `plan` compares one by one (dashboard_settings_changed).
@@ -86,8 +87,9 @@ def _normalize(spec: DashboardSpec) -> dict:
     """Canonical form for comparison: validated model dump with every
     compiler default materialized, so spec-with-defaults-omitted and
     decompiled-with-defaults-present compare equal. Chart identity is the
-    name, so chart list order is canonicalized by name."""
-    data = spec.model_dump(exclude_none=True, by_alias=True)
+    name, so chart list order is canonicalized by name. A written Superset default
+    compares equal to the omitted field, which is all decompile can read back."""
+    data = without_superset_defaults(spec).model_dump(exclude_none=True, by_alias=True)
     for chart in data["charts"]:
         chart["width"] = spec.resolved_item_width(chart["name"])
         chart["height"] = spec.resolved_height(chart["name"])

@@ -215,6 +215,17 @@ running the tool against real instances of all three releases.
   default to true, and the tool writes them only as false. Axis titles get an
   explicit margin, because 6.1.0's default x-title margin is 0, which draws
   the title over the tick labels.
+- **A written Superset default draws the same chart as an omitted field.**
+  Writing Superset's own value (`legend_position: "top"`, `legend_type:
+  "scroll"`, a pie's `label_type: "key_percent"`, a funnel's `"key"`, a
+  treemap's `"key_value"`, `marker_size: 6`, `opacity: 0.2`, the teal
+  `trend_color` `#007A87`, a heatmap's `superset_seq_1`, or a dashboard's
+  `refresh_frequency: 0` and `filter_bar_orientation: "vertical"`) changes
+  nothing Superset draws. The spec keeps the value as written, so an author's
+  choice survives validation; `compile` builds the same bundle as for the
+  omitted field, and `plan` reads the two as equal. A decompiled spec leaves
+  Superset's defaults out, since the stored chart can't say which one the
+  author wrote. The list is `SUPERSET_DEFAULTS` in `chartwright/spec.py`.
 - **The value-axis bounds are the axis edges on every release.** The panel
   says the bounds only widen the axis, but the Timeseries and Mixed plugins
   hand `y_axis_bounds` to ECharts as the axis minimum and maximum

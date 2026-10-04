@@ -123,3 +123,9 @@ def test_a_trend_with_its_own_time_range_is_bounded():
              "time_column": "ts", "time_grain": "P1D"}
     assert _fired("chart.trend-grain", [trend])
     assert not _fired("chart.trend-grain", [{**trend, "time_range": "Last 90 days"}])
+
+
+def test_a_written_superset_default_does_not_hide_a_duplicate_chart():
+    pie = {"name": "A", "type": "pie", "dataset": DS, "metric": "COUNT(*)", "groupby": "g"}
+    assert _fired("chart.dupe", [pie, {**pie, "name": "B", "legend_position": "top",
+                                       "label_type": "key_percent"}])

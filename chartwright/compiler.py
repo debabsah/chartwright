@@ -33,6 +33,7 @@ from .spec import (
     _SeriesDisplay,
     parse_metric,
     row_items,
+    without_superset_defaults,
 )
 
 BUNDLE_ROOT = "sdc_bundle"
@@ -1115,6 +1116,8 @@ def compile_bundle(
 ) -> bytes:
     """extra_files: round-tripped dataset/database YAMLs the importer requires,
     path -> bytes, relative to the bundle root."""
+    # A written Superset default builds exactly like the omitted field.
+    spec = without_superset_defaults(spec)
     files: dict[str, bytes] = {
         f"{BUNDLE_ROOT}/metadata.yaml": _yaml(
             {"version": "1.0.0", "type": "Dashboard", "timestamp": FIXED_TIMESTAMP}

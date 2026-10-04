@@ -247,18 +247,9 @@ class _Legend(BaseModel):
                     "entry, wrapped; the panel calls it List)",
     )
 
-    @field_validator("legend_position")
-    @classmethod
-    def _top_is_default(cls, v):
-        return None if v == "top" else v  # the default reads back as omitted
-
-    @field_validator("legend_type")
-    @classmethod
-    def _scroll_is_default(cls, v):
-        return None if v == "scroll" else v
-
     def _check_legend(self) -> None:
-        if not self.show_legend and (self.legend_position or self.legend_type):
+        if not self.show_legend and (set_value(self, "legend_position")
+                                     or set_value(self, "legend_type")):
             raise ValueError(f"chart {self.name!r}: legend_position and legend_type need "  # type: ignore[attr-defined]
                              "show_legend (the legend is hidden)")
 
@@ -369,8 +360,7 @@ class BigNumberTrendChart(_ChartBase):
             return v
         if not isinstance(v, str) or not HEX_COLOUR_RE.fullmatch(v):
             raise ValueError(f"trend_color must be green, amber, red or #RRGGBB, got {v!r}")
-        v = v.upper()
-        return None if v == TREND_DEFAULT_HEX else v  # Superset's own default reads back as omitted
+        return v.upper()
 
     @model_validator(mode="after")
     def _compare(self) -> "BigNumberTrendChart":
@@ -522,12 +512,6 @@ class _TimeseriesBase(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
         self._check_series_display(self.STACKS)
         return self
 
-    @field_validator("marker_size", "opacity", check_fields=False)
-    @classmethod
-    def _superset_defaults(cls, v, info):
-        # Superset's own defaults (markerSize 6, opacity 0.2) read back as omitted.
-        return None if v == {"marker_size": 6, "opacity": 0.2}[info.field_name] else v
-
 
 def _marker_size():
     return Field(default=None, ge=0, le=20, description="Marker size, 0-20 (Superset's default 6)")
@@ -543,9 +527,9 @@ class TimeseriesLineChart(_TimeseriesBase):
 
     @model_validator(mode="after")
     def _line_style(self) -> "TimeseriesLineChart":
-        if self.marker_size is not None and not self.markers:
+        if set_value(self, "marker_size") is not None and not self.markers:
             raise ValueError(f"chart {self.name!r}: marker_size needs markers")
-        if self.opacity is not None and not self.area:
+        if set_value(self, "opacity") is not None and not self.area:
             raise ValueError(f"chart {self.name!r}: opacity is the area fill's; it needs area")
         return self
 
@@ -565,7 +549,7 @@ class TimeseriesAreaChart(_TimeseriesBase):
 
     @model_validator(mode="after")
     def _check_marker_size(self) -> "TimeseriesAreaChart":
-        if self.marker_size is not None and not self.markers:
+        if set_value(self, "marker_size") is not None and not self.markers:
             raise ValueError(f"chart {self.name!r}: marker_size needs markers")
         return self
 
@@ -624,11 +608,6 @@ class PieChart(_Legend, _ChartBase, _ColorSchemeMixin):
     number_format: str | None = Field(default=None, description="d3 format for values in labels and tooltips")
     show_total: bool = Field(default=False, description="The total in the middle (best on a donut)")
     labels_outside: bool = Field(default=True, description="false puts the labels on the slices")
-
-    @field_validator("label_type")
-    @classmethod
-    def _pie_default(cls, v):
-        return None if v == "key_percent" else v
 
     @model_validator(mode="after")
     def _legend(self) -> "PieChart":
@@ -884,11 +863,6 @@ class HeatmapChart(_ChartBase):
     )
     show_legend: bool = Field(default=True, description="false hides the colour scale")
 
-    @field_validator("color_scheme")
-    @classmethod
-    def _scheme_default(cls, v):
-        return None if v == HEATMAP_DEFAULT_SCHEME else v
-
 
 class HistogramChart(_ChartBase, _ColorSchemeMixin):
     type: Literal["histogram"]
@@ -920,15 +894,10 @@ class FunnelChart(_Legend, _ChartBase, _ColorSchemeMixin):
     )
     number_format: str | None = Field(default=None, description="d3 format for values in labels and tooltips")
 
-    @field_validator("label_type")
-    @classmethod
-    def _funnel_default(cls, v):
-        return None if v == "key" else v
-
     @model_validator(mode="after")
     def _legend(self) -> "FunnelChart":
         self._check_legend()
-        if self.legend_type:
+        if set_value(self, "legend_type"):
             raise ValueError(f"chart {self.name!r}: Superset's funnel has no legend_type "
                              "(it always scrolls); set legend_position only")
         return self
@@ -942,11 +911,6 @@ class TreemapChart(_ChartBase, _ColorSchemeMixin):
     label_type: Literal["key", "value", "key_value"] | None = Field(
         default=None, description="What each tile's label shows: key, value, or key_value (default)")
     number_format: str | None = Field(default=None, description="d3 format for values in labels and tooltips")
-
-    @field_validator("label_type")
-    @classmethod
-    def _treemap_default(cls, v):
-        return None if v == "key_value" else v
 
 
 class MixedSeries(BaseModel):
@@ -1432,18 +1396,6 @@ class DashboardMeta(BaseModel):
     )
     tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
 
-    @field_validator("refresh_frequency")
-    @classmethod
-    def _no_refresh_is_none(cls, v: int | None) -> int | None:
-        # 0 is Superset's "don't refresh", which decompile reads back as omitted.
-        return v or None
-
-    @field_validator("filter_bar_orientation")
-    @classmethod
-    def _vertical_is_default(cls, v: str | None) -> str | None:
-        # Vertical is Superset's default, which decompile reads back as omitted.
-        return None if v == "vertical" else v
-
     @field_validator("css")
     @classmethod
     def _blank_css_is_none(cls, v: str | None) -> str | None:
@@ -1746,6 +1698,52 @@ def chart_metrics(chart) -> list[str]:
 
 def load_spec(data: dict) -> DashboardSpec:
     return DashboardSpec.model_validate(data)
+
+
+# -- a written Superset default ---------------------------------------------------------
+
+# Superset's own value for an optional field. An author may write it, and the model
+# keeps it as written (model_fields_set and a dump of the spec show it). Superset
+# draws the written default exactly like the omitted field, and decompile can't tell
+# the two apart, so compile, plan and the spec's own checks read a written default
+# as unset (docs/CONTRACTS.md, "A written Superset default").
+SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
+    "legend": {"legend_position": "top", "legend_type": "scroll"},  # every chart with a legend
+    "big_number_trend": {"trend_color": TREND_DEFAULT_HEX},
+    "timeseries_line": {"marker_size": 6, "opacity": 0.2},
+    "timeseries_area": {"marker_size": 6, "opacity": 0.2},
+    "timeseries_scatter": {"marker_size": 6},
+    "pie": {"label_type": "key_percent"},
+    "funnel": {"label_type": "key"},
+    "treemap": {"label_type": "key_value"},
+    "heatmap": {"color_scheme": HEATMAP_DEFAULT_SCHEME},
+    "dashboard": {"refresh_frequency": 0, "filter_bar_orientation": "vertical"},
+}
+
+
+def _default_fields(model: BaseModel) -> dict[str, object]:
+    kind = "dashboard" if isinstance(model, DashboardMeta) else getattr(model, "type", None)
+    out = {f: v for f, v in SUPERSET_DEFAULTS["legend"].items() if f in type(model).model_fields}
+    return {**out, **SUPERSET_DEFAULTS.get(kind, {})}
+
+
+def set_value(model: BaseModel, field: str):
+    """The field's value, or None when it holds Superset's own default."""
+    value = getattr(model, field)
+    defaults = _default_fields(model)
+    return None if field in defaults and value == defaults[field] else value
+
+
+def without_superset_defaults(spec: DashboardSpec) -> DashboardSpec:
+    """The spec with each written Superset default read as unset: what compile builds
+    from and what plan compares, so a written default and an omitted field agree."""
+    def strip(model: BaseModel) -> BaseModel:
+        update = {f: None for f in _default_fields(model) if set_value(model, f) is None
+                  and getattr(model, f) is not None}
+        return model.model_copy(update=update) if update else model
+
+    return spec.model_copy(update={"dashboard": strip(spec.dashboard),
+                                   "charts": [strip(c) for c in spec.charts]})
 
 
 def json_schema() -> dict:
