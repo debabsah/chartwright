@@ -751,7 +751,8 @@ def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
     return {
         "dashboard_title": spec.dashboard.title,
         "description": None,
-        "css": "",
+        # Superset's "Edit CSS"; "" (none) when the spec omits it.
+        "css": spec.dashboard.css or "",
         "slug": spec.dashboard.slug,
         "certified_by": None,
         "certification_details": None,

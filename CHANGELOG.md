@@ -7,6 +7,11 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Added
 
+- `dashboard.css`: the dashboard's CSS, the same thing as Superset's own "Edit CSS",
+  written into the import bundle's `css` field (which 4.1.4, 5.0.0 and 6.1.0 all import).
+  Decompiled (blank CSS reads back as omitted) and compared by `plan` (`css_changed`).
+  Spec-owned like the title: CSS edited in the UI shows up in `plan`, and `apply` replaces
+  it, as it always did when the spec had none.
 - Colour rules take any `#RRGGBB` besides `green` / `amber` / `red`, e.g.
   `"color": "#0057B8"`, painted as written for cells and text alike (stored upper case).
   The names keep their shades. Decompile reads a named shade for the rule's paint back as

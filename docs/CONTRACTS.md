@@ -44,6 +44,15 @@ running the tool against real instances of all three releases.
   keeping links to charts the bundle no longer contains (6.1.0
   `.../v1/__init__.py:186-193`). The tool deletes its own charts when they
   leave the spec, so the result is the same on every release.
+- **The dashboard's CSS travels in the bundle, on every release.** The
+  import schema accepts `css` (`ImportV1DashboardSchema`, 4.1.4
+  `superset/dashboards/schemas.py:461`, 5.0.0 `:477`, 6.1.0 `:508`), the
+  importer writes it with the other dashboard fields (4.1.4/5.0.0
+  `superset/commands/dashboard/importers/v1/utils.py:190`, 6.1.0 `:240`),
+  and the export carries it back (`superset/models/dashboard.py:174` at
+  4.1.4/5.0.0, `:187` at 6.1.0). An apply therefore replaces CSS edited in
+  the UI with the spec's `css`, or clears it when the spec has none; `plan`
+  reports the difference first.
 - **An import is a single database transaction** (6.1.0
   `superset/commands/importers/v1/__init__.py:85`): a failed import leaves
   no partial dashboard behind.

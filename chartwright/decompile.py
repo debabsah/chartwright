@@ -838,6 +838,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
     ordered = [charts_by_name[n] for n in ordered_names]
 
     label_colors = (dash.get("metadata") or {}).get("label_colors") or {}
+    css = dash.get("css") if isinstance(dash.get("css"), str) else ""
     spec = {
         "spec_version": "1",
         "dashboard": {
@@ -847,6 +848,8 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             # (docs/CONTRACTS.md), so read it back explicitly and always emit it.
             "cross_filters": bool((dash.get("metadata") or {}).get("cross_filters_enabled", False)),
             **({"label_colors": dict(label_colors)} if label_colors else {}),
+            # "Edit CSS"; blank or absent (Superset stores null) reads as omitted.
+            **({"css": css} if css.strip() else {}),
         },
         "charts": ordered,
         "layout": layout,

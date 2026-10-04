@@ -648,6 +648,22 @@ class DashboardMeta(BaseModel):
             "the scheme and the per-view map (6.1.0 applyColors)."
         ),
     )
+    css: str | None = Field(
+        default=None,
+        description=(
+            "CSS for the dashboard: the same thing as Superset's own \"Edit CSS\", e.g. "
+            "\".dashboard-markdown h1 { color: #1A1A1A; }\". Omitted means none. "
+            "Spec-owned, so CSS edited in the UI shows up as drift in `plan` and is "
+            "replaced by `apply`."
+        ),
+    )
+
+    @field_validator("css")
+    @classmethod
+    def _blank_css_is_none(cls, v: str | None) -> str | None:
+        # Blank CSS is no CSS: decompile reads it back as omitted, so keeping
+        # "  " here would show as drift in `plan` forever.
+        return v if v is not None and v.strip() else None
 
     @model_validator(mode="after")
     def _hex_colours(self) -> "DashboardMeta":

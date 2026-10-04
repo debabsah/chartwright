@@ -447,6 +447,19 @@
           "description": "A fixed colour per series label on every chart of the dashboard, e.g. {\"Revenue\": \"#1FA8C9\"}. Superset otherwise assigns colours as the page loads, so a measure can change colour between charts and visits; these win over the scheme and the per-view map (6.1.0 applyColors).",
           "title": "Label Colors",
           "type": "object"
+        },
+        "css": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "CSS for the dashboard: the same thing as Superset's own \"Edit CSS\", e.g. \".dashboard-markdown h1 { color: #1A1A1A; }\". Omitted means none. Spec-owned, so CSS edited in the UI shows up as drift in `plan` and is replaced by `apply`.",
+          "title": "Css"
         }
       },
       "required": [

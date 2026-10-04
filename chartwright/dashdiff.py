@@ -29,6 +29,7 @@ class Plan:
     layout_changed: bool = False
     cross_filters_changed: bool = False   # live setting flipped in the UI, or the spec changed
     label_colors_changed: bool = False    # the pinned series colours differ
+    css_changed: bool = False             # the dashboard CSS ("Edit CSS") differs
     decompile_losses: list[dict] = field(default_factory=list)
     # Why a plan is blocked by the spec: the same typed errors `check` and
     # `apply` return (column_not_found carries `candidates`). Empty otherwise.
@@ -40,7 +41,7 @@ class Plan:
             self.charts_added or self.charts_changed or self.charts_removed
             or self.filters_added or self.filters_changed or self.filters_removed
             or self.title_changed or self.layout_changed or self.cross_filters_changed
-            or self.label_colors_changed
+            or self.label_colors_changed or self.css_changed
         )
 
     def to_json(self) -> str:
@@ -59,6 +60,7 @@ class Plan:
                 "layout_changed": self.layout_changed,
                 "cross_filters_changed": self.cross_filters_changed,
                 "label_colors_changed": self.label_colors_changed,
+                "css_changed": self.css_changed,
                 "decompile_losses": self.decompile_losses,
                 "resolution_errors": self.resolution_errors,
             },
@@ -228,6 +230,7 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     p.label_colors_changed = (
         (t["dashboard"].get("label_colors") or {}) != (l["dashboard"].get("label_colors") or {})
     )
+    p.css_changed = t["dashboard"].get("css") != l["dashboard"].get("css")
     # Whole-layout compare: a tabs layout has no "rows" key after
     # exclude_none dumping, so keyed access would KeyError.
     p.layout_changed = t["layout"] != l["layout"]
