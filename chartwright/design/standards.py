@@ -38,8 +38,12 @@ from pathlib import Path
 from .model import RULES, SEVERITY_RANK, canonical_rule_id
 from .presets import AUDIENCES, PARAM_NAMES, _check_param_block
 
-FILE_KEYS = ("name", "extends", "default", "params", "audiences", "severity", "disable", "locked")
-LOCK_KEYS = ("rules", "params")
+FILE_KEYS = ("name", "extends", "default", "params", "audiences", "severity", "disable",
+             "content", "classifications", "locked")
+LOCK_KEYS = ("rules", "params", "content")
+# A standard that locks content locks the rule that reports a locked item the spec lacks,
+# so nothing below it (a lower file, design.ignore, --ignore, design.yaml) silences it.
+CONTENT_LOCK_RULE = "standard.content-locked"
 # org, unit, team; the dashboard's own design block is the fourth layer. The one
 # place the depth is set (the author chose three files on 2026-10-04).
 MAX_FILES = 3
@@ -73,6 +77,9 @@ class StandardFile:
     disable: list = field(default_factory=list)       # canonical rule ids
     locked_rules: list = field(default_factory=list)  # canonical rule ids
     locked_params: list = field(default_factory=list)
+    content: dict = field(default_factory=dict)       # design/content.py parse_content
+    classifications: list | None = None
+    locked_content: list = field(default_factory=list)  # content slots
 
 
 @dataclass
@@ -89,6 +96,11 @@ class Standard:
     locked_rules: dict = field(default_factory=dict)   # rule -> layer that locked it
     locked_params: dict = field(default_factory=dict)  # parameter -> layer that locked it
     origins: dict = field(default_factory=dict)        # "params.x", "severity.r", ... -> layer
+    # Content, per layer, root first: [(layer, its own content)] (design/content.py).
+    content_layers: list = field(default_factory=list)
+    content_locks: dict = field(default_factory=dict)  # slot -> layers locking it, root first
+    classifications: list | None = None                # the allowed values, if declared
+    classifications_layer: str | None = None
     # How a spec came to follow it: "design.standard" or "default". Set per spec.
     via: str | None = None
 
@@ -231,6 +243,16 @@ def parse_file(path: Path) -> StandardFile:
             f"{where}: locked.params: unknown parameters {unknown_params} "
             f"(known: {sorted(PARAM_NAMES)})")
     sf.locked_params = list(lp)
+    from . import content as _content
+
+    try:
+        if data.get("content") is not None:
+            sf.content = _content.parse_content(data["content"], where)
+        if data.get("classifications") is not None:
+            sf.classifications = _content.parse_classifications(data["classifications"], where)
+        sf.locked_content = _content.parse_content_locks(locked.get("content") or [], where)
+    except ValueError as e:
+        raise StandardsError("standards_file", str(e)) from e
     return sf
 
 
@@ -343,7 +365,41 @@ def resolve(name: str, files: dict[str, StandardFile], directory: Path) -> Stand
         _check_against_locks(sf, std)
         _merge(sf, std)
         _check_locked_values(sf, std)
+        _merge_content(sf, std)
+    from . import content as _content
+
+    try:
+        _content.check_resolved(std)
+    except ValueError as e:
+        raise StandardsError("standards_file", f"{display(chain[-1].path)}: {e}") from e
     return std
+
+
+def _merge_content(sf: StandardFile, std: Standard) -> None:
+    """Fold one layer's content in (design/content.py): rows and CSS add up per layer,
+    scalars and keys are the innermost layer's, locks add up. A lower layer can't
+    override locked content, and a lock needs content to lock."""
+    from . import content as _content
+
+    try:
+        _content.check_layer(sf.name, display(sf.path), sf.content, sf.locked_content,
+                             sf.classifications, std)
+    except _content.LockError as e:
+        raise StandardsError("locked", str(e)) from e
+    except ValueError as e:
+        raise StandardsError("standards_file", str(e)) from e
+    std.content_layers.append((sf.name, sf.content))
+    for slot in sf.locked_content:
+        std.content_locks.setdefault(slot, []).append(sf.name)
+    if sf.locked_content:
+        std.locked_rules.setdefault(CONTENT_LOCK_RULE, sf.name)
+        if CONTENT_LOCK_RULE in std.disable:
+            raise StandardsError(
+                "locked", f"{display(sf.path)}: locks content but {std.disable[CONTENT_LOCK_RULE]!r} "
+                          f"disables {CONTENT_LOCK_RULE}, the rule that reports it")
+    if sf.classifications is not None:
+        std.classifications = list(sf.classifications)
+        std.classifications_layer = sf.name
 
 
 def _check_locked_values(sf: StandardFile, std: Standard) -> None:
@@ -534,7 +590,7 @@ def show_payload(standards: Standards, std: Standard) -> dict:
         return out
 
     files = standards.files
-    return {
+    out = {
         "stage": "standards", "ok": True, "standards_dir": display(standards.directory),
         "standard": std.name, "default": std.name == standards.default,
         **({"via": std.via} if std.via else {}),
@@ -548,6 +604,19 @@ def show_payload(standards: Standards, std: Standard) -> dict:
         "locked": {"rules": dict(sorted(std.locked_rules.items())),
                    "params": dict(sorted(std.locked_params.items()))},
     }
+    # Content appears only when the standard has some, so a rules-only standard shows
+    # exactly what it showed before content existed.
+    from . import content as C
+
+    entries = C.show_entries(std)
+    if entries:
+        out["content"] = entries
+    if std.content_locks:
+        out["locked"]["content"] = {s: layers[0] for s, layers in sorted(std.content_locks.items())}
+    if std.classifications is not None:
+        out["classifications"] = {"value": list(std.classifications),
+                                  "layer": std.classifications_layer}
+    return out
 
 
 def show(source: StandardsSource, name: str | None = None, spec=None,
@@ -604,11 +673,21 @@ def render_show(payload: dict) -> str:
     for p, layer in payload["locked"]["params"].items():
         if p not in shown_params:
             rows.append((f"params.{p}", "(preset)", layer, True))
+    if payload.get("classifications"):
+        c = payload["classifications"]
+        rows.append(("classifications", json.dumps(c["value"]), c["layer"], False))
+    if payload.get("content"):
+        from .content import describe
+
+        for key, e in payload["content"].items():
+            rows.append((key, describe(e["value"], e["slot"]), e["layer"], e["locked"]))
     if not rows:
         lines.append("  sets nothing: the rulebook and the audience presets apply as they are")
     width = max((len(r[0]) for r in rows), default=0)
+    vwidth = max([8, *(len(r[1]) for r in rows)])
     for key, value, layer, locked in rows:
-        lines.append(f"  {key:<{width}}  {value:<8} {layer:<12} {'locked' if locked else ''}".rstrip())
+        lines.append(f"  {key:<{width}}  {value:<{vwidth}} {layer:<12} "
+                     f"{'locked' if locked else ''}".rstrip())
     return "\n".join(lines) + "\n"
 
 
@@ -843,3 +922,221 @@ def assign(paths: list[Path], name: str, standards: Standards) -> dict:
         written.append({"spec": str(p), "was": was})
     return {"stage": "standards", "ok": not errors, "standard": name,
             "written": written, "unchanged": unchanged, "errors": errors}
+
+
+# -- apply: content into specs ------------------------------------------------
+
+
+def apply_spec(data: dict, spec, std: Standard, *, locked: bool = False,
+               claim: bool = False) -> tuple[dict, dict]:
+    """(new spec data, the spec's entry) for one spec that follows `std`: the content
+    the standard has, written by the ownership rules of design/content.py. The new data
+    is validated; a result that isn't a valid spec is an error entry and the data is
+    returned unchanged. Deterministic: the same spec and standards give the same bytes."""
+    from pydantic import ValidationError
+
+    from ..spec import load_spec
+    from . import content as C
+
+    analysis = C.analyze(std, spec)
+    entry: dict = {"standard": std.name, "chain": list(std.chain)}
+    errors = [{"code": "css_markers", "detail": f"{e['item']}: {e['detail']}; nothing was "
+                                                f"written: fix the markers by hand, then run "
+                                                f"standards apply again"}
+              for e in analysis.errors]
+    new, changes = C.execute(data, spec, analysis, locked=locked, claim=claim)
+    if errors:
+        new, changes = data, []    # a spec apply can't fully read is left as it is
+    try:
+        load_spec(new)
+    except ValidationError as e:
+        errs = json.loads(e.json())
+        first = errs[0] if errs else {}
+        loc = ".".join(str(x) for x in first.get("loc", ()))
+        errors.append({"code": "schema", "detail": f"the spec with the standard's content is "
+                                                   f"not valid, so nothing was written; first "
+                                                   f"error at {loc}: {first.get('msg')}"})
+        new, changes = data, []
+    acted = {c.item for c in changes}
+    entry["changes"] = [c.as_dict() for c in changes]
+    # stale: apply would change content. locked_stale: locked content the spec doesn't
+    # hold as the standard has it, what --check fails on. locked: the items among those
+    # their authors changed, which this run left as they are (only --locked rewrites).
+    entry["stale"] = C.stale(analysis)
+    entry["locked_stale"] = C.locked_stale(analysis)
+    entry["locked"] = [d.id for d in analysis.decisions if d.violation and d.id not in acted]
+    entry["decisions"] = analysis.decisions   # for the summary; dropped from the payload
+    entry["errors"] = errors
+    entry["ok"] = not errors and not entry["locked"]
+    return new, entry
+
+
+def _bucket(d, changes: dict) -> tuple[str, object]:
+    """Where one spec's decision on one item lands in the grouped summary."""
+    c = changes.get(d.id)
+    if c is not None and c["action"] in ("add", "refresh", "remove", "claim", "rewrite"):
+        return "change", (c["action"], c.get("to"))
+    if d.violation:
+        return "locked", None
+    if d.state == "unrecorded":
+        return "unrecorded", None
+    if d.conforms or d.state == "current":
+        return "current", None
+    if d.state in ("released", "deleted", "author", "tombstone"):
+        return "released", None
+    return "other", None
+
+
+def apply_summary(entries: list[dict]) -> list[dict]:
+    """The rollout grouped by standard, then by item: per item, how many specs take the
+    same change, which ones their authors released (skipped), which a lock holds back,
+    and how many are current already."""
+    by_std: dict[str, dict] = {}
+    for e in entries:
+        if e.get("standard") is None or "decisions" not in e:
+            continue
+        group = by_std.setdefault(e["standard"], {"chain": e["chain"], "specs": 0,
+                                                  "items": {}})
+        group["specs"] += 1
+        changes = {c["item"]: c for c in e["changes"]}
+        for d in e["decisions"]:
+            item = group["items"].setdefault(d.id, {
+                "item": d.id, "layer": d.layer, "locked_by": d.locked_by,
+                "changes": {}, "current": 0, "released": [], "locked": [], "unrecorded": []})
+            where, key = _bucket(d, changes)
+            if where == "change":
+                item["changes"].setdefault(key, []).append(e["spec"])
+            elif where == "current":
+                item["current"] += 1
+            elif where in ("released", "locked", "unrecorded"):
+                item[where].append(e["spec"])
+    out = []
+    for name in sorted(by_std):
+        g = by_std[name]
+        items = []
+        for item_id in sorted(g["items"]):
+            it = g["items"][item_id]
+            it["changes"] = [{"action": a, "to": to, "specs": specs}
+                             for (a, to), specs in sorted(
+                                 it["changes"].items(), key=lambda kv: (kv[0][0], str(kv[0][1])))]
+            if not it["locked_by"]:
+                it.pop("locked_by")
+            items.append(it)
+        out.append({"standard": name, "chain": g["chain"], "specs": g["specs"], "items": items})
+    return out
+
+
+def _names(specs: list[str], limit: int = 8) -> str:
+    shown = ", ".join(specs[:limit])
+    return shown + (f" and {len(specs) - limit} more" if len(specs) > limit else "")
+
+
+def render_apply(payload: dict) -> str:
+    """The grouped summary as text, ready for a pull request's description."""
+    t = payload["totals"]
+    verb = "would write" if payload["check"] else "wrote"
+    head = (f"standards apply{' --check' if payload['check'] else ''}: {t['specs']} spec"
+            f"{'s' if t['specs'] != 1 else ''} following a standard; {verb} {t['written']}, "
+            f"{t['unchanged']} unchanged")
+    if payload.get("no_standard"):
+        head += f"; {len(payload['no_standard'])} follow no standard and stay as they are"
+    if payload["check"]:
+        n = t["locked_stale"]
+        head += (f"\n{n} spec{'s' if n != 1 else ''} lack locked content as the standard has "
+                 f"it now" if n else "\nevery spec holds its standard's locked content")
+    lines = [head]
+    for g in payload["summary"]:
+        lines += ["", f"{g['standard']} ({' -> '.join(g['chain'])}), {g['specs']} spec"
+                      f"{'s' if g['specs'] != 1 else ''}"]
+        for it in g["items"]:
+            parts = []
+            for c in it["changes"]:
+                n = len(c["specs"])
+                to = f" {c['to']}" if c.get("to") is not None else ""
+                parts.append(f"same change × {n} ({c['action']}{to})" if n > 1
+                             else f"{c['action']}{to}: {c['specs'][0]}")
+            if it["locked"]:
+                parts.append(f"{len(it['locked'])} changed by their authors but locked, left "
+                             f"as they are (--locked rewrites them): {_names(it['locked'])}")
+            if it["unrecorded"]:
+                parts.append(f"{len(it['unrecorded'])} hold it already, unrecorded (--claim "
+                             f"records them): {_names(it['unrecorded'])}")
+            if it["released"]:
+                parts.append(f"{len(it['released'])} released by authors, skipped: "
+                             f"{_names(it['released'])}")
+            if it["current"]:
+                parts.append(f"{it['current']} already current")
+            lock = f" (locked by {it['locked_by']})" if it.get("locked_by") else ""
+            lines.append(f"  {it['item']}{lock}: {'; '.join(parts) or 'nothing to do'}")
+    errors = [(e["spec"], err["detail"]) for e in payload["specs"] for err in e.get("errors", [])]
+    if errors:
+        lines.append("")
+        lines += [f"error: {spec}: {detail}" for spec, detail in errors]
+    return "\n".join(lines) + "\n"
+
+
+def apply_files(paths: list[Path], source: StandardsSource, *, check: bool = False,
+                locked: bool = False, claim: bool = False, only: str | None = None,
+                skipped: list[str] = ()) -> dict:
+    """`standards apply` over spec files. Writes only a spec whose data changed (2-space
+    JSON, as advise --fix writes), and nothing in check mode. `only` limits the run to
+    the specs following that standard, so a rollout splits into one pull request per
+    team."""
+    standards = source.load()
+    if only is not None:
+        standards.get(only)   # an unknown name stops the run before any write
+    entries, written, unchanged, no_standard, other = [], [], [], [], []
+    for p in paths:
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            entries.append({"spec": str(p), "ok": False, "standard": None,
+                            "errors": [{"code": "unreadable_spec", "detail": str(e)}]})
+            continue
+        spec, err = load_spec_file(p)
+        if err is not None:
+            entries.append({"spec": str(p), "ok": False, "standard": None, "errors": [err]})
+            continue
+        try:
+            std = source.standard_for(spec)
+        except StandardsError as e:
+            entries.append({"spec": str(p), "ok": False,
+                            "standard": spec.design.standard if spec.design else None,
+                            "errors": [e.as_dict()]})
+            continue
+        if std is None:
+            no_standard.append(str(p))
+            continue
+        if only is not None and std.name != only:
+            other.append(str(p))
+            continue
+        new, entry = apply_spec(data, spec, std, locked=locked, claim=claim)
+        entry = {"spec": str(p), **entry}
+        changed = new != data
+        if changed and not check:
+            p.write_text(json.dumps(new, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        entry["written"] = changed and not check
+        (written if changed else unchanged).append(str(p))
+        entries.append(entry)
+    summary = apply_summary(entries)
+    for e in entries:
+        e.pop("decisions", None)
+    if check:
+        # The decision record's #7: --check fails on locked content only, so unlocked
+        # changes can reach teams in their own pull requests while CI stays green.
+        ok = not any(e.get("locked_stale") or e.get("errors") for e in entries)
+    else:
+        ok = all(e.get("ok", False) for e in entries)
+    out = {"stage": "standards", "ok": ok, "check": check, "locked": locked, "claim": claim,
+           "standards_dir": display(standards.directory), "specs": entries,
+           "summary": summary,
+           "totals": {"specs": sum(1 for e in entries if "changes" in e),
+                      "written": len(written), "unchanged": len(unchanged),
+                      "stale": sum(1 for e in entries if e.get("stale")),
+                      "locked_stale": sum(1 for e in entries if e.get("locked_stale"))},
+           "skipped": list(skipped)}
+    if no_standard:
+        out["no_standard"] = no_standard
+    if other:
+        out["other_standards"] = other
+    return out

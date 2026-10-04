@@ -1379,6 +1379,48 @@ class Tab(_SketchHolder):
         return self
 
 
+SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]*$"
+# A classification is a word or a few: letters, digits, spaces, '-', '_' and '.'
+# ("internal", "Highly Confidential", "pii-restricted"). It names standard content
+# (design.standard_written keys hold it), so it never holds brackets or '='.
+CLASSIFICATION_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$"
+LIFECYCLE_STATES = ("active", "deprecated", "sunset")
+
+
+class Lifecycle(BaseModel):
+    """Where a dashboard is in its life. Spec-only: compile, plan and decompile never
+    read it, and Superset has no field for it. A standard turns it into what readers see,
+    a banner row per state (docs/DESIGN-BRAIN.md sec.18, "Content")."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["active", "deprecated", "sunset"] = Field(
+        description="active (in use), deprecated (still works; readers should move to the "
+                    "successor) or sunset (retired, kept for reference)")
+    successor: str | None = Field(
+        default=None, pattern=SLUG_PATTERN,
+        description="The slug of the dashboard that replaces this one; deprecated or "
+                    "sunset only")
+    sunset_date: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="The day it is (or was) retired, YYYY-MM-DD; deprecated or sunset only")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "Lifecycle":
+        import datetime
+
+        if self.sunset_date is not None:
+            try:
+                datetime.date.fromisoformat(self.sunset_date)
+            except ValueError:
+                raise ValueError(f"dashboard lifecycle: sunset_date {self.sunset_date!r} is "
+                                 "not a real day; write YYYY-MM-DD") from None
+        if self.state == "active" and (self.successor or self.sunset_date):
+            raise ValueError("dashboard lifecycle: an active dashboard has no successor or "
+                             "sunset_date; set state to deprecated or sunset first")
+        return self
+
+
 class DashboardMeta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1463,6 +1505,20 @@ class DashboardMeta(BaseModel):
                     "the live owners alone and plan doesn't compare them. Accounts only: "
                     "Superset's owners are users, not roles.",
     )
+    lifecycle: Lifecycle | None = Field(
+        default=None,
+        description="Where the dashboard is in its life: {\"state\": \"deprecated\", "
+                    "\"successor\": \"sales-v2\", \"sunset_date\": \"2026-12-31\"}. Spec-only: "
+                    "compile and plan ignore it, and Superset has no such field. A standard "
+                    "can turn it into a banner row (`standards apply`). Omitted means active.",
+    )
+    classification: str | None = Field(
+        default=None, pattern=CLASSIFICATION_PATTERN,
+        description="How sensitive the dashboard is, e.g. \"internal\" or \"confidential\": a "
+                    "free word, or one of the values the repository's standard lists. "
+                    "Spec-only: compile and plan ignore it. A standard can key footer rows "
+                    "off it (`standards apply`).",
+    )
 
     @field_validator("owners")
     @classmethod
@@ -1495,6 +1551,9 @@ class DashboardMeta(BaseModel):
             raise ValueError("dashboard certification_details needs certified_by")
         if self.tags is not None:
             self.tags = _tag_list(self.tags, "dashboard")
+        if self.lifecycle is not None and self.lifecycle.successor == self.slug:
+            raise ValueError(f"dashboard lifecycle: successor {self.slug!r} is this "
+                             "dashboard's own slug; name the dashboard that replaces it")
         return self
 
 
@@ -1502,6 +1561,68 @@ class DashboardMeta(BaseModel):
 # docs/DESIGN-BRAIN.md section 16). design.filled may list only these.
 BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "number_format", "page_length",
                          "search_box", "show_legend", "show_value", "x_label_format")
+
+
+# design.standard_written: one entry per item of spec content a standard wrote
+# (`standards apply`, docs/DESIGN-BRAIN.md sec.18 "Content"). The key names the item;
+# rows and CSS blocks are recorded by hash, everything else by value.
+STANDARD_NAME = r"[A-Za-z0-9][A-Za-z0-9_-]*"
+STANDARD_ITEM_KEYS = {
+    "row": re.compile(
+        rf"^layout\.(header|footer)\[({STANDARD_NAME})\]"
+        r"(?:\[(lifecycle|classification)=([^\]=]+)\])?\[(\d+)\]$"),
+    "css": re.compile(rf"^dashboard\.css\[({STANDARD_NAME})\]$"),
+    "scalar": re.compile(r"^dashboard\.(color_scheme|certified_by|certification_details)$"),
+    "label": re.compile(r"^dashboard\.label_colors\[(.+)\]$", re.S),
+    "number_format": re.compile(r"^charts\[(.+)\]\.number_format$", re.S),
+}
+STANDARD_HASH = re.compile(r"^[0-9a-f]{12}$")
+
+
+def standard_item_kind(key: str) -> tuple[str, re.Match] | None:
+    """(kind, match) for a design.standard_written key, or None."""
+    for kind, pattern in STANDARD_ITEM_KEYS.items():
+        m = pattern.match(key)
+        if m:
+            return kind, m
+    return None
+
+
+def _check_written_entry(key: str, record) -> None:
+    found = standard_item_kind(key)
+    if found is None:
+        raise ValueError(
+            f"design.standard_written: {key!r} names no item a standard writes (layout.header"
+            f"[layer][n], layout.footer[layer][n], dashboard.css[layer], dashboard.color_scheme, "
+            f"dashboard.certified_by, dashboard.certification_details, dashboard.label_colors"
+            f"[label], charts[name].number_format)")
+    kind, m = found
+    if kind == "row" and m.group(3) and (m.group(1), m.group(3)) not in (
+            ("header", "lifecycle"), ("footer", "classification")):
+        raise ValueError(f"design.standard_written: {key!r}: a standard keys header rows off "
+                         f"the lifecycle and footer rows off the classification")
+    if record is None:
+        return  # the author's: deleted (or, for a row, changed); never written again
+    by = "hash" if kind in ("row", "css") else "value"
+    if not isinstance(record, dict) or set(record) != {"layer", by}:
+        raise ValueError(f"design.standard_written[{key!r}] must be null or "
+                         f"{{\"layer\": ..., \"{by}\": ...}}, as standards apply writes it")
+    layer = record["layer"]
+    if not isinstance(layer, str) or not re.fullmatch(STANDARD_NAME, layer):
+        raise ValueError(f"design.standard_written[{key!r}]: layer {layer!r} is not a "
+                         f"standard's name")
+    if kind in ("row", "css") and layer != m.group(2 if kind == "row" else 1):
+        raise ValueError(f"design.standard_written[{key!r}]: layer {layer!r} is not the layer "
+                         f"its key names")
+    if by == "hash" and not (isinstance(record["hash"], str) and STANDARD_HASH.match(record["hash"])):
+        raise ValueError(f"design.standard_written[{key!r}]: hash must be 12 hex digits")
+    if by == "value":
+        value = record["value"]
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"design.standard_written[{key!r}]: value must be a non-empty "
+                             f"string")
+        if kind == "label" and not re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
+            raise ValueError(f"design.standard_written[{key!r}]: value must be #RRGGBB")
 
 
 class DesignConfig(BaseModel):
@@ -1532,6 +1653,24 @@ class DesignConfig(BaseModel):
                     "and it is yours; delete it and --fix records null here and fills it no "
                     "more, until you delete that entry. Compile ignores this block.",
     )
+    standard_written: dict[str, dict[str, str] | None] = Field(
+        default_factory=dict,
+        description="Written by `chartwright standards apply`, not by hand: each item of "
+                    "spec content a standard wrote (a header or footer row, a CSS block, a "
+                    "label colour, a dashboard setting, a chart's number_format), the layer "
+                    "that wrote it and its value or hash. While the spec still holds that "
+                    "value, apply keeps it up to date. Edit or delete an unlocked item and it "
+                    "is yours (null here: never written again, until you delete that entry); "
+                    "a locked item stays the standard's. Compile ignores this block.",
+    )
+
+    @field_validator("standard_written", mode="before")
+    @classmethod
+    def _written_entries(cls, written):
+        if isinstance(written, dict):
+            for key, record in written.items():
+                _check_written_entry(key, record)
+        return written
 
     @field_validator("filled", mode="before")
     @classmethod
@@ -1645,6 +1784,34 @@ class DashboardSpec(BaseModel):
                 except ValidationError as e:
                     raise ValueError(f"design.filled[{name!r}][{field!r}]: {value!r} is not a "
                                      f"value {field} takes ({e.errors()[0]['msg']})") from None
+        return self
+
+    @model_validator(mode="after")
+    def _one_owner_per_field(self) -> "DashboardSpec":
+        """A chart's number_format in design.standard_written names a real chart that has
+        the field, and a field has one owner: the brain (design.filled) or a standard
+        (design.standard_written), never both, or each would read the other's write as
+        the author's edit and neither would own it."""
+        if self.design is None:
+            return self
+        by_name = {c.name: c for c in self.charts}
+        for key in self.design.standard_written:
+            kind, m = standard_item_kind(key)
+            if kind != "number_format":
+                continue
+            name = m.group(1)
+            chart = by_name.get(name)
+            if chart is None:
+                raise ValueError(f"design.standard_written names chart {name!r}, which is not "
+                                 "in charts; rename its entry with the chart, or delete it")
+            if "number_format" not in type(chart).model_fields:
+                raise ValueError(f"design.standard_written: a {chart.type} chart has no "
+                                 f"number_format; delete {key!r}")
+            if "number_format" in self.design.filled.get(name, {}):
+                raise ValueError(
+                    f"{name!r}: number_format is recorded in design.filled and in "
+                    f"design.standard_written; a field has one owner. standards apply drops "
+                    f"the design.filled entry when the standard takes the field")
         return self
 
     @field_validator("filters")

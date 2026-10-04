@@ -74,6 +74,8 @@ def _findings(ctx: RuleContext, fill: Fill):
         if c.type not in fill.types:
             continue
         field = fill.field
+        if ctx.standard_holds(c, field):
+            continue  # a standard's (or the author's, released from it): one owner per field
         rec = ctx.filled(c.name)
         recorded = field in rec
         present = ctx.written(c, field)

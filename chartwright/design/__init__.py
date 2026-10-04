@@ -96,7 +96,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
                 severity[r] = level
                 set_by[r] = "overlay"
 
-    ctx = RuleContext(spec, params, resolution, prober)
+    ctx = RuleContext(spec, params, resolution, prober, standard)
     findings: list[Finding] = []
     ignored: list[str] = []
     polished: list[str] = []
@@ -323,3 +323,4 @@ def gate_block(advice: dict) -> str | None:
 # default.* fills come after the rules, whose grid helpers they share.
 from . import rules  # noqa: E402,F401
 from . import defaults  # noqa: E402,F401
+from . import standard_rules  # noqa: E402,F401

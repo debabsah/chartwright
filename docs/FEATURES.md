@@ -11,7 +11,7 @@ into one. Everything below works from that one file.
     - A screenshot of a dashboard in another BI tool, pointed at the same underlying data.
 - **Reviewable Checkpoint**: The AI's output is a small spec file you can read, edit, and version like code.
 - **Open AI Contract**: `chartwright schema` prints the full JSON Schema so any LLM or tool can generate valid specs.
-- **MCP Server**: Thirteen tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
+- **MCP Server**: Fourteen tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
 - **Guardrails**: The dashboard is new; the data behind it must be real. Every dataset, column, and metric the AI references is confirmed to exist before anything is built, so a made-up column becomes a clear error message, never a broken chart. The error suggests the closest real column names and lists the dataset's columns, so the AI can correct itself in one round.
 
 ## Dashboard Design

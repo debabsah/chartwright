@@ -29,6 +29,21 @@ def _row(ctx: RuleContext, chart, fill, pending: dict, ignored: set[str]) -> dic
     source = ("filled" if ctx.brain_owns(chart, field)
               else "spec" if present else "superset default")
     f = pending.get(key)
+    if ctx.standard_holds(chart, field):
+        # design.standard_written has the field: a standard's, or the author's after a
+        # release; the brain never fills it (one owner per field).
+        rec = ctx.spec.design.standard_written[f"charts[{chart.name}].{field}"]
+        owned = rec is not None and present and getattr(chart, field) == rec["value"]
+        row = {"field": field, "value": getattr(chart, field) if present else None,
+               "source": "standard" if owned else "spec" if present else "superset default",
+               "rule": fill.rule,
+               "reason": (f"the {rec['layer']} standard wrote it (design.standard_written); "
+                          f"the brain leaves it alone" if owned else
+                          "released from the standard, so yours; the brain leaves it alone"),
+               "override": (f"the standard governs it: its row in the dashboard content "
+                            f"section says whether it is locked" if owned
+                            else "it is yours: edit it freely")}
+        return row
     if key in ignored or fill.rule in ignored:
         reason = f"design.ignore holds {key}: the brain leaves this field alone"
     elif f is not None and f.kind == "release":
@@ -85,6 +100,13 @@ def explain(spec: DashboardSpec, *, audience: str | None = None, chart: str | No
     if standard is not None:
         out["standard"] = {"name": standard.name, "chain": list(standard.chain),
                            "via": standard.via}
+        from . import content as C
+
+        # Only a standard with content (or a spec it once wrote content into) has a
+        # dashboard section, so a rules-only standard explains exactly as before.
+        if chart is None and (C.has_content(standard)
+                              or (spec.design and spec.design.standard_written)):
+            out["dashboard"] = C.explain_rows(standard, spec)
     return out
 
 
@@ -93,6 +115,25 @@ def render_text(payload: dict) -> str:
     if payload.get("standard"):
         head += f", standard {' -> '.join(payload['standard']['chain'])}"
     lines = [f"Design defaults ({head})"]
+    if payload.get("dashboard") is not None:
+        from .content import describe
+
+        std = payload["standard"]
+        lines += ["", f"Dashboard content (standard {' -> '.join(std['chain'])}, "
+                      f"via {std['via']})"]
+        if not payload["dashboard"]:
+            lines.append("  the standard writes no content into this dashboard")
+        width = max((len(r["item"]) for r in payload["dashboard"]), default=0)
+        for r in payload["dashboard"]:
+            value = describe(r["value"], r["slot"]) if r["value"] is not None else "-"
+            lock = "locked" if r["locked"] else "open"
+            lines.append(f"  {r['item']:<{width}}  {value:<40} {r['layer'] or '-':<10} "
+                         f"{lock:<7} {r['source']}")
+            if r.get("standard") is not None:
+                lines.append(f"      standard: {describe(r['standard'], r['slot'])}")
+            if r.get("pending"):
+                lines.append(f"      {r['pending']}")
+            lines.append(f"      override: {r['override']}")
     for c in payload["charts"]:
         lines += ["", f"{c['chart']}  ({c['type']})"]
         if not c["fields"]:

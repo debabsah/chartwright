@@ -348,6 +348,11 @@ fails when it drifts.
 | `size.pivot-window` | warn | - | - | 2 | a pivot's height should show a meaningful share of its row_limit |
 | `size.row-harmony` | warn | ✔ | - | 1 | charts sharing a row should share a height (Superset sizes the row to its tallest child) |
 | `size.table-window` | warn | - | - | 1 | a table's height should show a meaningful share of its row_limit |
+| `standard.classification` | error | - | - | 6 | the dashboard's classification is one the standard lists |
+| `standard.content-locked` | error | - | - | 6 | content a standard locks is in the spec as the standard has it (standards apply writes it; a change goes through the standard's file) |
+| `standard.content-released` | info | - | - | 6 | content a standard has that the author took over (edited or removed): the author's now, and standards apply leaves it alone |
+| `standard.content-stale` | warn | - | - | 6 | content a standard wrote is current: standards apply would change nothing |
+| `standard.css-hides` | warn | - | - | 6 | no CSS outside the locking standard's own blocks hides elements while a standard locks header or footer rows |
 
 <!-- END rule-table -->
 
