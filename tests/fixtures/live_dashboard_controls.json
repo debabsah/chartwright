@@ -9,7 +9,8 @@
     "certification_details": "Reconciled with the finance close",
     "published": false,
     "refresh_frequency": 300,
-    "filter_bar_orientation": "horizontal"
+    "filter_bar_orientation": "horizontal",
+    "owners": ["admin@localhost"]
   },
   "charts": [
     {"name": "Flights", "type": "big_number_total", "metric": "COUNT(*)",

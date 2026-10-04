@@ -7,6 +7,22 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Added
 
+- `dashboard.owners`: the dashboard's owners, by Superset username or by the email
+  address of each account, e.g. `["jdoe", "ana@example.com"]`. Superset's import makes
+  the importing account an owner and its bundle has no owners field, so `apply` now
+  sets them after the import, through the dashboard API.
+  - Every owner is resolved to an account before anything is written. An unknown one
+    is an `owner_not_found` error at resolve, with the closest accounts as
+    `candidates`; one that names two accounts is `owner_ambiguous`.
+  - Usernames need an instance whose API returns them: 6.1.0 by default, 4.1.4 and
+    5.0.0 only with `FAB_ADD_SECURITY_API` on. Emails work on all three.
+  - The account that applies stays an owner: Superset adds it on every import, and a
+    non-admin account can't import over the dashboard again without it. Run `plan`
+    with the same profile.
+  - `decompile` reads the owners back from the live dashboard, and `plan` lists
+    `owners` in `dashboard_settings_changed` when they differ.
+  - Omitted, `apply` leaves the live owners alone and `plan` doesn't compare them;
+    the bundle is the same either way. Chart owners are left as Superset sets them.
 - `dashboard.css`: the dashboard's CSS, the same thing as Superset's own "Edit CSS",
   written into the import bundle's `css` field (which 4.1.4, 5.0.0 and 6.1.0 all import).
   Decompiled (blank CSS reads back as omitted) and compared by `plan` (`css_changed`).

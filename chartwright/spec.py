@@ -1451,6 +1451,33 @@ class DashboardMeta(BaseModel):
                     "it there before anything is written.",
     )
     tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
+    owners: list[str] | None = Field(
+        default=None,
+        description="The dashboard's owners: Superset usernames, or the email address of "
+                    "each account, e.g. [\"jdoe\", \"ana@example.com\"]. Use emails on "
+                    "4.1.4 and 5.0.0, whose API returns no usernames unless "
+                    "FAB_ADD_SECURITY_API is on. apply sets them after the import, keeping "
+                    "the account that applies as an owner too (Superset adds it on every "
+                    "import, and a non-admin account needs it to import again), and plan "
+                    "reports a difference. Omitted, apply leaves "
+                    "the live owners alone and plan doesn't compare them. Accounts only: "
+                    "Superset's owners are users, not roles.",
+    )
+
+    @field_validator("owners")
+    @classmethod
+    def _owner_names(cls, owners: list[str] | None) -> list[str] | None:
+        if owners is None:
+            return None
+        seen: set[str] = set()
+        for name in owners:
+            if not name or name != name.strip():
+                raise ValueError(f"dashboard owners: {name!r} must be a username or an "
+                                 "email, without surrounding spaces")
+            if name.casefold() in seen:
+                raise ValueError(f"dashboard owners: {name!r} is listed twice")
+            seen.add(name.casefold())
+        return owners
 
     @field_validator("css")
     @classmethod

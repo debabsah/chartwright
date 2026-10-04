@@ -44,7 +44,8 @@ approximate it with a different mechanism.
    dashboard-level `filters` (select, time_range, numeric range, time_grain
    and time_column native filter bar; `dependencies` for cascading; `charts`
    to scope any of them), dashboard settings (colour scheme, description,
-   certification, draft, refresh), layout as `rows`, `tabs`, or an
+   certification, draft, refresh, `owners` by username or email, the
+   email on 4.1.4 and 5.0.0), layout as `rows`, `tabs`, or an
    ASCII `sketch` with a `legend`, markdown blocks in rows, `{"header": ...}`
    and `{"divider": true}` entries between rows, an optional
    `layout.footer` (rows below everything, shown under every tab), an optional

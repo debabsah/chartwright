@@ -30,7 +30,7 @@ from .spec import DashboardSpec
 @dataclass
 class ApplyReport:
     ok: bool
-    stage: str  # resolve | ownership | prepare | import | linkage | scope | smoke | done
+    stage: str  # resolve | ownership | prepare | import | linkage | scope | owners | smoke | done
     resolution_errors: list[dict] = field(default_factory=list)
     import_status: int | None = None
     import_detail: str | None = None
@@ -468,6 +468,18 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
         if scope_errors:
             report.import_detail = "; ".join(scope_errors)
             return report
+
+        if resolution.owner_ids is not None:
+            # The bundle can't carry owners (ImportV1DashboardSchema has none), and the
+            # import just made this account an owner; set the spec's list, resolved to
+            # ids before anything was written (chartwright.owners).
+            from .owners import set_owners
+
+            report.stage = "owners"
+            owner_error = set_owners(client, report.dashboard_id, resolution.owner_ids)
+            if owner_error:
+                report.import_detail = owner_error
+                return report
 
         report.stage = "smoke"
         results: list[SmokeResult] = smoke(spec, resolution, client)

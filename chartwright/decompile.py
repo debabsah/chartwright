@@ -330,6 +330,8 @@ class DecompileResult:
     spec: dict
     losses: list[Loss] = field(default_factory=list)
     dataset_uuids: dict[str, str] = field(default_factory=dict)  # chart name -> dataset uuid
+    # The live dashboard's owner ids (decompile_live only: exports carry no owners).
+    owner_ids: list[int] | None = None
 
     def losses_json(self) -> list[dict]:
         return [loss.as_dict() for loss in self.losses]
@@ -1445,4 +1447,26 @@ def decompile_live(slug_or_id: str, client) -> DecompileResult:
             raise ValueError(f"no dashboard with slug {slug_or_id!r}")
         did = dash["id"]
     blob = client.export_dashboard(did)
-    return decompile_bundle(blob, live_dataset_lookup(client))
+    result = decompile_bundle(blob, live_dataset_lookup(client))
+    _read_owners(result, client, did)
+    return result
+
+
+def _read_owners(result: DecompileResult, client, dashboard_id: int) -> None:
+    """dashboard.owners from the live dashboard: exports carry no owners
+    (ImportV1DashboardSchema has none), so they come from the REST API, named by
+    username where the instance returns usernames and by email elsewhere
+    (chartwright.owners). An owner that can't be named leaves `owners` out, with a
+    loss: a partial list would drop that owner on the next apply."""
+    from .client import SupersetAPIError
+    from .owners import live_owner_ids, owner_names
+
+    result.owner_ids = live_owner_ids(client, dashboard_id)
+    try:
+        names, why = owner_names(client, result.owner_ids)
+    except SupersetAPIError as e:  # e.g. an account the owner list is closed to
+        names, why = None, f"owners not read back ({e}); omitted, so apply leaves them alone"
+    if names is None:
+        result.losses.append(Loss("dashboard", why))
+    elif names:
+        result.spec["dashboard"]["owners"] = names

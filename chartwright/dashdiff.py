@@ -103,6 +103,8 @@ def _normalize(spec: DashboardSpec) -> dict:
     data["charts"].sort(key=lambda c: c["name"])
     if not data["dashboard"].get("tags"):
         data["dashboard"].pop("tags", None)
+    # Owners are names in a spec and ids live; plan compares them as ids, apart.
+    data["dashboard"].pop("owners", None)
 
     def norm_rows(model_rows, data_rows) -> None:
         for mrow, drow in zip(model_rows, data_rows):
@@ -266,6 +268,12 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
     p.css_changed = t["dashboard"].get("css") != l["dashboard"].get("css")
     p.dashboard_settings_changed = [
         k for k in DASHBOARD_SETTINGS if t["dashboard"].get(k) != l["dashboard"].get(k)]
+    # Owners compare as user ids: the spec's resolved at resolve time (plus the
+    # signed-in account, which apply keeps), the live ones as the API lists them.
+    # Omitted owners are not managed, as omitted tags are not.
+    if resolution.owner_ids is not None and live_result.owner_ids is not None:
+        if set(resolution.owner_ids) != set(live_result.owner_ids):
+            p.dashboard_settings_changed.append("owners")
     # Whole-layout compare: a tabs layout has no "rows" key after
     # exclude_none dumping, so keyed access would KeyError.
     p.layout_changed = t["layout"] != l["layout"]
