@@ -7,6 +7,7 @@
     chartwright apply spec.json --profile P     check -> compile -> import -> smoke
     chartwright brief                           the design brief to read BEFORE authoring a spec
     chartwright advise spec.json                design review (add --profile for data-aware rules)
+    chartwright explain spec.json               where each design-default field comes from, and why
     chartwright redesign <slug> --profile P     decompile + audit + safe fixes -> redesigned spec
     chartwright calibrate                       learn recommended heights from absorb history
 """
@@ -34,6 +35,20 @@ def _load(path: str):
         return load_spec(data)
     except ValidationError as e:
         _die({"stage": "schema", "errors": json.loads(e.json())})
+
+
+def _release(text: str) -> str:
+    """argparse type for --superset-version: a release such as 5.0.0."""
+    from .versions import not_a_release, stated_release
+
+    release = stated_release(text)
+    if release is None:
+        raise argparse.ArgumentTypeError(not_a_release(text))
+    return release
+
+
+_VERSION_HELP = ("the Superset release to hold the spec to, e.g. 5.0.0; fields that release "
+                 "can't take are refused, fields it ignores warn")
 
 
 def _die(payload: dict, code: int = 1) -> None:
@@ -119,6 +134,8 @@ def _main(argv: list[str] | None = None) -> None:
     comp = sub.add_parser("compile", help="compile an import bundle offline (stub dataset ids)")
     comp.add_argument("spec")
     comp.add_argument("-o", "--output", default=None)
+    comp.add_argument("--superset-version", type=_release, default=None,
+                      help=_VERSION_HELP + " (default: no check; the bundle is the same either way)")
 
     subhelp = {"check": "pre-flight referential resolution against the live instance",
                "apply": "check -> compile -> import -> verify -> smoke",
@@ -127,6 +144,8 @@ def _main(argv: list[str] | None = None) -> None:
         p = sub.add_parser(name, help=subhelp[name])
         p.add_argument("spec")
         p.add_argument("--profile", required=True)
+        p.add_argument("--superset-version", type=_release, default=None,
+                       help=_VERSION_HELP + " (default: ask the instance)")
         if name != "plan":
             p.add_argument("--design", choices=["off", "warn", "strict"], default="warn",
                            help="design-brain advice: warn (report, default), strict (block), off")
@@ -141,6 +160,15 @@ def _main(argv: list[str] | None = None) -> None:
     adv.add_argument("--strict", action="store_true", help="exit 1 on warnings, not just errors")
     adv.add_argument("--ignore", default=None, help="comma-separated rule ids to suppress")
     adv.add_argument("--no-probe", action="store_true", help="skip cardinality queries (metadata only)")
+    adv.add_argument("--chart", default=None, metavar="NAME",
+                     help="only this chart's findings, and with --fix only its fixes")
+
+    ex = sub.add_parser("explain",
+                        help="where each chart's design-default fields come from, and why (offline)")
+    ex.add_argument("spec")
+    ex.add_argument("--chart", default=None, metavar="NAME", help="explain this chart only")
+    ex.add_argument("--audience", choices=AUDIENCE_NAMES, default=None)
+    ex.add_argument("--json", action="store_true", help="the same rows as JSON, for agents")
 
     br = sub.add_parser("brief", help="the design brief to read BEFORE authoring a spec")
     br.add_argument("--audience", choices=AUDIENCE_NAMES, default="analytical")
@@ -190,11 +218,23 @@ def _main(argv: list[str] | None = None) -> None:
         from .compiler import compile_bundle
         from .testing import stub_resolution
 
+        checked = None
+        if args.superset_version:
+            from .versions import check_spec_version
+
+            checked = check_spec_version(spec, args.superset_version)
+            if not checked.ok:
+                _die({"ok": False, "stage": "version", "superset_version": checked.version,
+                      "errors": checked.errors, "version_warnings": checked.warnings})
         bundle = compile_bundle(spec, stub_resolution(spec))
         out = Path(args.output or f"{spec.dashboard.slug}.zip")
         out.write_bytes(bundle)
-        print(json.dumps({"ok": True, "stage": "compile", "output": str(out), "bytes": len(bundle),
-                          "note": "stub resolution (fake dataset ids); use apply for a real import"}))
+        payload = {"ok": True, "stage": "compile", "output": str(out), "bytes": len(bundle),
+                   "note": "stub resolution (fake dataset ids); use apply for a real import"}
+        if checked is not None:
+            payload["superset_version"] = checked.version
+            payload["version_warnings"] = checked.warnings
+        print(json.dumps(payload))
         return
 
     if args.cmd == "check":
@@ -202,8 +242,15 @@ def _main(argv: list[str] | None = None) -> None:
         client = _client(args.profile)
         from .apply import check
 
-        res = check(spec, client)
+        res = check(spec, client, args.superset_version)
         payload = {"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]}
+        if res.superset_version:
+            payload["superset_version"] = res.superset_version
+        if res.version_warnings:
+            payload["version_warnings"] = res.version_warnings
+        if res.unchecked_sql:
+            # Custom SQL is not checkable by name; say so instead of passing it silently.
+            payload["unchecked_sql"] = res.unchecked_sql
         gate = False
         if args.design != "off":
             advice = _advice_payload(spec, resolution=res if res.ok else None)
@@ -231,12 +278,31 @@ def _main(argv: list[str] | None = None) -> None:
         client = _client(args.profile)
         from .apply import apply as run_apply
 
-        report = run_apply(spec, client, args.profile)
+        report = run_apply(spec, client, args.profile, args.superset_version)
         out = json.loads(report.to_json())
         if advice is not None:
             out["advice"] = advice
         print(json.dumps(out, indent=2))
         sys.exit(0 if report.ok else 1)
+
+    if args.cmd in ("advise", "explain") and args.chart is not None:
+        names = [c.name for c in _load(args.spec).charts]
+        if args.chart not in names:
+            _die({"stage": "design", "errors": [{
+                "code": "unknown_chart",
+                "detail": f"no chart named {args.chart!r} in the spec; charts: {names}"}]})
+
+    if args.cmd == "explain":
+        spec = _load(args.spec)
+        from .design.explain import explain, render_text
+
+        try:
+            payload = explain(spec, audience=args.audience, chart=args.chart)
+        except ValueError as e:
+            _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
+        print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json
+              else render_text(payload), end="\n" if args.json else "")
+        return
 
     if args.cmd == "advise":
         spec = _load(args.spec)
@@ -259,7 +325,7 @@ def _main(argv: list[str] | None = None) -> None:
                 spec_data = json.loads(Path(args.spec).read_text(encoding="utf-8"))
                 new_data, report = advise_and_fix(
                     spec_data, audience=args.audience, ignore=ignore,
-                    resolution=resolution, prober=prober)
+                    resolution=resolution, prober=prober, chart=args.chart)
                 if report.fixed:
                     # --fix rewrites the whole file (normalized JSON formatting,
                     # same as absorb); the payload discloses the path.
@@ -268,7 +334,7 @@ def _main(argv: list[str] | None = None) -> None:
                     written = str(args.spec)
             else:
                 report = advise(spec, audience=args.audience, ignore=ignore,
-                                resolution=resolution, prober=prober)
+                                resolution=resolution, prober=prober, chart=args.chart)
         except ValueError as e:
             _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
         payload = report.payload()
@@ -359,7 +425,7 @@ def _main(argv: list[str] | None = None) -> None:
         client = _client(args.profile)
         from .dashdiff import plan as run_plan
 
-        p = run_plan(spec, client)
+        p = run_plan(spec, client, args.superset_version)
         print(p.to_json())
         sys.exit(0 if p.clean else 1)
 

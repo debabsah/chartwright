@@ -12,7 +12,16 @@ from dataclasses import dataclass, field
 from . import ids
 from .client import SupersetClient
 from .decompile import decompile_live
-from .spec import DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec
+from .spec import (
+    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
+    without_superset_defaults,
+)
+
+# Dashboard settings `plan` compares one by one (dashboard_settings_changed).
+DASHBOARD_SETTINGS = (
+    "color_scheme", "description", "certified_by", "certification_details", "published",
+    "refresh_frequency", "filter_bar_orientation", "show_chart_timestamps", "tags",
+)
 
 
 @dataclass
@@ -29,10 +38,15 @@ class Plan:
     layout_changed: bool = False
     cross_filters_changed: bool = False   # live setting flipped in the UI, or the spec changed
     label_colors_changed: bool = False    # the pinned series colours differ
+    css_changed: bool = False             # the dashboard CSS ("Edit CSS") differs
+    # Other dashboard settings that differ, by spec field name (DASHBOARD_SETTINGS).
+    dashboard_settings_changed: list[str] = field(default_factory=list)
     decompile_losses: list[dict] = field(default_factory=list)
     # Why a plan is blocked by the spec: the same typed errors `check` and
     # `apply` return (column_not_found carries `candidates`). Empty otherwise.
     resolution_errors: list[dict] = field(default_factory=list)
+    # Fields the instance's Superset release ignores (chartwright.versions).
+    version_warnings: list[dict] = field(default_factory=list)
 
     @property
     def clean(self) -> bool:
@@ -40,7 +54,7 @@ class Plan:
             self.charts_added or self.charts_changed or self.charts_removed
             or self.filters_added or self.filters_changed or self.filters_removed
             or self.title_changed or self.layout_changed or self.cross_filters_changed
-            or self.label_colors_changed
+            or self.label_colors_changed or self.css_changed or self.dashboard_settings_changed
         )
 
     def to_json(self) -> str:
@@ -59,19 +73,32 @@ class Plan:
                 "layout_changed": self.layout_changed,
                 "cross_filters_changed": self.cross_filters_changed,
                 "label_colors_changed": self.label_colors_changed,
+                "css_changed": self.css_changed,
+                "dashboard_settings_changed": self.dashboard_settings_changed,
                 "decompile_losses": self.decompile_losses,
                 "resolution_errors": self.resolution_errors,
+                "version_warnings": self.version_warnings,
             },
             indent=2,
         )
+
+
+def _normalize_tags(holder: dict) -> None:
+    """Tags compare as a set: Superset keeps no order for them. [] clears tags,
+    and Superset then exports none, so it compares equal to no tags."""
+    if holder.get("tags"):
+        holder["tags"] = sorted(holder["tags"])
+    else:
+        holder.pop("tags", None)
 
 
 def _normalize(spec: DashboardSpec) -> dict:
     """Canonical form for comparison: validated model dump with every
     compiler default materialized, so spec-with-defaults-omitted and
     decompiled-with-defaults-present compare equal. Chart identity is the
-    name, so chart list order is canonicalized by name."""
-    data = spec.model_dump(exclude_none=True, by_alias=True)
+    name, so chart list order is canonicalized by name. A written Superset default
+    compares equal to the omitted field, which is all decompile can read back."""
+    data = without_superset_defaults(spec).model_dump(exclude_none=True, by_alias=True)
     for chart in data["charts"]:
         chart["width"] = spec.resolved_item_width(chart["name"])
         chart["height"] = spec.resolved_height(chart["name"])
@@ -80,11 +107,16 @@ def _normalize(spec: DashboardSpec) -> dict:
         if chart["type"] in ("timeseries_line", "timeseries_bar", "timeseries_area",
                              "timeseries_scatter", "big_number_trend"):
             chart.setdefault("time_grain", DEFAULT_TIME_GRAIN)
+        _normalize_tags(chart)
     data["charts"].sort(key=lambda c: c["name"])
+    _normalize_tags(data["dashboard"])
 
     def norm_rows(model_rows, data_rows) -> None:
         for mrow, drow in zip(model_rows, data_rows):
-            for mitem, ditem in zip(mrow, drow):
+            mitems, ditems = row_items(mrow), row_items(drow)
+            if mitems is None:
+                continue  # a header or divider: compared as dumped, defaults included
+            for mitem, ditem in zip(mitems, ditems):
                 if not isinstance(mitem, str):
                     ditem["width"] = spec.resolved_item_width(mitem)
                     ditem.setdefault("height", 4)
@@ -131,7 +163,7 @@ def _normalize(spec: DashboardSpec) -> dict:
     return data
 
 
-def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
+def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | None = None) -> Plan:
     from .resolver import resolve
 
     existing = client.find_dashboard_by_slug(target.dashboard.slug)
@@ -148,13 +180,14 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
         return Plan(dashboard="blocked",
                     detail=f"slug {target.dashboard.slug!r} exists but is not owned by this tool")
 
-    resolution = resolve(target, client)
+    resolution = resolve(target, client, superset_version)
     if not resolution.ok:
         n = len(resolution.errors)
         return Plan(dashboard="blocked",
-                    detail=f"the spec names {n} thing{'s' if n != 1 else ''} this instance doesn't have; "
-                           f"see resolution_errors",
-                    resolution_errors=[e.as_dict() for e in resolution.errors])
+                    detail=f"the spec names {n} thing{'s' if n != 1 else ''} this instance doesn't have "
+                           f"or can't take; see resolution_errors",
+                    resolution_errors=[e.as_dict() for e in resolution.errors],
+                    version_warnings=resolution.version_warnings)
 
     live_result = decompile_live(target.dashboard.slug, client)
     try:
@@ -162,10 +195,12 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     except Exception as e:  # noqa: BLE001 - decompiled live state can be arbitrarily degraded
         return Plan(dashboard="update",
                     detail=f"live dashboard not representable as a spec ({e}); apply will rebuild it",
-                    decompile_losses=live_result.losses_json())
+                    decompile_losses=live_result.losses_json(),
+                    version_warnings=resolution.version_warnings)
 
     t, l = _normalize(target), _normalize(live_spec)
-    p = Plan(dashboard="unchanged", decompile_losses=live_result.losses_json())
+    p = Plan(dashboard="unchanged", decompile_losses=live_result.losses_json(),
+             version_warnings=resolution.version_warnings)
 
     t_charts = {c["name"]: c for c in t["charts"]}
     l_charts = {c["name"]: c for c in l["charts"]}
@@ -175,6 +210,13 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
         t_charts[chart.name]["dataset"] = resolution.for_chart(chart.dataset).uuid
     for name in l_charts:
         l_charts[name]["dataset"] = live_result.dataset_uuids.get(name)
+    # Omitted tags are not managed: the bundle leaves them out, so the import
+    # leaves the live tags alone, and plan does not report them either.
+    for chart in target.charts:
+        if chart.tags is None and chart.name in l_charts:
+            l_charts[chart.name].pop("tags", None)
+    if target.dashboard.tags is None:
+        l["dashboard"].pop("tags", None)
     p.charts_added = sorted(set(t_charts) - set(l_charts))
     p.charts_removed = sorted(set(l_charts) - set(t_charts))
     p.charts_changed = sorted(
@@ -186,7 +228,7 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     t_filters = {f["name"]: dict(f) for f in t.get("filters", [])}
     l_filters = {f["name"]: dict(f) for f in l.get("filters", [])}
     for f in target.filters:
-        if f.type in ("select", "range"):
+        if f.type in DATASET_FILTER_TYPES:
             t_filters[f.name]["dataset"] = resolution.datasets[f.dataset.key()].uuid
     for name in l_filters:
         u = live_result.dataset_uuids.get(f"filter:{name}")
@@ -228,6 +270,9 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     p.label_colors_changed = (
         (t["dashboard"].get("label_colors") or {}) != (l["dashboard"].get("label_colors") or {})
     )
+    p.css_changed = t["dashboard"].get("css") != l["dashboard"].get("css")
+    p.dashboard_settings_changed = [
+        k for k in DASHBOARD_SETTINGS if t["dashboard"].get(k) != l["dashboard"].get(k)]
     # Whole-layout compare: a tabs layout has no "rows" key after
     # exclude_none dumping, so keyed access would KeyError.
     p.layout_changed = t["layout"] != l["layout"]

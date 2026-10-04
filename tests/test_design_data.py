@@ -53,7 +53,7 @@ def line(name, **kw):
 
 
 def test_temporal_type_error_and_unknown_skips():
-    spec = mk([line("L")])
+    spec = mk([line("L", number_format=",.0f")])  # no count-format fill to report either
     rep = advise(spec, resolution=resolution(ts=1), overlay=EMPTY)  # ts is a string
     f = next(f for f in rep.findings if f.rule == "chart.temporal-type")
     assert f.severity == "error" and not rep.ok

@@ -41,8 +41,10 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         f"- Axis charts (timeseries/bar/heatmap/histogram): >= {p.min_axis_height} units tall, 8 is the comfortable default.",
         f"- At most {p.max_row_charts} axis charts per row; below 3/12 width a chart is unreadable.",
         "- Pie/donut: >= 5/12 wide, >= 8 tall. Heatmap: >= 5/12 wide (7/12 when many columns), >= 6 tall.",
-        f"- Vertical bars: <= {p.vbar_max_categories} categories, then flip horizontal. Pies: <= {p.pie_max_slices} slices.",
-        f"- Timeseries: <= {p.series_max} grouped series. Tables: height should show >= {p.table_visible_ratio:.0%} of row_limit (~0.8 units/row).",
+        f"- Vertical bars: <= {p.vbar_max_categories} categories, then flip horizontal; an ordered axis "
+        f"(hours, ranks) stays vertical with category_sort and x_label_every. Pies: <= {p.pie_max_slices} slices.",
+        f"- Timeseries: <= {p.series_max} grouped series (series_limit keeps the top N). Tables: height should "
+        f"show >= {p.table_visible_ratio:.0%} of row_limit (~0.8 units/row), or one page with page_length.",
         "- Charts sharing a row share a height; Superset sizes the row to its tallest child.",
     ]
     if p.recommended_heights:
@@ -76,13 +78,25 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
 
     lines += [
         "",
-        "## Defaults the compiler fills in (the critic flags the ones that matter)",
+        "## What an omitted field means (the critic flags the ones that matter)",
         "",
         "- Omitted height -> 8 units (KPIs 4, markdown 4). Omitted width -> the row splits evenly.",
         "- Omitted row_limit -> 10,000 (pie 100, table 1,000, funnel 10): set it deliberately on bar/pie/table/pivot.",
         "- Omitted time_grain -> P1D. Grains: PT1H P1D P1W P1M P3M P1Y. Points ~= range/grain; budget ~40 for bars, ~300 for lines.",
         "- number_format is d3: ',.0f' thousands, '.1%' percent, '.3s' SI units, '$,.2f' money. One measure, one format.",
         "- Native filter bar: select pickers (few, they query on load), a time_range WITH a default, numeric range sliders.",
+        "",
+        "## Design defaults: `advise --fix` fills these, so leave them unset unless the user asks",
+        "",
+        "- x_label_format, compare_suffix, number_format of COUNT metrics, and on tables cell_bars,",
+        "  page_length and search_box; show_legend on a single named series; show_value on few bars.",
+        "  Set one yourself only when the user asks for it, and say so in your reply.",
+        "- Run `chartwright advise <spec> --fix` (MCP: fix_spec) before you build. It writes each value",
+        "  into the spec file and records it in design.filled; its `fixed` entries say kind \"fill\" and why.",
+        "- Edit the spec it wrote; never regenerate the spec from your own copy, or the fills are lost.",
+        "  A filled value you change or delete is yours from then on (kind \"release\"); never edit design.filled.",
+        "- Never filled, set them only on request: category_sort, y_axis_truncate, compare_lag,",
+        "  series_limit, show_totals, and currency formats.",
     ]
 
     lines += ["", _guideline("chart-choice.md").strip(), "", _guideline("composition.md").strip()]

@@ -25,21 +25,59 @@ def _md_block(data: dict, addr, ri, ii):
             rows = lay["tabs"][addr[0]]["tabs"][addr[1]]["rows"]
         else:
             rows = lay["tabs"][addr]["rows"]
-        item = rows[ri][ii]
+        row = rows[ri]
+        item = (row["row"] if isinstance(row, dict) else row)[ii]
     except (KeyError, IndexError, TypeError):
         return None
     return item if isinstance(item, dict) and "markdown" in item else None
 
 
+def _record(f: Finding, **rest) -> dict:
+    """One applied fix: what changed, from what, and why. `kind` tells a design
+    default the brain filled (`fill`) or handed back to the author (`release`)
+    from a repair of something wrong (`repair`)."""
+    return {"finding": f.key, "rule": f.rule, "kind": f.kind, **rest,
+            "why": f.why or f.detail}
+
+
+def _update_filled(out: dict, order: list[str], recorded: dict, unrecorded: dict) -> None:
+    """Write the brain's records into design.filled ({chart: {field: value written}},
+    null for a fill the author deleted): chart order, sorted fields, empty entries
+    (and an emptied block) removed, so a spec without fills carries no trace."""
+    design = out.get("design") or {}
+    filled = {k: dict(v) for k, v in (design.get("filled") or {}).items()}
+    for name in set(recorded) | set(unrecorded):
+        rec = {**filled.get(name, {}), **recorded.get(name, {})}
+        for field in unrecorded.get(name, ()):
+            rec.pop(field, None)
+        filled[name] = rec
+    rank = {n: i for i, n in enumerate(order)}
+    filled = {n: dict(sorted(filled[n].items()))
+              for n in sorted(filled, key=lambda n: rank.get(n, len(rank))) if filled[n]}
+    if filled:
+        out["design"] = {**design, "filled": filled}
+    elif "design" in out:
+        design.pop("filled", None)
+        if design:
+            out["design"] = design
+        else:
+            out.pop("design")
+
+
 def apply_fixes(spec_data: dict, findings: list[Finding]) -> tuple[dict, list[dict]]:
     """Returns (patched deep copy, applied entries). Each entry says exactly
-    what changed and from what: {finding, rule, chart, set: {field: new},
-    was: {field: old}} -- an autofix that can't show its diff is a mutation
-    the user has to trust blind. Unknown chart names / stale markdown indices
-    are skipped, not errors."""
+    what changed and from what: {finding, rule, kind, chart, set: {field: new},
+    was: {field: old}, why} -- an autofix that can't show its diff is a mutation
+    the user has to trust blind. A fill may also remove a field (`unset`, shown
+    as null in `set`) and keeps design.filled in step: `record` writes the value
+    it filled (null for a fill the author deleted), `unrecord` drops the record.
+    Unknown chart names / stale markdown indices are skipped, not errors."""
     out = copy.deepcopy(spec_data)
     by_name = {c.get("name"): c for c in out.get("charts", [])}
     merged: dict[str, dict] = {}
+    unset: dict[str, set] = {}
+    recorded: dict[str, dict] = {}
+    unrecorded: dict[str, set] = {}
     chart_findings: list[Finding] = []
     applied: list[dict] = []
     for f in findings:
@@ -50,25 +88,37 @@ def apply_fixes(spec_data: dict, findings: list[Finding]) -> tuple[dict, list[di
             if block is not None:
                 was = {k: block.get(k) for k in f.fix["set"]}
                 block.update(f.fix["set"])
-                applied.append({"finding": f.key, "rule": f.rule, "chart": None,
-                                "md": f.fix["md"], "set": dict(f.fix["set"]), "was": was})
+                applied.append(_record(f, chart=None, md=f.fix["md"],
+                                       set=dict(f.fix["set"]), was=was))
             continue
-        if f.fix.get("chart") not in by_name:
+        name = f.fix.get("chart")
+        if name not in by_name:
             continue
-        tgt = merged.setdefault(f.fix["chart"], {})
-        for k, v in f.fix["set"].items():
+        tgt = merged.setdefault(name, {})
+        for k, v in f.fix.get("set", {}).items():
             if k in tgt and isinstance(v, (int, float)) and isinstance(tgt[k], (int, float)):
                 tgt[k] = max(tgt[k], v)
             else:
                 tgt[k] = v
+        unset.setdefault(name, set()).update(f.fix.get("unset", ()))
+        recorded.setdefault(name, {}).update(f.fix.get("record", {}))
+        unrecorded.setdefault(name, set()).update(f.fix.get("unrecord", ()))
         chart_findings.append(f)
     for f in chart_findings:  # report the FINAL merged value per touched field
         name = f.fix["chart"]
-        applied.append({
-            "finding": f.key, "rule": f.rule, "chart": name,
-            "set": {k: merged[name][k] for k in f.fix["set"]},
-            "was": {k: by_name[name].get(k) for k in f.fix["set"]},
-        })
+        gone = list(f.fix.get("unset", ()))
+        applied.append(_record(
+            f, chart=name,
+            set={**{k: merged[name][k] for k in f.fix.get("set", {})}, **{k: None for k in gone}},
+            was={k: by_name[name].get(k) for k in [*f.fix.get("set", {}), *gone]},
+        ))
     for name, sets in merged.items():
         by_name[name].update(sets)
+    for name, fields in unset.items():
+        for k in fields:
+            by_name[name].pop(k, None)
+    if any(recorded.values()) or any(unrecorded.values()):
+        _update_filled(out, [c.get("name") for c in out.get("charts", [])],
+                       {k: v for k, v in recorded.items() if v},
+                       {k: v for k, v in unrecorded.items() if v})
     return out, applied

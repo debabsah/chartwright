@@ -4,15 +4,18 @@ Anything not expressible here does not exist. Validation errors are the only
 feedback channel an LLM caller gets; keep messages precise and actionable.
 
 Surface: 15 chart types, per-chart WHERE filters, a dashboard-level native
-filter bar (select, time_range, numeric range), markdown blocks, and tabs.
+filter bar (select, time range, numeric range, time grain, time column),
+markdown blocks, headers, dividers, and tabs.
 """
 
 from __future__ import annotations
 
+import math
 import re
-from typing import Annotated, Literal, Union
+from typing import Annotated, Any, ClassVar, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator,
+                      model_validator)
 
 GRID_WIDTH = 12
 DEFAULT_HEIGHT = {"big_number_total": 4, "big_number_trend": 5, "markdown": 4, "default": 8}
@@ -24,32 +27,94 @@ DEFAULT_ROW_LIMIT = {
 }
 DEFAULT_TIME_GRAIN = "P1D"
 
-# How a rendered table/pivot grid consumes spec height. ONE model, used by the
-# design critic (size.table-window, size.pivot-window, size.grid-fit) and by
-# apply-time smoke, so offline advice, data-aware advice, and the apply warning
-# can never disagree about the same chart. ~30px per grid row over a 40px unit;
-# 3 units of card title + column header (one more when a pivot nests column
-# dimensions). Calibration knob, same status as ROW_UNITS_PER_SPEC_UNIT.
-GRID_UNITS_PER_ROW = 0.75
-GRID_HEADER_UNITS = 3
+# How a rendered table or pivot spends spec height. ONE model, read by the design
+# critic (size.table-window, size.pivot-window, size.grid-fit), the page-length and
+# search-box fills, and apply-time smoke, so offline advice, data-aware advice, the
+# fills and the apply warning can never disagree about the same chart.
+#
+# Measured 2026-10-03 on rendered Superset 4.1.4, 5.0.0 and 6.1.0 (1600 px viewport,
+# default theme; docs/DESIGN-BRAIN.md, "Calibration"). Each constant is the largest
+# the three releases draw, rounded up, so the model may leave a row empty but never
+# counts a row the panel hides. 1 unit = 40 px.
+GRID_UNITS_PER_ROW = 0.74      # table body row: 29.4 px at 6.1.0, 27.8 px at 4.1.4 and 5.0.0
+GRID_HEADER_UNITS = 2.5        # card title, column header and card padding: 99.4 px / 97.8 px
+GRID_CONTROLS_UNITS = 1.05     # the bar above the rows that search_box or any page_length
+                               # adds: 41.1 px / 39.1 px (6.1.0 draws 33.1 px for a page size alone)
+GRID_PAGER_UNITS = 1.45        # the pager under a table of more than one page: 57.9 px / 42.9 px
+PIVOT_UNITS_PER_ROW = 0.65     # pivot body row: 25.8 px on average (19 rows: 490.1 px)
+PIVOT_FRAME_UNITS = 2.55       # pivot card title, margins and padding: 101 px
+PIVOT_HEADER_ROW_UNITS = 0.66  # one pivot header row: 26.3 px; a pivot draws one per column
+                               # dimension plus two (the metric row and the row-dimension names)
+PIVOT_TOTALS_UNITS = 0.72      # the totals row column_totals pins over the bottom rows: 28.8 px
+PIVOT_HSCROLL_UNITS = 0.45     # the horizontal scrollbar under a pivot whose column dimensions
+                               # outgrow the panel: 11 px in Chromium's classic scrollbars, and
+                               # Windows draws 17 px; overlay scrollbars (macOS) take none
 
 
-def grid_units_for_rows(rows: float, header_units: float = GRID_HEADER_UNITS) -> float:
+def grid_units_for_rows(rows: float, header_units: float = GRID_HEADER_UNITS,
+                        row_units: float = GRID_UNITS_PER_ROW) -> float:
     """Spec height units needed to render `rows` grid rows without an inner scrollbar."""
-    return rows * GRID_UNITS_PER_ROW + header_units
+    return rows * row_units + header_units
 
 
-def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS) -> float:
+def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS,
+                      row_units: float = GRID_UNITS_PER_ROW) -> float:
     """Inverse: grid rows visible at `height` before the inner scrollbar starts."""
-    return max(0.0, (height - header_units) / GRID_UNITS_PER_ROW)
+    return max(0.0, (height - header_units) / row_units)
+
+
+def table_header_units(*, controls: bool = False, pager: bool = False) -> float:
+    """Everything a table draws besides its body rows: card title, column header and
+    padding, plus the bar above the rows (`controls`: a search box, or any
+    page_length, which draws a page-size picker even on one page) and the pager under
+    them (`pager`: more rows than one page holds)."""
+    return (GRID_HEADER_UNITS + (GRID_CONTROLS_UNITS if controls else 0)
+            + (GRID_PAGER_UNITS if pager else 0))
+
+
+def pivot_header_units(column_dims: int, *, totals: bool = False) -> float:
+    """Everything a pivot draws besides its body rows: card frame, a header row per
+    column dimension plus two, room for a horizontal scrollbar when column dimensions
+    can outgrow the panel, and the pinned totals row (`column_totals`)."""
+    return (PIVOT_FRAME_UNITS + PIVOT_HEADER_ROW_UNITS * (column_dims + 2)
+            + (PIVOT_HSCROLL_UNITS if column_dims else 0)
+            + (PIVOT_TOTALS_UNITS if totals else 0))
+
+
+def grid_header(chart, rows: int | None = None) -> tuple[float, float]:
+    """(header units, units per body row) of a table or pivot chart as configured,
+    drawing `rows` body rows (None: unknown, so a paged table counts its pager)."""
+    if chart.type == "pivot_table":
+        return (pivot_header_units(len(chart.columns), totals=chart.column_totals),
+                PIVOT_UNITS_PER_ROW)
+    page = chart.page_length or 0
+    return (table_header_units(controls=bool(page) or chart.search_box,
+                               pager=bool(page) and (rows is None or rows > page)),
+            GRID_UNITS_PER_ROW)
 
 ADHOC_AGGREGATES = ("SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX")
 _ADHOC_RE = re.compile(r"^(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((.+?)\)(?:\s+AS\s+(.+))?$")
+# A custom-SQL metric: SQL(<any SQL expression>) AS <label>. The label is
+# required: Superset otherwise labels the series with the (truncated) SQL.
+_SQL_METRIC_RE = re.compile(r"^SQL\((.+)\)\s+AS\s+(.+)$", re.S)
+
+# The categorical colour schemes every supported release ships (superset-ui-core
+# color/colorSchemes/categorical/*.ts; the same 18 ids at 4.1.4, 5.0.0 and 6.1.0).
+# A deployment can register more (EXTRA_CATEGORICAL_COLOR_SCHEMES), so other names
+# are accepted and the design brain warns about them (narrative.color-scheme).
+SUPERSET_COLOR_SCHEMES = (
+    "supersetColors", "supersetAndPresetColors", "presetColors", "bnbColors",
+    "d3Category10", "d3Category20", "d3Category20b", "d3Category20c",
+    "echarts4Colors", "echarts5Colors", "googleCategory10c", "googleCategory20c",
+    "lyftColors", "modernSunset", "colorsOfRainbow", "blueToGreen", "redToYellow",
+    "wavesOfBlue",
+)
 
 # The RAG hexes Superset's own conditional-formatting picker offers (cell backgrounds).
 FORMAT_COLOR_HEX = {"green": "#ACE1C4", "amber": "#FDE380", "red": "#EFA1AA"}
 # Text needs darker shades of the same three: each is >= 4.5:1 on white (WCAG AA).
 FORMAT_TEXT_HEX = {"green": "#1B7F3B", "amber": "#8A6100", "red": "#B3261E"}
+HEX_COLOUR_RE = re.compile(r"#[0-9A-F]{6}", re.IGNORECASE)
 
 FilterOp = Literal["==", "!=", ">", ">=", "<", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL"]
 _LIST_OPS = ("IN", "NOT IN")
@@ -74,11 +139,22 @@ class DatasetRef(BaseModel):
 
 def parse_metric(metric: str) -> dict | None:
     """{'aggregate','column','label'} for ad-hoc metrics, None for saved-metric
-    names. Optional display label via ``AGG(col) AS Pretty Label`` (AS uppercase)."""
+    names. Optional display label via ``AGG(col) AS Pretty Label`` (AS uppercase).
+    A custom-SQL metric, ``SQL(expr) AS Label``, gives {'sql','label'} with
+    aggregate and column None."""
+    s = _SQL_METRIC_RE.match(metric)
+    if s and s.group(1).strip() and s.group(2).strip():
+        return {"aggregate": None, "column": None, "sql": s.group(1).strip(),
+                "label": s.group(2).strip()}
     m = _ADHOC_RE.match(metric)
     if not m:
         return None
     return {"aggregate": m.group(1), "column": m.group(2).strip(), "label": m.group(3)}
+
+
+def malformed_sql_metric(metric: str) -> bool:
+    """A string that starts like a custom-SQL metric but is not one (no label, empty SQL)."""
+    return metric.startswith("SQL(") and (parse_metric(metric) or {}).get("sql") is None
 
 
 def metric_label(metric: str) -> str:
@@ -90,16 +166,33 @@ def metric_label(metric: str) -> str:
 
 
 class ChartFilter(BaseModel):
-    """A WHERE-clause condition on the chart's dataset."""
+    """A WHERE-clause condition on the chart's dataset: column/op/value, or
+    ``sql`` for a custom SQL condition."""
 
     model_config = ConfigDict(extra="forbid")
 
-    column: str
+    column: str | None = None
     op: FilterOp = "=="
     value: str | int | float | bool | list[str | int | float] | None = None
+    sql: str | None = Field(
+        default=None,
+        description="A custom SQL WHERE condition instead of column/op/value, e.g. "
+                    "\"amount > 0 OR status = 'refunded'\". `check` cannot verify the "
+                    "columns inside SQL; apply's data check runs the query.",
+    )
 
     @model_validator(mode="after")
     def _value_shape(self) -> "ChartFilter":
+        if self.sql is not None:
+            if not self.sql.strip():
+                raise ValueError("filter sql must be a non-empty SQL condition")
+            # op keeps its default: a dumped-and-reloaded sql filter carries it
+            if self.column is not None or self.value is not None or self.op != "==":
+                raise ValueError("a sql filter takes no column, op or value")
+            self.sql = self.sql.strip()
+            return self
+        if self.column is None:
+            raise ValueError("a filter needs a column (or sql)")
         if self.op in _NULL_OPS:
             if self.value is not None:
                 raise ValueError(f"filter op {self.op!r} takes no value")
@@ -113,21 +206,166 @@ class ChartFilter(BaseModel):
         return self
 
 
+def _tag_list(tags: list[str], where: str) -> list[str]:
+    clean = [t.strip() for t in tags]
+    if any(not t for t in clean):
+        raise ValueError(f"{where} tags must be non-empty strings")
+    if any(":" in t for t in clean):
+        # Superset reserves "type:value" names (owner:1, type:chart) for its own tags.
+        raise ValueError(f"{where} tags cannot contain ':' (Superset reserves those for its own tags)")
+    if len(set(clean)) != len(clean):
+        raise ValueError(f"{where} tags must be unique")
+    return clean
+
+
+TAGS_DESCRIPTION = (
+    "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the "
+    "TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries "
+    "tags, so check, apply and plan refuse the field there before anything is written; "
+    "6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply "
+    "replaces the object's tags with this list, so [] removes them all, tags added in the "
+    "UI included; omit the field to leave tags alone, in apply and in plan."
+)
+
+
 class _ChartBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, description="Chart title; unique within the dashboard (uuid seed input)")
     dataset: DatasetRef
     filters: list[ChartFilter] = Field(default_factory=list, description="WHERE conditions on this chart only")
+    time_range: str | None = Field(
+        default=None,
+        description='Superset time range for this chart alone, e.g. "Last 30 days"; defaults to '
+                    '"No filter". A chart without a time axis of its own is filtered on its '
+                    "dataset's main time column, so a dataset without one ignores it.",
+    )
     width: int | None = Field(default=None, ge=1, le=GRID_WIDTH)
     height: float | None = Field(
         default=None, ge=1, le=100,
         description="Height in 40px units. Fractional values (0.2 steps = Superset's "
                     "8px grid) are tool-written by `chartwright absorb`; humans write integers.",
     )
+    display_name: str | None = Field(
+        default=None, min_length=1,
+        description="A shorter title shown on this dashboard's chart card (Superset's "
+                    "sliceNameOverride); `name` stays the chart's name everywhere else",
+    )
+    description: str | None = Field(
+        default=None, min_length=1,
+        description="What the chart shows, e.g. a metric definition; dashboard viewers "
+                    "open it with \"Show chart description\" in the chart menu",
+    )
+    certified_by: str | None = Field(
+        default=None, min_length=1, description="Who certified the chart: Superset shows a certified badge")
+    certification_details: str | None = Field(
+        default=None, min_length=1, description="The certified badge's tooltip text; needs certified_by")
+    cache_timeout: int | None = Field(
+        default=None, ge=1, description="Seconds Superset caches this chart's query results; omit for the default")
+    tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
+
+    @model_validator(mode="after")
+    def _chart_metadata(self) -> "_ChartBase":
+        if self.display_name == self.name:
+            self.display_name = None  # the card shows `name` anyway; decompile reads it as omitted
+        if self.certification_details and not self.certified_by:
+            raise ValueError(f"chart {self.name!r}: certification_details needs certified_by")
+        if self.tags is not None:
+            self.tags = _tag_list(self.tags, f"chart {self.name!r}")
+        return self
 
     def default_height(self) -> int:
         return DEFAULT_HEIGHT.get(self.type, DEFAULT_HEIGHT["default"])  # type: ignore[attr-defined]
+
+
+LegendPosition = Literal["top", "bottom", "left", "right"]
+
+
+class _Legend(BaseModel):
+    """Where a chart's legend sits, or whether it shows at all. Superset's default is a
+    scrolling legend along the top."""
+
+    show_legend: bool = Field(default=True, description="false hides the legend")
+    legend_position: LegendPosition | None = Field(
+        default=None, description="top (Superset's default), bottom, left or right")
+    legend_type: Literal["scroll", "plain"] | None = Field(
+        default=None,
+        description="scroll (Superset's default: one line with arrows) or plain (every "
+                    "entry, wrapped; the panel calls it List)",
+    )
+
+    def _check_legend(self) -> None:
+        if not self.show_legend and (set_value(self, "legend_position")
+                                     or set_value(self, "legend_type")):
+            raise ValueError(f"chart {self.name!r}: legend_position and legend_type need "  # type: ignore[attr-defined]
+                             "show_legend (the legend is hidden)")
+
+
+def hex_to_rgb(hex_colour: str) -> dict:
+    h = hex_colour.lstrip("#")
+    return {"r": int(h[0:2], 16), "g": int(h[2:4], 16), "b": int(h[4:6], 16), "a": 1}
+
+
+class _ColorSchemeMixin(BaseModel):
+    """Charts whose control panel declares color_scheme (every supported release)."""
+
+    color_scheme: str | None = Field(
+        default=None, min_length=1,
+        description="Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a "
+                    "dashboard color_scheme overrides it on the dashboard. Superset ships "
+                    + ", ".join(SUPERSET_COLOR_SCHEMES)
+                    + "; other names must be registered by your deployment "
+                      "(EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+    )
+
+
+ANNOTATION_STYLES = ("solid", "dashed", "dotted")
+
+
+class Annotation(BaseModel):
+    """A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal
+    line at y = 80. Superset draws it as a series named ``name`` (in the legend
+    and tooltip); formula layers have no on-chart label in any release."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, description="Series name in the legend and tooltip, e.g. \"Goal\"")
+    value: float | None = Field(default=None, description="A flat line at this y value, e.g. 80")
+    formula: str | None = Field(
+        default=None, min_length=1,
+        description="Instead of value: a formula in x, e.g. \"2*x + 10\" (x is the "
+                    "x-axis value; epoch milliseconds on a time axis)",
+    )
+    color: str | None = Field(
+        default=None, pattern=r"^#[0-9A-Fa-f]{6}$",
+        description="#RRGGBB; omit to take a colour from the chart's scheme",
+    )
+    style: Literal["solid", "dashed", "dotted"] = "solid"
+    width: float = Field(default=1, gt=0, le=20, description="Line width in px")
+    opacity: Literal["low", "medium", "high"] | None = Field(
+        default=None, description="0.2 / 0.5 / 0.8; omit for opaque")
+
+    @model_validator(mode="after")
+    def _value_or_formula(self) -> "Annotation":
+        if self.formula is not None:
+            text = self.formula.strip()
+            try:
+                # A formula that is a plain number IS a value: decompile reads it
+                # back as one, so keeping it a formula would show as drift in plan.
+                number = float(text.split("=", 1)[1] if text.startswith("y") and "=" in text else text)
+            except ValueError:
+                number = None
+            if number is not None and self.value is None:
+                self.value, self.formula = number, None
+            else:
+                self.formula = text
+        if (self.value is None) == (self.formula is None):
+            raise ValueError(f"annotation {self.name!r}: give exactly one of value or formula")
+        if self.value is not None and not math.isfinite(self.value):
+            raise ValueError(f"annotation {self.name!r}: value must be a finite number")
+        if self.color is not None:
+            self.color = self.color.upper()
+        return self
 
 
 class BigNumberChart(_ChartBase):
@@ -143,6 +381,49 @@ class BigNumberTrendChart(_ChartBase):
     time_column: str
     time_grain: str | None = None
     number_format: str | None = None
+    compare_lag: int | None = Field(
+        default=None, ge=1,
+        description="Compare the latest value with the one this many time-grain steps "
+                    "earlier, shown as a percentage change under the number, e.g. 1 at P1M is "
+                    "month over month",
+    )
+    compare_suffix: str | None = Field(
+        default=None,
+        description='Text after the percentage change, e.g. "vs last month". Leave it unset '
+                    "unless asked: `advise --fix` fills it from the grain and compare_lag")
+    subtitle: str | None = Field(
+        default=None,
+        description="A line of context under the number (Superset 6.0.0 or later; older "
+                    "releases ignore it)",
+    )
+    trend_color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] | None = Field(
+        default=None,
+        description="Colour of the trendline: green, amber or red (the text shades colour "
+                    "rules use) or any #RRGGBB; Superset's default is teal #007A87",
+    )
+
+    @field_validator("trend_color", mode="before")
+    @classmethod
+    def _trend_colour(cls, v):
+        if v is None or v in FORMAT_TEXT_HEX:
+            return v
+        if not isinstance(v, str) or not HEX_COLOUR_RE.fullmatch(v):
+            raise ValueError(f"trend_color must be green, amber, red or #RRGGBB, got {v!r}")
+        return v.upper()
+
+    @model_validator(mode="after")
+    def _compare(self) -> "BigNumberTrendChart":
+        if self.compare_suffix and self.compare_lag is None:
+            raise ValueError(f"chart {self.name!r}: compare_suffix needs compare_lag")
+        return self
+
+    def trend_rgb(self) -> dict | None:
+        if self.trend_color is None:
+            return None
+        return hex_to_rgb(FORMAT_TEXT_HEX.get(self.trend_color, self.trend_color))
+
+
+TREND_DEFAULT_HEX = "#007A87"  # Superset's PRIMARY_COLOR {r: 0, g: 122, b: 135}, every release
 
 
 class _AxisChart(_ChartBase):
@@ -151,53 +432,186 @@ class _AxisChart(_ChartBase):
     picks from the width, then drops labels that collide, so 13 months can read
     'September, November, 2026, March' with gaps that differ chart to chart."""
 
+    x_axis_title: str | None = Field(default=None, description="Title under the x axis")
+    y_axis_title: str | None = Field(
+        default=None, description="Title above the value axis, e.g. its unit")
+    y_axis_min: float | None = Field(
+        default=None,
+        description="Bottom of the value axis. Superset hands the bound to the chart as the "
+                    "axis minimum on every release, so it widens the axis or cuts values "
+                    "below it off at the edge; omitted, the axis fits the data",
+    )
+    y_axis_max: float | None = Field(
+        default=None,
+        description="Top of the value axis, e.g. 1 for a share that can't pass 100 %. Like "
+                    "y_axis_min it is the axis maximum on every release: values above it are "
+                    "cut off at the edge",
+    )
+    y_axis_truncate: bool = Field(
+        default=False,
+        description="Fit the value axis to the data instead of always including zero "
+                    "(Superset's Truncate Y Axis); a y_axis_min or y_axis_max wins on its side",
+    )
+    y_axis_log: bool = Field(default=False, description="A logarithmic value axis")
     x_label_format: str | None = Field(
         default=None,
         description="d3 time format for the labels of a time x axis, e.g. '%b' (Sep); "
-                    "omit for Superset's adaptive format",
+                    "omit for Superset's adaptive format. On a timeseries chart, leave it "
+                    "unset unless asked: `advise --fix` fills one from the time grain",
     )
     x_label_every: bool = Field(
         default=False,
         description="A label at every x value: every time-grain step, or every category "
-                    "(Superset 6.1.0+ controls; older releases ignore them)",
+                    "(Superset 6.1.0 or later; 6.0.0 takes it on a mixed chart's category axis "
+                    "only, and older releases ignore it)",
     )
     x_label_rotation: int | None = Field(
         default=None, ge=-90, le=90,
         description="Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
     )
+    annotations: list[Annotation] = Field(
+        default_factory=list,
+        description="Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, "
+                    "\"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+    )
+
+    @model_validator(mode="after")
+    def _annotation_names(self) -> "_AxisChart":
+        names = [a.name for a in self.annotations]
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        if dupes:
+            raise ValueError(f"chart {self.name!r}: duplicate annotation names {dupes} (each is a series id)")
+        return self
+
+    def _check_y_axis(self) -> None:
+        _check_bounds(self.name, "", self.y_axis_min, self.y_axis_max, self.y_axis_log)
 
 
-class _TimeseriesBase(_AxisChart):
+def _check_bounds(name: str, suffix: str, lo: float | None, hi: float | None, log: bool) -> None:
+    if lo is not None and hi is not None and lo >= hi:
+        raise ValueError(f"chart {name!r}: y_axis_min{suffix} ({lo:g}) must be below "
+                         f"y_axis_max{suffix} ({hi:g})")
+    if log and lo is not None and lo <= 0:
+        raise ValueError(f"chart {name!r}: a logarithmic axis starts above zero; "
+                         f"y_axis_min{suffix} is {lo:g}")
+
+
+class _SeriesDisplay(BaseModel):
+    """Values on the marks, stacking, 100 % stacks, and a top-N series limit, for the
+    charts whose Superset panel has them (line, bar, area, scatter, categorical bar)."""
+
+    show_value: bool = Field(default=False, description="Write each value on its bar or point")
+    stack: bool | Literal["stream", "expand"] = Field(
+        default=False,
+        description="true stacks the series; \"stream\" (line, area, scatter) is a streamgraph "
+                    "around a centre line; \"expand\" (area only) stacks to 100 %",
+    )
+    only_total: bool = Field(
+        default=True,
+        description="With show_value on a stacked chart, label each stack's total only "
+                    "(Superset's default); false labels every segment",
+    )
+    contribution: Literal["row", "series"] | None = Field(
+        default=None,
+        description="Plot shares instead of values: \"row\" is each series' share of its x "
+                    "value's total (with stack, a 100 % stacked chart); \"series\" is each "
+                    "value's share of its own series' total",
+    )
+    series_limit: int | None = Field(
+        default=None, ge=1,
+        description="With groupby: keep the top N series, ranked by series_limit_metric "
+                    "(default the first metric), largest first",
+    )
+    series_limit_metric: str | None = Field(
+        default=None, description="Metric that ranks the series for series_limit, written like any metric")
+    series_limit_ascending: bool = Field(
+        default=False, description="Keep the N smallest series instead of the largest")
+
+    def _check_series_display(self, stacks: tuple) -> None:
+        name = self.name  # type: ignore[attr-defined]
+        if self.stack not in stacks:
+            allowed = ", ".join(json_value(s) for s in stacks if s is not False)
+            raise ValueError(f"chart {name!r}: stack {json_value(self.stack)} is not available "
+                             f"on {self.type}; use {allowed}")  # type: ignore[attr-defined]
+        if not self.only_total and not (self.show_value and self.stack):
+            raise ValueError(f"chart {name!r}: only_total applies to show_value on a stacked chart")
+        if self.series_limit is not None and not self.groupby:  # type: ignore[attr-defined]
+            raise ValueError(f"chart {name!r}: series_limit needs groupby (it keeps the top N series)")
+        if self.series_limit is None and (self.series_limit_metric or self.series_limit_ascending):
+            raise ValueError(f"chart {name!r}: series_limit_metric and series_limit_ascending "
+                             "need series_limit")
+
+
+def json_value(v) -> str:
+    return "true" if v is True else "false" if v is False else f'"{v}"'
+
+
+class _TimeseriesBase(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
     metrics: list[str] = Field(min_length=1)
     time_column: str
     time_grain: str | None = Field(default=None, description="ISO 8601 duration, e.g. P1D, P1W, P1M")
-    time_range: str | None = Field(default=None, description='Superset time range; defaults to "No filter"')
     groupby: str | None = Field(default=None, description="At most one dimension column")
     row_limit: int | None = Field(default=None, ge=1)
     number_format: str | None = Field(default=None, description="d3 format for the value axis, e.g. '.1%'")
 
+    STACKS: ClassVar[tuple] = (False, True, "stream")
+
+    @model_validator(mode="after")
+    def _display(self):
+        self._check_legend()
+        self._check_y_axis()
+        self._check_series_display(self.STACKS)
+        return self
+
+
+def _marker_size():
+    return Field(default=None, ge=0, le=20, description="Marker size, 0-20 (Superset's default 6)")
+
 
 class TimeseriesLineChart(_TimeseriesBase):
     type: Literal["timeseries_line"]
-    y_axis_max: float | None = Field(
-        default=None,
-        description="Top of the value axis, e.g. 1 for a share that can't pass 100 % (Superset 6.1.0+)",
-    )
+    markers: bool = Field(default=False, description="A marker at each point")
+    marker_size: int | None = _marker_size()
+    area: bool = Field(default=False, description="Fill the area under each line")
+    opacity: float | None = Field(
+        default=None, ge=0, le=1, description="Opacity of the area fill, 0-1 (Superset's default 0.2)")
+
+    @model_validator(mode="after")
+    def _line_style(self) -> "TimeseriesLineChart":
+        if set_value(self, "marker_size") is not None and not self.markers:
+            raise ValueError(f"chart {self.name!r}: marker_size needs markers")
+        if set_value(self, "opacity") is not None and not self.area:
+            raise ValueError(f"chart {self.name!r}: opacity is the area fill's; it needs area")
+        return self
 
 
 class TimeseriesBarChart(_TimeseriesBase):
     type: Literal["timeseries_bar"]
+    STACKS: ClassVar[tuple] = (False, True)
 
 
 class TimeseriesAreaChart(_TimeseriesBase):
     type: Literal["timeseries_area"]
+    markers: bool = Field(default=False, description="A marker at each point")
+    marker_size: int | None = _marker_size()
+    opacity: float | None = Field(
+        default=None, ge=0, le=1, description="Opacity of the area fill, 0-1 (default 0.2)")
+    STACKS: ClassVar[tuple] = (False, True, "stream", "expand")
+
+    @model_validator(mode="after")
+    def _check_marker_size(self) -> "TimeseriesAreaChart":
+        if set_value(self, "marker_size") is not None and not self.markers:
+            raise ValueError(f"chart {self.name!r}: marker_size needs markers")
+        return self
 
 
 class TimeseriesScatterChart(_TimeseriesBase):
     type: Literal["timeseries_scatter"]
+    marker_size: int | None = Field(
+        default=None, ge=0, le=20, description="Point size, 0-20 (default 6)")
 
 
-class BarChart(_AxisChart):
+class BarChart(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
     """Categorical bar: any column on the x axis.
 
     ``orientation: "horizontal"`` draws ranked lists with long labels the
@@ -211,21 +625,53 @@ class BarChart(_AxisChart):
     row_limit: int | None = Field(default=None, ge=1)
     orientation: Literal["vertical", "horizontal"] = "vertical"
     number_format: str | None = Field(default=None, description="d3 format for the value axis, e.g. ',.0f'")
+    category_sort: Literal["asc", "desc"] | None = Field(
+        default=None,
+        description="Order the bars by their category (x_column) instead of by the first "
+                    "metric: \"asc\" reads A to Z or 0 to 9 (hours, ranks, '1-Mon'), left to "
+                    "right or top to bottom on a horizontal bar; \"desc\" reverses it. The "
+                    "query is ordered by the category too, so a row_limit keeps the first "
+                    "categories in that order, not the largest values. With series_limit the query "
+                    "stays ordered by the series ranking (Superset has one \"Sort query by\" "
+                    "control for both), so there a row_limit keeps the largest values",
+    )
+
+    @model_validator(mode="after")
+    def _display(self) -> "BarChart":
+        self._check_legend()
+        self._check_y_axis()
+        self._check_series_display((False, True))
+        return self
 
 
-class PieChart(_ChartBase):
+class PieChart(_Legend, _ChartBase, _ColorSchemeMixin):
     type: Literal["pie"]
     metric: str
     groupby: str
     donut: bool = False
     row_limit: int | None = Field(default=None, ge=1)
+    label_type: Literal["key", "value", "percent", "key_value", "key_percent",
+                        "key_value_percent", "value_percent"] | None = Field(
+        default=None,
+        description="What each slice's label shows: key (the category), value, percent, or a "
+                    "combination such as key_value; default key_percent",
+    )
+    number_format: str | None = Field(default=None, description="d3 format for values in labels and tooltips")
+    show_total: bool = Field(default=False, description="The total in the middle (best on a donut)")
+    labels_outside: bool = Field(default=True, description="false puts the labels on the slices")
+
+    @model_validator(mode="after")
+    def _legend(self) -> "PieChart":
+        self._check_legend()
+        return self
 
 
 class FormatRule(BaseModel):
-    """One solid RAG band on one metric. A pivot colours a cell by its OWN
-    value only, so band a normalized metric (e.g. a %-of-goal ratio) when
-    thresholds differ per row. A table can read one column and paint another
-    (apply_to): colour a number by a status column beside it."""
+    """One solid colour band on one metric: green / amber / red, or any
+    #RRGGBB. A pivot colours a cell by its OWN value only, so band a
+    normalized metric (e.g. a %-of-goal ratio) when thresholds differ per
+    row. A table can read one column and paint another (apply_to): colour a
+    number by a status column beside it."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -234,13 +680,33 @@ class FormatRule(BaseModel):
     target: float | None = Field(default=None, description="Threshold for <, > or =")
     target_left: float | None = Field(default=None, description="Lower bound for 'between'")
     target_right: float | None = Field(default=None, description="Upper bound for 'between'")
-    color: Literal["green", "amber", "red"]
+    color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = Field(
+        description="green, amber or red (Superset's own picker colours; text paint uses a darker "
+                    "shade of each), or any #RRGGBB, used as written for cell and text",
+    )
     apply_to: str | None = Field(
         default=None,
         description="Table only: the label of the column to paint, or \"row\"; default the metric's own cells",
     )
     paint: Literal["cell", "text"] = Field(
         default="cell", description="Paint the cell background (default) or the text, e.g. an arrow")
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _colour(cls, v):
+        if not isinstance(v, str):
+            raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
+        if v in FORMAT_COLOR_HEX:
+            return v
+        if HEX_COLOUR_RE.fullmatch(v):
+            return v.upper()
+        raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
+
+    def paint_hex(self) -> str:
+        """The colour Superset paints: a name's shade for this paint, or the hex as written."""
+        if self.color in FORMAT_COLOR_HEX:
+            return (FORMAT_TEXT_HEX if self.paint == "text" else FORMAT_COLOR_HEX)[self.color]
+        return self.color
 
     @model_validator(mode="after")
     def _target_shape(self) -> "FormatRule":
@@ -272,7 +738,7 @@ class TableChart(_ChartBase):
     )
     hidden: list[str] = Field(
         default_factory=list,
-        description="Labels queried but not displayed, e.g. a status only a colour rule reads (Superset 6.1+)",
+        description="Labels queried but not displayed, e.g. a status only a colour rule reads (Superset 6.0+)",
     )
     number_formats: dict[str, str] = Field(
         default_factory=dict, description="d3 format per label, e.g. {\"Rate\": \".3f\"}",
@@ -280,9 +746,39 @@ class TableChart(_ChartBase):
     cell_bars: bool | None = Field(
         default=None,
         description="Bars behind numeric cells (Superset draws them by default; false for ids, "
-                    "years or a column a colour rule already speaks for)",
+                    "years or a column a colour rule already speaks for). `advise --fix` "
+                    "fills false on a raw table with id, code, year or zip columns",
     )
     date_format: str | None = Field(default=None, description="strftime for date columns, e.g. '%Y-%m-%d'")
+    page_length: int | None = Field(
+        default=None, ge=0,
+        description="Rows per page, with a pager under the table; 0 shows every row on one "
+                    "page. Omitted, Superset pages at 200 rows only once the table passes "
+                    "5,000 cells. Leave it unset unless asked: `advise --fix` fills the rows "
+                    "that fit the panel when row_limit outgrows it",
+    )
+    show_totals: bool = Field(
+        default=False, description="A totals row under the table (aggregate mode)")
+    search_box: bool = Field(
+        default=False,
+        description="A search box over the table's rows. `advise --fix` fills true on a raw "
+                    "table with a row_limit above 20 (search_min_rows in design.yaml), "
+                    "when the search bar pushes none of its rows out of the panel")
+    column_align: dict[str, Literal["left", "center", "right"]] = Field(
+        default_factory=dict,
+        description="Text alignment per label, e.g. {\"Region\": \"center\"}; Superset's "
+                    "default puts numbers right and text left",
+    )
+    column_widths: dict[str, Annotated[int, Field(ge=1)]] = Field(
+        default_factory=dict,
+        description="Minimum width in pixels per label, e.g. {\"Customer\": 220}; a column "
+                    "still grows when the table has room",
+    )
+    column_headers: dict[str, str] = Field(
+        default_factory=dict,
+        description="Header text per label, e.g. {\"SUM(revenue)\": \"Revenue\"} "
+                    "(Superset 6.0.0 or later; older releases show the label)",
+    )
 
     def labels(self) -> list[str]:
         return [metric_label(m) for m in self.metrics or []] + list(self.groupby or []) + list(self.columns or [])
@@ -302,10 +798,26 @@ class TableChart(_ChartBase):
         named += [(r.apply_to, "conditional_formatting apply_to") for r in self.conditional_formatting
                   if r.apply_to not in (None, "row")]
         named += [(h, "hidden") for h in self.hidden] + [(k, "number_formats") for k in self.number_formats]
+        named += [(k, attr) for attr in ("column_align", "column_widths", "column_headers")
+                  for k in getattr(self, attr)]
         for label, where in named:
             if label not in labels:
                 raise ValueError(f"{where} {label!r} is not one of the table's labels {sorted(labels)}")
+        if self.show_totals and raw:
+            raise ValueError("table chart: show_totals needs aggregate mode (metrics); a raw table has no totals row")
         return self
+
+
+# Pivot aggregate choices, identical in PivotTable controlPanel.tsx at 4.1.4, 5.0.0, 6.1.0.
+PivotAggregate = Literal[
+    "Count", "Count Unique Values", "List Unique Values", "Sum", "Average", "Median",
+    "Sample Variance", "Sample Standard Deviation", "Minimum", "Maximum", "First", "Last",
+    "Sum as Fraction of Total", "Sum as Fraction of Rows", "Sum as Fraction of Columns",
+    "Count as Fraction of Total", "Count as Fraction of Rows", "Count as Fraction of Columns",
+]
+PivotOrder = Literal["a_to_z", "z_to_a", "value_asc", "value_desc"]
+PIVOT_ORDER = {"a_to_z": "key_a_to_z", "z_to_a": "key_z_to_a",
+               "value_asc": "value_a_to_z", "value_desc": "value_z_to_a"}
 
 
 class PivotTableChart(_ChartBase):
@@ -333,6 +845,21 @@ class PivotTableChart(_ChartBase):
     )
     number_format: str | None = Field(default=None, description="d3 format for the cells and totals, e.g. ',.0f'")
     conditional_formatting: list[FormatRule] = Field(default_factory=list)
+    aggregate_function: PivotAggregate = Field(
+        default="Sum",
+        description="How a cell combines the rows under it, Superset's names: Sum (default), "
+                    "Average, Median, Count, Minimum, Maximum, Sum as Fraction of Total, ...",
+    )
+    row_order: PivotOrder = Field(
+        default="a_to_z",
+        description="Row order: a_to_z or z_to_a by label, value_asc or value_desc by value",
+    )
+    column_order: PivotOrder = Field(default="a_to_z", description="Column order, as row_order")
+    row_subtotals: bool = Field(
+        default=False, description="A subtotal under each group of an outer row dimension")
+    transpose: bool = Field(default=False, description="Swap rows and columns")
+    metrics_layout: Literal["columns", "rows"] = Field(
+        default="columns", description="Lay several metrics out as columns (default) or as rows")
 
     @model_validator(mode="after")
     def _dims(self) -> "PivotTableChart":
@@ -350,34 +877,97 @@ class PivotTableChart(_ChartBase):
         return self
 
 
+# Superset's sequential colour schemes (superset-ui-core color/colorSchemes/sequential,
+# common.ts + d3.ts), the same 56 ids at 4.1.4, 5.0.0 and 6.1.0.
+SequentialScheme = Literal[
+    "blue_white_yellow", "fire", "white_black", "black_white", "dark_blue", "pink_grey",
+    "greens", "purples", "oranges", "red_yellow_blue", "brown_white_green",
+    "purple_white_green", "superset_seq_1", "superset_seq_2", "superset_div_1",
+    "superset_div_2", "preset_seq_1", "preset_seq_2", "preset_div_1", "preset_div_2",
+    "echarts_gradient", "deck_gl_heatmap_gradient", "schemeRdBu", "schemeBrBG", "schemePRGn",
+    "schemePiYG", "schemePuOr", "schemeRdGy", "schemeRdYlBu", "schemeRdYlGn", "schemeSpectral",
+    "schemeBlues", "schemeGreens", "schemeGrays", "schemeOranges", "schemePurples",
+    "schemeReds", "schemeViridis", "schemeInferno", "schemeMagma", "schemeWarm", "schemeCool",
+    "schemeCubehelixDefault", "schemeBuGn", "schemeBuPu", "schemeGnBu", "schemeOrRd",
+    "schemePuBuGn", "schemePuBu", "schemePuRd", "schemeRdPu", "schemeYlGnBu", "schemeYlGn",
+    "schemeYlOrBr", "schemeYlOrRd",
+]
+HEATMAP_DEFAULT_SCHEME = "superset_seq_1"
+
+
 class HeatmapChart(_ChartBase):
     type: Literal["heatmap"]
     x_column: str
     y_column: str
     metric: str
     row_limit: int | None = Field(default=None, ge=1)
+    show_values: bool = Field(default=False, description="Write each cell's value in the cell")
+    color_scheme: SequentialScheme | None = Field(
+        default=None,
+        description="Superset's sequential colour scheme for the cells, e.g. schemeBlues, "
+                    "schemeYlOrRd, superset_seq_2; default superset_seq_1",
+    )
+    number_format: str | None = Field(default=None, description="d3 format for cell values, e.g. ',.0f'")
+    show_percentage: bool = Field(
+        default=True,
+        description="The tooltip shows the cell's share (of what normalize_across names); "
+                    "false shows the value only",
+    )
+    normalize_across: Literal["heatmap", "x", "y"] = Field(
+        default="heatmap",
+        description="What the colour scale and the tooltip share compare a cell with: the "
+                    "whole heatmap (default), its x value's column, or its y value's row",
+    )
+    show_legend: bool = Field(default=True, description="false hides the colour scale")
 
 
-class HistogramChart(_ChartBase):
+class HistogramChart(_ChartBase, _ColorSchemeMixin):
     type: Literal["histogram"]
     column: str
     bins: int = Field(default=10, ge=1, le=200)
     groupby: str | None = None
     row_limit: int | None = Field(default=None, ge=1)
+    x_axis_title: str | None = Field(default=None, description="Title under the x axis")
+    y_axis_title: str | None = Field(default=None, description="Title of the count axis")
 
 
-class FunnelChart(_ChartBase):
+# The funnel's label_type is a numeric enum (EchartsFunnelLabelType, Funnel/types.ts:
+# Key=0 ... ValuePercent=6, the same order at 4.1.4, 5.0.0 and 6.1.0).
+FUNNEL_LABEL_TYPES = ("key", "value", "percent", "key_value", "key_percent",
+                      "key_value_percent", "value_percent")
+LabelType = Literal["key", "value", "percent", "key_value", "key_percent",
+                    "key_value_percent", "value_percent"]
+
+
+class FunnelChart(_Legend, _ChartBase, _ColorSchemeMixin):
     type: Literal["funnel"]
     metric: str
     groupby: str
     row_limit: int | None = Field(default=None, ge=1)
+    label_type: LabelType | None = Field(
+        default=None,
+        description="What each stage's label shows: key (the stage, default), value, percent, "
+                    "or a combination such as key_value_percent",
+    )
+    number_format: str | None = Field(default=None, description="d3 format for values in labels and tooltips")
+
+    @model_validator(mode="after")
+    def _legend(self) -> "FunnelChart":
+        self._check_legend()
+        if set_value(self, "legend_type"):
+            raise ValueError(f"chart {self.name!r}: Superset's funnel has no legend_type "
+                             "(it always scrolls); set legend_position only")
+        return self
 
 
-class TreemapChart(_ChartBase):
+class TreemapChart(_ChartBase, _ColorSchemeMixin):
     type: Literal["treemap"]
     metric: str
     groupby: list[str] = Field(min_length=1)
     row_limit: int | None = Field(default=None, ge=1)
+    label_type: Literal["key", "value", "key_value"] | None = Field(
+        default=None, description="What each tile's label shows: key, value, or key_value (default)")
+    number_format: str | None = Field(default=None, description="d3 format for values in labels and tooltips")
 
 
 class MixedSeries(BaseModel):
@@ -394,23 +984,61 @@ class MixedSeries(BaseModel):
         default=False,
         description="A marker at each point (a line over one category draws nothing without them)",
     )
+    show_value: bool = Field(default=False, description="Write each value on its bar or point")
+    stack: bool = Field(default=False, description="Stack this query's series (needs groupby or several metrics)")
+    only_total: bool = Field(
+        default=True,
+        description="With show_value and stack, label each stack's total only (Superset 6.0.0 or "
+                    "later, its default); false labels every segment, as older releases always do",
+    )
+    series_limit: int | None = Field(
+        default=None, ge=1,
+        description="With groupby: keep the top N series, ranked by series_limit_metric "
+                    "(default the first metric), largest first",
+    )
+    series_limit_metric: str | None = Field(
+        default=None, description="Metric that ranks the series for series_limit")
+    series_limit_ascending: bool = Field(
+        default=False, description="Keep the N smallest series instead of the largest")
+
+    @model_validator(mode="after")
+    def _display(self) -> "MixedSeries":
+        if not self.only_total and not (self.show_value and self.stack):
+            raise ValueError("only_total applies to show_value on a stacked series")
+        if self.series_limit is not None and not self.groupby:
+            raise ValueError("series_limit needs groupby (it keeps the top N series)")
+        if self.series_limit is None and (self.series_limit_metric or self.series_limit_ascending):
+            raise ValueError("series_limit_metric and series_limit_ascending need series_limit")
+        return self
 
 
-class MixedChart(_AxisChart):
+class MixedChart(_Legend, _AxisChart, _ColorSchemeMixin):
     """Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue
     as bars with revenue per order as a line. ``x_column`` is a time column (bucketed
     by ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and
-    ``b`` are the two queries; the chart's own ``filters`` apply to both."""
+    ``b`` are the two queries; the chart's own ``filters`` apply to both. The y_axis_*
+    fields set the primary (left) axis; their *_secondary twins the right one."""
 
     type: Literal["mixed"]
     x_column: str
     time_grain: str | None = Field(default=None, description="ISO 8601 duration for a time x axis, e.g. P1M")
-    time_range: str | None = Field(default=None, description='Superset time range; defaults to "No filter"')
     a: MixedSeries
     b: MixedSeries
     row_limit: int | None = Field(default=None, ge=1)
     number_format: str | None = Field(default=None, description="d3 format for the primary axis")
     number_format_secondary: str | None = Field(default=None, description="d3 format for the secondary axis")
+    y_axis_title_secondary: str | None = Field(default=None, description="Title of the secondary axis")
+    y_axis_min_secondary: float | None = Field(default=None, description="Bottom of the secondary axis")
+    y_axis_max_secondary: float | None = Field(default=None, description="Top of the secondary axis")
+    y_axis_log_secondary: bool = Field(default=False, description="A logarithmic secondary axis")
+
+    @model_validator(mode="after")
+    def _display(self) -> "MixedChart":
+        self._check_legend()
+        self._check_y_axis()
+        _check_bounds(self.name, "_secondary", self.y_axis_min_secondary,
+                      self.y_axis_max_secondary, self.y_axis_log_secondary)
+        return self
 
 
 Chart = Annotated[
@@ -430,7 +1058,55 @@ CHART_TYPES = (
 )
 
 
-class SelectFilter(BaseModel):
+class _FilterBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    description: str | None = Field(
+        default=None, min_length=1, description="Shown as the filter's tooltip in the filter bar")
+
+    def _check_scope(self, kind: str) -> None:
+        charts = getattr(self, "charts", None)
+        if charts is not None and not charts:
+            raise ValueError(f"{kind} filter {self.name!r}: charts must be omitted or non-empty")
+
+
+def _charts_scope():
+    return Field(default=None, description="Chart names this filter governs; omit for all charts")
+
+
+def _dependencies():
+    return Field(
+        default=None,
+        description="Names of other select, range or time_range filters whose values narrow this "
+                    "filter's list (Superset's \"Values are dependent on other filters\"), e.g. "
+                    "[\"Region\"] for a city filter",
+    )
+
+
+class _PreFilterMixin(BaseModel):
+    """Superset's "Pre-filter available values": conditions on the filter's own
+    dataset that limit the values it lists (select) or its bounds (range)."""
+
+    pre_filter: list[ChartFilter] = Field(
+        default_factory=list,
+        description="WHERE conditions on the filter's dataset that limit the values it offers, "
+                    "e.g. [{\"column\": \"active\", \"value\": true}]",
+    )
+    time_range: str | None = Field(
+        default=None, min_length=1,
+        description="Pre-filter by time: only rows in this Superset time range, e.g. \"Last year\"; "
+                    "needs time_column",
+    )
+    time_column: str | None = Field(
+        default=None, min_length=1, description="The temporal column time_range applies to")
+
+    def _check_pre_filter(self, kind: str, name: str) -> None:
+        if (self.time_range is None) != (self.time_column is None):
+            raise ValueError(f"{kind} filter {name!r}: time_range and time_column go together")
+
+
+class SelectFilter(_FilterBase, _PreFilterMixin):
     """Native filter bar: value picker over one dataset column.
 
     ``default`` pre-selects values on load (viewers can still change them); a
@@ -438,10 +1114,7 @@ class SelectFilter(BaseModel):
     a literal year would go stale. ``charts`` scopes the filter to the named charts
     only (default: every chart), resolved to slice ids after import, as on range."""
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["select"]
-    name: str = Field(min_length=1)
     dataset: DatasetRef
     column: str
     multi: bool = True
@@ -454,11 +1127,21 @@ class SelectFilter(BaseModel):
                     "that is the latest of sortable values like '2026 (this year)', so it never goes stale)",
     )
     sort_descending: bool = Field(default=False, description="List (and pick the first of) the values Z-A")
-    required: bool = Field(default=False, description="A value must stay selected (no empty filter)")
-    charts: list[str] | None = Field(
-        default=None,
-        description="Chart names this filter governs; omit for all charts",
+    sort_metric: str | None = Field(
+        default=None, min_length=1,
+        description="Order the values by this saved metric of the filter's dataset instead of "
+                    "by the values themselves (sort_descending still sets the direction)",
     )
+    required: bool = Field(default=False, description="A value must stay selected (no empty filter)")
+    search_all_options: bool = Field(
+        default=False,
+        description="Search every value in the database as the viewer types, not only the "
+                    "first values loaded (for high-cardinality columns)",
+    )
+    inverse_selection: bool = Field(
+        default=False, description="Exclude the selected values instead of keeping only them")
+    dependencies: list[str] | None = _dependencies()
+    charts: list[str] | None = _charts_scope()
 
     @model_validator(mode="after")
     def _default_and_scope(self) -> "SelectFilter":
@@ -468,28 +1151,31 @@ class SelectFilter(BaseModel):
             raise ValueError(f"select filter {self.name!r}: default and default_to_first are exclusive (Superset allows one)")
         if self.default and not self.multi and len(self.default) > 1:
             raise ValueError(f"select filter {self.name!r}: a single-select default takes one value")
-        if self.charts is not None and not self.charts:
-            raise ValueError(f"select filter {self.name!r}: charts must be omitted or non-empty")
+        self._check_scope("select")
+        self._check_pre_filter("select", self.name)
         return self
 
 
-class TimeRangeFilter(BaseModel):
-    """Native filter bar: dashboard-wide time range picker.
+class TimeRangeFilter(_FilterBase):
+    """Native filter bar: time range picker.
 
     ``default`` is a Superset time-range expression (``"Last month"``,
     ``"2026-05-01 : 2026-06-01"``) that pre-fills the picker on load; viewers
     can still change it. Omitted, the picker starts empty (Superset shows
-    "No filter").
+    "No filter"). ``charts`` scopes it to the named charts (default: every chart).
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["time_range"]
-    name: str = Field(min_length=1)
     default: str | None = None
+    charts: list[str] | None = _charts_scope()
+
+    @model_validator(mode="after")
+    def _scope(self) -> "TimeRangeFilter":
+        self._check_scope("time_range")
+        return self
 
 
-class RangeFilter(BaseModel):
+class RangeFilter(_FilterBase, _PreFilterMixin):
     """Native filter bar: numeric range on one dataset column (filter_range).
 
     ``le``/``ge`` set the DEFAULT bound(s) users see on load. One bound gives a
@@ -498,31 +1184,66 @@ class RangeFilter(BaseModel):
     named charts only (default: every chart), resolved to slice ids after
     import, since ids don't exist at compile time."""
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["range"]
-    name: str = Field(min_length=1)
     dataset: DatasetRef
     column: str
     le: float | None = Field(default=None, description="Default upper bound (x ≤ N)")
     ge: float | None = Field(default=None, description="Default lower bound (x ≥ N)")
-    charts: list[str] | None = Field(
-        default=None,
-        description="Chart names this filter governs; omit for all charts",
-    )
+    dependencies: list[str] | None = _dependencies()
+    charts: list[str] | None = _charts_scope()
 
     @model_validator(mode="after")
     def _bounds(self) -> "RangeFilter":
         if self.le is not None and self.ge is not None and self.ge > self.le:
             raise ValueError(f"range filter {self.name!r}: ge ({self.ge}) > le ({self.le})")
-        if self.charts is not None and not self.charts:
-            raise ValueError(f"range filter {self.name!r}: charts must be omitted or non-empty")
+        self._check_scope("range")
+        self._check_pre_filter("range", self.name)
+        return self
+
+
+class TimeGrainFilter(_FilterBase):
+    """Native filter bar: a time grain picker (day, week, month...) that re-buckets
+    the time axis of the charts in scope. The grains offered are the dataset's
+    database's own."""
+
+    type: Literal["time_grain"]
+    dataset: DatasetRef
+    default: str | None = Field(
+        default=None, min_length=1, description="Grain selected on load, an ISO 8601 duration, e.g. P1M")
+    required: bool = Field(default=False, description="A grain must stay selected")
+    charts: list[str] | None = _charts_scope()
+
+    @model_validator(mode="after")
+    def _scope(self) -> "TimeGrainFilter":
+        self._check_scope("time_grain")
+        return self
+
+
+class TimeColumnFilter(_FilterBase):
+    """Native filter bar: lets viewers pick which of the dataset's temporal columns
+    the dashboard's time range applies to (e.g. order date or ship date)."""
+
+    type: Literal["time_column"]
+    dataset: DatasetRef
+    default: str | None = Field(default=None, min_length=1, description="Temporal column selected on load")
+    required: bool = Field(default=False, description="A column must stay selected")
+    charts: list[str] | None = _charts_scope()
+
+    @model_validator(mode="after")
+    def _scope(self) -> "TimeColumnFilter":
+        self._check_scope("time_column")
         return self
 
 
 DashboardFilter = Annotated[
-    Union[SelectFilter, TimeRangeFilter, RangeFilter], Field(discriminator="type")
+    Union[SelectFilter, TimeRangeFilter, RangeFilter, TimeGrainFilter, TimeColumnFilter],
+    Field(discriminator="type"),
 ]
+# Filter types another filter may depend on (Superset's ALLOW_DEPENDENCIES,
+# FiltersConfigModal at 4.1.4/5.0.0, FiltersConfigModal/hooks/useFilterOperations.ts at 6.1.0).
+DEPENDENCY_PARENT_TYPES = ("select", "range", "time_range")
+# Filter types whose native filter targets a dataset.
+DATASET_FILTER_TYPES = ("select", "range", "time_grain", "time_column")
 
 
 class MarkdownBlock(BaseModel):
@@ -545,6 +1266,62 @@ class MarkdownBlock(BaseModel):
 
 
 RowItem = Union[str, MarkdownBlock]
+
+
+class HeaderBlock(BaseModel):
+    """A full-width section title between rows (Superset's Header component).
+    Superset places headers beside rows, never inside one, so a header is a
+    row of its own in ``rows``: ``{"header": "Revenue", "size": "large"}``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    header: str = Field(min_length=1, description="The header text")
+    size: Literal["small", "medium", "large"] = Field(
+        default="medium", description="Text size; medium is what Superset's own new header uses")
+    background: Literal["transparent", "white"] = Field(
+        default="transparent", description="white (\"Solid\" on Superset 6.1) draws a card behind it")
+
+
+class DividerBlock(BaseModel):
+    """A full-width horizontal rule between rows (Superset's Divider component):
+    ``{"divider": true}`` as a row of its own in ``rows``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    divider: Literal[True]
+
+
+class StyledRow(BaseModel):
+    """A row with a background: ``{"row": ["A", "B"], "background": "white"}``.
+    A plain list is a row with Superset's default transparent background."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    row: list[RowItem] = Field(min_length=1)
+    background: Literal["white"] = Field(
+        description="white (\"Solid\" on Superset 6.1): the row's charts sit on one card")
+
+
+# One entry of `rows` / `footer`: a row of charts and markdown (a list, or a
+# StyledRow), or a full-width header or divider between rows.
+Row = Union[list[RowItem], StyledRow, HeaderBlock, DividerBlock]
+
+
+def row_items(row) -> list | None:
+    """The charts and markdown blocks of a layout row (model or raw JSON), or
+    None for a header or divider."""
+    if isinstance(row, list):
+        return row
+    if isinstance(row, StyledRow):
+        return row.row
+    if isinstance(row, dict) and isinstance(row.get("row"), list):
+        return row["row"]
+    return None
+
+
+def item_rows(rows) -> list[list]:
+    """The rows that hold charts or markdown, headers and dividers skipped."""
+    return [items for items in (row_items(r) for r in rows or []) if items is not None]
 
 
 class _SketchHolder(BaseModel):
@@ -583,7 +1360,7 @@ class Tab(_SketchHolder):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1)
-    rows: list[list[RowItem]] | None = None
+    rows: list[Row] | None = None
     tabs: list["Tab"] | None = Field(
         default=None, description="Sub-tabs (one level), instead of rows / sketch")
 
@@ -626,13 +1403,79 @@ class DashboardMeta(BaseModel):
             "the scheme and the per-view map (6.1.0 applyColors)."
         ),
     )
+    css: str | None = Field(
+        default=None,
+        description=(
+            "CSS for the dashboard: the same thing as Superset's own \"Edit CSS\", e.g. "
+            "\".dashboard-markdown h1 { color: #1A1A1A; }\". Omitted means none. "
+            "Spec-owned, so CSS edited in the UI shows up as drift in `plan` and is "
+            "replaced by `apply`."
+        ),
+    )
+
+    color_scheme: str | None = Field(
+        default=None, min_length=1,
+        description="Categorical colour scheme for every chart on the dashboard (Superset's "
+                    "dashboard \"Color scheme\"), e.g. \"supersetColors\"; it overrides each "
+                    "chart's own. Superset ships " + ", ".join(SUPERSET_COLOR_SCHEMES)
+                    + "; other names must be registered by your deployment "
+                      "(EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+    )
+    description: str | None = Field(
+        default=None, min_length=1, description="The dashboard's description in Superset")
+    certified_by: str | None = Field(
+        default=None, min_length=1, description="Who certified the dashboard: Superset shows a certified badge")
+    certification_details: str | None = Field(
+        default=None, min_length=1, description="The certified badge's tooltip text; needs certified_by")
+    published: bool = Field(
+        default=True,
+        description="false keeps the dashboard a draft (Superset's Draft badge; Superset "
+                    "lists a draft only for its owners and admins)",
+    )
+    refresh_frequency: int | None = Field(
+        default=None, ge=0,
+        description="Reload every chart every N seconds while the dashboard is open, e.g. "
+                    "300; omit (or 0) for no automatic refresh",
+    )
+    filter_bar_orientation: Literal["vertical", "horizontal"] | None = Field(
+        default=None,
+        description="Where the filter bar sits: vertical (the left side panel, Superset's "
+                    "default) or horizontal (above the charts). On 4.1.4 and 5.0.0 horizontal "
+                    "needs the HORIZONTAL_FILTER_BAR feature flag; without it Superset shows "
+                    "the vertical bar.",
+    )
+    show_chart_timestamps: bool = Field(
+        default=False,
+        description="Show each chart's last-queried time on its card. Superset 6.1.0 or "
+                    "later: 4.1.4, 5.0.0 and 6.0.0 import it, then refuse to save the "
+                    "dashboard's settings (their metadata schema rejects the key), so check, "
+                    "apply and plan refuse it there before anything is written.",
+    )
+    tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
+
+    @field_validator("css")
+    @classmethod
+    def _blank_css_is_none(cls, v: str | None) -> str | None:
+        # Blank CSS is no CSS: decompile reads it back as omitted, so keeping
+        # "  " here would show as drift in `plan` forever.
+        return v if v is not None and v.strip() else None
 
     @model_validator(mode="after")
     def _hex_colours(self) -> "DashboardMeta":
         bad = {k: v for k, v in self.label_colors.items() if not re.fullmatch(r"#[0-9A-Fa-f]{6}", v)}
         if bad:
             raise ValueError(f"label_colors must be #RRGGBB: {bad}")
+        if self.certification_details and not self.certified_by:
+            raise ValueError("dashboard certification_details needs certified_by")
+        if self.tags is not None:
+            self.tags = _tag_list(self.tags, "dashboard")
         return self
+
+
+# The chart fields the design brain may fill with a design default (`advise --fix`,
+# docs/DESIGN-BRAIN.md section 16). design.filled may list only these.
+BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "number_format", "page_length",
+                         "search_box", "show_legend", "show_value", "x_label_format")
 
 
 class DesignConfig(BaseModel):
@@ -649,6 +1492,27 @@ class DesignConfig(BaseModel):
         default=None, description="Design preset; CLI --audience overrides")
     ignore: list[str] = Field(
         default_factory=list, description="Design rule ids to suppress")
+    filled: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Written by `chartwright advise --fix`, not by hand: per chart name, each "
+                    "field it filled with a design default and the value it wrote. While the "
+                    "chart still holds that value, --fix keeps it up to date. Edit the field "
+                    "and it is yours; delete it and --fix records null here and fills it no "
+                    "more, until you delete that entry. Compile ignores this block.",
+    )
+
+    @field_validator("filled", mode="before")
+    @classmethod
+    def _filled_fields(cls, filled):
+        for chart, record in (filled or {}).items() if isinstance(filled, dict) else ():
+            if not isinstance(record, dict):
+                raise ValueError(f"design.filled[{chart!r}] must map each filled field to the "
+                                 f"value --fix wrote, e.g. {{\"page_length\": 8}}")
+            bad = sorted(set(record) - set(BRAIN_FILLABLE_FIELDS))
+            if bad:
+                raise ValueError(f"design.filled[{chart!r}]: {bad} are not fields the design "
+                                 f"brain fills (it fills {list(BRAIN_FILLABLE_FIELDS)})")
+        return filled
 
 
 class Layout(_SketchHolder):
@@ -658,9 +1522,9 @@ class Layout(_SketchHolder):
 
     model_config = ConfigDict(extra="forbid")
 
-    rows: list[list[RowItem]] | None = None
+    rows: list[Row] | None = None
     tabs: list[Tab] | None = None
-    footer: list[list[RowItem]] | None = Field(
+    footer: list[Row] | None = Field(
         default=None,
         description="Rows below the rows / tabs / sketch, outside any tab (shown under every tab)")
 
@@ -685,8 +1549,9 @@ class Layout(_SketchHolder):
         return [leaf for tab in (self.tabs or []) for leaf in (tab.tabs or [tab])]
 
     def all_rows(self) -> list[list[RowItem]]:
+        """Every row of charts and markdown (headers and dividers skipped)."""
         body = self.rows or [row for tab in self.leaf_tabs() for row in (tab.rows or [])]
-        return [*body, *(self.footer or [])]
+        return item_rows([*body, *(self.footer or [])])
 
     def sketch_holders(self) -> list["_SketchHolder"]:
         if self.sketch:
@@ -717,6 +1582,35 @@ class DashboardSpec(BaseModel):
             seen.add(c.name)
         return charts
 
+    @model_validator(mode="after")
+    def _filled_names_charts(self) -> "DashboardSpec":
+        """design.filled names real charts, fields that chart has, and values that field
+        takes (or null: a fill the author deleted). A renamed chart must carry its entry
+        along, or the brain would lose track of its own fills."""
+        by_name = {c.name: c for c in self.charts}
+        for name, record in (self.design.filled if self.design else {}).items():
+            chart = by_name.get(name)
+            if chart is None:
+                raise ValueError(f"design.filled names chart {name!r}, which is not in charts; "
+                                 "rename its entry with the chart, or delete the entry")
+            fields = type(chart).model_fields
+            foreign = [f for f in record if f not in fields]
+            if foreign:
+                raise ValueError(f"design.filled[{name!r}]: a {chart.type} chart has no "
+                                 f"{foreign}; delete them from the entry")
+            for field, value in record.items():
+                if value is None:
+                    continue
+                info = fields[field]
+                kind = (Annotated[(info.annotation, *info.metadata)] if info.metadata
+                        else info.annotation)
+                try:
+                    TypeAdapter(kind, config=ConfigDict(strict=True)).validate_python(value)
+                except ValidationError as e:
+                    raise ValueError(f"design.filled[{name!r}][{field!r}]: {value!r} is not a "
+                                     f"value {field} takes ({e.errors()[0]['msg']})") from None
+        return self
+
     @field_validator("filters")
     @classmethod
     def _unique_filter_names(cls, filters: list[DashboardFilter]) -> list[DashboardFilter]:
@@ -737,6 +1631,57 @@ class DashboardSpec(BaseModel):
                         f"filter {f.name!r} scopes unknown chart {target!r} "
                         f"(spec charts: {sorted(names)})"
                     )
+        return self
+
+    @model_validator(mode="after")
+    def _filter_dependencies_resolve(self) -> "DashboardSpec":
+        by_name = {f.name: f for f in self.filters}
+        parents: dict[str, list[str]] = {}
+        for f in self.filters:
+            deps = getattr(f, "dependencies", None)
+            if deps is None:
+                continue
+            if not deps:
+                raise ValueError(f"filter {f.name!r}: dependencies must be omitted or non-empty")
+            if len(set(deps)) != len(deps):
+                raise ValueError(f"filter {f.name!r}: duplicate dependencies {deps}")
+            for parent in deps:
+                if parent == f.name:
+                    raise ValueError(f"filter {f.name!r} cannot depend on itself")
+                if parent not in by_name:
+                    raise ValueError(
+                        f"filter {f.name!r} depends on unknown filter {parent!r} "
+                        f"(spec filters: {sorted(by_name)})")
+                if by_name[parent].type not in DEPENDENCY_PARENT_TYPES:
+                    raise ValueError(
+                        f"filter {f.name!r} depends on {parent!r}, a {by_name[parent].type} filter; "
+                        f"Superset lets a filter depend on {', '.join(DEPENDENCY_PARENT_TYPES)} filters only")
+            parents[f.name] = list(deps)
+
+        def cycle(name: str, trail: tuple[str, ...]) -> tuple[str, ...] | None:
+            if name in trail:
+                return (*trail, name)
+            for p in parents.get(name, []):
+                found = cycle(p, (*trail, name))
+                if found:
+                    return found
+            return None
+
+        for name in parents:
+            found = cycle(name, ())
+            if found:
+                raise ValueError(f"filter dependencies form a cycle: {' -> '.join(found)}")
+        return self
+
+    @model_validator(mode="after")
+    def _sql_metrics_labelled(self) -> "DashboardSpec":
+        for c in self.charts:
+            for m in chart_metrics(c):
+                if malformed_sql_metric(m):
+                    raise ValueError(
+                        f"chart {c.name!r}: metric {m!r} looks like a custom-SQL metric but is not "
+                        "one; write SQL(<expression>) AS <Label>, e.g. "
+                        "\"SQL(100.0 * SUM(a) / NULLIF(SUM(b), 0)) AS Rate\"")
         return self
 
     @model_validator(mode="after")
@@ -847,8 +1792,71 @@ class DashboardSpec(BaseModel):
         return chart.default_height()
 
 
+def chart_metrics(chart) -> list[str]:
+    """Every metric string a chart names: its metric(s), a mixed chart's two
+    queries, an aggregate table's sort metric and the metric ranking a series limit."""
+    out: list[str] = []
+    if getattr(chart, "metric", None):
+        out.append(chart.metric)
+    out += list(getattr(chart, "metrics", None) or [])
+    if getattr(chart, "series_limit_metric", None):
+        out.append(chart.series_limit_metric)
+    if chart.type == "mixed":
+        out += [*chart.a.metrics, *chart.b.metrics]
+        out += [s.series_limit_metric for s in (chart.a, chart.b) if s.series_limit_metric]
+    if chart.type == "table" and chart.sort_by and not chart.columns:
+        out.append(chart.sort_by)
+    return out
+
+
 def load_spec(data: dict) -> DashboardSpec:
     return DashboardSpec.model_validate(data)
+
+
+# -- a written Superset default ---------------------------------------------------------
+
+# Superset's own value for an optional field. An author may write it, and the model
+# keeps it as written (model_fields_set and a dump of the spec show it). Superset
+# draws the written default exactly like the omitted field, and decompile can't tell
+# the two apart, so compile, plan and the spec's own checks read a written default
+# as unset (docs/CONTRACTS.md, "A written Superset default").
+SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
+    "legend": {"legend_position": "top", "legend_type": "scroll"},  # every chart with a legend
+    "big_number_trend": {"trend_color": TREND_DEFAULT_HEX},
+    "timeseries_line": {"marker_size": 6, "opacity": 0.2},
+    "timeseries_area": {"marker_size": 6, "opacity": 0.2},
+    "timeseries_scatter": {"marker_size": 6},
+    "pie": {"label_type": "key_percent"},
+    "funnel": {"label_type": "key"},
+    "treemap": {"label_type": "key_value"},
+    "heatmap": {"color_scheme": HEATMAP_DEFAULT_SCHEME},
+    "dashboard": {"refresh_frequency": 0, "filter_bar_orientation": "vertical"},
+}
+
+
+def _default_fields(model: BaseModel) -> dict[str, object]:
+    kind = "dashboard" if isinstance(model, DashboardMeta) else getattr(model, "type", None)
+    out = {f: v for f, v in SUPERSET_DEFAULTS["legend"].items() if f in type(model).model_fields}
+    return {**out, **SUPERSET_DEFAULTS.get(kind, {})}
+
+
+def set_value(model: BaseModel, field: str):
+    """The field's value, or None when it holds Superset's own default."""
+    value = getattr(model, field)
+    defaults = _default_fields(model)
+    return None if field in defaults and value == defaults[field] else value
+
+
+def without_superset_defaults(spec: DashboardSpec) -> DashboardSpec:
+    """The spec with each written Superset default read as unset: what compile builds
+    from and what plan compares, so a written default and an omitted field agree."""
+    def strip(model: BaseModel) -> BaseModel:
+        update = {f: None for f in _default_fields(model) if set_value(model, f) is None
+                  and getattr(model, f) is not None}
+        return model.model_copy(update=update) if update else model
+
+    return spec.model_copy(update={"dashboard": strip(spec.dashboard),
+                                   "charts": [strip(c) for c in spec.charts]})
 
 
 def json_schema() -> dict:

@@ -66,7 +66,7 @@ def test_compile_time_axis_mixed():
     assert (p["seriesType"], p["seriesTypeB"]) == ("bar", "line")
     assert (p["yAxisIndex"], p["yAxisIndexB"]) == (0, 1)
     assert p["y_axis_format"] == "SMART_NUMBER" and p["y_axis_format_secondary"] == ".3f"
-    # The chart's own filter, then the time-range filter on its axis (0.2.1).
+    # The chart's filter, then the time-range filter on the axis (test_chart_time_range.py).
     assert p["adhoc_filters"] == p["adhoc_filters_b"] and len(p["adhoc_filters"]) == 2
     assert p["adhoc_filters"][1]["operator"] == "TEMPORAL_RANGE"
     assert p["groupby"] == [] and p["groupby_b"] == []
@@ -183,8 +183,8 @@ def test_every_month_keeps_both_ends_on_lines_and_bars():
     params = _params(_spec(line, scatter, {**BY_MONTH, "x_label_every": True}))
     _, pl = params["Trend"]
     assert json.loads(pl["echart_options"]) == {
-        "xAxis": {"axisLabel": {"showMaxLabel": False}, "boundaryGap": ["3%", "3%"]},
-        "yAxis": {"max": 1}}
+        "xAxis": {"axisLabel": {"showMaxLabel": False}, "boundaryGap": ["3%", "3%"]}}
+    assert pl["y_axis_bounds"] == [None, 1]  # the axis maximum on every release
     _, pm = params["Revenue and revenue per order"]  # bars are padded already
     assert json.loads(pm["echart_options"]) == {"xAxis": {"axisLabel": {"showMaxLabel": False}}}
     _, ps = params["Dots"]  # scatter's 6.1.0 panel has no echart_options

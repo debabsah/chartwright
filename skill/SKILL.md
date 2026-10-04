@@ -38,12 +38,18 @@ approximate it with a different mechanism.
 1. `CW schema`: read the contract. Surface: 15 chart types (big numbers,
    timeseries line/bar/area/scatter, categorical bar, pie/donut, table,
    pivot_table, heatmap, histogram, funnel, treemap, mixed: bars + a line on
-   two axes), per-chart `filters`
-   (WHERE), dashboard-level `filters` (select, time_range and numeric range native
-   filter bar, time_range with an optional `default`), layout as `rows`, `tabs`, or an
-   ASCII `sketch` with a `legend`, markdown blocks in rows, an optional
+   two axes), metrics as saved names, `AGG(col) [AS Label]` or
+   `SQL(expression) AS Label`, per-chart `filters` (WHERE: column/op/value
+   or `sql`), goal lines (`annotations`) on line/bar/area/scatter/mixed,
+   dashboard-level `filters` (select, time_range, numeric range, time_grain
+   and time_column native filter bar; `dependencies` for cascading; `charts`
+   to scope any of them), dashboard settings (colour scheme, description,
+   certification, draft, refresh), layout as `rows`, `tabs`, or an
+   ASCII `sketch` with a `legend`, markdown blocks in rows, `{"header": ...}`
+   and `{"divider": true}` entries between rows, an optional
    `layout.footer` (rows below everything, shown under every tab), an optional
-   `design` block (audience + rule suppressions).
+   `design` block (audience + rule suppressions; `design.filled` is written
+   by `--fix`, never by you).
 2. Design brain, ON by default: run `CW brief --audience <a>` and follow it
    while authoring. Infer the audience from the request: executive
    scorecard/leadership review -> `executive`; ops monitor/wall display ->
@@ -52,19 +58,35 @@ approximate it with a different mechanism.
    "exactly as I specify"): skip the brief, skip step 6, and pass
    `--design off` to check and apply.
 3. Write the spec to the specs dir (absolute path). Slug lowercase-kebab;
-   chart names unique.
+   chart names unique. Leave the design-default fields unset unless the user
+   asked for a value (the brief lists them: time-axis label format, compare
+   suffix, count number formats, table cell bars, page size and search box,
+   a single series' legend, values on few bars); step 6 fills them.
 4. `CW validate <abs-spec-path>`: fix schema errors (max 3 attempts).
 5. `CW check <abs-spec-path> --profile <profile>`: fix referential errors
    (max 3 attempts total across 4+5; errors name the exact dataset/column/
    metric at fault). The payload carries an `advice` block (design findings);
-   act on it in step 6.
+   act on it in step 6. `superset_version_too_old` names a field the
+   instance's Superset release can't take: remove it and tell the user.
+   `superset_version_unknown` means the instance didn't report its release:
+   ask the user for it and pass `--superset-version <release>` to check,
+   apply and plan. Pass `version_warnings` (fields that release ignores) on
+   to the user verbatim.
 6. `CW advise <abs-spec-path> --profile <profile>`: the design critic, with
    data-aware rules (column types, cardinality). Apply what it suggests:
-   `CW advise <abs-spec-path> --fix` applies the safe geometry subset in
-   place; the rest you edit in the spec. A finding that is a deliberate
-   exception goes in the spec's `design.ignore` as `"rule.id@Chart Name"`,
-   and you tell the user. At most 2 design iterations, then surface the
-   remaining findings verbatim.
+   run `CW advise <abs-spec-path> --fix` before any hand edit and before
+   apply (MCP: `fix_spec`). It rewrites the file in place: safe geometry
+   repairs, plus the design defaults it fills into unset fields, recorded in
+   the spec's `design.filled` with the value written. Each `fixed` entry says
+   `kind: "fill"`, `"repair"` or `"release"` and why; keep the fills unless
+   the user asked otherwise. Make the rest of your changes by editing THAT
+   file; never regenerate the spec from your own copy, or the fills are lost.
+   A filled value you change or delete is yours from then on: the next
+   `--fix` releases it and never refills it. Never edit `design.filled`.
+   `CW explain <abs-spec-path> [--chart NAME]` says where each value came
+   from. A finding that is a deliberate exception goes in the spec's
+   `design.ignore` as `"rule.id@Chart Name"`, and you tell the user. At most
+   2 design iterations, then surface the remaining findings verbatim.
 7. `CW apply <abs-spec-path> --profile <profile>`: on success give the user
    the dashboard_url and any smoke warnings verbatim. Apply backs up the
    previous state under `~/.config/chartwright/backups/<profile>/<slug>/` (restore with
@@ -106,5 +128,6 @@ learns from them over time (`CW calibrate`).
 | User wants a chart type outside the 15 | Say it's out of surface; offer the nearest supported type |
 | Retry apply a 4th time with random changes | Stop; surface all errors verbatim |
 | Advice finding seems wrong; hand-tune to dodge it | Record it in the spec's `design.ignore` and tell the user, or report a rule bug |
+| A design default you'd rather not have; rewrite the spec without it | Delete the field from the file `--fix` wrote (a deleted fill stays deleted), or add `"default.rule@Chart Name"` to `design.ignore`; tell the user |
 | "Quick" dashboard via POST /api/v1/dashboard/ | Never; the guarantee only exists through chartwright |
 | Auth fails; hunt for password variables or files | Show the ProfileError; the user names their env var or password_cmd |

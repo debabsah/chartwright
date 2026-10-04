@@ -43,6 +43,19 @@ def _client(profile: str):
     return c
 
 
+def _stated_version(superset_version: str):
+    """(release or None, error JSON or None) for a tool's superset_version argument."""
+    if not superset_version:
+        return None, None
+    from .versions import not_a_release, stated_release
+
+    release = stated_release(superset_version)
+    if release is None:
+        return None, json.dumps({"ok": False, "stage": "version", "errors": [{
+            "code": "bad_superset_version", "detail": not_a_release(superset_version)}]})
+    return release, None
+
+
 def _typed_errors(fn):
     """Return the CLI's typed error JSON instead of raising, for tools that
     sign in. A raised exception reached the agent as a bare tool failure it
@@ -110,48 +123,78 @@ def _bad_audience(audience: str) -> str | None:
     return None
 
 
+def _bad_chart(spec, chart: str) -> str | None:
+    names = [c.name for c in spec.charts]
+    if chart and chart not in names:
+        return json.dumps({"ok": False, "stage": "design", "errors": [{
+            "code": "unknown_chart",
+            "detail": f"no chart named {chart!r} in the spec; charts: {names}"}]})
+    return None
+
+
 @mcp.tool()
 @_typed_errors
-def check_spec(spec_json: str, profile: str) -> str:
+def check_spec(spec_json: str, profile: str, superset_version: str = "") -> str:
     """Pre-flight referential resolution against the live Superset instance:
-    every dataset triple, column, and metric must exist. Returns typed errors
-    plus a design-brain advice block."""
+    every dataset triple, column, and metric must exist, and every field must
+    suit the instance's Superset release. Returns typed errors plus a
+    design-brain advice block. superset_version (optional, e.g. "5.0.0") names the
+    instance's Superset release; omitted, the instance is asked."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    version, err = _stated_version(superset_version)
+    if err:
+        return err
     from .apply import check
 
-    res = check(spec, _client(profile))
-    return json.dumps({"ok": res.ok, "stage": "resolve",
-                       "errors": [e.as_dict() for e in res.errors],
-                       "advice": _advice(spec, resolution=res if res.ok else None)})
+    res = check(spec, _client(profile), version)
+    out = {"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]}
+    if res.superset_version:
+        out["superset_version"] = res.superset_version
+    if res.version_warnings:
+        out["version_warnings"] = res.version_warnings
+    if res.unchecked_sql:
+        # Custom SQL is not checkable by name; say so instead of passing it silently.
+        out["unchecked_sql"] = res.unchecked_sql
+    out["advice"] = _advice(spec, resolution=res if res.ok else None)
+    return json.dumps(out)
 
 
 @mcp.tool()
 @_typed_errors
-def build_dashboard(spec_json: str, profile: str) -> str:
+def build_dashboard(spec_json: str, profile: str, superset_version: str = "") -> str:
     """Compile the spec and apply it to the live Superset instance
     (resolve -> import -> linkage -> data smoke). Returns the full apply report
-    including the dashboard URL."""
+    including the dashboard URL. A field the instance's release can't take
+    stops the build at resolve, before anything is written. superset_version (optional, e.g. "5.0.0") names the
+    instance's Superset release; omitted, the instance is asked."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    version, err = _stated_version(superset_version)
+    if err:
+        return err
     from .apply import apply as run_apply
 
-    return run_apply(spec, _client(profile), profile).to_json()
+    return run_apply(spec, _client(profile), profile, version).to_json()
 
 
 @mcp.tool()
 @_typed_errors
-def plan_dashboard(spec_json: str, profile: str) -> str:
+def plan_dashboard(spec_json: str, profile: str, superset_version: str = "") -> str:
     """Diff a spec against the live dashboard at its slug: what would apply
-    change? clean=true means no drift."""
+    change? clean=true means no drift. superset_version (optional, e.g. "5.0.0") names the
+    instance's Superset release; omitted, the instance is asked."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    version, err = _stated_version(superset_version)
+    if err:
+        return err
     from .dashdiff import plan as run_plan
 
-    return run_plan(spec, _client(profile)).to_json()
+    return run_plan(spec, _client(profile), version).to_json()
 
 
 @mcp.tool()
@@ -172,16 +215,20 @@ def design_brief(audience: str = "analytical") -> str:
 
 @mcp.tool()
 @_typed_errors
-def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
+def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: str = "") -> str:
     """Design review of a spec against the design-brain rulebook (offline;
     pass a profile for data-aware rules: column types and cardinality).
-    Audiences: executive | analytical | operational."""
+    Audiences: executive | analytical | operational. `chart` keeps one chart's
+    findings (the CLI's advise --chart)."""
     bad = _bad_audience(audience)
     if bad:
         return bad
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    bad = _bad_chart(spec, chart)
+    if bad:
+        return bad
     from .design import advise
 
     resolution = prober = None
@@ -193,7 +240,8 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
         resolution = resolve(spec, client)
         prober = CardinalityProber(client)
     try:
-        report = advise(spec, audience=audience or None, resolution=resolution, prober=prober)
+        report = advise(spec, audience=audience or None, resolution=resolution, prober=prober,
+                        chart=chart or None)
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
     payload = report.payload()
@@ -204,9 +252,13 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
 
 @mcp.tool()
 def fix_spec(spec_json: str, audience: str = "") -> str:
-    """Apply the design brain's safe, presentation-only fixes (heights, bar
-    orientation) to a spec. Returns {spec, advice}: the patched spec JSON and
-    the advice report with .fixed listing what changed. Offline."""
+    """Apply the design brain's safe, presentation-only fixes to a spec: repairs
+    (heights, bar orientation), then design defaults it fills into fields left
+    unset (time-axis label format, count number format, table paging, ...),
+    recorded in design.filled. Returns {spec, advice}: the patched spec JSON and
+    the advice report; each .fixed entry has kind "fill" or "repair" and a why.
+    Run it before build_dashboard; keep the returned spec and edit THAT, never a
+    regenerated one. Offline."""
     bad = _bad_audience(audience)
     if bad:
         return bad
@@ -220,6 +272,29 @@ def fix_spec(spec_json: str, audience: str = "") -> str:
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
     return json.dumps({"ok": True, "stage": "design", "spec": new_data, "advice": report.payload()})
+
+
+@mcp.tool()
+def explain_spec(spec_json: str, chart: str = "", audience: str = "") -> str:
+    """Where each design-default field's value comes from (the CLI's `explain
+    --json`), offline: per chart, one row per field a default.* rule governs with
+    its value, source (spec | filled | superset default), the rule, a reason, and
+    how to override it; a filled field also shows the value design.filled recorded."""
+    bad = _bad_audience(audience)
+    if bad:
+        return bad
+    spec, err = _parse_spec(spec_json)
+    if err:
+        return json.dumps(err)
+    bad = _bad_chart(spec, chart)
+    if bad:
+        return bad
+    from .design.explain import explain
+
+    try:
+        return json.dumps(explain(spec, audience=audience or None, chart=chart or None))
+    except ValueError as e:
+        return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
 
 
 @mcp.tool()

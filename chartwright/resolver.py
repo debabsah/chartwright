@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 from .client import SupersetClient
-from .spec import DashboardSpec, DatasetRef, parse_metric
+from .spec import DATASET_FILTER_TYPES, DashboardSpec, DatasetRef, parse_metric
 
 
 @dataclass
@@ -40,6 +40,7 @@ class ResolvedDataset:
 @dataclass
 class ResolutionError:
     code: str          # dataset_not_found | dataset_ambiguous | column_not_found | metric_not_found | bad_metric
+    #                    | superset_version_too_old | superset_version_unknown (chartwright.versions)
     chart: str | None
     ref: str
     detail: str
@@ -55,6 +56,15 @@ class ResolutionError:
 class Resolution:
     datasets: dict[str, ResolvedDataset] = field(default_factory=dict)  # DatasetRef.key() -> resolved
     errors: list[ResolutionError] = field(default_factory=list)
+    # Custom SQL (SQL(...) AS label metrics, sql filters) names columns inside
+    # free text, so resolution cannot check it: listed here, never an error.
+    # Apply's data check runs every chart's query, which is where bad SQL fails.
+    unchecked_sql: list[dict] = field(default_factory=list)
+    # The Superset release the spec was held to (chartwright.versions), when a
+    # version-gated field made it matter; None when no gated field is in use or
+    # the instance did not say. Fields that release ignores warn here.
+    superset_version: str | None = None
+    version_warnings: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -64,8 +74,12 @@ class Resolution:
         return self.datasets[ref.key()]
 
 
-def resolve(spec: DashboardSpec, client: SupersetClient) -> Resolution:
+def resolve(spec: DashboardSpec, client: SupersetClient,
+            superset_version: str | None = None) -> Resolution:
+    """`superset_version` states the target release; omitted, the instance is
+    asked, and only when the spec uses a version-gated field."""
     res = Resolution()
+    _check_version(spec, client, res, superset_version)
     cache: dict[str, ResolvedDataset | None] = {}
 
     def dataset_for(ref: DatasetRef) -> ResolvedDataset | None:
@@ -81,15 +95,52 @@ def resolve(spec: DashboardSpec, client: SupersetClient) -> Resolution:
         if ds is None:
             continue
         _check_chart_fields(chart, ds, res)
-        for f in chart.filters:
-            _check_column(f.column, chart.name, ds, res, "filter column")
+        _check_where(chart.filters, chart.name, ds, res, "filter column")
 
     for f in spec.filters:
+        if f.type not in DATASET_FILTER_TYPES:
+            continue
+        ds = dataset_for(f.dataset)
+        if ds is None:
+            continue
+        where = f"filter:{f.name}"
         if f.type in ("select", "range"):
-            ds = dataset_for(f.dataset)
-            if ds is not None:
-                _check_column(f.column, f"filter:{f.name}", ds, res, "native filter column")
+            _check_column(f.column, where, ds, res, "native filter column")
+            _check_where(f.pre_filter, where, ds, res, "pre_filter column")
+            if f.time_column:
+                _check_column(f.time_column, where, ds, res, "pre-filter time_column")
+        if f.type == "select" and f.sort_metric and f.sort_metric not in ds.metrics:
+            # The filter form offers saved metrics only (FiltersConfigForm.tsx sortMetric).
+            res.errors.append(ResolutionError(
+                "metric_not_found", where, f.sort_metric,
+                f"sort_metric must be a saved metric on {ds.table!r} (has: {ds.metrics})",
+            ))
+        if f.type == "time_column" and f.default:
+            _check_column(f.default, where, ds, res, "time_column default")
     return res
+
+
+def _check_version(spec: DashboardSpec, client: SupersetClient, res: Resolution,
+                   stated: str | None) -> None:
+    from .versions import check_spec_version, format_version, gated_fields_used, parse_version
+
+    uses = gated_fields_used(spec)
+    if not uses:
+        release = parse_version(stated)
+        res.superset_version = format_version(release) if release else None
+        return
+    checked = check_spec_version(spec, stated if stated else client.superset_version(), uses)
+    res.superset_version = checked.version
+    res.version_warnings = checked.warnings
+    res.errors += [ResolutionError(e["code"], e["chart"], e["ref"], e["detail"]) for e in checked.errors]
+
+
+def _check_where(filters, where: str, ds: "ResolvedDataset", res: "Resolution", what: str) -> None:
+    for f in filters:
+        if f.sql is not None:
+            res.unchecked_sql.append({"chart": where, "sql": f.sql})
+        else:
+            _check_column(f.column, where, ds, res, what)
 
 
 def _resolve_dataset(ref: DatasetRef, client: SupersetClient, res: Resolution) -> ResolvedDataset | None:
@@ -140,12 +191,16 @@ def _resolve_dataset(ref: DatasetRef, client: SupersetClient, res: Resolution) -
 
 def _check_metric(metric: str, chart_name: str, ds: ResolvedDataset, res: Resolution) -> None:
     adhoc = parse_metric(metric)
+    if adhoc is not None and adhoc.get("sql") is not None:
+        res.unchecked_sql.append({"chart": chart_name, "sql": adhoc["sql"], "metric": metric})
+        return
     if adhoc is None:
         if metric not in ds.metrics:
             res.errors.append(ResolutionError(
                 "metric_not_found", chart_name, metric,
                 f"not a saved metric on {ds.table!r} (has: {ds.metrics}) and not an "
-                f"ad-hoc aggregate of the form AGG(column), AGG in SUM/AVG/COUNT/COUNT_DISTINCT/MIN/MAX",
+                f"ad-hoc aggregate of the form AGG(column), AGG in SUM/AVG/COUNT/COUNT_DISTINCT/MIN/MAX, "
+                f"or a custom-SQL metric SQL(expression) AS Label",
             ))
         return
     col = adhoc["column"]
@@ -189,6 +244,9 @@ def _check_column(col: str, chart_name: str, ds: ResolvedDataset, res: Resolutio
 
 def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
     t = chart.type
+    if getattr(chart, "series_limit_metric", None):
+        # The metric that ranks the series for a series limit (line, bar, area, scatter).
+        _check_metric(chart.series_limit_metric, chart.name, ds, res)
     if t in ("big_number_total", "big_number_trend"):
         _check_metric(chart.metric, chart.name, ds, res)
         if t == "big_number_trend":
@@ -212,6 +270,8 @@ def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
                 _check_metric(m, chart.name, ds, res)
             if series.groupby:
                 _check_column(series.groupby, chart.name, ds, res, "groupby")
+            if series.series_limit_metric:
+                _check_metric(series.series_limit_metric, chart.name, ds, res)
     elif t == "pie":
         _check_metric(chart.metric, chart.name, ds, res)
         _check_column(chart.groupby, chart.name, ds, res, "groupby")

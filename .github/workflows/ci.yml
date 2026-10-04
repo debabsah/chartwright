@@ -48,7 +48,15 @@ jobs:
       - name: Boot Superset ${{ matrix.superset }} sandbox
         run: bash sandbox/up.sh --tag "${{ matrix.superset }}" 8098
       - name: Kitchen-sink apply + slice-id stability
-        run: python tools/ci_live_check.py --base-url http://localhost:8098
+        run: python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/kitchen_sink.json
+      # The display and dashboard controls fixtures, pointed at Superset's
+      # example data, so every chart and filter control applies for real.
+      - name: Display-controls apply + slice-id stability
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_display_controls.json
+      - name: Dashboard-controls apply + slice-id stability
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
       - name: Lifecycle soak (25 cycles)
         run: python tools/soak.py --base-url http://localhost:8098 --cycles 25 --seed 7
       - name: Second-writer adversary

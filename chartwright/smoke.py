@@ -17,9 +17,9 @@ import math
 from dataclasses import dataclass
 
 from .client import SupersetClient
-from .compiler import _metric_payload, mixed_time_axis, time_axis_column
+from .compiler import _metric_payload, mixed_time_axis, time_binding
 from .resolver import Resolution
-from .spec import GRID_HEADER_UNITS, DashboardSpec, grid_units_for_rows
+from .spec import DashboardSpec, grid_header, grid_units_for_rows
 
 
 def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
@@ -39,17 +39,21 @@ def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
         if not chart.rows:
             return None  # columns-only pivot: a single metric band, height-safe
         leaf = len({tuple(r.get(d) for d in chart.rows) for r in data})
-        header_units = GRID_HEADER_UNITS + (1 if chart.columns else 0)
-        what = f"pivot renders ~{leaf} leaf rows"
+        header, row = grid_header(chart)
+        what = f"pivot renders ~{leaf} leaf rows" + (" and its totals row" if chart.column_totals else "")
     else:
         leaf = len(data)  # already capped by the query's row_limit
-        header_units = GRID_HEADER_UNITS
+        header, row = grid_header(chart, leaf)
         what = f"table renders ~{leaf} rows"
+        if chart.page_length and leaf > chart.page_length:
+            # A paged table renders one page and its page controls (size.table-window's model).
+            leaf = chart.page_length
+            what = f"table renders a {chart.page_length}-row page and its pager"
     height = spec.resolved_height(chart.name)
     # Shared grid model (chartwright/spec.py): the design critic's
     # size.grid-fit and size.table-window read the same numbers, so pre-apply
     # advice and this post-apply warning can never contradict each other.
-    needed = grid_units_for_rows(leaf, header_units)
+    needed = grid_units_for_rows(leaf, header, row)
     if needed <= height:
         return None
     return (f"{what} (~{needed * 40:.0f}px) but height={height:g} ({height * 40:.0f}px): "
@@ -66,24 +70,38 @@ class SmokeResult:
 
 
 def _filters_payload(chart) -> list[dict]:
-    return [{"col": f.column, "op": f.op, "val": f.value} for f in chart.filters]
+    return [{"col": f.column, "op": f.op, "val": f.value} for f in chart.filters if f.sql is None]
+
+
+def _sql_where(chart) -> str | None:
+    """A chart's custom-SQL filters as the query's extra WHERE text (extras.where,
+    accepted by the chart data API in every supported release)."""
+    parts = [f"({f.sql})" for f in chart.filters if f.sql is not None]
+    return " AND ".join(parts) or None
+
+
+def _with_where(q: dict, chart) -> dict:
+    where = _sql_where(chart)
+    if where:
+        q["extras"]["where"] = where
+    return q
 
 
 def _with_time_range(q: dict, chart, ds) -> dict:
-    """The chart's own time_range, bound the way the compiled chart binds it: a
-    TEMPORAL_RANGE filter on a time axis (compiler.time_axis_column), else the
-    dataset's main time column as granularity. A chart without a time_range, or
-    without a binding, keeps the unfiltered query."""
-    time_range = getattr(chart, "time_range", None)
-    if not time_range:
+    """The chart's own time_range, bound the way the compiled chart binds it
+    (compiler.time_binding): a TEMPORAL_RANGE filter on a time axis, else the
+    dataset's main time column as granularity. A chart without a time_range
+    keeps the unfiltered query."""
+    binding = time_binding(chart, ds) if chart.time_range else None
+    if binding is None:
         return q
-    axis = time_axis_column(chart, ds)
-    if axis:
-        q["time_range"] = time_range
-        q["filters"] = q["filters"] + [{"col": axis, "op": "TEMPORAL_RANGE", "val": time_range}]
-    elif ds.main_dttm_col:
-        q["time_range"] = time_range
-        q["granularity"] = ds.main_dttm_col
+    kind, column = binding
+    q["time_range"] = chart.time_range
+    if kind == "axis":
+        q["filters"] = q["filters"] + [
+            {"col": column, "op": "TEMPORAL_RANGE", "val": chart.time_range}]
+    else:
+        q["granularity"] = column
     return q
 
 
@@ -150,7 +168,7 @@ def _query_for(chart, spec: DashboardSpec) -> dict:
     elif t == "treemap":
         q["metrics"] = [metric(chart.metric)]
         q["columns"] = list(chart.groupby)
-    return q
+    return _with_where(q, chart)
 
 
 def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
@@ -159,7 +177,7 @@ def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
          if mixed_time_axis(chart, ds) else chart.x_column)
     out = []
     for series in (chart.a, chart.b):
-        out.append({
+        out.append(_with_where({
             "filters": _filters_payload(chart),
             "extras": {"time_grain_sqla": chart.time_grain or "P1D"},
             "time_range": "No filter",
@@ -167,7 +185,7 @@ def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
             "columns": [x] + ([series.groupby] if series.groupby else []),
             "metrics": [_metric_payload(m, spec.dashboard.slug, chart.name) for m in series.metrics],
             "orderby": [],
-        })
+        }, chart))
     return out
 
 

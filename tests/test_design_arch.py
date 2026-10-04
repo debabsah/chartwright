@@ -88,7 +88,13 @@ def test_golden_dogfood_example_advises_clean():
         (Path(__file__).parent.parent / "examples" / "nyc_taxi_operations.json")
         .read_text(encoding="utf-8"))
     rep = advise(load_spec(example), overlay=EMPTY)
-    assert rep.findings == [], [f.key for f in rep.findings]
+    # The example is the spec behind the README screenshot, kept as the AI wrote it,
+    # so the design defaults brain 5 offers are pending fills. Nothing else fires,
+    # and once advise --fix writes the fills nothing is left at all.
+    assert [f.key for f in rep.findings if f.kind != "fill"] == []
+    fixed, rep2 = advise_and_fix(example, overlay=EMPTY)
+    assert rep2.findings == [], [f.key for f in rep2.findings]
+    assert rep2.fixed and {e["kind"] for e in rep2.fixed} == {"fill"}
 
 
 def test_advise_never_raises_on_mutated_specs():

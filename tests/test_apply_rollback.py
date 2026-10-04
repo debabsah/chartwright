@@ -57,7 +57,7 @@ class StubClient:
 def flow(monkeypatch, tmp_path):
     """Isolate apply's orchestration: resolution, compile and restore stubbed."""
     monkeypatch.setenv("CHARTWRIGHT_BACKUP_DIR", str(tmp_path))
-    monkeypatch.setattr(ap, "resolve", lambda spec, client: Resolution())
+    monkeypatch.setattr(ap, "resolve", lambda spec, client, *_: Resolution())
     monkeypatch.setattr(ap, "_ownership_guard", lambda spec, client: None)
     monkeypatch.setattr(ap, "_roundtrip_dataset_files", lambda res, client: {})
     monkeypatch.setattr(ap, "compile_bundle", lambda spec, res, extra_files=None: b"bundle")

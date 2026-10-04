@@ -35,9 +35,9 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (384 tests, 39 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (980 tests, 53 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
-| Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
+| Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
 | Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every PR and push to main, all 3 versions |
 | Fault injection | A typed failure at every stage boundary; complete restore | every PR and push to main, all 3 versions |
@@ -81,13 +81,36 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   **backup layout** (`test_backup_layout.py`: backups are separated per
   profile and the location override is honored), plus dedicated suites for
   pivot formatting, range filters, layout sketches, and absorb.
+- **Dashboard and filter controls** (`test_dashboard_settings.py`,
+  `test_chart_metadata.py`, `test_annotations.py`, `test_filter_controls.py`,
+  `test_sql_metrics.py`, `test_layout_headers.py`): each setting compiles to
+  the shape Superset saves, compiles to the earlier output when omitted,
+  decompiles back, shows up in `plan` when changed live, and names a bad
+  value.
+- **Release-specific fields** (`test_superset_version.py`): with the
+  instance's answer mocked, `check`, `apply` and `plan` refuse tags before
+  6.0.0 and chart timestamps before 6.1.0 ahead of any write, warn for the
+  fields older releases ignore, and read the version from `/version` (6.1.0)
+  or the sign-in page (4.1.4, 5.0.0); `compile --superset-version` gives
+  the same answers and the same bundle.
 - **The design brain** (`test_design*.py`, `test_calibrate.py`,
   `test_redesign.py`): every rule table-driven against violating and clean
   specs; fix-loop convergence, idempotence, and the no-fractional-heights
   invariant; a seeded advise-never-raises fuzz; the chart-type taxonomy
   contract; design.yaml trust-boundary validation; the golden dogfood
-  (the shipped example advises clean); calibration grouping, decay, and
-  overlay round-trips.
+  (the shipped example raises nothing but pending design defaults, and
+  nothing at all once `--fix` writes them); calibration grouping, decay,
+  and overlay round-trips.
+- **Design defaults** (`test_design_defaults.py`): each `default.*` fill
+  fires where its conditions hold and nowhere else, never touches a field
+  the author wrote (a written Superset default included), keeps its own
+  fills current through the values `design.filled` records, keeps an
+  author's edit to a filled value, never refills a deleted one, and never
+  writes Superset's own value. Filling every
+  fixture converges, a second `--fix` is a no-op, a paged table never
+  ratchets `size.table-window` across heights 6-20, fills never write
+  geometry or a field a repair writes, and a fixed spec compiles to the
+  same bundle as the same fields with no `design` block.
 
 ## 2. Chart options, checked against plugin source
 
@@ -95,7 +118,7 @@ Superset's backend has no schema for chart options; each chart type's
 options are defined only by its frontend plugin. The file
 `tools/contracts/params-contract.json` holds the option names for the 13
 emitted chart types, extracted from plugin source at each supported
-release, and `tools/params_drift.py` (run by `test_params_contract.py`)
+release (the Mixed Chart's by `tools/extract_mixed_contract.py`), and `tools/params_drift.py` (run by `test_params_contract.py`)
 fails the build if the compiler ever emits an option a target release does
 not declare. Current status: clean against all three releases; the single
 tool-owned key (`sdc_categorical_bar`) is allowlisted with its rationale
@@ -113,7 +136,14 @@ apply of the complete example spec (`tests/fixtures/kitchen_sink.json`),
 which exercises all 15 chart types, per-chart WHERE filters, a native
 filter bar with two value pickers and a time range, plus markdown and tabs.
 (A numeric range filter scoped to specific charts is exercised live by the
-second-writer and fault-injection runs.) Then a per-chart data check: each
+second-writer and fault-injection runs.) The same check then runs on two
+more specs, `tests/fixtures/live_display_controls.json` (every chart display
+control: legends, axis titles and bounds, stacking, labels, table and pivot
+options) and `tests/fixtures/live_dashboard_controls.json` (dashboard
+settings, colour schemes, goal lines, layout headers, cascading and
+pre-filtered native filters, time grain and time column filters). They are
+the offline display and dashboard controls fixtures pointed at Superset's
+example data. Each apply is followed by a per-chart data check: each
 chart's query, over the chart's own time range, must return HTTP 200 and
 rows; an empty chart is a named
 warning, never a silent pass. Finally a second apply of the same spec,
@@ -233,7 +263,9 @@ python tools/params_drift.py --all         # chart options vs plugin source, 3 v
 
 # live (any sandbox; sandbox/up.sh --tag <v> boots one)
 export SDC_CI_PASSWORD=admin
-python tools/ci_live_check.py --base-url http://localhost:8098
+python tools/ci_live_check.py --base-url http://localhost:8098   # kitchen sink
+python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_display_controls.json
+python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
 python tools/soak.py       --base-url http://localhost:8098 --cycles 500 --seed 1
 python tools/adversary.py  --base-url http://localhost:8098
 python tools/faultline.py  --base-url http://localhost:8098
@@ -250,7 +282,10 @@ Stated plainly, so the green above means something:
   SSO or OAuth sign-in. CI signs in with a database login; LDAP and Preset
   sign-in aren't tested live.
 - **Versions**: 4.1.4, 5.0.0, and 6.1.0 exactly; other release lines are
-  untested.
+  untested. 6.0.x is not in the tested matrix: the release-specific fields
+  are placed at 6.0.0 or 6.1.0 from the 6.0.0 source, never from a running
+  6.0.x. Reading the instance's version is tested against responses shaped
+  like each release's source, not yet against the live containers.
 - **Concurrency**: the second-writer harness scripts the known stale-tab
   patterns; arbitrary multi-writer races are not exhaustively explored.
 - **Permissions**: all verification runs as an admin. Restricted roles

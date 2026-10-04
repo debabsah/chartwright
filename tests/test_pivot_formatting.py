@@ -129,7 +129,11 @@ def test_decompile_roundtrip_helpers():
                                 "targetValueLeft": 1.0, "targetValueRight": 1.25}) == \
             {"metric": "% of Goal", "operator": "between", "color": "amber",
              "target_left": 1.0, "target_right": 1.25}
-    assert _format_to_spec({"column": "% of Goal", "colorScheme": "#123456",
+    # any other hex reads back as itself (upper case); a non-hex is outside the surface
+    assert _format_to_spec({"column": "% of Goal", "colorScheme": "#12ab56",
+                            "operator": "<", "targetValue": 1.0}) == \
+        {"metric": "% of Goal", "operator": "<", "color": "#12AB56", "target": 1.0}
+    assert _format_to_spec({"column": "% of Goal", "colorScheme": "rgba(0,0,0,1)",
                             "operator": "<", "targetValue": 1.0}) is None
     assert _format_to_spec({"column": "% of Goal", "colorScheme": "#ACE1C4",
                             "operator": "≤", "targetValue": 1.0}) is None

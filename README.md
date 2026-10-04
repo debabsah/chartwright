@@ -67,7 +67,7 @@ own specs do.
   `python install-skill.py`; the model writes the spec from your request, and
   the tool verifies and builds it.
 - **MCP server**: `chartwright-mcp` (installed with `pip install "chartwright[mcp]"`)
-  exposes ten tools covering the whole lifecycle, usable from any MCP client.
+  exposes eleven tools covering the whole lifecycle, usable from any MCP client.
 - **Open contract**: `chartwright schema` prints the spec's JSON Schema, so any LLM or
   tool can generate valid specs.
 - **Guardrails**: the AI proposes; the tool verifies, using your own Superset

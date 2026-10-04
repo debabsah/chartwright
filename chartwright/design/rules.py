@@ -18,10 +18,16 @@ import re
 from datetime import date
 
 from ..spec import (
+    DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
-    GRID_HEADER_UNITS,
+    SUPERSET_COLOR_SCHEMES,
+    HeaderBlock,
+    _ColorSchemeMixin,
+    grid_header,
     grid_rows_visible,
     grid_units_for_rows,
+    row_items,
+    without_superset_defaults,
 )
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 
@@ -136,26 +142,60 @@ def heatmap_geometry(ctx: RuleContext):
             )
 
 
+def _table_page(c) -> int | None:
+    """Rows on one page of a paged table (page_length > 0), never more than row_limit;
+    None when every row is on one page."""
+    if not getattr(c, "page_length", None):
+        return None
+    return min(c.page_length, c.row_limit) if c.row_limit else c.page_length
+
+
+def _brain_page(ctx: RuleContext, c) -> bool:
+    """The page is default.page-length's own fill (the value design.filled records for
+    it). That page follows the height, so a sizing rule must not raise the
+    height to fit a stale one: the fill phase refreshes it to the panel instead. The
+    rule still REPORTS a page that doesn't fit, without a height fix: brain output must
+    never silence a rule (the v2 echo chamber), and a stale page whose fill is ignored
+    would otherwise pass unseen."""
+    return ctx.brain_owns(c, "page_length")
+
+
 @rule("size.table-window", "warn", "a table's height should show a meaningful share of its row_limit")
 def table_window(ctx: RuleContext):
     for c in ctx.spec.charts:
-        if c.type != "table" or c.row_limit is None:
+        if c.type != "table" or (c.row_limit is None and not c.page_length):
             continue
         h = ctx.height(c.name)
-        # Same grid model as size.grid-fit and apply-time smoke: offline this
-        # can only reason about row_limit (the ceiling), where grid-fit probes
-        # the real count -- but both now measure a row the same way, so they
-        # can no longer give one chart contradictory verdicts.
-        visible = grid_rows_visible(h)
-        want = ctx.params.table_visible_ratio * c.row_limit
+        # Same grid model as size.grid-fit, the fills and apply-time smoke (spec.py):
+        # offline this can only reason about row_limit (the ceiling), where grid-fit
+        # probes the real count, but all of them measure a table the same way. The
+        # header counts the search bar, the page-size bar and the pager the chart draws.
+        header, row = grid_header(c, c.row_limit)
+        visible = grid_rows_visible(h, header, row)
+        # Whole rows, rounded down: rounding 6.67 up once told a 6-row page it showed
+        # ~7 rows while asking for more height (the pager was what didn't fit).
+        fits = f"table at {h:g} units fits {math.floor(visible)} full rows"
+        page = _table_page(c)
+        if page is not None:
+            # A paged table shows one page at a time, plus its page controls: the whole
+            # page should fit, but rows beyond it are a click away, not a scroll.
+            want = page
+            shown = f"{fits} beside its page controls, short of its {page}-row page"
+        else:
+            want = ctx.params.table_visible_ratio * c.row_limit
+            shown = f"{fits} of its {c.row_limit}"
         if visible < want:
+            brain = page is not None and _brain_page(ctx, c)
+            target = grid_units_for_rows(want, header, row)
             yield Finding(
                 "size.table-window", "warn", c.name, ctx.where(c.name),
-                f"table shows ~{visible:.0f} of {c.row_limit} rows at {h:g} units "
-                f"(a scroll dungeon); raise height to "
-                f"~{math.ceil(grid_units_for_rows(want))} or lower row_limit",
-                fix=ctx.fix_height(c, math.ceil(grid_units_for_rows(want)))
-                if grid_units_for_rows(want) <= 20 else None,
+                f"{shown} (a scroll dungeon); "
+                + ("the page is a design default: advise --fix refits it to the panel"
+                   if brain else
+                   f"raise height to ~{math.ceil(target)} or "
+                   + ("lower page_length" if page is not None else "lower row_limit")),
+                fix=ctx.fix_height(c, math.ceil(target))
+                if target <= 20 and not brain else None,
                 height_driven=True,
             )
 
@@ -184,17 +224,19 @@ def pivot_window(ctx: RuleContext):
         if c.type != "pivot_table" or c.row_limit is None:
             continue
         h = ctx.height(c.name)
-        header = GRID_HEADER_UNITS + (1 if c.columns else 0)  # nested column headers cost one more
-        visible = grid_rows_visible(h, header)
+        # Header rows per column dimension, the horizontal-scrollbar allowance and the
+        # pinned totals row: the shared grid model (spec.py), the one smoke reads.
+        header, row = grid_header(c)
+        visible = grid_rows_visible(h, header, row)
         want = ctx.params.table_visible_ratio * c.row_limit
         if visible < want:
+            target = grid_units_for_rows(want, header, row)
             yield Finding(
                 "size.pivot-window", "warn", c.name, ctx.where(c.name),
-                f"pivot shows ~{visible:.0f} of {c.row_limit} rows at {h:g} units "
+                f"pivot shows ~{math.floor(visible)} of {c.row_limit} rows at {h:g} units "
                 f"({header:g} header units); raise height to "
-                f"~{math.ceil(grid_units_for_rows(want, header))} or lower row_limit",
-                fix=ctx.fix_height(c, math.ceil(grid_units_for_rows(want, header)))
-                if grid_units_for_rows(want, header) <= 20 else None,
+                f"~{math.ceil(target)} or lower row_limit",
+                fix=ctx.fix_height(c, math.ceil(target)) if target <= 20 else None,
                 height_driven=True,
             )
 
@@ -210,9 +252,9 @@ def grid_fit(ctx: RuleContext):
         return
     for c in ctx.spec.charts:
         if c.type == "pivot_table" and len(c.rows) == 1:
-            dim, extra_header = c.rows[0], (1 if c.columns else 0)
+            dim = c.rows[0]
         elif c.type == "table" and (c.groupby or []) and len(c.groupby) == 1 and not c.columns:
-            dim, extra_header = c.groupby[0], 0
+            dim = c.groupby[0]
         else:
             continue
         ds = ctx.dataset_for(c)
@@ -223,17 +265,24 @@ def grid_fit(ctx: RuleContext):
         if n is None:
             continue
         n = min(n, cap)
-        # Shared grid model (chartwright/spec.py), same numbers smoke uses.
-        needed = math.ceil(grid_units_for_rows(n, GRID_HEADER_UNITS + extra_header))
+        # Shared grid model (chartwright/spec.py), same numbers smoke uses: the
+        # header counts the controls, pager, header rows and totals the chart draws.
+        header, row = grid_header(c, n)
+        page = _table_page(c) if c.type == "table" else None
+        if page is not None:
+            n = min(n, page)  # one page (its pager is in the header), not every row
+        needed = math.ceil(grid_units_for_rows(n, header, row))
         h = ctx.height(c.name)
         if needed <= h:
             continue
+        # A brain-filled page follows the height: report, but leave the fix to the fill.
+        brain = page is not None and _brain_page(ctx, c)
         yield Finding(
             "size.grid-fit", "warn", c.name, ctx.where(c.name),
             f"{dim!r} yields ~{n} rendered rows needing ~{needed} units; height {h:g} "
             f"hides the tail behind an inner scrollbar -- and row counts grow with the "
             f"data, so this only gets worse",
-            fix=ctx.fix_height(c, needed) if needed <= 20 else None,
+            fix=ctx.fix_height(c, needed) if needed <= 20 and not brain else None,
             height_driven=True,
         )
 
@@ -414,17 +463,18 @@ def orphan_chart(ctx: RuleContext):
                 )
 
 
-@rule("layout.section-headers", "info", "large flat dashboards need markdown signposts")
+@rule("layout.section-headers", "info", "large flat dashboards need section headers (header rows or markdown)")
 def section_headers(ctx: RuleContext):
     body = ctx.body_sections
     if len(body) != 1 or body[0].mode != "rows" or body[0].title:
         return
     n = len(ctx.spec.charts)
     has_md = any(i.is_markdown for b in body[0].bands for i in b.items)  # a footer note is no signpost
+    has_md = has_md or any(isinstance(r, HeaderBlock) for r in ctx.spec.layout.rows or [])
     if n > 8 and not has_md:
         yield Finding(
             "layout.section-headers", "info", None, "layout",
-            f"{n} charts with no markdown section headers; readers need signposts "
+            f"{n} charts with no section headers (header rows or markdown); readers need signposts "
             f"(or split into tabs)",
         )
 
@@ -438,20 +488,35 @@ def vbar_categories(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type != "bar" or c.orientation != "vertical":
             continue
+        if c.category_sort and c.x_label_every:
+            # An ordered axis (hours, ranks) reads as a sequence left to right, and every
+            # label is drawn: flipping it to a ranked horizontal list would lose the order.
+            continue
         rl = c.row_limit
         if rl is not None and rl <= p.vbar_max_categories:
             continue
         if ctx.prober is not None and (ds := ctx.dataset_for(c)):
             if ctx.prober.more_than(ds, c.x_column, p.vbar_max_categories) is False:
                 continue  # the data itself stays under the label limit
+        lead = (f"vertical bar with row_limit {rl}" if rl is not None
+                else "vertical bar with no row_limit (defaults to 10,000)")
+        if c.category_sort:
+            # Sorted by category, the bars are a sequence, not a ranking: keep them
+            # vertical and draw every label instead.
+            yield Finding(
+                "chart.vbar-categories", "warn", c.name, ctx.where(c.name),
+                f"{lead}: Superset drops category labels past ~{p.vbar_max_categories}; "
+                "these bars are sorted by category, so set x_label_every to draw every "
+                "label (Superset 6.1+), or cap the row_limit",
+                fix={"chart": c.name, "set": {"x_label_every": True}},
+            )
+            continue
         fix = ({"chart": c.name, "set": {"orientation": "horizontal"}}
                if rl is not None and rl <= 15 else None)
         yield Finding(
             "chart.vbar-categories", "warn", c.name, ctx.where(c.name),
-            (f"vertical bar with row_limit {rl}" if rl is not None
-             else "vertical bar with no row_limit (defaults to 10,000)")
-            + f": Superset drops category labels past ~{p.vbar_max_categories}; "
-              "flip to horizontal and cap around 10",
+            lead + f": Superset drops category labels past ~{p.vbar_max_categories}; "
+                   "flip to horizontal and cap around 10",
             fix=fix,
         )
 
@@ -486,6 +551,8 @@ def series_limit(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type not in TIMESERIES_TYPES or not c.groupby:
             continue
+        if c.series_limit is not None and c.series_limit <= ctx.params.series_max:
+            continue  # series_limit already keeps the top few
         ds = ctx.dataset_for(c)
         if ds is None:
             continue
@@ -493,7 +560,8 @@ def series_limit(ctx: RuleContext):
             yield Finding(
                 "chart.series-limit", "warn", c.name, ctx.where(c.name),
                 f"groupby {c.groupby!r} has more than {ctx.params.series_max} values: "
-                f"a line per value is spaghetti; filter to the top few or use a coarser dimension",
+                f"a line per value is spaghetti; set series_limit to keep the top "
+                f"{ctx.params.series_max}, filter, or use a coarser dimension",
             )
 
 
@@ -650,12 +718,13 @@ def format_bands(ctx: RuleContext):
             lo, hi = ((r.target_left, r.target_right) if r.operator == "between"
                       else (float("-inf"), r.target) if r.operator == "<"
                       else (r.target, float("inf")))
-            by_metric.setdefault(r.metric, []).append((lo, hi, r.color))
+            # compared by the shade painted, so "green" and its own hex agree
+            by_metric.setdefault(r.metric, []).append((lo, hi, r.color, r.paint_hex()))
         for metric, bands in by_metric.items():
             for i in range(len(bands)):
                 for j in range(i + 1, len(bands)):
-                    (a0, a1, ca), (b0, b1, cb) = bands[i], bands[j]
-                    if a0 < b1 and b0 < a1 and ca != cb:
+                    (a0, a1, ca, ha), (b0, b1, cb, hb) = bands[i], bands[j]
+                    if a0 < b1 and b0 < a1 and ha != hb:
                         yield Finding(
                             "chart.format-bands", "warn", c.name, ctx.where(c.name),
                             f"metric {metric!r}: {ca} and {cb} bands overlap "
@@ -687,7 +756,16 @@ def ordinal_order(ctx: RuleContext):
 
     for c in ctx.spec.charts:
         hits = [d for d in dims(c) if d and _ORDINAL_RE.search(d)]
-        if hits:
+        if hits and c.type == "bar" and not c.category_sort:
+            # A bar sorts by its first metric unless category_sort is set, so an
+            # order-encoded label alone changes nothing.
+            yield Finding(
+                "chart.ordinal-order", "info", c.name, ctx.where(c.name),
+                f"{hits} look ordinal but these bars sort by their first metric; set "
+                f"category_sort \"asc\", over an order-encoded label column (e.g. '1-Mon') "
+                f"if the dataset has one, since Superset sorts labels alphabetically",
+            )
+        elif hits:
             yield Finding(
                 "chart.ordinal-order", "info", c.name, ctx.where(c.name),
                 f"{hits} look ordinal but Superset sorts categories alphabetically "
@@ -717,7 +795,8 @@ def treemap_vs_bar(ctx: RuleContext):
 @rule("chart.dupe", "info", "two charts answering the identical question is redundancy")
 def chart_dupe(ctx: RuleContext):
     seen: dict[str, str] = {}
-    for c in ctx.spec.charts:
+    # A written Superset default (legend at the top) is the same chart as an omitted one.
+    for c in without_superset_defaults(ctx.spec).charts:
         fp = json.dumps(c.model_dump(exclude={"name", "width", "height"}),
                         sort_keys=True, default=str)
         if fp in seen:
@@ -761,6 +840,18 @@ def top_n_sort(ctx: RuleContext):
                 "data.top-n-sort", "warn", c.name, ctx.where(c.name),
                 f"row_limit {c.row_limit} with no sort_by shows {c.row_limit} ARBITRARY "
                 f"rows, not a top {c.row_limit}; set sort_by to the ranking metric",
+            )
+        elif (c.type == "bar" and c.category_sort and c.series_limit is not None
+                and c.row_limit is not None and c.row_limit < DEFAULT_ROW_LIMIT["bar"]):
+            # One "Sort query by" control (timeseries_limit_metric) ranks the series and
+            # orders the query (buildQueryObject.ts, normalizeOrderBy.ts), so with a
+            # series limit the query can't also be ordered by the category.
+            yield Finding(
+                "data.top-n-sort", "warn", c.name, ctx.where(c.name),
+                f"row_limit {c.row_limit} with category_sort and series_limit keeps the "
+                f"{c.row_limit} largest values, not the first categories: Superset orders "
+                "the query by the series ranking, so the axis shows gaps; drop row_limit, "
+                "or drop series_limit so the query is ordered by the category",
             )
 
 
@@ -849,12 +940,13 @@ def trend_grain(ctx: RuleContext):
     if not _unwindowed(ctx):
         return
     for c in ctx.spec.charts:
-        if c.type == "big_number_trend" and c.time_grain in _FINE_GRAINS:
+        # A trend with its own time_range is bounded whatever the dashboard does.
+        if c.type == "big_number_trend" and c.time_grain in _FINE_GRAINS and not c.time_range:
             yield Finding(
                 "chart.trend-grain", "info", c.name, ctx.where(c.name),
                 f"sparkline at grain {c.time_grain or 'P1D (default)'} with no defaulted "
-                f"dashboard time window draws full history daily; coarsen to P1W/P1M or "
-                f"give the time_range filter a default",
+                f"dashboard time window draws full history daily; coarsen to P1W/P1M, "
+                f"give the chart a time_range, or give the time_range filter a default",
             )
 
 
@@ -937,8 +1029,13 @@ def title_style(ctx: RuleContext):
 
 @rule("narrative.big-number-format", "info", "hero numbers deserve a number format")
 def big_number_format(ctx: RuleContext):
+    from .defaults import FILLS  # function-level: defaults imports this module
+
+    counts = FILLS["default.count-format"]
     for c in ctx.spec.charts:
         if c.type in KPI_TYPES and c.number_format is None:
+            if counts.decide(ctx, c)[0] is not None:
+                continue  # default.count-format offers this remedy with a fix; one finding
             yield Finding(
                 "narrative.big-number-format", "info", c.name, ctx.where(c.name),
                 "no number_format: raw float precision on a hero number; ',.0f' or '.3s' read better",
@@ -1064,6 +1161,26 @@ def format_consistency(ctx: RuleContext):
             )
 
 
+@rule("narrative.color-scheme", "warn",
+      "a colour scheme Superset doesn't ship draws the default palette unless your deployment registers it",
+      since="4")
+def color_scheme(ctx: RuleContext):
+    known = set(SUPERSET_COLOR_SCHEMES)
+    named = [(None, "dashboard", ctx.spec.dashboard.color_scheme)]
+    # A heatmap's color_scheme is a sequential scheme the schema already limits.
+    named += [(c.name, ctx.where(c.name), c.color_scheme) for c in ctx.spec.charts
+              if isinstance(c, _ColorSchemeMixin)]
+    for chart, where, scheme in named:
+        if scheme and scheme not in known:
+            near = [k for k in SUPERSET_COLOR_SCHEMES if k.lower() == scheme.lower()]
+            hint = f"; did you mean {near[0]!r}?" if near else (
+                "; fine if your deployment registers it (EXTRA_CATEGORICAL_COLOR_SCHEMES)")
+            yield Finding(
+                "narrative.color-scheme", "warn", chart, where,
+                f"color_scheme {scheme!r} is not one Superset ships{hint}",
+            )
+
+
 @rule("layout.markdown-height", "info", "a one-line markdown header doesn't need a chart-sized block", fixable=True, since="2")
 def markdown_height(ctx: RuleContext):
     # Operates on the raw layout indices so the fix can address the block
@@ -1084,7 +1201,8 @@ def markdown_height(ctx: RuleContext):
         sources.append(("footer", "footer", lay.footer))
     for addr, label, rows in sources:
         for ri, row in enumerate(rows):
-            for ii, item in enumerate(row):
+            # ri indexes the raw rows (headers and dividers included): the fix reads the same list.
+            for ii, item in enumerate(row_items(row) or []):
                 if isinstance(item, str):
                     continue
                 lines = [l for l in item.markdown.splitlines() if l.strip()]

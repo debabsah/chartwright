@@ -39,13 +39,20 @@ class ApplyReport:
     backup: str | None = None
     smoke_results: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # The Superset release the spec was held to, and the fields it ignores
+    # (chartwright.versions); set only when the spec uses a version-gated field.
+    superset_version: str | None = None
+    version_warnings: list[dict] = field(default_factory=list)
+    # Custom SQL resolve could not check by name (Resolution.unchecked_sql); the
+    # data check runs it with the profile's rights, so the report says which.
+    unchecked_sql: list[dict] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
 
 
-def check(spec: DashboardSpec, client: SupersetClient) -> Resolution:
-    return resolve(spec, client)
+def check(spec: DashboardSpec, client: SupersetClient, superset_version: str | None = None) -> Resolution:
+    return resolve(spec, client, superset_version)
 
 
 def _ownership_guard(spec: DashboardSpec, client: SupersetClient) -> str | None:
@@ -151,6 +158,10 @@ def _roundtrip_dataset_files(resolution: Resolution, client: SupersetClient) -> 
     return extra
 
 
+# Chart fields beyond params that the spec owns (null when the spec omits them).
+CHART_PUT_FIELDS = ("description", "certified_by", "certification_details", "cache_timeout")
+
+
 def chart_payloads_from_bundle(bundle: bytes, dataset_ids: dict[str, int] | None = None) -> dict[str, dict]:
     """uuid -> ChartRestApi.put payload, from the compiled bundle's chart yamls.
 
@@ -176,6 +187,12 @@ def chart_payloads_from_bundle(bundle: bytes, dataset_ids: dict[str, int] | None
                 # params changed -> any stored query context is stale
                 "query_context": None,
             }
+            # The chart's own fields travel too: the importer never overwrites an
+            # existing chart, so without them a re-apply would leave a changed
+            # description or certification at its old value. ChartPutSchema takes
+            # each (allow_none) at 4.1.4, 5.0.0 and 6.1.0.
+            for key in CHART_PUT_FIELDS:
+                payload[key] = cy.get(key)
             ds_id = (dataset_ids or {}).get(str(cy.get("dataset_uuid")))
             if ds_id is not None:
                 payload["datasource_id"] = ds_id
@@ -321,11 +338,17 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
     return report
 
 
-def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default") -> ApplyReport:
+def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
+          superset_version: str | None = None) -> ApplyReport:
     report = ApplyReport(ok=False, stage="resolve")
 
-    resolution = resolve(spec, client)
+    # Resolution also holds the spec to the instance's Superset release, so a
+    # field that release can't take stops the apply here, before any write.
+    resolution = resolve(spec, client, superset_version)
     report.resolution_errors = [e.as_dict() for e in resolution.errors]
+    report.superset_version = resolution.superset_version
+    report.version_warnings = resolution.version_warnings
+    report.unchecked_sql = resolution.unchecked_sql
     if not resolution.ok:
         return report
 

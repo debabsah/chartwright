@@ -3,6 +3,163 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
+## Unreleased
+
+### Added
+
+- `dashboard.css`: the dashboard's CSS, the same thing as Superset's own "Edit CSS",
+  written into the import bundle's `css` field (which 4.1.4, 5.0.0 and 6.1.0 all import).
+  Decompiled (blank CSS reads back as omitted) and compared by `plan` (`css_changed`).
+  Spec-owned like the title: CSS edited in the UI shows up in `plan`, and `apply` replaces
+  it, as it always did when the spec had none.
+- Colour rules take any `#RRGGBB` besides `green` / `amber` / `red`, e.g.
+  `"color": "#0057B8"`, painted as written for cells and text alike (stored upper case).
+  The names keep their shades. Decompile reads a named shade for the rule's paint back as
+  its name and any other hex as itself, where it used to drop the rule as a loss.
+- Chart display options, each optional and written only when set, so an existing spec
+  builds the same bundle. All decompile back and show up in `plan` when changed in the UI.
+  - Axes on line, bar, area, scatter, categorical bar and mixed charts: `x_axis_title`,
+    `y_axis_title`, `y_axis_min`, `y_axis_max`, `y_axis_truncate` (fit the axis to the
+    data instead of including zero) and `y_axis_log`; a mixed chart's second axis takes
+    `y_axis_title_secondary`, `y_axis_min_secondary`, `y_axis_max_secondary` and
+    `y_axis_log_secondary`. A histogram takes the two titles.
+  - `show_value` (values on the bars or points), `stack` (`true`, or `"stream"` and
+    `"expand"` where the chart offers them), `only_total` and `contribution` (`"row"`
+    with `stack` is a 100 % stacked chart). A mixed chart's queries take `show_value`,
+    `stack` and `only_total` (6.0+) each.
+  - `series_limit`, `series_limit_metric` and `series_limit_ascending`: the top N series
+    of a `groupby`, on the timeseries charts, the categorical bar and each mixed query.
+  - `show_legend`, `legend_position` (`bottom`, `left`, `right`) and `legend_type`
+    (`plain`), on the timeseries, bar, mixed, pie and funnel charts; a heatmap takes
+    `show_legend`.
+  - `category_sort` (`"asc"` or `"desc"`) on a categorical bar: bars in the order of
+    their categories, such as hours, instead of by the first metric.
+  - `time_range` on every chart type, e.g. a "Last 30 days" KPI or table.
+  - Trendline KPIs: `compare_lag` and `compare_suffix` ("+4 % vs last month"),
+    `trend_color` (green, amber, red or `#RRGGBB`) and, on Superset 6.0+, `subtitle`.
+  - Tables: `page_length`, `show_totals`, `search_box`, and per label `column_align`,
+    `column_widths` and, on Superset 6.0+, `column_headers`.
+  - Pivots: `aggregate_function` (Average, Median, Sum as Fraction of Total, ...),
+    `row_order` and `column_order` (by label or by value), `row_subtotals`, `transpose`
+    and `metrics_layout`.
+  - Heatmaps: `show_values`, `color_scheme` (Superset's sequential schemes),
+    `number_format`, `show_percentage` and `normalize_across`. Pie, funnel and treemap:
+    `label_type` and `number_format`; pie also `show_total` and `labels_outside`.
+  - Line: `markers`, `marker_size`, `area` and `opacity`; area: `markers`, `marker_size`
+    and `opacity`; scatter: `marker_size`.
+- The design review knows the new options: a vertical bar sorted by category that labels
+  every category (hours, ranks) passes `chart.vbar-categories`, and the fix for one that
+  drops labels is `x_label_every`, not a flip to horizontal; a paged table needs room for
+  one page; `series_limit` quiets `chart.series-limit`; a trendline with its own
+  `time_range` quiets `chart.trend-grain`.
+- Dashboard settings in the spec: `color_scheme`, `description`, `certified_by`,
+  `certification_details`, `published` (`false` for a draft), `refresh_frequency`
+  (seconds), `filter_bar_orientation` (`"horizontal"` puts the bar above the charts; 4.1.4
+  and 5.0.0 need Superset's `HORIZONTAL_FILTER_BAR` flag), `tags` (Superset 6.0 or
+  later) and `show_chart_timestamps` (6.1 or later). `plan` names each one that differs
+  in a new `dashboard_settings_changed` list. Omitted `tags` are left alone by `apply`
+  and `plan` alike; `[]` clears them.
+- Chart settings: `color_scheme` (on the chart types whose panel has one), `description`
+  (viewers open it with "Show chart description"), `certified_by`,
+  `certification_details`, `cache_timeout`, `display_name` (a shorter title shown on the
+  dashboard card, Superset's `sliceNameOverride`) and `tags` (6.0 or later). A re-apply
+  updates description, certification and cache timeout on existing charts too.
+- `check`, `apply` and `plan` hold a spec to the instance's Superset release. When the
+  spec uses a release-specific field, they read the version (`/version` on 6.1, the
+  sign-in page on 4.1 and 5.0) and refuse `tags` before 6.0.0 and
+  `show_chart_timestamps` before 6.1.0 with a resolve-stage error, before anything is
+  written: `superset_version_too_old`, or `superset_version_unknown` when the instance
+  doesn't say. Fields older releases ignore (`x_label_every`, a trendline's `subtitle`,
+  `column_headers`, a stacked mixed query's totals-only labels) come back as
+  `version_warnings`. `--superset-version` (the MCP tools' `superset_version`) states
+  the release instead; `compile --superset-version` runs the same check offline.
+- A colour scheme name Superset doesn't ship gets a `narrative.color-scheme` warning (with
+  a did-you-mean for a case slip); a deployment's own registered schemes are accepted.
+- `annotations` on line, bar, area, scatter and mixed charts: goal and trend lines, as
+  Superset's FORMULA annotation layers, e.g. `{"name": "Goal", "value": 80, "style":
+  "dashed"}`, with colour, width and opacity. Decompile keeps formula layers and names
+  any other layer type as a loss, where it used to drop them silently.
+- Custom SQL metrics, `SQL(100.0 * SUM(a) / NULLIF(SUM(b), 0)) AS Rate`, anywhere a
+  metric goes, and custom SQL chart filters, `{"sql": "amount > 0 OR refunded"}`.
+  `check` cannot see the columns inside SQL, so it lists them under `unchecked_sql`, and
+  so do the `apply` report and the MCP `build_dashboard` payload: apply's data check runs
+  them with the profile's rights. UI-built SQL metrics and SQL filters now decompile,
+  where they used to be dropped as losses.
+- Native filter controls: `description` on every filter; `dependencies` (cascading, by
+  filter name); on value pickers `search_all_options`, `inverse_selection`,
+  `sort_metric`; on value pickers and sliders a pre-filter (`pre_filter` conditions, and
+  `time_range` with `time_column`); `charts` scoping on the time range picker; and two new
+  filter types, `time_grain` and `time_column`.
+- Layout: `{"header": "Revenue", "size": "large"}` and `{"divider": true}` entries between
+  rows (Superset nests headers and dividers beside rows, never inside one), and
+  `{"row": [...], "background": "white"}` for a row on a card.
+- Design defaults: `advise --fix` (MCP `fix_spec`) fills sensible values into display
+  fields the author left unset and writes them into the spec, where the diff shows them.
+  Nothing changes at compile time: compile, `plan` and decompile are as before, and a
+  spec that was never fixed builds the same bundle. Eight `default.*` rules, each an
+  `info` finding with a fix that `check` and `apply` list too:
+  - `x_label_format` from the time grain (`%b %Y` monthly, `%Y` yearly, `%d %b` daily
+    or weekly over 365 days or less);
+  - `compare_suffix` from the grain and `compare_lag` ("vs previous month");
+  - `,.0f` for charts whose metrics are all COUNT or COUNT_DISTINCT;
+  - on tables, `cell_bars: false` with id, code, year or zip columns, `page_length` set to
+    the rows that fit beside the page controls when an explicit `row_limit` outgrows the
+    panel, and `search_box` on raw tables of more than 20 rows when no row loses its
+    place to the search bar;
+  - `show_legend: false` on a single series the title names, `show_value` on a bar of 12
+    bars or fewer: at least half the page wide, or on a horizontal bar, tall enough to
+    space its labels.
+  None writes Superset's own value; the thresholds are audience parameters
+  (`search_min_rows`, `value_label_max_bars`, `value_label_min_width`, `page_min_rows`,
+  `day_label_max_span_days`), tunable in `design.yaml`. The grid and value-label numbers
+  were measured on rendered Superset 4.1.4, 5.0.0 and 6.1.0 (DESIGN-BRAIN §17).
+- `design.filled` records, per chart, each field `--fix` filled and the value it wrote.
+  While the chart still holds that value, `--fix` keeps it up to date as the chart changes
+  and removes it when it stops applying. A field you write is never touched. Edit a filled
+  value and it is yours; delete it and it stays deleted (`--fix` records null and fills it
+  no more, until you delete that record).
+- `chartwright explain <spec> [--chart NAME] [--json]`: per chart, each design-default
+  field's value, whether it came from the spec, a fill or Superset, the value
+  `design.filled` recorded, why, and how to change it. `advise --chart NAME` narrows a
+  review, or a `--fix`, to one chart. MCP: `advise_spec` takes `chart`, and the new
+  `explain_spec` tool returns the `explain --json` payload (eleven tools).
+
+### Changed
+
+- Each `fixed` entry from `advise --fix` and `fix_spec` gains `kind` (`"fill"`, `"repair"`,
+  or `"release"` when a fill passes to the author) and a `why` line. `redesign` still
+  applies repairs only and names `advise --fix` when fills are waiting. The brief and the
+  skill tell an AI author to leave design defaults unset, run `--fix` before building, and
+  edit the file it wrote. The design brain's version is now 5.
+- `narrative.big-number-format` no longer fires on a COUNT KPI, where
+  `default.count-format` offers the same fix.
+- `y_axis_max` now applies on Superset 4.1.4 and 5.0.0 as well as 6.1.0, and on every
+  chart with a value axis, not only lines. It was written into the ECharts Options,
+  which only 6.1.0 reads, and is now the axis bound every release reads
+  (`y_axis_bounds`). A dashboard built with the old form still decompiles to the same
+  `y_axis_max`; the next apply rewrites it.
+
+### Fixed
+
+- Tables and pivots that hid their last rows passed `size.table-window`,
+  `size.pivot-window`, `size.grid-fit` and the apply-time smoke warning. Their shared
+  grid model was a guess. It is now measured on rendered Superset 4.1.4, 5.0.0 and 6.1.0
+  (DESIGN-BRAIN §17), and counts what the old one missed:
+  - a search box;
+  - the page-size bar any `page_length` draws, and the pager's real height;
+  - pivot header rows and the pinned totals row;
+  - a horizontal scrollbar under a pivot with column dimensions.
+  So these checks now warn where they used to pass. For example, a 5-row pivot by month
+  at 8 units hid its last row, and a 10-row page at 12 units hides one on 6.1.0.
+- A table's page size can now be set: `page_length`. The bundle carried
+  `server_page_length: 10`, which Superset reads only with server pagination, so tables
+  never paged by it; that key still ships, unchanged, and does nothing.
+- The params contract's Mixed Chart entry listed only the keys the tool writes, so the
+  drift check could not see a Mixed control missing from a release. It now lists every
+  control the panel declares at 4.1.4, 5.0.0 and 6.1.0, and
+  `tools/extract_mixed_contract.py` extracts it from the plugin source (`--check` says
+  when the JSON no longer matches).
+
 ## 0.2.1 (2026-10-04)
 
 ### Fixed
@@ -13,6 +170,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
   - The next `apply` rewrites those charts, so both ranges work.
   - `plan` does not flag dashboards built with 0.2.0, so run `apply` on them even when
     `plan` is clean.
+- `apply`'s data check queried every chart over all dates. It now uses each chart's own
+  `time_range`, so a range that matches no rows shows up as an empty-chart warning.
 
 ## 0.2.0 (2026-10-03)
 
