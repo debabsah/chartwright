@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (392 tests, 40 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (394 tests, 41 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
@@ -95,7 +95,7 @@ Superset's backend has no schema for chart options; each chart type's
 options are defined only by its frontend plugin. The file
 `tools/contracts/params-contract.json` holds the option names for the 13
 emitted chart types, extracted from plugin source at each supported
-release, and `tools/params_drift.py` (run by `test_params_contract.py`)
+release (the Mixed Chart's by `tools/extract_mixed_contract.py`), and `tools/params_drift.py` (run by `test_params_contract.py`)
 fails the build if the compiler ever emits an option a target release does
 not declare. Current status: clean against all three releases; the single
 tool-owned key (`sdc_categorical_bar`) is allowlisted with its rationale
