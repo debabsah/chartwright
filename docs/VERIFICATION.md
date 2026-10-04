@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (700 tests, 50 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (860 tests, 51 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
@@ -98,8 +98,18 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   specs; fix-loop convergence, idempotence, and the no-fractional-heights
   invariant; a seeded advise-never-raises fuzz; the chart-type taxonomy
   contract; design.yaml trust-boundary validation; the golden dogfood
-  (the shipped example advises clean); calibration grouping, decay, and
-  overlay round-trips.
+  (the shipped example raises nothing but pending design defaults, and
+  nothing at all once `--fix` writes them); calibration grouping, decay,
+  and overlay round-trips.
+- **Design defaults** (`test_design_defaults.py`): each `default.*` fill
+  fires where its conditions hold and nowhere else, never touches a field
+  the author wrote (a written Superset default included), keeps its own
+  fills current through `design.filled` and hands a field over when the
+  author edits it, and never writes Superset's own value. Filling every
+  fixture converges, a second `--fix` is a no-op, a paged table never
+  ratchets `size.table-window` across heights 6-20, fills never write
+  geometry or a field a repair writes, and a fixed spec compiles to the
+  same bundle as the same fields with no `design` block.
 
 ## 2. Chart options, checked against plugin source
 
