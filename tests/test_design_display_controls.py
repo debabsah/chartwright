@@ -75,6 +75,26 @@ def test_a_paged_table_needs_room_for_one_page_not_every_row():
     assert _fired("size.table-window", [{**table, "page_length": 0}])
 
 
+def test_the_table_window_message_never_shows_more_rows_than_it_says_are_missing():
+    """At 8 units a table fits 6.67 rows; rounded, the warning read "shows ~7 rows of
+    its 6-row page" while asking for more height (the pager is what doesn't fit)."""
+    table = {"name": "T", "type": "table", "dataset": DS, "metrics": ["COUNT(*)"],
+             "groupby": ["c"], "sort_by": "COUNT(*)", "row_limit": 500, "height": 8,
+             "page_length": 6}
+    (f,) = _fired("size.table-window", [table])
+    assert "fits 6 full rows" in f.detail
+    assert "6-row page plus the pager needs 7 rows" in f.detail
+    assert "~9" in f.detail and "page_length" in f.detail
+    # Unpaged: whole rows, never rounded up past what fits.
+    (f,) = _fired("size.table-window", [{**table, "page_length": None, "row_limit": 20}])
+    assert "fits 6 full rows of its 20" in f.detail and "row_limit" in f.detail
+    for height in (4, 5, 6, 7, 8, 9, 10, 11, 12):
+        for page in (2, 5, 6, 8, 10, 12):
+            for f in _fired("size.table-window", [{**table, "height": height, "page_length": page}]):
+                fits = int(f.detail.split("fits ")[1].split(" ")[0])
+                assert fits < page + 1, f.detail
+
+
 def test_grid_fit_and_smoke_count_one_page_of_a_paged_table():
     table = {"name": "T", "type": "table", "dataset": DS, "metrics": ["COUNT(*)"],
              "groupby": ["c"], "sort_by": "COUNT(*)", "row_limit": 60, "height": 12}

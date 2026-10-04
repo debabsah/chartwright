@@ -163,19 +163,22 @@ def table_window(ctx: RuleContext):
         # the real count -- but both now measure a row the same way, so they
         # can no longer give one chart contradictory verdicts.
         visible = grid_rows_visible(h)
+        # Whole rows, rounded down: rounding 6.67 up once told a 6-row page it showed
+        # ~7 rows while asking for more height (the pager was what didn't fit).
+        fits = f"table at {h:g} units fits {math.floor(visible)} full rows"
         page = _table_page(c)
         if page is not None:
             # A paged table shows one page at a time, plus its pager: the whole page
             # should fit, but rows beyond it are a click away, not a scroll.
-            want, shown = page + _PAGER_ROWS, f"~{visible:.0f} rows of its {page}-row page"
+            want = page + _PAGER_ROWS
+            shown = f"{fits}; its {page}-row page plus the pager needs {want} rows"
         else:
             want = ctx.params.table_visible_ratio * c.row_limit
-            shown = f"~{visible:.0f} of {c.row_limit} rows"
+            shown = f"{fits} of its {c.row_limit}"
         if visible < want:
             yield Finding(
                 "size.table-window", "warn", c.name, ctx.where(c.name),
-                f"table shows {shown} at {h:g} units "
-                f"(a scroll dungeon); raise height to "
+                f"{shown} (a scroll dungeon); raise height to "
                 f"~{math.ceil(grid_units_for_rows(want))} or "
                 + ("lower page_length" if page is not None else "lower row_limit"),
                 fix=ctx.fix_height(c, math.ceil(grid_units_for_rows(want)))
