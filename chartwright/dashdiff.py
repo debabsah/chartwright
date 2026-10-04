@@ -83,6 +83,15 @@ class Plan:
         )
 
 
+def _normalize_tags(holder: dict) -> None:
+    """Tags compare as a set: Superset keeps no order for them. [] clears tags,
+    and Superset then exports none, so it compares equal to no tags."""
+    if holder.get("tags"):
+        holder["tags"] = sorted(holder["tags"])
+    else:
+        holder.pop("tags", None)
+
+
 def _normalize(spec: DashboardSpec) -> dict:
     """Canonical form for comparison: validated model dump with every
     compiler default materialized, so spec-with-defaults-omitted and
@@ -98,11 +107,9 @@ def _normalize(spec: DashboardSpec) -> dict:
         if chart["type"] in ("timeseries_line", "timeseries_bar", "timeseries_area",
                              "timeseries_scatter", "big_number_trend"):
             chart.setdefault("time_grain", DEFAULT_TIME_GRAIN)
-        if not chart.get("tags"):
-            chart.pop("tags", None)  # [] clears tags; Superset then exports none
+        _normalize_tags(chart)
     data["charts"].sort(key=lambda c: c["name"])
-    if not data["dashboard"].get("tags"):
-        data["dashboard"].pop("tags", None)
+    _normalize_tags(data["dashboard"])
 
     def norm_rows(model_rows, data_rows) -> None:
         for mrow, drow in zip(model_rows, data_rows):
