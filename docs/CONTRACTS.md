@@ -97,13 +97,49 @@ running the tool against real instances of all three releases.
 - **Options genuinely differ by release.** 6.1.0 renamed the big-number
   subtitle field (`subheader` became `subtitle`) and removed sort controls
   that older releases still have. The tool emits only options valid on all
-  three releases, with one named exception: an opt-in field documented with a
-  later release (`x_label_every`, "Superset 6.1.0+") may emit that release's
-  controls (`force_max_interval`, `xAxisLabelInterval`, 6.1.0
-  `Timeseries/Regular/*/controlPanel.tsx` and `MixedTimeseries/controlPanel.tsx`).
-  An older plugin never reads them, so an older Superset ignores them;
-  `tools/params_drift.py` lists them in `SINCE` and holds every other key to
-  every release.
+  three releases, with named exceptions. An opt-in field documented with a
+  later release may emit that release's controls: `x_label_every`
+  (`force_max_interval`, `xAxisLabelInterval`, 6.1.0
+  `Timeseries/Regular/*/controlPanel.tsx` and `MixedTimeseries/controlPanel.tsx`),
+  a trend's `subtitle` (`BigNumberWithTrendline/controlPanel.tsx`), a mixed
+  query's `only_total` (`only_total`, `only_totalB`), and a table's
+  `column_headers` (`customColumnName` inside `column_config`, read at 6.1.0
+  `plugin-chart-table/src/TableChart.tsx:859`). An older plugin never reads
+  them, so an older Superset ignores them; `tools/params_drift.py` lists them
+  in `SINCE`. The reverse also happens: a bar's category sort with several
+  series writes `x_axis_sort_series` for 4.1.4 and 5.0.0, which 6.1.0 no
+  longer declares and ignores (`UNTIL`). Every other key is held to every
+  release.
+- **A dashboard fills each missing chart option with the panel's default**
+  before drawing (`applyDefaultFormData`, 4.1.4/5.0.0
+  `src/dashboard/actions/hydrate.js:111`, 6.1.0
+  `src/dashboard/actions/hydrate.ts:168`). The panel
+  default is therefore what a chart shows when the spec omits a field, so the
+  spec's defaults match it: `only_total` and a heatmap's `show_percentage`
+  default to true, and the tool writes them only as false. Axis titles get an
+  explicit margin, because 6.1.0's default x-title margin is 0, which draws
+  the title over the tick labels.
+- **The value-axis bounds are the axis edges on every release.** The panel
+  says the bounds only widen the axis, but the Timeseries and Mixed plugins
+  hand `y_axis_bounds` to ECharts as the axis minimum and maximum
+  (`Timeseries/transformProps.ts` 4.1.4 `:427,510`, 5.0.0 `:426,510`, 6.1.0
+  `:677,951`; `MixedTimeseries/transformProps.ts` 4.1.4 `:361,534`, 6.1.0
+  `:421,728`), so `y_axis_min` and `y_axis_max` set where the axis ends. The
+  panel shows the bounds only while Truncate Y Axis is on; the tool writes
+  them without turning truncation on, so the side without a bound still
+  includes zero unless the spec sets `y_axis_truncate`.
+- **A table's page size is `page_length`.** Superset reads
+  `server_page_length` only with server pagination on, and `page_length`
+  otherwise (`plugin-chart-table/src/transformProps.ts`, 4.1.4 `:631`, 5.0.0
+  `:699`, 6.1.0 `:789`). The tool never turns server pagination on; the
+  `server_page_length` it has always written is Superset's stored default and
+  changes nothing. `page_length` in the spec sets the page.
+- **A bar sorts its categories two ways.** With one series the query sorts
+  on the x column (`operators/sortOperator.ts`, which skips any chart with a
+  groupby, 4.1.4 `:46`, 6.1.0 `:45`); with several series the plugin sorts
+  the x values by name, reading `x_axis_sort` at 6.1.0
+  (`Timeseries/transformProps.ts:335`) and `x_axis_sort_series` at 4.1.4 and
+  5.0.0 (`:243` at 4.1.4). `category_sort` writes whichever applies.
 - **On 4.1.4, heatmap and histogram exist twice** (a legacy plugin and a
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named

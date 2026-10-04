@@ -24,6 +24,16 @@ into one. Everything below works from that one file.
     - Solid colour rules on pivot and table cells: green, amber or red (Superset's own picker colours), or any hex colour such as `#0057B8`.
     - On Superset 6.1+, a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it.
     - Hidden table columns, a fixed ascending table sort, d3 number and date formats.
+- **Chart Options**: Set the common options of Superset's chart panels in the spec; an option changed in the UI shows up in `plan`.
+    - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own.
+    - Values written on bars and points, stacked series, 100% stacks, and the top N series of a breakdown.
+    - Legends hidden, or placed at the bottom, left or right.
+    - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value.
+    - A time range per chart, such as a "Last 30 days" KPI on a dashboard that shows all time.
+    - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.1+ a subtitle.
+    - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.1+ header names.
+    - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
+    - Heatmap values and colour scheme; what pie, funnel and treemap labels show, and their number format.
 - **Dashboard CSS**: `"css"` on the dashboard block holds what you would type into Superset's Edit CSS, so the styling is reviewed and versioned with the rest of the dashboard. CSS changed in the UI is drift that `plan` reports and `apply` replaces.
 - **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs.
 - **No Empty First Load**: New charts open on your full data range, so a narrow default time window never hides everything on the first paint. On a large dataset that full range is a lot to draw, so give the filter bar a time range with a default; `chartwright advise` tells you when a dashboard has nothing bounding its dates.

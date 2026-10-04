@@ -16,6 +16,59 @@ while the major version is 0, minor bumps may include breaking changes and say s
   `"color": "#0057B8"`, painted as written for cells and text alike (stored upper case).
   The names keep their shades. Decompile reads a named shade for the rule's paint back as
   its name and any other hex as itself, where it used to drop the rule as a loss.
+- Chart display options, each optional and written only when set, so an existing spec
+  builds the same bundle. All decompile back and show up in `plan` when changed in the UI.
+  - Axes on line, bar, area, scatter, categorical bar and mixed charts: `x_axis_title`,
+    `y_axis_title`, `y_axis_min`, `y_axis_max`, `y_axis_truncate` (fit the axis to the
+    data instead of including zero) and `y_axis_log`; a mixed chart's second axis takes
+    `y_axis_title_secondary`, `y_axis_min_secondary`, `y_axis_max_secondary` and
+    `y_axis_log_secondary`. A histogram takes the two titles.
+  - `show_value` (values on the bars or points), `stack` (`true`, or `"stream"` and
+    `"expand"` where the chart offers them), `only_total` and `contribution` (`"row"`
+    with `stack` is a 100 % stacked chart). A mixed chart's queries take `show_value`,
+    `stack` and `only_total` (6.1+) each.
+  - `series_limit`, `series_limit_metric` and `series_limit_ascending`: the top N series
+    of a `groupby`, on the timeseries charts, the categorical bar and each mixed query.
+  - `show_legend`, `legend_position` (`bottom`, `left`, `right`) and `legend_type`
+    (`plain`), on the timeseries, bar, mixed, pie and funnel charts; a heatmap takes
+    `show_legend`.
+  - `category_sort` (`"asc"` or `"desc"`) on a categorical bar: bars in the order of
+    their categories, such as hours, instead of by the first metric.
+  - `time_range` on every chart type, e.g. a "Last 30 days" KPI or table.
+  - Trendline KPIs: `compare_lag` and `compare_suffix` ("+4 % vs last month"),
+    `trend_color` (green, amber, red or `#RRGGBB`) and, on Superset 6.1+, `subtitle`.
+  - Tables: `page_length`, `show_totals`, `search_box`, and per label `column_align`,
+    `column_widths` and, on Superset 6.1+, `column_headers`.
+  - Pivots: `aggregate_function` (Average, Median, Sum as Fraction of Total, ...),
+    `row_order` and `column_order` (by label or by value), `row_subtotals`, `transpose`
+    and `metrics_layout`.
+  - Heatmaps: `show_values`, `color_scheme` (Superset's sequential schemes),
+    `number_format`, `show_percentage` and `normalize_across`. Pie, funnel and treemap:
+    `label_type` and `number_format`; pie also `show_total` and `labels_outside`.
+  - Line: `markers`, `marker_size`, `area` and `opacity`; area: `markers`, `marker_size`
+    and `opacity`; scatter: `marker_size`.
+- The design review knows the new options: a vertical bar sorted by category that labels
+  every category (hours, ranks) passes `chart.vbar-categories`, and the fix for one that
+  drops labels is `x_label_every`, not a flip to horizontal; a paged table needs room for
+  one page; `series_limit` quiets `chart.series-limit`; a trendline with its own
+  `time_range` quiets `chart.trend-grain`.
+
+### Changed
+
+- `y_axis_max` now applies on Superset 4.1.4 and 5.0.0 as well as 6.1.0, and on every
+  chart with a value axis, not only lines. It was written into the ECharts Options,
+  which only 6.1.0 reads, and is now the axis bound every release reads
+  (`y_axis_bounds`). A dashboard built with the old form still decompiles to the same
+  `y_axis_max`; the next apply rewrites it.
+
+### Fixed
+
+- A table's page size can now be set: `page_length`. The bundle carried
+  `server_page_length: 10`, which Superset reads only with server pagination, so tables
+  never paged by it; that key still ships, unchanged, and does nothing.
+- The params contract's Mixed Chart entry listed only the keys the tool writes, so the
+  drift check could not see a Mixed control missing from a release. It now lists every
+  control the panel declares at 4.1.4, 5.0.0 and 6.1.0.
 
 ## 0.2.0 (2026-10-03)
 
