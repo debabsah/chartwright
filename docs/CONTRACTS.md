@@ -88,11 +88,12 @@ running the tool against real instances of all three releases.
   (`tools/contracts/params-contract.json`), and CI fails if the tool ever
   emits an option a supported release does not declare
   (`tools/params_drift.py`).
-- **The `mixed_timeseries` entry lists the keys the tool emits**, each checked in
-  `plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx` at 4.1.4, 5.0.0 and
-  6.1.0 (query B's query keys take `_b`, its display keys `B`; the tooltip and
-  legend keys come from the shared sections). It is verified, not an exhaustive
-  extraction: a new key must be checked the same way before it is emitted.
+- **The `mixed_timeseries` entry lists every key the Mixed Chart panel declares**,
+  extracted from `plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx` at
+  4.1.4, 5.0.0 and 6.1.0 together with the shared sections it pulls in (title,
+  legend, tooltip, annotations, advanced analytics). Query B's query keys take
+  `_b` and its display keys `B`. 6.1.0 adds, among others, `only_total` and
+  `only_totalB`.
 - **Options genuinely differ by release.** 6.1.0 renamed the big-number
   subtitle field (`subheader` became `subtitle`) and removed sort controls
   that older releases still have. The tool emits only options valid on all
