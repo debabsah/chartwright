@@ -62,6 +62,20 @@ jobs:
       - name: Standards content apply + round trip
         if: ${{ !cancelled() }}
         run: python tools/ci_live_standards.py --base-url http://localhost:8098
+      # standards verify-visible in a headless Chromium: the locked footer shows, and
+      # CSS that turns it near-white is caught. Installing the browser is the optional
+      # part: if the install fails the check is skipped; once it is installed, a
+      # verify-visible regression fails the job.
+      - name: Install the visual extra (optional)
+        id: visual
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          pip install -e ".[visual]"
+          python -m playwright install --with-deps chromium
+      - name: Locked text visible on the rendered dashboard
+        if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
+        run: python tools/ci_live_visible.py --base-url http://localhost:8098
       - name: Lifecycle soak (25 cycles)
         run: python tools/soak.py --base-url http://localhost:8098 --cycles 25 --seed 7
       - name: Second-writer adversary

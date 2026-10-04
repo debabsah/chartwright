@@ -116,7 +116,7 @@ def calibrate(min_samples: int = 5, write: bool = False, since: str | None = Non
     report = {
         "stage": "calibrate", "ok": True, "events": len(events), "since": since,
         "proposals": proposals, "candidates": candidates, "written": False,
-        "overlay": str(overlay_path()),
+        "overlay": overlay_path().as_posix(),
     }
     if write and proposals:
         import yaml

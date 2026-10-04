@@ -85,6 +85,15 @@ GATED_FIELDS: tuple[GatedField, ...] = (
         _tags,
     ),
     GatedField(
+        "theme", "6.0.0", "error",
+        "rejects the import bundle, so the import fails: the dashboard import schema has no "
+        "theme field and the instance has no themes before 6.0.0",
+        "ImportV1DashboardSchema theme_uuid/theme_id at 6.0.0 dashboards/schemas.py:503-504 "
+        "and 6.1.0 :520-521; Dashboard.theme_id at 6.0.0 models/dashboard.py:139 and 6.1.0 "
+        ":140; absent at 4.1.4 and 5.0.0",
+        lambda spec: [None] if spec.dashboard.theme is not None else [],
+    ),
+    GatedField(
         "show_chart_timestamps", "6.1.0", "error",
         "imports it, then refuses every later save of the dashboard's settings (its "
         "metadata schema rejects the key), apply's filter-scope step included",

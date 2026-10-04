@@ -3,6 +3,9 @@ one-vote-per-chart hygiene; --write lands in the overlay that presets and
 fixes then honor."""
 
 import json
+from pathlib import Path
+
+import pytest
 
 from chartwright.design.calibrate import calibrate, log_path, record_absorb
 from chartwright.design.presets import load_overlay, params_for
@@ -106,3 +109,34 @@ def test_since_decay(monkeypatch, tmp_path):
     log_path().write_text("\n".join(_json.dumps(e) for e in old) + "\n", encoding="utf-8")
     assert calibrate(min_samples=1, since="90d")["events"] == 0
     assert calibrate(min_samples=1)["events"] == 5
+
+
+# -- paths print with forward slashes ---------------------------------------------------
+
+
+class _BackslashPath(type(Path())):
+    """A path that prints as Windows does, so a str(path) in a message shows here too."""
+
+    def __str__(self):
+        return super().__str__().replace("/", "\\")
+
+    def __fspath__(self):            # the file system still sees the real path
+        return super().__str__()
+
+    def as_posix(self):              # as Windows' as_posix gives forward slashes
+        return super().__str__().replace("\\", "/")
+
+
+def test_calibrate_and_overlay_errors_print_forward_slashes(monkeypatch, tmp_path):
+    import chartwright.design.calibrate as cal
+    from chartwright.design.presets import load_overlay
+
+    target = _BackslashPath(tmp_path / "home" / "design.yaml")
+    monkeypatch.setattr(cal, "overlay_path", lambda: target)
+    report = cal.calibrate(min_samples=5)
+    assert "\\" not in report["overlay"] and report["overlay"].endswith("home/design.yaml")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("disable: nope\n", encoding="utf-8")
+    with pytest.raises(ValueError) as e:
+        load_overlay(target)
+    assert "\\" not in str(e.value) and "home/design.yaml" in str(e.value)

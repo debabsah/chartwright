@@ -1287,6 +1287,21 @@
           "description": "The dashboard's owners: Superset usernames, or the email address of each account, e.g. [\"jdoe\", \"ana@example.com\"]. Use emails on 4.1.4 and 5.0.0, whose API returns no usernames unless FAB_ADD_SECURITY_API is on. apply sets them after the import, keeping the account that applies as an owner too (Superset adds it on every import, and a non-admin account needs it to import again), and plan reports a difference. Omitted, apply leaves the live owners alone and plan doesn't compare them. Accounts only: Superset's owners are users, not roles.",
           "title": "Owners"
         },
+        "theme": {
+          "anyOf": [
+            {
+              "maxLength": 250,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A Superset theme for the dashboard, by its name as Superset lists it (Settings > Themes), e.g. \"Acme Brand\". Superset 6.0.0 or later: check, apply and plan resolve the name on each instance and refuse an unknown or ambiguous one before anything is written; 4.1.4 and 5.0.0 have no themes and refuse the import, so check refuses the field there. Omitted, apply leaves the dashboard's theme as it is (a theme chosen in the UI stays) and plan doesn't compare it.",
+          "title": "Theme"
+        },
         "lifecycle": {
           "anyOf": [
             {

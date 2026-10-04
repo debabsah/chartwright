@@ -20,7 +20,7 @@ from .spec import (
 # Dashboard settings `plan` compares one by one (dashboard_settings_changed).
 DASHBOARD_SETTINGS = (
     "color_scheme", "description", "certified_by", "certification_details", "published",
-    "refresh_frequency", "filter_bar_orientation", "show_chart_timestamps", "tags",
+    "refresh_frequency", "filter_bar_orientation", "show_chart_timestamps", "tags", "theme",
 )
 
 
@@ -47,6 +47,10 @@ class Plan:
     resolution_errors: list[dict] = field(default_factory=list)
     # Fields the instance's Superset release ignores (chartwright.versions).
     version_warnings: list[dict] = field(default_factory=list)
+    # Standard content this instance's release can't take, held back before the
+    # compare (design/standards.py for_instance); and why nothing could be held.
+    held: list[dict] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def clean(self) -> bool:
@@ -58,29 +62,33 @@ class Plan:
         )
 
     def to_json(self) -> str:
-        return json.dumps(
-            {
-                "dashboard": self.dashboard,
-                "detail": self.detail,
-                "clean": self.clean,
-                "charts_added": self.charts_added,
-                "charts_changed": self.charts_changed,
-                "charts_removed": self.charts_removed,
-                "filters_added": self.filters_added,
-                "filters_changed": self.filters_changed,
-                "filters_removed": self.filters_removed,
-                "title_changed": self.title_changed,
-                "layout_changed": self.layout_changed,
-                "cross_filters_changed": self.cross_filters_changed,
-                "label_colors_changed": self.label_colors_changed,
-                "css_changed": self.css_changed,
-                "dashboard_settings_changed": self.dashboard_settings_changed,
-                "decompile_losses": self.decompile_losses,
-                "resolution_errors": self.resolution_errors,
-                "version_warnings": self.version_warnings,
-            },
-            indent=2,
-        )
+        out = {
+            "dashboard": self.dashboard,
+            "detail": self.detail,
+            "clean": self.clean,
+            "charts_added": self.charts_added,
+            "charts_changed": self.charts_changed,
+            "charts_removed": self.charts_removed,
+            "filters_added": self.filters_added,
+            "filters_changed": self.filters_changed,
+            "filters_removed": self.filters_removed,
+            "title_changed": self.title_changed,
+            "layout_changed": self.layout_changed,
+            "cross_filters_changed": self.cross_filters_changed,
+            "label_colors_changed": self.label_colors_changed,
+            "css_changed": self.css_changed,
+            "dashboard_settings_changed": self.dashboard_settings_changed,
+            "decompile_losses": self.decompile_losses,
+            "resolution_errors": self.resolution_errors,
+            "version_warnings": self.version_warnings,
+        }
+        # Only when there is something to say, so a plan whose standard holds nothing
+        # reads exactly as before.
+        if self.held:
+            out["held"] = self.held
+        if self.warnings:
+            out["warnings"] = self.warnings
+        return json.dumps(out, indent=2)
 
 
 def _normalize_tags(holder: dict) -> None:
@@ -221,6 +229,11 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
             l_charts[chart.name].pop("tags", None)
     if target.dashboard.tags is None:
         l["dashboard"].pop("tags", None)
+    # Omitted theme is not managed either: the bundle carries none, so the import keeps
+    # the theme chosen in the UI. A named theme compares by name, which resolve has
+    # already proven names one theme on this instance.
+    if target.dashboard.theme is None:
+        l["dashboard"].pop("theme", None)
     p.charts_added = sorted(set(t_charts) - set(l_charts))
     p.charts_removed = sorted(set(l_charts) - set(t_charts))
     p.charts_changed = sorted(

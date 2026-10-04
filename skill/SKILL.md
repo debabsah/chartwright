@@ -110,10 +110,18 @@ approximate it with a different mechanism.
    `CW standards apply <abs-spec-path>` (it adds or refreshes the standard's
    content); when the error says the content was changed by hand, show the
    user the finding and ask before running `--locked`, which puts the
-   standard's version back over theirs.
+   standard's version back over theirs. The only exception to a lock is an
+   entry in `standards/waivers.yaml`, and it is the user's to grant: write one
+   only when the user gives you the owner (who approved it), the reason and
+   the expiry date, all three in their own words, and remind them the file
+   needs the platform team's review (CODEOWNERS). A finding listed under
+   `waived` passed under such an entry; a `standard.waiver-expired` error
+   means the entry ran out: tell the user, never move the date yourself.
    At most 2 design iterations, then surface the remaining findings verbatim.
 7. `CW apply <abs-spec-path> --profile <profile>`: on success give the user
-   the dashboard_url and any smoke warnings verbatim. Apply backs up the
+   the dashboard_url and any smoke warnings verbatim, and any `held` items
+   (standard content this instance's Superset release can't take, left off
+   this instance on purpose). Apply backs up the
    previous state under `~/.config/chartwright/backups/<profile>/<slug>/` (restore with
    `CW restore <zip> --profile <profile>`).
 8. Modify tool-born dashboards by editing their spec and re-running 5-7.
@@ -156,6 +164,8 @@ learns from them over time (`CW calibrate`).
 | A locked finding blocks; edit `standards/` to loosen the lock, or add the rule to `design.ignore` | Never touch `standards/` unasked; fix the spec, or show the user the finding and the layer that locks it |
 | A standard's footer, header, CSS block or colour is in the way; edit or delete it, or regenerate the spec without it | Leave the content `design.standard_written` records alone; tell the user which standard file sets it. Regenerated specs lose it: edit the file `standards apply` wrote, and run it again after each change |
 | A `standard.content-locked` error; add it to `design.ignore` or hand-copy text until it passes | Run `CW standards apply`; if the content was changed by hand, ask the user before `--locked` |
+| A lock blocks; write a waiver into `standards/waivers.yaml` yourself, or push an expiry date out | Only with the owner, reason and expiry the user gives you; never invent or extend one |
+| `theme_not_found`; pick a theme name that resolves | Show the user the error's list of themes and let them choose |
 | A design default you'd rather not have; rewrite the spec without it | Delete the field from the file `--fix` wrote (a deleted fill stays deleted), or add `"default.rule@Chart Name"` to `design.ignore`; tell the user |
 | "Quick" dashboard via POST /api/v1/dashboard/ | Never; the guarantee only exists through chartwright |
 | Auth fails; hunt for password variables or files | Show the ProfileError; the user names their env var or password_cmd |

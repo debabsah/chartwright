@@ -33,6 +33,10 @@ def stub_resolution(spec: DashboardSpec) -> Resolution:
             metrics=[],
             main_dttm_col=None,
         )
+    if spec.dashboard.theme is not None:
+        # A fake theme, as the datasets are: a real apply resolves it by name.
+        res.theme_id = 1000
+        res.theme_uuid = str(uuid.uuid5(ids.NAMESPACE, f"stub-theme/{spec.dashboard.theme}"))
     return res
 
 

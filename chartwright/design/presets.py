@@ -153,44 +153,45 @@ def load_overlay(path: Path | None = None) -> Overlay:
     p = path or overlay_path()
     if not p.exists():
         return Overlay()
+    where = p.as_posix()   # forward slashes in every message, on every platform
     import yaml
 
     try:
         data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as e:
-        raise ValueError(f"design overlay {p} is not valid YAML: {e}") from e
+        raise ValueError(f"design overlay {where} is not valid YAML: {e}") from e
     if not isinstance(data, dict):
-        raise ValueError(f"design overlay {p} must be a YAML mapping")
+        raise ValueError(f"design overlay {where} must be a YAML mapping")
     unknown = sorted(set(data) - OVERLAY_KEYS)
     if unknown:
-        raise ValueError(f"design overlay {p}: unknown keys {unknown} (known: {sorted(OVERLAY_KEYS)})")
+        raise ValueError(f"design overlay {where}: unknown keys {unknown} (known: {sorted(OVERLAY_KEYS)})")
 
     ov = Overlay(**{k: v for k, v in data.items() if k in OVERLAY_KEYS}, source=p)
     if not isinstance(ov.disable, list) or not all(isinstance(x, str) for x in ov.disable):
-        raise ValueError(f"design overlay {p}: disable must be a list of rule-id strings")
+        raise ValueError(f"design overlay {where}: disable must be a list of rule-id strings")
     if not isinstance(ov.brief_extra, str):
-        raise ValueError(f"design overlay {p}: brief_extra must be a string")
+        raise ValueError(f"design overlay {where}: brief_extra must be a string")
     _check_param_block(ov.params, "params")
     _check_heights(ov.recommended_heights, "recommended_heights")
     if not isinstance(ov.audiences, dict):
-        raise ValueError(f"design overlay {p}: audiences must be a mapping")
+        raise ValueError(f"design overlay {where}: audiences must be a mapping")
     bad_aud = sorted(set(ov.audiences) - set(AUDIENCES))
     if bad_aud:
         raise ValueError(
-            f"design overlay {p}: unknown audiences {bad_aud} (known: {sorted(AUDIENCES)})")
+            f"design overlay {where}: unknown audiences {bad_aud} (known: {sorted(AUDIENCES)})")
     for aud, block in ov.audiences.items():
         _check_param_block(block, f"audiences.{aud}")
     if not isinstance(ov.severity, dict):
-        raise ValueError(f"design overlay {p}: severity must be a mapping of rule id -> level")
+        raise ValueError(f"design overlay {where}: severity must be a mapping of rule id -> level")
     from .model import known_rule_ids  # function-level: no import cycle
 
     known = known_rule_ids()
     for rule_id, level in ov.severity.items():
         if rule_id not in known:
-            raise ValueError(f"design overlay {p}: severity for unknown rule {rule_id!r}")
+            raise ValueError(f"design overlay {where}: severity for unknown rule {rule_id!r}")
         if level not in ("error", "warn", "info"):
             raise ValueError(
-                f"design overlay {p}: severity[{rule_id!r}] must be error|warn|info, got {level!r}")
+                f"design overlay {where}: severity[{rule_id!r}] must be error|warn|info, got {level!r}")
     return ov
 
 

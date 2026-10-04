@@ -60,6 +60,9 @@ class Finding:
     # level), and whether a standard locks the rule.
     layer: str | None = None
     locked: bool | None = None
+    # A standard.content-locked finding: the layer whose lock it reports, so a waiver
+    # scoped to one layer (design/waivers.py) can tell. Never in the payload.
+    lock_layer: str | None = None
 
     @property
     def kind(self) -> str:
@@ -87,6 +90,7 @@ class Finding:
         d.pop("height_driven")
         d.pop("why")
         d.pop("release")
+        d.pop("lock_layer")
         if self.layer is None:
             d.pop("layer")
         if self.locked is None:
@@ -125,6 +129,11 @@ class AdviceReport:
     overlay: dict | None = None
     # The standard this run applied (design/standards.py report_block); None without one.
     standard: dict | None = None
+    # Locked findings a waiver let pass (design/waivers.py), each with the waiver's owner,
+    # reason, expiry and status; and the warnings an expired waiver that still applied
+    # (outside standards check and advise) left. Empty without a standards waivers file.
+    waived: list[dict] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def payload(self) -> dict:
         out = {
@@ -145,6 +154,10 @@ class AdviceReport:
             out["overlay"] = self.overlay
         if self.standard is not None:
             out["standard"] = self.standard
+        if self.waived:
+            out["waived"] = self.waived
+        if self.warnings:
+            out["warnings"] = self.warnings
         return out
 
 
