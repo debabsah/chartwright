@@ -2209,6 +2209,8 @@ Limits, each a way a line could be hidden and still pass:
 - it reads one moment after the dashboard settles; a rule that hides text
   later, on hover or by script, isn't seen.
 
-The live CI job runs it on the three releases as an optional step that reports
-without failing the job (`tools/ci_live_visible.py`), since the browser is an
-optional extra; elsewhere it is a post-deploy step you add after `apply`.
+The live CI job runs it on the three releases (`tools/ci_live_visible.py`).
+Installing the browser is the optional step, since the browser is an optional
+extra: when the install fails the check is skipped, and once it succeeds a
+failing check fails the job. Elsewhere it is a post-deploy step you add after
+`apply`.
