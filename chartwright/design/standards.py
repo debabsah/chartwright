@@ -338,7 +338,21 @@ def resolve(name: str, files: dict[str, StandardFile], directory: Path) -> Stand
     for sf in chain:
         _check_against_locks(sf, std)
         _merge(sf, std)
+        _check_locked_values(sf, std)
     return std
+
+
+def _check_locked_values(sf: StandardFile, std: Standard) -> None:
+    """A locked parameter needs a value by the layer that locks it: in `params`, or in
+    every audience's block. A lock on an unset parameter would pin only the preset's
+    value, which the spec's design.audience chooses, so a looser audience would move it."""
+    for p in sf.locked_params:
+        if p in std.params or all(p in std.audiences.get(a, {}) for a in AUDIENCES):
+            continue
+        raise StandardsError(
+            "standards_file",
+            f"{display(sf.path)}: locks {p} without a value; lock a value, not a slot: set "
+            f"params.{p} (or {p} under every audience) in this file or one it extends")
 
 
 def _standard_files(directory: Path) -> list[Path]:

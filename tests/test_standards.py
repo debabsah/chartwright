@@ -203,8 +203,53 @@ def test_renamed_rule_ids_resolve_through_the_alias_table(tmp_path, monkeypatch)
 
 
 ORG_LOCKS = ("name: org\nseverity: {narrative.title-style: warn}\n"
+             "params: {fold_units: 40, recommended_heights: {table: 10}}\n"
              "locked: {rules: [size.axis-min-height, narrative.title-style], "
              "params: [fold_units, recommended_heights]}\n")
+
+
+@pytest.mark.parametrize("files", [
+    # Locked with no value anywhere: the audience preset would decide it.
+    {"org.yaml": "name: org\nlocked: {params: [min_axis_height]}\n"},
+    # A value for some audiences only.
+    {"org.yaml": "name: org\naudiences: {executive: {min_axis_height: 8}}\n"
+                 "locked: {params: [min_axis_height]}\n"},
+    # A team locks a parameter nobody set.
+    {"org.yaml": "name: org\n",
+     "team.yaml": "name: team\nextends: org\nlocked: {params: [fold_units]}\n"},
+])
+def test_a_lock_holds_a_value_not_a_slot(tmp_path, files):
+    with pytest.raises(StandardsError) as e:
+        load_standards(make_repo(tmp_path / "r", files))
+    assert e.value.code == "standards_file" and "lock a value, not a slot" in str(e.value)
+
+
+@pytest.mark.parametrize("files", [
+    {"org.yaml": "name: org\nparams: {min_axis_height: 7}\nlocked: {params: [min_axis_height]}\n"},
+    {"org.yaml": "name: org\naudiences: {executive: {min_axis_height: 8}, "
+                 "analytical: {min_axis_height: 7}, operational: {min_axis_height: 6}}\n"
+                 "locked: {params: [min_axis_height]}\n"},
+    # The value comes from the parent; the team locks it.
+    {"org.yaml": "name: org\nparams: {min_axis_height: 7}\n",
+     "team.yaml": "name: team\nextends: org\nlocked: {params: [min_axis_height]}\n"},
+])
+def test_a_lock_on_a_value_set_at_or_above_the_locking_layer_loads(tmp_path, files):
+    assert load_standards(make_repo(tmp_path / "r", files))
+
+
+def test_a_looser_audience_cant_move_a_locked_threshold(tmp_path, capsys):
+    """The reviewer's case: min_axis_height locked; a height-5 axis chart under the
+    operational preset (whose own minimum is 5) still gets the locked minimum."""
+    repo = make_repo(tmp_path / "r", {"org.yaml": "name: org\ndefault: true\n"
+                                                  "params: {min_axis_height: 6}\n"
+                                                  "locked: {rules: [size.axis-min-height], "
+                                                  "params: [min_axis_height]}\n"}).parent
+    data = json.loads(json.dumps(DATA))
+    data["charts"][0]["height"] = 5
+    spec = write_spec(repo / "specs" / "s.json", data, audience="operational")
+    code, payload = run(capsys, "standards", "check", str(spec), "--strict")
+    assert code == 1
+    assert AXIS in [f["rule"] for f in payload["specs"][0]["findings"]]
 
 
 @pytest.mark.parametrize("team,words", [

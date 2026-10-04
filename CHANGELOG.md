@@ -15,9 +15,12 @@ while the major version is 0, minor bumps may include breaking changes and say s
     `default: true` marks the standard for specs that name none.
   - Down a chain, `params` and `audiences` override per parameter, `severity` per rule;
     `disable` and `locked` add up. Below the layer that locks it, a locked rule can't be
-    disabled or have its severity lowered, and a locked parameter can't be set.
+    disabled or have its severity lowered, and a locked parameter can't be set. A locked
+    parameter needs a value by the layer that locks it (in `params`, or under every
+    audience), so a spec's `design.audience` can't move it.
   - Cycles, an unknown parent, a chain of three files, unknown rule ids and parameters,
-    and a lower file loosening a lock are errors that name the file.
+    a lock on an unset parameter, and a lower file loosening a lock are errors that name
+    the file.
   - The folder is `--standards DIR`, or the one `standards/` folder at or above the spec
     inside its git repository; the MCP server reads `$CHARTWRIGHT_STANDARDS_DIR`.
 - `design.standard`: the standard a spec follows. **An older chartwright (0.2.1 and

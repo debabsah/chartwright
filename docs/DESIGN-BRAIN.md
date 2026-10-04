@@ -1194,9 +1194,13 @@ A rule a layer locks:
   otherwise unlock a sizing rule.
 
 A locked parameter can't be set below the layer that locks it, in `params` or
-in any `audiences` block, and `design.yaml` can't move it. Every layer below
-gets the value it had at the locking layer: set there, set above it, or the
-audience preset's.
+in any `audiences` block, and `design.yaml` can't move it. The lock holds a
+value, not a slot: by the locking layer the parameter must be set, in that
+file or one it extends, either in `params` or under every audience in
+`audiences`; a lock on an unset parameter is an error. Otherwise the value
+would be the audience preset's, and a spec could move it by choosing a looser
+`design.audience`. With per-audience values the spec's audience picks one of
+the values the standard set.
 A lower file that loosens a lock is an error naming both layers; the
 spec-level and `design.yaml` attempts are set aside and reported, never
 silently applied. Locks are recomputed from the standards files on every run;

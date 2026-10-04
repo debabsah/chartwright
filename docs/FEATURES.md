@@ -88,7 +88,8 @@ into one. Everything below works from that one file.
     - `chartwright standards assign specs/finance --standard finance` writes that field into every spec in a folder, so moving a dashboard to another team is a one-line diff.
     - `advise`, `explain`, `check` and `apply` review each spec under its standard, and `explain` names the chain it used.
     - `chartwright standards show finance` lists every setting with the file that set it and whether it is locked.
-- **Locked Rules**: Lock a rule or a threshold in a standard, and every dashboard that follows it, or a standard extending it, keeps it: no team file, `design.ignore` entry, `--ignore` flag or personal `design.yaml` can turn the rule off, lower its severity, or move the threshold.
+- **Locked Rules**: Lock a rule, or a threshold together with its value, in a standard, and every dashboard that follows it, or a standard extending it, keeps it: no team file, `design.ignore` entry, `--ignore` flag or personal `design.yaml` can turn the rule off, lower its severity, or change the threshold.
+    - Give a locked threshold one value, or one value per audience; with per-audience values, a spec's `design.audience` picks among the values the standard set.
     - A team can still raise a locked rule's severity.
     - A finding of a locked rule is fixed in the spec; to change the lock itself, edit the file that sets it in a pull request.
 - **One Check for the Whole Folder**: `chartwright standards check specs/` reviews every spec under its standard and exits 1 on any error finding, or on warnings too with `--strict`, ready as a CI gate. It sets `design.yaml` aside, so it gives the same result on every machine.
