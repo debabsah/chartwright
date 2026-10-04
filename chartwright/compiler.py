@@ -137,7 +137,7 @@ def _format_rule_payload(rule) -> dict:
 
 
 # Spec field -> the key ColumnConfigControl stores per label (constants.tsx at 4.1.4,
-# 5.0.0 and 6.1.0; customColumnName from 6.1.0, read at TableChart.tsx:859).
+# 5.0.0 and 6.1.0; customColumnName from 6.0.0, read at TableChart.tsx:806, :859 at 6.1.0).
 COLUMN_CONFIG_KEYS = {"number_formats": "d3NumberFormat", "column_align": "horizontalAlign",
                       "column_widths": "columnWidth", "column_headers": "customColumnName"}
 
@@ -220,7 +220,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         if chart.number_format:
             p["y_axis_format"] = chart.number_format
         _pin_big_number_fonts(p)
-        # BigNumberWithTrendline controlPanel.tsx, all three releases; `subtitle` 6.1.0+.
+        # BigNumberWithTrendline controlPanel.tsx, all three releases; `subtitle` 6.0.0 or later.
         if chart.compare_lag is not None:
             p["compare_lag"] = chart.compare_lag
         if chart.compare_suffix:
@@ -266,8 +266,9 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             ascending = (chart.category_sort == "asc") != (chart.orientation == "horizontal")
             if chart.groupby or len(chart.metrics) > 1:
                 # Several series: the plugin sorts the x values itself, by name
-                # (SortSeriesType.Name, utils/series.ts sortRows). 6.1.0 reads x_axis_sort
-                # for it; 4.1.4 and 5.0.0 read x_axis_sort_series, which 6.1.0 dropped.
+                # (SortSeriesType.Name, utils/series.ts sortRows). 6.0.0 and later read
+                # x_axis_sort for it; 4.1.4 and 5.0.0 read x_axis_sort_series, which 6.0.0
+                # dropped.
                 p["x_axis_sort"] = "name"
                 p["x_axis_sort_series"] = "name"
                 p["x_axis_sort_series_ascending"] = ascending
@@ -345,7 +346,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             if series.stack:
                 p[f"stack{suffix}"] = True  # a checkbox here, not the Stack/Stream select
             if not series.only_total:
-                p[f"only_total{suffix}"] = False  # 6.1.0 control; older releases ignore it
+                p[f"only_total{suffix}"] = False  # 6.0.0 control; older releases ignore it
         for suffix, series in (("", chart.a), ("_b", chart.b)):
             _series_limit_params(series, p, suffix, metric)
         _y_axis_params(chart, p)
@@ -700,7 +701,8 @@ def _x_label_params(chart: _AxisChart, p: dict) -> None:
     if chart.x_label_rotation is not None:
         p["xAxisLabelRotation"] = chart.x_label_rotation
     if chart.x_label_every:
-        # 6.1.0 controls; older plugins don't read them, so older releases ignore them.
+        # force_max_interval is a 6.1.0 control, xAxisLabelInterval a 6.0.0 one; older
+        # plugins don't read them, so older releases ignore them.
         # A time axis needs the grain as its WIDEST tick spacing (ECharts otherwise picks
         # e.g. every 2 months: transformProps maxInterval); interval applies to category axes only.
         if "time_grain_sqla" in p:
@@ -744,7 +746,7 @@ def _chart_yaml(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         "dataset_uuid": ds.uuid,
     }
     if chart.tags is not None:
-        # ImportV1ChartSchema has `tags` from 6.1.0 only (docs/CONTRACTS.md).
+        # ImportV1ChartSchema has `tags` from 6.0.0 (docs/CONTRACTS.md).
         out["tags"] = list(chart.tags)
     return out
 
@@ -1160,7 +1162,7 @@ def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
         "version": "1.0.0",
     }
     if d.tags is not None:
-        # ImportV1DashboardSchema has `tags` from 6.1.0 only (docs/CONTRACTS.md).
+        # ImportV1DashboardSchema has `tags` from 6.0.0 (docs/CONTRACTS.md).
         out["tags"] = list(d.tags)
     return out
 

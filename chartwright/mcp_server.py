@@ -47,14 +47,13 @@ def _stated_version(superset_version: str):
     """(release or None, error JSON or None) for a tool's superset_version argument."""
     if not superset_version:
         return None, None
-    from .versions import format_version, parse_version
+    from .versions import not_a_release, stated_release
 
-    release = parse_version(superset_version)
+    release = stated_release(superset_version)
     if release is None:
         return None, json.dumps({"ok": False, "stage": "version", "errors": [{
-            "code": "bad_superset_version",
-            "detail": f"{superset_version!r} is not a Superset release, e.g. 5.0.0"}]})
-    return format_version(release), None
+            "code": "bad_superset_version", "detail": not_a_release(superset_version)}]})
+    return release, None
 
 
 def _typed_errors(fn):

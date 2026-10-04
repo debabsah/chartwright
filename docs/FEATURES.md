@@ -25,22 +25,22 @@ into one. Everything below works from that one file.
     - Value pickers can pre-filter their list, sort it by a saved metric, search every value in the database, or exclude what is picked; every filter takes a description, shown as its tooltip.
     - Solid colour rules on pivot and table cells: green, amber or red (Superset's own picker colours), or any hex colour such as `#0057B8`.
     - On Superset 6.1+, a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it.
-    - Hidden table columns, a fixed ascending table sort, d3 number and date formats.
+    - A fixed ascending table sort, d3 number and date formats, and on Superset 6.0+ hidden table columns.
 - **Chart Options**: Set the common options of Superset's chart panels in the spec; an option changed in the UI shows up in `plan`.
     - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own.
     - Values written on bars and points, stacked series, 100% stacks, and the top N series of a breakdown.
     - Legends hidden, or placed at the bottom, left or right.
     - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value.
     - A time range per chart, such as a "Last 30 days" KPI on a dashboard that shows all time.
-    - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.1+ a subtitle.
-    - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.1+ header names.
+    - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
+    - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
     - Heatmap values and colour scheme; what pie, funnel and treemap labels show, and their number format.
 - **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend.
 - **Dashboard and Chart Settings**: Set the dashboard's own settings and each chart's in the spec, so a change made in the UI shows up in `plan`.
     - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).
     - Chart: colour scheme, description (viewers open it from the chart menu), certification badge, cache timeout, and a shorter title shown on the dashboard.
-    - Superset 6.1 adds chart timestamps on every card and tags; set them in the spec there (tags need Superset's `TAGGING_SYSTEM` flag).
+    - Tags on Superset 6.0+ (with Superset's `TAGGING_SYSTEM` flag on), and chart timestamps on every card on Superset 6.1+.
 - **Named Owners**: List the dashboard's owners in the spec (`"owners": ["jdoe", "ana@example.com"]`), so a dashboard applied from CI belongs to the people responsible for it, and its drafts stay visible to them.
     - Each owner is checked against the instance before anything is written; a misspelt one comes back with the closest accounts.
     - Name owners by email on 4.1.4 and 5.0.0, whose API returns usernames only with `FAB_ADD_SECURITY_API` on; usernames work on 6.1.0.
@@ -108,7 +108,7 @@ into one. Everything below works from that one file.
 - **Environment Promotion**: Specs name their data (connection, schema, table), never instance ids, so the same file applies to dev, staging, and production when they share connection names; where names differ, generate one copy per instance.
 - **PR-Gated Dashboard Changes**: Specs live in git; `chartwright plan` passes when the live dashboard matches the spec and fails when it drifted, ready as a merge gate; read-only `chartwright check` runs safely on any schedule.
 - **Offline Compilation**: Build the import bundle with `chartwright compile`, no server needed; the output is reproducible byte-for-byte.
-- **Instance Migration**: Decompile from one Superset, apply the spec to another; it applies to 4.1.4 and 5.0.0 even when it came from 6.1.0, whose exports those releases reject. `chartwright check` names any 6.1-only setting the spec carries, such as tags, for you to remove first.
+- **Instance Migration**: Decompile from one Superset, apply the spec to another; it applies to 4.1.4 and 5.0.0 even when it came from 6.1.0, whose exports those releases reject. `chartwright check` names any setting the target release can't take, such as tags before 6.0, for you to remove first.
 - **Git as the Source of Truth**: A lost or mangled dashboard is one re-apply away from its spec.
 
 ## Safety and Recovery
@@ -117,7 +117,7 @@ into one. Everything below works from that one file.
 - **Self-Healing Applies**: When an apply fails while preparing, importing or updating charts, the previous state is restored automatically, whatever the error. A failure after that (linkage, filter scopes, chart queries) leaves the new version live, and the report gives the backup to restore.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once: an error fails the apply, and a chart that returns no rows is named. Any failure says what went wrong and where.
-    - Your spec is held to the instance's Superset release too: a setting the release can't take (tags on 4.1.4 or 5.0.0, chart timestamps before 6.1) stops the apply before anything is written and names the field to remove; one it would ignore, such as a trendline subtitle before 6.1, comes back as a warning. Offline, `chartwright compile --superset-version 5.0.0` runs the same check.
+    - Your spec is held to the instance's Superset release too: a setting the release can't take (tags on 4.1.4 or 5.0.0, chart timestamps before 6.1) stops the apply before anything is written and names the field to remove; one it would ignore, such as a trendline subtitle before 6.0, comes back as a warning. Offline, `chartwright compile --superset-version 5.0.0` runs the same check.
 - **Ownership Guard**: The tool only ever overwrites dashboards it created. To manage a hand-built dashboard, decompile it into a spec and build it at a new slug; the original stays untouched.
 
 ## Enterprise Ready
@@ -127,6 +127,7 @@ into one. Everything below works from that one file.
     - Preset-hosted workspaces (preset.io) sign in with an API token and secret: take them from env vars, or reuse the credentials preset-cli already stored.
 - **What the AI Can See**: The AI proposes; the tool verifies, using your own Superset login. Verification reads names (datasets, columns, metrics), not rows; the AI never queries your warehouse.
     - The post-apply data check keeps a row count and discards the rows.
+    - Custom SQL in a spec runs with the profile's rights during apply's data check; `check` lists it under `unchecked_sql` so you can review it before it runs, and the apply report lists it too.
 - **Corporate Networks**: Custom CA bundles, proxies, LDAP auth, internal pip mirrors (only 3 dependencies).
 - **Works Where You Work**: Windows, macOS, Linux; PowerShell and git bash; run from any directory; the Claude Code skill installs by copy, no admin rights.
 
