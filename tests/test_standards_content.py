@@ -895,6 +895,74 @@ def test_mcp_check_strict(repo, monkeypatch, capsys):
                     strict=True)["ok"] is False
 
 
+# -- pins for behaviour a mutation run showed untested ---------------------------
+
+
+def test_footer_rows_go_innermost_layer_first(tmp_path, capsys):
+    """The org's row sits at the very bottom: footer rows are innermost layer first."""
+    org = "name: org\ndefault: true\ncontent: {footer: [[{markdown: Org}]]}\n"
+    team = "name: team\nextends: org\ncontent: {footer: [[{markdown: Team}]]}\n"
+    repo = make_repo(tmp_path / "r", {"org.yaml": org, "team.yaml": team}).parent
+    path = spec_file(repo, standard="team")
+    apply(capsys, str(path))
+    assert [r[0]["markdown"] for r in read(path)["layout"]["footer"]] == [
+        "my note", "Team", "Org"]
+
+
+def test_check_fails_when_locked_css_markers_cant_be_read(repo, capsys):
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    edit(path, lambda d: d["dashboard"].update(
+        css=d["dashboard"]["css"].replace("/* cw:end org */", "")))
+    code, out = apply(capsys, str(path), "--check")
+    assert code == 1 and out["specs"][0]["locked_stale"] == ["dashboard.css"]
+
+
+def test_check_fails_on_an_error_even_with_nothing_locked(tmp_path, capsys):
+    org = "name: org\ndefault: true\ncontent: {css: '.a { color: red; }'}\n"
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo, data={**DATA, "dashboard": {
+        **DATA["dashboard"], "css": "/* cw:std org 0123456789ab */\n.a {}\n"}})
+    code, out = apply(capsys, str(path), "--check")
+    assert code == 1 and out["specs"][0]["locked_stale"] == []
+    assert out["specs"][0]["errors"][0]["code"] == "css_markers"
+
+
+def test_a_released_row_is_the_authors_for_repairs_too(tmp_path, capsys):
+    """The markdown-height repair leaves a standard's rows alone, not rows released to
+    the author."""
+    org = "name: org\ndefault: true\ncontent: {footer: [[{markdown: Legal notice}]]}\n"
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo, data={**DATA, "layout": {"rows": [["K", "R"]]}})
+    apply(capsys, str(path))
+    edit(path, lambda d: d["layout"]["footer"][0][0].update(markdown="Legal notice!"))
+    apply(capsys, str(path))
+    assert read(path)["design"]["standard_written"]["layout.footer[org][0]"]["released"]
+    fixed, _ = advise_and_fix(read(path))
+    assert fixed["layout"]["footer"][0][0]["height"] == 2
+
+
+def test_blocks_go_after_a_leading_namespace(tmp_path, capsys):
+    css = "@namespace svg url(http://www.w3.org/2000/svg);\n.mine { color: red; }"
+    path = two_layer_css(tmp_path, css)
+    apply(capsys, str(path))
+    assert read(path)["dashboard"]["css"].startswith(
+        "@namespace svg url(http://www.w3.org/2000/svg);\n/* cw:std a ")
+
+
+def test_a_row_with_another_background_is_not_the_edited_row(repo, capsys):
+    """Shape includes the background: a white card where a transparent row stood is not
+    that row, edited."""
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    edit(path, lambda d: d["layout"]["footer"].__setitem__(-1, {
+        "row": [{"markdown": "Confidential. Acme Corp. 2026.", "width": 12, "height": 1}],
+        "background": "white"}))
+    _, out = apply(capsys, str(path), "--locked")
+    footer = read(path)["layout"]["footer"]
+    assert footer[-2]["background"] == "white" and footer[-1] == ORG_FOOTER
+
+
 def test_mcp_standards_apply_returns_a_typed_error_not_a_raise(repo, monkeypatch):
     monkeypatch.setenv("CHARTWRIGHT_STANDARDS_DIR", str(repo / "standards"))
     import chartwright.design.standards as st
