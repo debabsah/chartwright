@@ -226,6 +226,9 @@ running the tool against real instances of all three releases.
   omitted field, and `plan` reads the two as equal. A decompiled spec leaves
   Superset's defaults out, since the stored chart can't say which one the
   author wrote. The list is `SUPERSET_DEFAULTS` in `chartwright/spec.py`.
+  The design brain's fills (`advise --fix`, DESIGN-BRAIN.md §16) read the
+  spec as written, so a written default is the author's choice and no fill
+  replaces it; once decompiled, it is gone and the field reads as unset.
 - **The value-axis bounds are the axis edges on every release.** The panel
   says the bounds only widen the axis, but the Timeseries and Mixed plugins
   hand `y_axis_bounds` to ECharts as the axis minimum and maximum

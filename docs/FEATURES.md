@@ -58,7 +58,13 @@ into one. Everything below works from that one file.
 ## The Design Brain
 - **Codified BI/UX Practice**: An optional layer holding what Few, Tufte and IBCS teach about reading a dashboard, plus the Superset rendering quirks that break it, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).
 - **The Brief**: `chartwright brief` prints design guidance for the AI (or you) to read before writing a spec: budgets, chart choice, and composition, tuned to an audience preset (`executive`, `analytical`, or `operational`).
-- **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices).
+- **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices); `--chart` looks at one chart.
+- **Design Defaults in the Spec**: Leave the small display choices unset and `advise --fix` writes sensible values into the spec, where the diff shows them; `chartwright explain` says where each value came from and how to change it.
+    - Monthly time axes labelled `Sep 2026`, counts shown as `12,345`, "vs previous month" after a trendline KPI's change.
+    - Tables that page by what fits their panel, a search box on long raw tables, no cell bars behind id, code, year or zip columns.
+    - No legend on a single series the title already names, values written on a few bars.
+    - A field you write is never touched. Filled fields are listed in the spec's `design.filled` and kept up to date as the chart changes; to make one yours, remove it from that list. To keep Superset's default instead, add the rule to `design.ignore`.
+    - The bundle depends on the spec alone: compile, `plan` and decompile never add a value of their own.
 - **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
 - **House Style**: A `design.yaml` overlay tunes thresholds, disables rules, and appends org guidance to the brief, so a deployment can set its own standards without forking the rulebook.
 - **Heights Calibrated From Your Own Dashboards**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.

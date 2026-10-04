@@ -93,8 +93,40 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - Layout: `{"header": "Revenue", "size": "large"}` and `{"divider": true}` entries between
   rows (Superset nests headers and dividers beside rows, never inside one), and
   `{"row": [...], "background": "white"}` for a row on a card.
+- Design defaults: `advise --fix` (MCP `fix_spec`) fills sensible values into display
+  fields the author left unset and writes them into the spec, where the diff shows them.
+  Nothing changes at compile time: compile, `plan` and decompile are as before, and a
+  spec that was never fixed builds the same bundle. Eight `default.*` rules, each an
+  `info` finding with a fix that `check` and `apply` list too:
+  - `x_label_format` from the time grain (`%b %Y` monthly, `%Y` yearly, `%d %b` daily
+    or weekly over a year or less);
+  - `compare_suffix` from the grain and `compare_lag` ("vs previous month");
+  - `,.0f` for charts whose metrics are all COUNT or COUNT_DISTINCT;
+  - on tables, `cell_bars: false` with id, code, year or zip columns, `page_length` set to
+    the rows that fit when an explicit `row_limit` outgrows the panel, and `search_box`
+    on raw tables of more than 20 rows;
+  - `show_legend: false` on a single series the title names, `show_value` on a bar of 12
+    bars or fewer at least half the page wide.
+  None writes Superset's own value; the thresholds are audience parameters
+  (`search_min_rows`, `value_label_max_bars`, `value_label_min_width`, `page_min_rows`,
+  `day_label_max_span_days`), tunable in `design.yaml`.
+- `design.filled` records which fields `--fix` filled, per chart. `--fix` keeps those up to
+  date as the chart changes and removes them when they stop applying. A field you write
+  is never touched; a filled field becomes yours when you remove it from the list, or
+  when you change it to a value the rule never writes (`page_length: 0`, say).
+- `chartwright explain <spec> [--chart NAME] [--json]`: per chart, each design-default
+  field's value, whether it came from the spec, a fill or Superset, why, and how to change
+  it. `advise --chart NAME` narrows a review, or a `--fix`, to one chart.
 
 ### Changed
+
+- Each `fixed` entry from `advise --fix` and `fix_spec` gains `kind` (`"fill"` or
+  `"repair"`) and a `why` line. `redesign` still applies repairs only and names
+  `advise --fix` when fills are waiting. The brief and the skill tell an AI author to leave
+  design defaults unset, run `--fix` before building, and edit the file it wrote. The design
+  brain's version is now 5.
+- `narrative.big-number-format` no longer fires on a COUNT KPI, where
+  `default.count-format` offers the same fix.
 
 - `y_axis_max` now applies on Superset 4.1.4 and 5.0.0 as well as 6.1.0, and on every
   chart with a value axis, not only lines. It was written into the ECharts Options,

@@ -1,6 +1,7 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 3.** This page is both the design and the
+> **Status: SHIPPED, design brain 5** (4 added `narrative.color-scheme`; 5 the
+> design defaults of §16). This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -43,9 +44,13 @@ that the user can switch off.
    about the brain loosens the bright line (the spec remains the only
    LLM-authored artifact).
 2. **Advice, not authority.** The brain never silently changes what data a
-   chart shows. Autofixes are presentation-only (geometry, orientation).
-   Anything that would change the data shown (row limits, filters, chart
-   type) is a finding with a suggested edit, never an automatic one.
+   chart shows. Autofixes are presentation-only: repairs (geometry,
+   orientation) and design defaults it fills into fields the author left
+   unset (§16). Both happen only when asked (`advise --fix`, MCP
+   `fix_spec`), land in the spec file where the diff shows them, and never
+   at compile time. Anything that would change the data shown (row limits,
+   filters, chart type, series limits, sort order) is a finding with a
+   suggested edit, never an automatic one.
 3. **Off is really off.** `--design off` (or omitting `advise`) yields
    byte-identical behavior to today. The feature is additive; `spec_version`
    stays `"1"`.
@@ -93,6 +98,8 @@ chartwright/design/
   __init__.py      advise() / advise_and_fix() entry points
   model.py         Finding, AdviceReport, RuleContext, @rule registry, taxonomy
   rules.py         all Tier L rule implementations (split when it outgrows one file)
+  defaults.py      the default.* fills (§16): one decision per field, one shared driver
+  explain.py       `chartwright explain`: each design-default field's value and source
   presets.py       audience parameter tables + design.yaml overlay
   fix.py           apply_fixes(spec_data, findings) -> (new_data, applied)
   brief.py         render_brief(audience) -> markdown
@@ -106,7 +113,8 @@ chartwright/design/
 
 ```
 chartwright advise <spec> [--audience A] [--profile P] [--fix] [--strict]
-                          [--ignore rule1,rule2] [--no-probe]
+                          [--ignore rule1,rule2] [--no-probe] [--chart NAME]
+chartwright explain <spec> [--chart NAME] [--audience A] [--json]
 chartwright brief [--audience A]
 chartwright redesign <slug-or-id> --profile P [-o spec.json] [--audience A] [--no-probe]
 chartwright calibrate [--write] [--min-samples N] [--since 90d]
@@ -120,8 +128,14 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
   keeps it to metadata already fetched by resolution (no queries).
 - `advise --fix`: applies the safe-fix subset in place (same file-rewrite
   mechanics as `absorb`; formatting normalizes), re-validates, and reports
-  each change as `{rule, chart, set: {field: new}, was: {field: old}}` plus
-  the `written` path. Idempotent: a second `--fix` run is a no-op.
+  each change as `{rule, kind, chart, set: {field: new}, was: {field: old},
+  why}` plus the `written` path. `kind` is `repair` or `fill` (a design
+  default, §16). Idempotent: a second `--fix` run is a no-op.
+- `advise --chart NAME`: only that chart's findings; with `--fix`, only its
+  fixes. An unknown name is an `unknown_chart` error.
+- `explain`: offline, per chart, one row per field a design default
+  governs: value, source (`spec`, `filled`, `superset default`), rule, a
+  one-line reason and how to take it over. Text, or `--json` for agents.
 - `brief`: prints the Tier G design brief for the audience, the document the
   skill reads before authoring. Compact by contract (a test caps the line
   count), because it lands in an LLM context window.
@@ -144,9 +158,15 @@ One additive optional block (models stay `extra="forbid"`):
 ```json
 "design": {
   "audience": "executive",
-  "ignore": ["size.pie-geometry", "layout.fold-budget@Ops Detail"]
+  "ignore": ["size.pie-geometry", "layout.fold-budget@Ops Detail"],
+  "filled": {"Orders": ["page_length", "search_box"]}
 }
 ```
+
+- `filled`: written by `advise --fix`, never by hand except to delete an
+  entry: per chart, the fields the brain filled with a design default (§16).
+  Validated against the charts (a renamed chart carries its entry along).
+  Compile, plan and decompile ignore it.
 
 - `audience`: this dashboard's preset; CLI `--audience` overrides it, the
   built-in default (`analytical`) applies when both are absent.
@@ -179,6 +199,11 @@ minus Superset chrome is ≈ 22 units).
 | `vbar_max_categories` | 6 | 8 | 8 |
 | `pie_max_slices` | 5 | 7 | 7 |
 | `series_max` (lines per timeseries) | 5 | 10 | 8 |
+| `search_min_rows` (§16, unsourced) | 20 | 20 | 20 |
+| `value_label_max_bars` (§16, unsourced) | 12 | 12 | 12 |
+| `value_label_min_width` (§16, unsourced) | 6 | 6 | 6 |
+| `page_min_rows` (§16) | 3 | 3 | 3 |
+| `day_label_max_span_days` (§16) | 366 | 366 | 366 |
 
 Presets are data (`presets.py`), not branches: rules never test the audience
 name, only parameters. Adding an audience is adding a row.
@@ -219,7 +244,7 @@ several offline rules additionally sharpen or stand down when probes are
 available (noted in their text). `since` is the design-brain version that
 introduced the rule: "2" the post-review batch
 (docs/DESIGN-BRAIN-V2.md), "3" the review burn-down (§15.11 onward), "4"
-the colour-scheme check.
+the colour-scheme check, "5" the design defaults (§16).
 
 The table below is GENERATED from the registry by
 `tools/gen_rule_table.py --write`; do not hand-edit it. `tests/test_docs.py`
@@ -310,13 +335,20 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
 
 ## 9. Autofix semantics
 
-- **Safe set only:** heights, bar orientation and markdown header heights.
-  All presentation; a fixed spec queries identically to the unfixed one.
-  Widths are report-only (§15.1).
+- **Safe set only:** repairs (heights, bar orientation, `x_label_every` on
+  a category-sorted bar, markdown header heights) and the design defaults
+  of §16, which fill unset display fields. All presentation; a fixed spec
+  queries identically to the unfixed one. Widths are report-only (§15.1).
 - Mechanics mirror `absorb`: findings carry a patch
   (`{"chart": "Top Products", "set": {"height": 8}}`), `fix.py` applies them
   to the raw spec JSON, the result is re-validated before writing, and the
-  report lists every applied fix as `rule@chart`.
+  report lists every applied fix with its `set`/`was` diff, its `kind`
+  (`repair` or `fill`) and a `why` line (a repair's why is its finding).
+- **Two phases:** repairs run until none is left; fills run only then,
+  because some read the geometry repairs settle (a page size reads the
+  height). A fill never writes geometry or a field a repair writes, so the
+  convergence invariant of `advise_and_fix` is unchanged (tested), and a
+  moved height refreshes the brain's own fills on the next pass.
 - **Idempotent by test:** fixed specs re-advise with zero fixable findings.
 - Sketch layouts: heights are fixable (an explicit `chart.height` overrides
   sketch height by existing precedence in `spec.resolved_height`); widths are
@@ -333,7 +365,7 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
 {
   "stage": "design",
   "ok": true,
-  "design_brain": "2",
+  "design_brain": "5",
   "audience": "analytical",
   "counts": {"error": 0, "warn": 2, "info": 1},
   "findings": [
@@ -348,7 +380,12 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   ],
   "fixed": [
     {"finding": "size.pie-geometry@Sales by Region", "rule": "size.pie-geometry",
-     "chart": "Sales by Region", "set": {"height": 8}, "was": {"height": 4}}
+     "kind": "repair", "chart": "Sales by Region", "set": {"height": 8},
+     "was": {"height": 4},
+     "why": "pie squeezed: height 4 < 8; ring shrinks and legend crowds"},
+    {"finding": "default.x-label-format@Weekly Orders", "rule": "default.x-label-format",
+     "kind": "fill", "chart": "Weekly Orders", "set": {"x_label_format": "%b %Y"},
+     "was": {"x_label_format": null}, "why": "grain P1M reads as 'Sep 2026'"}
   ],
   "ignored": ["layout.fold-budget"],
   "unmatched_ignores": ["size.pie-geometri"],
@@ -359,8 +396,11 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
 - `ok` is false iff a finding of severity `error` exists. The `--strict` gate
   (and `--design strict` on check/apply) rides the exit code and appends a
   `design_gate` entry to `errors`; it does not redefine `ok`'s meaning.
-- `fixed` entries disclose the full diff (`set` new values, `was` old);
-  `advise --fix` additionally reports the `written` file path.
+- `fixed` entries disclose the full diff (`set` new values, `was` old; a
+  field a fill removes shows `null` in `set`), the `kind` (`repair` or
+  `fill`) and the `why`; `advise --fix` additionally reports the `written`
+  file path. A fill waiting for `--fix` is an `info` finding with
+  `fixable: true`, in `advise` and in the advice `check` and `apply` carry.
 - `unmatched_ignores` lists ignore/disable entries whose rule id doesn't
   exist: a typo'd suppression is surfaced, never a silent no-op.
 - `polished` lists sizing findings withheld because the chart carries a
@@ -384,7 +424,9 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   `chartwright decompile old-dash -o spec.json && chartwright advise spec.json`.
 - **`redesign`:** the one-shot form of the above: decompile → data-aware
   audit → safe geometry fixes → redesigned spec + losses + remaining
-  structural findings. Ownership decides where it lands: tool-born
+  structural findings. It writes no design defaults (only `advise --fix`
+  and `fix_spec` do, §16); its `next` line names the command when fills
+  are waiting. Ownership decides where it lands: tool-born
   dashboards redesign in place; UI-born ones come back under a `-redesign`
   slug (title suffixed too) so apply builds the redesign **side by side**
   and the original is never overwritten. Structural findings stay findings:
@@ -403,7 +445,10 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
 - **Chart identity:** no rule may ever autofix a chart `name`: names seed
   uuid5 identity; a rename is a delete+create on the live instance.
 - **`plan`/golden tests:** advise is pure spec-side analysis; compiled bytes
-  are untouched, golden tests unaffected.
+  are untouched, golden tests unaffected. A design default is an ordinary
+  field once `--fix` writes it, so `plan` and decompile treat it like one the
+  author typed; `design.filled` never reaches the bundle, and decompile
+  cannot recover it (a decompiled spec's fields read as the author's).
 - **Skill (`skill/SKILL.md`):** the static "Design rules" section is replaced
   by two procedure steps:
   - *Step 1.5*, brain on (default): run `CW brief --audience <inferred>`
@@ -414,7 +459,8 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   - *Step 4.5*, after `check` passes: `CW advise <spec> --profile <p>`;
     apply or consciously `ignore` findings (with the user, in the spec's
     `design.ignore`); at most 2 design iterations, then surface remaining
-    findings verbatim.
+    findings verbatim. `--fix` runs before any hand edit, and the author
+    edits the file it wrote, never a regenerated copy (§16).
   - Anti-evasion row: *"Advice finding seems wrong → record it in
     `design.ignore` and tell the user, or report a rule bug; never hand-tune
     output to dodge the critic."*
@@ -430,7 +476,11 @@ What actually runs (tests/test_design*.py, test_calibrate.py, test_redesign.py):
 - **Seeded fuzz:** advise never raises across a grid of height/width/layout
   mutations of a mixed-type spec.
 - **Golden dogfood:** `examples/nyc_taxi_operations.json` advises clean at
-  `analytical` (its two deliberate exceptions recorded in `design.ignore`).
+  `analytical` (its two deliberate exceptions recorded in `design.ignore`)
+  except for the design defaults `--fix` would fill: the file is the spec
+  behind the README screenshot, kept as written, and the test also holds it
+  to zero findings once `--fix` writes them.
+- **Design defaults** (`test_design_defaults.py`): see §16.
 - **Contract tests:** the chart-type taxonomy exactly covers `CHART_TYPES`
   (a 15th type fails CI until classified); one sketch parse per holder
   (the geometry-cache bound); brief line budget per audience.
@@ -481,6 +531,18 @@ reversible and none is load-bearing enough to block on:
 12. **Learning/calibration deferred to phase 3**; the architecture point is
     that rules-as-data + stable ids make it a parameter update, not a
     rewrite.
+13. **Design defaults are fills written into the spec, never compile-time
+    defaults** (2026-10-03, decided after four independent reviews and two
+    cross-checks; the record is the project's 2026-10-03 brain-defaults
+    decision, kept with its research notes outside the repository). The
+    brain chooses a value only through `advise --fix` and MCP `fix_spec`,
+    which write it into the spec; compile, plan and decompile never
+    invent one, so a bundle depends on the spec alone, `plan` stays clean
+    after `apply`, and upgrading chartwright restyles nothing. Provenance
+    is `design.filled`, and there is no per-spec brain version pin: a
+    newer brain changes a spec only when someone runs `--fix`, and then
+    only fields left unset or listed in `design.filled`. The catalogue, the
+    ownership rule and the conditions each fill honours are §16.
 
 ## 15. Implementation deviations (recorded, not silent)
 
@@ -581,3 +643,107 @@ Recorded during the post-merge review burn-down:
     stops at a page cap; past it, a real dataset became "uuid not resolvable"
     and its chart was dropped: a wrong answer wearing the costume of an
     honest loss, which is the one failure this decompiler must never produce.
+
+## 16. Design defaults (fills)
+
+Some display fields have one sensible value the spec can work out on its
+own: a monthly axis labelled `Sep 2026`, a count shown as `12,345`, a
+table that pages by what fits its panel. The brain fills these in with
+`advise --fix` (MCP `fix_spec`) when the author left them unset, writing
+the value into the spec where the diff shows it. Nothing fills at compile
+time (§14.13): compile, `plan`, decompile and `--design off` behave
+exactly as before, and a spec that was never fixed builds the same bytes.
+
+### The fills
+
+Every fill is an `info` finding with a fix, never writes Superset's own
+value (a fill that draws nothing new is only noise in the spec), and
+changes no query. Thresholds are audience params (§6),
+so `design.yaml` tunes them; those marked unsourced are judgement awaiting
+the live calibration this page's status note asks for.
+
+| rule | field | fills | only when |
+|---|---|---|---|
+| `default.x-label-format` | `x_label_format` | `%b %Y` at P1M, `%Y` at P1Y, `%d %b` at P1D or P1W | a timeseries chart (line, bar, area, scatter); for day labels, the chart's `time_range` spans at most `day_label_max_span_days` (366), since `%d %b` drops the year. An omitted grain is read as its P1D default. Not on a categorical bar or a mixed chart, whose x axis may not be time |
+| `default.compare-suffix` | `compare_suffix` | `vs previous month`, `vs 12 months earlier` | a trendline KPI with `compare_lag`, at a grain with a plain name (hour, day, week, month, quarter, year) |
+| `default.count-format` | `number_format` | `,.0f` | every metric the chart shows is `COUNT` or `COUNT_DISTINCT`, on a chart with one `number_format` (not a table or a mixed chart); not with `contribution`, a 100 % stack, or a pivot aggregation that leaves fractions |
+| `default.cell-bars` | `cell_bars` | `false` | a raw-mode table with a column named `id`, `code`, `year`, `zip`, `zipcode` or `postcode` as a whole trailing token (`order_id`, `fiscal_year`; not `uuid` or `zip_count`). With column types (`--profile`), only a numeric one counts. Aggregate tables draw bars on metrics only, so they never need it |
+| `default.page-length` | `page_length` | whole rows that fit, minus one for the pager | a table with an explicit `row_limit` larger than the rows that fit, and a page of at least `page_min_rows` (3). The one grid formula `size.table-window` reads, so the fill can never make that rule ask for more height |
+| `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, unsourced) |
+| `default.single-series-legend` | `show_legend` | `false` | a timeseries chart or categorical bar with one metric, no groupby, no series limit, no goal lines and no legend placement written, whose shown title or `y_axis_title` contains the metric's label. Never a heatmap, whose legend is the colour scale |
+| `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12) and a width of at least `value_label_min_width` (6/12); both unsourced |
+
+`narrative.big-number-format` stands down where `default.count-format`
+offers the same remedy with a fix: one remedy, one finding.
+
+The decision record's suggestion-only list stays without fills: category
+sort (`chart.ordinal-order` reports ordinal names), y-axis truncation,
+`compare_lag`, series limits (`chart.series-limit` reports them with
+`--profile`), `show_totals` (Superset's totals row sums every group, not
+the rows shown), and number or currency formats guessed from names. The
+brief tells an author to set these only on request.
+
+### Who owns a field
+
+`design.filled` maps a chart name to the fields the brain filled. Per chart
+and field:
+
+- **Written and not listed:** the author's. No fill ever touches it, even
+  when it holds Superset's own value (`show_legend: true` keeps a legend).
+  Rules know what was written from validation's `model_fields_set`
+  (`RuleContext.written`); an explicit `null` counts as unset.
+- **Listed:** the brain's. Every `--fix` recomputes it from the chart as it
+  is now, so a new height, grain, `row_limit` or groupby refreshes it, and
+  removes it (and the entry) when its rule stops applying: a groupby added
+  later brings the legend back.
+- **Unset:** filled when the rule applies, and listed.
+
+The author takes a filled field over in either of two ways: delete it from
+`design.filled`, or edit it to a value the rule never writes (`page_length:
+0`, `show_legend: true`, a format of their own). The next `--fix` sees the
+second case, drops the field from the list and keeps the value. An edit to
+a value the rule could also have written (a page of 10 where the panel fits
+5) is indistinguishable from a stale fill, so it stays the brain's until
+delisted; `advise` shows the refresh before `--fix` runs, with the delisting
+it would take. To keep a field unset for good, ignore the rule for that
+chart (`"default.page-length@Orders"`); deleting the value only brings it
+back.
+
+Why not "a fill whose value differs from what the brain would now choose
+becomes the author's"? That rule cannot tell an edit from a change of
+input, so it would freeze every stale fill as the author's: a legend
+hidden for one series would stay hidden after a groupby added five, and
+a "vs previous month" would survive a switch to weekly data. Refreshing
+stale fills is the reason provenance exists, so the brain keeps what it
+wrote until the value says otherwise.
+
+`design.filled` is the brain's record of its own writes, the same
+direction as §15.13, which names explicit provenance as the real fix for
+inferred signals. It is validated (every key a chart, every field one the
+brain fills and the chart has), so a renamed chart must carry its entry.
+Brain output never silences a rule: `size.table-window` and `size.grid-fit`
+still report a brain-filled page that no longer fits, but leave the height
+alone, because that page follows the height and the fill phase refits it.
+Decompile cannot recover provenance, so every field of a decompiled spec
+reads as the author's.
+
+### The loop, sketches, and redesign
+
+Fills run after repairs settle (§9), so a page is computed from the height
+the repairs leave. They write no geometry and no field a repair writes,
+which keeps the loop's convergence invariant, and a second `--fix` is a
+no-op (both tested). Charts in a sketch take fills like any other: no fill
+changes a height or width, so the drawing stays true and §15.9's
+stale-drawing disclosure never applies to them. `redesign` writes no fills;
+its `next` line names `advise --fix` when some are waiting.
+
+### Seeing them
+
+- `advise`, and the advice `check` and `apply` carry, list each waiting
+  fill as an `info` finding with `fixable: true`. Info never blocks
+  `--design strict`.
+- Each `fixed` record says `kind: "fill"` and why.
+- `chartwright explain <spec> [--chart NAME] [--json]` shows, per chart,
+  every field a fill governs: its value, whether it came from the spec, a
+  fill, or Superset's own default, the rule, the reason, and how to change
+  it.
