@@ -18,6 +18,7 @@ import re
 from datetime import date
 
 from ..spec import (
+    DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
     GRID_HEADER_UNITS,
     SUPERSET_COLOR_SCHEMES,
@@ -816,6 +817,18 @@ def top_n_sort(ctx: RuleContext):
                 "data.top-n-sort", "warn", c.name, ctx.where(c.name),
                 f"row_limit {c.row_limit} with no sort_by shows {c.row_limit} ARBITRARY "
                 f"rows, not a top {c.row_limit}; set sort_by to the ranking metric",
+            )
+        elif (c.type == "bar" and c.category_sort and c.series_limit is not None
+                and c.row_limit is not None and c.row_limit < DEFAULT_ROW_LIMIT["bar"]):
+            # One "Sort query by" control (timeseries_limit_metric) ranks the series and
+            # orders the query (buildQueryObject.ts, normalizeOrderBy.ts), so with a
+            # series limit the query can't also be ordered by the category.
+            yield Finding(
+                "data.top-n-sort", "warn", c.name, ctx.where(c.name),
+                f"row_limit {c.row_limit} with category_sort and series_limit keeps the "
+                f"{c.row_limit} largest values, not the first categories: Superset orders "
+                "the query by the series ranking, so the axis shows gaps; drop row_limit, "
+                "or drop series_limit so the query is ordered by the category",
             )
 
 

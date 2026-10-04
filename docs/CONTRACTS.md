@@ -230,12 +230,36 @@ running the tool against real instances of all three releases.
   `:699`, 6.1.0 `:789`). The tool never turns server pagination on; the
   `server_page_length` it has always written is Superset's stored default and
   changes nothing. `page_length` in the spec sets the page.
-- **A bar sorts its categories two ways.** With one series the query sorts
-  on the x column (`operators/sortOperator.ts`, which skips any chart with a
-  groupby, 4.1.4 `:46`, 6.1.0 `:45`); with several series the plugin sorts
-  the x values by name, reading `x_axis_sort` at 6.1.0
-  (`Timeseries/transformProps.ts:335`) and `x_axis_sort_series` at 4.1.4 and
-  5.0.0 (`:243` at 4.1.4). `category_sort` writes whichever applies.
+- **A bar sorts its categories two ways.** With one series a post-processing
+  sort orders the returned rows on the x column (`operators/sortOperator.ts`,
+  which skips any chart with a groupby, 4.1.4 and 5.0.0 `:46`, 6.1.0 `:45`);
+  with several series the plugin sorts the x values by name, reading
+  `x_axis_sort` at 6.1.0 (`Timeseries/transformProps.ts:335`) and
+  `x_axis_sort_series` at 4.1.4 and 5.0.0 (`:243` at 4.1.4, `:246` at 5.0.0).
+  `category_sort` writes whichever applies.
+- **Which rows a bar's row limit keeps is set by the query's ORDER BY, not by
+  that sort.** The bar's query takes its ORDER BY from `normalizeOrderBy`
+  (`Timeseries/buildQuery.ts:93` at all three releases): the "Sort query by"
+  control (`timeseries_limit_metric`, labelled "Sort by" at 4.1.4) if set,
+  else the first metric (`query/normalizeOrderBy.ts` `:54` and `:74`, 6.1.0
+  `:73`), descending
+  unless `order_desc` is false (`query/buildQueryObject.ts`, 4.1.4 and 5.0.0
+  `:131`, 6.1.0 `:133`). The control's own help text says so: it decides
+  "what data are truncated" when a row limit is reached
+  (`shared-controls/dndControls.tsx`, 5.0.0 `:195`, 6.1.0 `:229`; 4.1.4
+  `:194` words it as "row selection criteria"). Ordered by value, a row limit
+  below the number of categories kept the largest bars, which were then
+  drawn in category order with gaps. So `category_sort` also sets "Sort
+  query by" to `MIN(<x column>)` and `order_desc` to the sort's direction:
+  grouped by the x column, `MIN` of it is the category itself, so the row
+  limit keeps the first categories in reading order. Superset compiles an
+  ad-hoc metric in the ORDER BY (`superset/models/helpers.py`, 4.1.4 `:1570`,
+  5.0.0 `:1581`, 6.1.0 `:2796`), and the metric is not drawn as a series
+  because its label is not `x_axis_sort`
+  (`operators/utils/extractExtraMetrics.ts:35`, all three releases).
+  With `series_limit` the same control ranks the series, so the tool leaves
+  it to the series limit; there a `row_limit` still keeps the largest values,
+  and `advise` warns about it (`data.top-n-sort`).
 - **On 4.1.4, heatmap and histogram exist twice** (a legacy plugin and a
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named

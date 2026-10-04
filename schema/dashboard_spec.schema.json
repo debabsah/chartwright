@@ -562,7 +562,7 @@
             }
           ],
           "default": null,
-          "description": "Order the bars by their category (x_column) instead of by the first metric: \"asc\" reads A to Z or 0 to 9 (hours, ranks, '1-Mon'), left to right or top to bottom on a horizontal bar; \"desc\" reverses it",
+          "description": "Order the bars by their category (x_column) instead of by the first metric: \"asc\" reads A to Z or 0 to 9 (hours, ranks, '1-Mon'), left to right or top to bottom on a horizontal bar; \"desc\" reverses it. The query is ordered by the category too, so a row_limit keeps the first categories in that order, not the largest values. With series_limit the query stays ordered by the series ranking (Superset has one \"Sort query by\" control for both), so there a row_limit keeps the largest values",
           "title": "Category Sort"
         }
       },

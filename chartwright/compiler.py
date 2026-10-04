@@ -270,10 +270,34 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
                 p["x_axis_sort_series"] = "name"
                 p["x_axis_sort_series_ascending"] = ascending
             else:
-                # One series: the query sorts on the x column, one of x_axis_sort's own
-                # options (operators/sortOperator.ts is_sort_index, all three releases).
+                # One series: the post-processing sort orders the result on the x
+                # column, one of x_axis_sort's own options (operators/sortOperator.ts
+                # is_sort_index, all three releases). It sorts whatever rows the query
+                # returned; it does not choose them.
                 p["x_axis_sort"] = chart.x_column
             p["x_axis_sort_asc"] = ascending
+            if chart.series_limit is None:
+                # The SQL ORDER BY, and so which rows a row limit keeps, comes from
+                # normalizeOrderBy (Timeseries/buildQuery.ts:93 at 4.1.4, 5.0.0 and
+                # 6.1.0): the "Sort query by" metric (timeseries_limit_metric), else the
+                # first metric, descending by default (buildQueryObject.ts). Left alone,
+                # a row limit keeps the top rows by value and the chart draws them in
+                # category order, with gaps. MIN(x) per x group is x itself, so sorting
+                # the query by it keeps the first categories in reading order. Its
+                # label is never x_axis_sort, so extractExtraMetrics.ts doesn't add it
+                # as a series. With series_limit the same control ranks the series, so
+                # it stays that (spec validation refuses a row_limit there).
+                p["timeseries_limit_metric"] = {
+                    "expressionType": "SIMPLE",
+                    "column": {"column_name": chart.x_column},
+                    "aggregate": "MIN",
+                    "label": f"MIN({chart.x_column})",
+                    "optionName": "metric_sdc_" + uuid.uuid5(
+                        ids.NAMESPACE, f"{spec.dashboard.slug}/chart/{chart.name}/category_sort"
+                    ).hex[:12],
+                    "hasCustomLabel": False,
+                }
+                p["order_desc"] = chart.category_sort == "desc"
         else:
             # Rankings read sorted by their measure, not by label order. The
             # horizontal axis renders bottom-up, so ascending puts the largest

@@ -167,7 +167,7 @@ def test_category_sort_reads_in_order_on_both_orientations():
     for (orientation, order), stored_asc in cases.items():
         p = _params(_spec({**bar, "orientation": orientation, "category_sort": order}))["B"]
         assert (p["x_axis_sort"], p["x_axis_sort_asc"]) == ("hour", stored_asc)
-        assert "x_axis_sort_series" not in p  # one series: the query sorts on the column
+        assert "x_axis_sort_series" not in p  # one series: sortOperator sorts on the column
         # Several series: sortOperator.ts skips a groupby, so the plugin sorts by name,
         # read from x_axis_sort at 6.1.0 and x_axis_sort_series at 4.1.4 and 5.0.0.
         for extra in ({"groupby": "region"}, {"metrics": ["COUNT(*)", "SUM(x)"]}):
@@ -177,6 +177,53 @@ def test_category_sort_reads_in_order_on_both_orientations():
             assert (p["x_axis_sort_series"], p["x_axis_sort_series_ascending"]) == ("name", stored_asc)
     default = _params(_spec(bar))["B"]
     assert (default["x_axis_sort"], default["x_axis_sort_asc"]) == ("COUNT(*)", False)
+
+
+def test_category_sort_orders_the_query_so_a_row_limit_keeps_the_first_categories():
+    """The query's ORDER BY comes from normalizeOrderBy (Timeseries/buildQuery.ts:93 at
+    4.1.4, 5.0.0 and 6.1.0): the "Sort query by" metric, else the first metric,
+    descending. Ordered by value, a row limit kept the 5 busiest hours and the chart
+    then drew them in hour order, with gaps. category_sort orders the query by the
+    category itself: MIN(x) per x group is x, with or without a groupby."""
+    bar = {"name": "B", "type": "bar", "dataset": DS, "x_column": "hour",
+           "metrics": ["COUNT(*)"], "row_limit": 5}
+    for extra in ({}, {"groupby": "region"}):
+        for orientation in ("vertical", "horizontal"):
+            for order, desc in (("asc", False), ("desc", True)):
+                p = _params(_spec({**bar, **extra, "orientation": orientation,
+                                   "category_sort": order}))["B"]
+                sort_by = p["timeseries_limit_metric"]
+                assert (sort_by["expressionType"], sort_by["aggregate"],
+                        sort_by["column"]["column_name"]) == ("SIMPLE", "MIN", "hour")
+                assert p["order_desc"] is desc
+                # extractExtraMetrics adds the sort metric as a series only when its
+                # label is x_axis_sort; it must stay out of the chart.
+                assert sort_by["label"] != p["x_axis_sort"]
+    default = _params(_spec(bar))["B"]
+    assert "timeseries_limit_metric" not in default and "order_desc" not in default
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"echarts_timeseries_bar": set(p)}) == [], version
+
+
+def test_the_category_query_order_round_trips_without_a_loss():
+    spec = _spec({"name": "B", "type": "bar", "dataset": DS, "x_column": "hour",
+                  "metrics": ["COUNT(*)"], "row_limit": 5, "category_sort": "desc"})
+    out = _decompile(spec)
+    assert out.losses == []
+    assert out.spec["charts"][0]["category_sort"] == "desc"
+    assert "series_limit_metric" not in out.spec["charts"][0]
+
+
+def test_category_sort_with_a_series_limit_keeps_the_series_ranking():
+    """One "Sort query by" control (timeseries_limit_metric) ranks the series for the
+    series limit and orders the query (buildQueryObject.ts, normalizeOrderBy.ts), so with
+    series_limit it stays the series ranking (data.top-n-sort warns on a row_limit)."""
+    bar = {"name": "B", "type": "bar", "dataset": DS, "x_column": "hour", "metrics": ["COUNT(*)"],
+           "groupby": "region", "series_limit": 3, "series_limit_metric": "SUM(x)",
+           "category_sort": "asc"}
+    p = _params(_spec(bar))["B"]
+    assert p["timeseries_limit_metric"]["column"]["column_name"] == "x" and "order_desc" not in p
 
 
 def test_a_grouped_bar_sorted_by_name_on_4_1_decompiles_as_category_sort():

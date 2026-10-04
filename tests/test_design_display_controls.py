@@ -52,6 +52,18 @@ def test_ordinal_bars_are_pointed_at_category_sort():
     assert "alphabetically" in f.detail and "category_sort" not in f.detail
 
 
+def test_a_row_limit_on_a_category_sorted_bar_with_a_series_limit_warns():
+    """There the query stays ordered by the series ranking, so the limit cuts by value."""
+    bar = {**HOURS, "groupby": "region", "series_limit": 3, "category_sort": "asc",
+           "x_label_every": True}
+    (f,) = _fired("data.top-n-sort", [bar])
+    assert f.severity == "warn" and "largest values" in f.detail
+    assert not _fired("data.top-n-sort", [{**bar, "row_limit": None}])
+    # Without a series limit the query is ordered by the category itself.
+    no_limit = {k: v for k, v in bar.items() if k != "series_limit"}
+    assert not _fired("data.top-n-sort", [no_limit])
+
+
 def test_a_paged_table_needs_room_for_one_page_not_every_row():
     table = {"name": "T", "type": "table", "dataset": DS, "metrics": ["COUNT(*)"],
              "groupby": ["c"], "sort_by": "COUNT(*)", "row_limit": 500, "height": 12}
