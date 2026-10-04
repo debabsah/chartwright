@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1289 tests, 58 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1292 tests, 58 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -317,8 +317,10 @@ Stated plainly, so the green above means something:
   SSO or OAuth sign-in. CI signs in with a database login; LDAP and Preset
   sign-in aren't tested live.
 - **Versions**: 4.1.4, 5.0.0, and 6.1.0 exactly; other release lines are
-  untested. Reading the instance's version is tested against responses
-  shaped like each release's source, not yet against the live containers.
+  untested. 6.0.x is not in the tested matrix: the release-specific fields
+  are placed at 6.0.0 or 6.1.0 from the 6.0.0 source, never from a running
+  6.0.x. Reading the instance's version is tested against responses shaped
+  like each release's source, not yet against the live containers.
 - **Concurrency**: the second-writer harness scripts the known stale-tab
   patterns; arbitrary multi-writer races are not exhaustively explored.
 - **Permissions**: all verification runs as an admin. Restricted roles

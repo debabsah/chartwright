@@ -608,11 +608,9 @@ reversible and none is load-bearing enough to block on:
     that rules-as-data + stable ids make it a parameter update, not a
     rewrite.
 13. **Design defaults are fills written into the spec, never compile-time
-    defaults** (2026-10-03, decided after four independent reviews and two
-    cross-checks; the record is the project's 2026-10-03 brain-defaults
-    decision, kept with its research notes outside the repository). The
-    brain chooses a value only through `advise --fix` and MCP `fix_spec`,
-    which write it into the spec; compile, plan and decompile never
+    defaults** (2026-10-03). The brain chooses a value only through
+    `advise --fix` and MCP `fix_spec`, which write it into the spec;
+    compile, plan and decompile never
     invent one, so a bundle depends on the spec alone, `plan` stays clean
     after `apply`, and upgrading chartwright restyles nothing. Provenance
     is `design.filled`, and there is no per-spec brain version pin: a
@@ -974,7 +972,7 @@ thresholds; those marked judgement are usability choices, not pixel facts.
 | `default.cell-bars` | `cell_bars` | `false` | a raw-mode table with a column named `id`, `code`, `year`, `zip`, `zipcode` or `postcode` as a whole trailing token (`order_id`, `fiscal_year`; not `uuid` or `zip_count`). With column types (`--profile`), only a numeric one counts. Aggregate tables draw bars on metrics only, so they never need it |
 | `default.page-length` | `page_length` | the whole rows that fit beside the page-size bar and the pager | a table with an explicit `row_limit` larger than the rows that fit on one page, and a page of at least `page_min_rows` (3, judgement). The one grid model `size.table-window` reads, so the fill can never make that rule ask for more height |
 | `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, judgement), when the bar the box sits in hides no row: a paged table already draws it, and a table on one page must still fit every row beside it |
-| `default.single-series-legend` | `show_legend` | `false` | a timeseries chart or categorical bar with one metric, no groupby, no series limit, no goal lines and no legend placement written, whose shown title or `y_axis_title` contains the metric's label. Never a heatmap, whose legend is the colour scale |
+| `default.single-series-legend` | `show_legend` | `false` | a timeseries chart or categorical bar with one metric, no groupby, no series limit, no goal lines and no legend placement written, whose shown title or `y_axis_title` contains the metric's label, and that label is at least 3 characters long. Never a heatmap, whose legend is the colour scale |
 | `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17) |
 
 `narrative.big-number-format` stands down where `default.count-format`

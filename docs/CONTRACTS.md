@@ -53,21 +53,20 @@ running the tool against real instances of all three releases.
   4.1.4/5.0.0, `:187` at 6.1.0). An apply therefore replaces CSS edited in
   the UI with the spec's `css`, or clears it when the spec has none; `plan`
   reports the difference first.
-- **Tags import on 6.1.0 only, and only with tagging turned on.** The
-  dashboard and chart import schemas gain `tags` at 6.1.0
-  (`superset/dashboards/schemas.py:519`, `superset/charts/schemas.py:1627`).
-  4.1.4 and 5.0.0 load every bundle file through schemas that reject a
-  field they don't declare (`superset/commands/importers/v1/utils.py:187`),
-  so a bundle carrying tags fails to import there. On 6.1.0 the importer
-  applies tags only with the `TAGGING_SYSTEM` feature flag
-  (`superset/commands/dashboard/importers/v1/__init__.py:152,207`) and
-  replaces the object's tags with the bundle's list
-  (`superset/commands/importers/v1/utils.py:335`). The tool writes `tags`
-  only when the spec sets them, and `check`, `apply` and `plan` refuse a
-  spec with `tags` on an instance older than 6.0.0, the first release whose
-  import schemas declare them (6.0.0 `superset/dashboards/schemas.py:502`,
-  `superset/charts/schemas.py:1589`); see "Which release is on the other
-  end".
+- **Tags import on 6.0.0 or later, and only with tagging turned on.** The
+  dashboard and chart import schemas gain `tags` at 6.0.0
+  (`superset/dashboards/schemas.py:502`, `superset/charts/schemas.py:1589`;
+  6.1.0 `:519`, `:1627`). 4.1.4 and 5.0.0 load every bundle file through
+  schemas that reject a field they don't declare
+  (`superset/commands/importers/v1/utils.py:187`), so a bundle carrying tags
+  fails to import there. From 6.0.0 the importer applies tags only with the
+  `TAGGING_SYSTEM` feature flag
+  (`superset/commands/dashboard/importers/v1/__init__.py`, 6.0.0
+  `:152,188`, 6.1.0 `:152,207`) and replaces the object's tags with the
+  bundle's list (`superset/commands/importers/v1/utils.py`, 6.0.0 `:315-318`,
+  6.1.0 `:335`). The tool writes `tags` only when the spec sets them, and
+  `check`, `apply` and `plan` refuse a spec with `tags` on an instance older
+  than 6.0.0; see "Which release is on the other end".
 - **A chart's own settings change through the chart API.** Since the
   importer never overwrites an existing chart, a re-apply sends a chart's
   description, certification and cache timeout with its options in the
@@ -208,14 +207,23 @@ running the tool against real instances of all three releases.
   (the MCP tools' `superset_version`), which also skips the lookup.
   `compile --superset-version` runs the same check offline; without it,
   `compile` writes the same bundle for every release.
-- **A field a release ignores is a warning.** `x_label_every`, a
-  trendline's `subtitle` and a table's `column_headers` write 6.1.0
-  controls that older plugins never read (next section). A stacked mixed
-  query with `show_value` labels every segment before 6.1.0, because the
-  Mixed Chart reads `onlyTotal` from 6.1.0 only
-  (`MixedTimeseries/transformProps.ts:186-187`); `only_total: false` asks
-  for exactly that, so it raises nothing. These come back in
+- **A field a release ignores is a warning.** A trendline's `subtitle` and
+  a table's `column_headers` write controls that 6.0.0 added and older
+  plugins never read (next section). `x_label_every` warns before 6.1.0: a
+  time axis needs `force_max_interval`, a 6.1.0 control, while a mixed
+  chart's category axis needs only `xAxisLabelInterval`, which 6.0.0 reads.
+  A stacked mixed query with `show_value` labels every segment before
+  6.0.0, because the Mixed Chart reads `onlyTotal` from 6.0.0 on
+  (`MixedTimeseries/transformProps.ts`, 6.0.0 `:178-179`, 6.1.0
+  `:186-187`). That warning names `show_value`, the field the spec wrote,
+  since `only_total` is on by default; `only_total: false` asks for every
+  segment on every release, so it raises nothing. These come back in
   `version_warnings`, and the dashboard still builds.
+- **6.0.x is checked against its source, not tested live.** Each field's
+  first release, 6.0.0 or 6.1.0, was read from the 6.0.0 tag, so `check`,
+  `apply` and `plan` hold a 6.0.x instance to what that release takes. 6.0.x
+  is not in the tested matrix, which stays 4.1.4, 5.0.0 and 6.1.0
+  (`docs/VERIFICATION.md`).
 
 ## What chart options mean
 
@@ -232,8 +240,9 @@ running the tool against real instances of all three releases.
   keys take `_b`, its display keys `B`). Like the other entries it lists
   every control the panel declares, so the drift check sees the Mixed
   controls the tool does not emit yet; `--check` fails when the JSON no
-  longer matches the source. 6.1.0 adds, among others, `only_total` and
-  `only_totalB`.
+  longer matches the source. Among the controls 6.1.0 declares and 5.0.0
+  does not are `only_total` and `only_totalB`, both new in 6.0.0
+  (`MixedTimeseries/controlPanel.tsx:204` at 6.0.0).
 - **Formula annotation layers draw the same way in every release.** The line,
   bar, area, scatter and mixed panels all include the annotation section
   (`chart-controls/src/sections/annotationsAndLayers.tsx:31`), and both
@@ -242,22 +251,23 @@ running the tool against real instances of all three releases.
   5.0.0 `:362`, 6.1.0 `:457`, the same body in each). Its colour, opacity,
   width and line style (solid, dashed or dotted) reach the chart; a formula
   layer has no on-chart label, so the tool offers none.
-- **Options genuinely differ by release.** 6.1.0 renamed the big-number
+- **Options genuinely differ by release.** 6.0.0 renamed the big-number
   subtitle field (`subheader` became `subtitle`) and removed sort controls
   that older releases still have. The tool emits only options valid on all
   three releases, with named exceptions. An opt-in field documented with a
   later release may emit that release's controls: `x_label_every`
-  (`force_max_interval`, `xAxisLabelInterval`, 6.1.0
-  `Timeseries/Regular/*/controlPanel.tsx` and `MixedTimeseries/controlPanel.tsx`),
-  a trend's `subtitle` (`BigNumberWithTrendline/controlPanel.tsx`), a mixed
-  query's `only_total` (`only_total`, `only_totalB`), and a table's
-  `column_headers` (`customColumnName` inside `column_config`, read at 6.1.0
-  `plugin-chart-table/src/TableChart.tsx:859`). An older plugin never reads
-  them, so an older Superset ignores them; `tools/params_drift.py` lists them
-  in `SINCE`. The reverse also happens: a bar's category sort with several
-  series writes `x_axis_sort_series` for 4.1.4 and 5.0.0, which 6.1.0 no
-  longer declares and ignores (`UNTIL`). Every other key is held to every
-  release.
+  (`force_max_interval`, new in 6.1.0, and `xAxisLabelInterval`, new in
+  6.0.0: `controls.tsx:305` at 6.0.0; `Timeseries/Regular/*/controlPanel.tsx`
+  and `MixedTimeseries/controlPanel.tsx`), a trend's `subtitle`
+  (`BigNumberWithTrendline/controlPanel.tsx:33` at 6.0.0), a mixed query's
+  `only_total` (`only_total`, `only_totalB`, 6.0.0), and a table's
+  `column_headers` (`customColumnName` inside `column_config`, read at 6.0.0
+  `plugin-chart-table/src/TableChart.tsx:806`, `:859` at 6.1.0). An older
+  plugin never reads them, so an older Superset ignores them;
+  `tools/params_drift.py` lists them in `SINCE`. The reverse also happens: a
+  bar's category sort with several series writes `x_axis_sort_series` for
+  4.1.4 and 5.0.0, which 6.0.0 and later no longer read (`UNTIL`). Every
+  other key is held to every release.
 - **A dashboard fills each missing chart option with the panel's default**
   before drawing (`applyDefaultFormData`, 4.1.4/5.0.0
   `src/dashboard/actions/hydrate.js:111`, 6.1.0
@@ -300,7 +310,8 @@ running the tool against real instances of all three releases.
   sort orders the returned rows on the x column (`operators/sortOperator.ts`,
   which skips any chart with a groupby, 4.1.4 and 5.0.0 `:46`, 6.1.0 `:45`);
   with several series the plugin sorts the x values by name, reading
-  `x_axis_sort` at 6.1.0 (`Timeseries/transformProps.ts:335`) and
+  `x_axis_sort` from 6.0.0 (`Timeseries/transformProps.ts`, 6.0.0 `:254`,
+  6.1.0 `:335`) and
   `x_axis_sort_series` at 4.1.4 and 5.0.0 (`:243` at 4.1.4, `:246` at 5.0.0).
   `category_sort` writes whichever applies.
 - **Which rows a bar's row limit keeps is set by the query's ORDER BY, not by
@@ -330,6 +341,13 @@ running the tool against real instances of all three releases.
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named
   losses rather than guessing.
+- **Custom SQL runs with the profile's rights.** A `SQL(...)` metric or a
+  `{"sql": ...}` filter reaches Superset as an ad hoc SQL expression, so
+  `check` cannot match it to a column and lists it under `unchecked_sql`;
+  the `apply` report and the MCP `build_dashboard` payload list it the same
+  way. Custom SQL in a spec runs with the profile's rights during apply's
+  data check, which queries each chart once through `/api/v1/chart/data`
+  signed in as that profile.
 
 ## Differences the tool absorbs
 
@@ -340,12 +358,13 @@ running the tool against real instances of all three releases.
   `superset/dashboards/schemas.py:245`). The tool reads it from the list
   API, which includes it on every release (4.1.4
   `superset/dashboards/api.py:221`).
-- **6.1.0 renamed the big-number subtitle controls.** 4.1.4 and 5.0.0
+- **6.0.0 renamed the big-number subtitle controls.** 4.1.4 and 5.0.0
   declare `subheader` and `subheader_font_size`
   (`plugin-chart-echarts/src/BigNumber/sharedControls.ts` at both tags);
-  6.1.0 replaced them with `subtitle` and `subtitle_font_size` but still
-  renders the legacy pair through a fallback
-  (`BigNumber/BigNumberTotal/transformProps.ts:77` at 6.1.0). The tool
+  6.0.0 and 6.1.0 replace them with `subtitle` and `subtitle_font_size` but
+  still render the legacy pair through a fallback
+  (`BigNumber/BigNumberTotal/transformProps.ts`, 6.0.0 `:69-72`, 6.1.0
+  `:77`). The tool
   emits the legacy pair with pinned sizes, which every release honors.
   Left unpinned, that fallback sizes the subtitle at the full card height,
   so short subtitles render huge and cropped.

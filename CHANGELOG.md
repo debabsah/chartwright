@@ -131,7 +131,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
   - `show_value` (values on the bars or points), `stack` (`true`, or `"stream"` and
     `"expand"` where the chart offers them), `only_total` and `contribution` (`"row"`
     with `stack` is a 100 % stacked chart). A mixed chart's queries take `show_value`,
-    `stack` and `only_total` (6.1+) each.
+    `stack` and `only_total` (6.0+) each.
   - `series_limit`, `series_limit_metric` and `series_limit_ascending`: the top N series
     of a `groupby`, on the timeseries charts, the categorical bar and each mixed query.
   - `show_legend`, `legend_position` (`bottom`, `left`, `right`) and `legend_type`
@@ -141,9 +141,9 @@ while the major version is 0, minor bumps may include breaking changes and say s
     their categories, such as hours, instead of by the first metric.
   - `time_range` on every chart type, e.g. a "Last 30 days" KPI or table.
   - Trendline KPIs: `compare_lag` and `compare_suffix` ("+4 % vs last month"),
-    `trend_color` (green, amber, red or `#RRGGBB`) and, on Superset 6.1+, `subtitle`.
+    `trend_color` (green, amber, red or `#RRGGBB`) and, on Superset 6.0+, `subtitle`.
   - Tables: `page_length`, `show_totals`, `search_box`, and per label `column_align`,
-    `column_widths` and, on Superset 6.1+, `column_headers`.
+    `column_widths` and, on Superset 6.0+, `column_headers`.
   - Pivots: `aggregate_function` (Average, Median, Sum as Fraction of Total, ...),
     `row_order` and `column_order` (by label or by value), `row_subtotals`, `transpose`
     and `metrics_layout`.
@@ -160,14 +160,14 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - Dashboard settings in the spec: `color_scheme`, `description`, `certified_by`,
   `certification_details`, `published` (`false` for a draft), `refresh_frequency`
   (seconds), `filter_bar_orientation` (`"horizontal"` puts the bar above the charts; 4.1.4
-  and 5.0.0 need Superset's `HORIZONTAL_FILTER_BAR` flag), and, on Superset 6.1 only,
-  `show_chart_timestamps` and `tags`. `plan` names each one that differs in a new
-  `dashboard_settings_changed` list. Omitted `tags` are left alone by `apply` and `plan`
-  alike; `[]` clears them.
+  and 5.0.0 need Superset's `HORIZONTAL_FILTER_BAR` flag), `tags` (Superset 6.0 or
+  later) and `show_chart_timestamps` (6.1 or later). `plan` names each one that differs
+  in a new `dashboard_settings_changed` list. Omitted `tags` are left alone by `apply`
+  and `plan` alike; `[]` clears them.
 - Chart settings: `color_scheme` (on the chart types whose panel has one), `description`
   (viewers open it with "Show chart description"), `certified_by`,
   `certification_details`, `cache_timeout`, `display_name` (a shorter title shown on the
-  dashboard card, Superset's `sliceNameOverride`) and `tags` (6.1 only). A re-apply
+  dashboard card, Superset's `sliceNameOverride`) and `tags` (6.0 or later). A re-apply
   updates description, certification and cache timeout on existing charts too.
 - `check`, `apply` and `plan` hold a spec to the instance's Superset release. When the
   spec uses a release-specific field, they read the version (`/version` on 6.1, the
@@ -180,16 +180,16 @@ while the major version is 0, minor bumps may include breaking changes and say s
   the release instead; `compile --superset-version` runs the same check offline.
 - A colour scheme name Superset doesn't ship gets a `narrative.color-scheme` warning (with
   a did-you-mean for a case slip); a deployment's own registered schemes are accepted.
-  The design brain's version is now 4.
 - `annotations` on line, bar, area, scatter and mixed charts: goal and trend lines, as
   Superset's FORMULA annotation layers, e.g. `{"name": "Goal", "value": 80, "style":
   "dashed"}`, with colour, width and opacity. Decompile keeps formula layers and names
   any other layer type as a loss, where it used to drop them silently.
 - Custom SQL metrics, `SQL(100.0 * SUM(a) / NULLIF(SUM(b), 0)) AS Rate`, anywhere a
   metric goes, and custom SQL chart filters, `{"sql": "amount > 0 OR refunded"}`.
-  `check` cannot see the columns inside SQL, so it lists them under `unchecked_sql`;
-  apply's data check runs them. UI-built SQL metrics and SQL filters now decompile, where
-  they used to be dropped as losses.
+  `check` cannot see the columns inside SQL, so it lists them under `unchecked_sql`, and
+  so do the `apply` report and the MCP `build_dashboard` payload: apply's data check runs
+  them with the profile's rights. UI-built SQL metrics and SQL filters now decompile,
+  where they used to be dropped as losses.
 - Native filter controls: `description` on every filter; `dependencies` (cascading, by
   filter name); on value pickers `search_all_options`, `inverse_selection`,
   `sort_metric`; on value pickers and sliders a pre-filter (`pre_filter` conditions, and

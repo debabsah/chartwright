@@ -43,6 +43,9 @@ class ApplyReport:
     # (chartwright.versions); set only when the spec uses a version-gated field.
     superset_version: str | None = None
     version_warnings: list[dict] = field(default_factory=list)
+    # Custom SQL resolve could not check by name (Resolution.unchecked_sql); the
+    # data check runs it with the profile's rights, so the report says which.
+    unchecked_sql: list[dict] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -345,6 +348,7 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
     report.resolution_errors = [e.as_dict() for e in resolution.errors]
     report.superset_version = resolution.superset_version
     report.version_warnings = resolution.version_warnings
+    report.unchecked_sql = resolution.unchecked_sql
     if not resolution.ok:
         return report
 
