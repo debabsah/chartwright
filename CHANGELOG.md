@@ -74,7 +74,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
     `--standard NAME` limits a run to one team's specs.
   - New rules, design brain 6: `standard.content-locked` (error),
     `standard.content-stale` (warn), `standard.content-released` (info),
-    `standard.classification` (error) and `standard.css-hides` (warn).
+    `standard.classification` (error) and `standard.css-hides` (warn, a heuristic for
+    the common ways CSS hides an element; locked with the content).
   - A field has one owner: `design.filled` and `design.standard_written` never record
     the same field; apply takes a brain fill over, and the brain never fills a field a
     standard holds.

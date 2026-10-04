@@ -927,13 +927,26 @@ Recorded during the content standards (§18, "Content"):
     even when it carries a record from an earlier standard: removing a
     standard's `default: true` must not strip every dashboard that
     followed it.
-33. **The version floor and the exceptions file plug in later** (the
-    decision's phase 4): a floor filters the content a spec expects per
-    instance release (`expected_items` in `design/content.py`), and an
-    exception would be consulted where a locked mismatch is decided. No
-    content slot is version-gated today: header and footer rows, CSS,
-    colours, certification and number formats import on all three
-    releases.
+33. **Left for phase 4**, with where each plugs in:
+    - the version floor filters the content a spec expects per instance
+      release (`expected_items` in `design/content.py`). No content slot is
+      version-gated today: header and footer rows, CSS, colours,
+      certification and number formats import on all three releases;
+    - the exceptions file is consulted where a locked mismatch is decided
+      (`Decision.violation`);
+    - the check that locked text is visible on the rendered dashboard after
+      deploy, the real lock that `standard.css-hides` only approximates;
+    - a lockable classification: today the lock is on the rows of the
+      classification a spec has, and the classification is the author's
+      field, so reclassifying a dashboard swaps its locked rows with only a
+      warning (§18, "Lifecycle and classification");
+    - design.filled's behaviour after an edit: a fill drops its record, so
+      deleting an edited fill lets `--fix` fill it again, where a standard's
+      released record keeps the deletion (§15.29). Both follow "an author's
+      edit or deletion wins" once fills keep a released record too;
+    - design.filled entries for a renamed or removed chart, which
+      validation still refuses, where design.standard_written accepts them
+      and `standards apply` drops them.
 
 ## 16. Design defaults (fills)
 
@@ -999,7 +1012,10 @@ the brain's work from the author's. Per chart and field, on every `--fix`:
 - **Unset, no record:** filled when the rule applies, and recorded.
 
 So the author takes a fill over by doing the obvious thing, editing or deleting
-the field, and never needs to touch `design.filled`. To keep a field unset
+the field, and never needs to touch `design.filled`. (A standard's content keeps
+a released record after an edit, so a later deletion of the edited value stays
+deleted; a fill's dropped record lets `--fix` fill that field again. §15.33
+lists aligning the two as phase 4 work.) To keep a field unset
 before anything was filled, ignore the rule for that chart
 (`"default.page-length@Orders"`).
 
@@ -1747,6 +1763,15 @@ decompiled spec has neither and a spec builds the same bytes with them. They
 reach a dashboard through a standard's `header_by_lifecycle` and
 `footer_by_classification` rows. Changing either swaps those rows on the next
 `standards apply`.
+
+A lock on `footer_by_classification` (or `header_by_lifecycle`) holds the rows
+of the classification (or state) the spec has now; the classification and the
+lifecycle are the author's fields. Reclassifying a confidential dashboard as
+public therefore removes its locked confidential row on the next
+`standards apply`, and `standards check` reports that change only as a
+`standard.content-stale` warning until then. A platform team that must control
+the classification itself reviews that field in the pull request; a lockable
+classification is phase 4 work (§15.33).
 
 Superset has no field to carry them, checked at 4.1.4, 5.0.0 and 6.1.0:
 

@@ -1071,6 +1071,24 @@ def test_a_lifecycle_banner_and_a_classification_footer_follow_the_spec(repo, ca
                    for k in got["design"]["standard_written"])
 
 
+def test_reclassifying_swaps_a_locked_classification_row_with_a_warning(repo, capsys):
+    """As DESIGN-BRAIN sec.18 documents: the lock holds the rows of the classification
+    the spec has; the classification is the author's field."""
+    data = {**DATA, "dashboard": {**DATA["dashboard"], "classification": "confidential"}}
+    org = repo / "standards" / "org.yaml"
+    org.write_text(ORG.replace("content: [footer, css]",
+                               "content: [footer, css, footer_by_classification]"),
+                   encoding="utf-8")
+    path = spec_file(repo, standard="finance", data=data)
+    apply(capsys, str(path))
+    edit(path, lambda d: d["dashboard"].update(classification="public"))
+    stale = [f for f in findings(capsys, path) if f["where"].startswith(
+        "layout.footer[org][classification=confidential]")]
+    assert [(f["rule"], f["severity"]) for f in stale] == [("standard.content-stale", "warn")]
+    apply(capsys, str(path))
+    assert "Named recipients only." not in json.dumps(read(path)["layout"]["footer"])
+
+
 def test_a_classification_the_standard_doesnt_list_is_an_error(repo, capsys):
     path = spec_file(repo, standard="finance",
                      data={**DATA, "dashboard": {**DATA["dashboard"], "classification": "secret"}})
