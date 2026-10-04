@@ -18,8 +18,8 @@ from typing import Callable, get_args
 import yaml
 
 from .compiler import (
-    BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_SIZE, LEGEND_TYPES,
-    ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
+    BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
+    LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
 )
 from .spec import (
     ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES,
@@ -1253,17 +1253,27 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
     kept = set(charts_by_name)
     grid = position.get("GRID_ID") or {}
     grid_children = grid.get("children", [])
-    # Footer = grid-level content after the last TABS (Superset draws it under
-    # every tab), or, with no tabs, the compiler's marked trailing rows.
+    # Header = grid-level content before the first TABS and footer = after the
+    # last (Superset draws them above and under every tab), or, with no tabs, the
+    # compiler's marked leading and trailing rows.
     types = [(position.get(c) or {}).get("type") for c in grid_children]
     if "TABS" in types:
+        head = types.index("TABS")
         cut = len(types) - types[::-1].index("TABS")
     else:
+        def marked(i: int, prefix: str) -> bool:
+            return grid_children[i].startswith(
+                tuple(f"{kind}-{prefix}" for kind in ("ROW", "HEADER", "DIVIDER")))
+
         cut = len(grid_children)
-        while cut and grid_children[cut - 1].startswith(
-                tuple(f"{kind}-{FOOTER_PREFIX}" for kind in ("ROW", "HEADER", "DIVIDER"))):
+        while cut and marked(cut - 1, FOOTER_PREFIX):
             cut -= 1
-    grid_children, footer_ids = grid_children[:cut], grid_children[cut:]
+        head = 0
+        while head < cut and marked(head, HEADER_PREFIX):
+            head += 1
+    header_ids, grid_children, footer_ids = (
+        grid_children[:head], grid_children[head:cut], grid_children[cut:])
+    header_rows = _walk_rows(position, header_ids, kept, losses, geometry) if header_ids else []
     footer_rows = _walk_rows(position, footer_ids, kept, losses, geometry) if footer_ids else []
     top_types = {(position.get(c) or {}).get("type") for c in grid_children}
 
@@ -1304,11 +1314,14 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
         layout = {"rows": rows}
     if footer_rows:
         layout["footer"] = footer_rows
+    if header_rows:
+        layout = {"header": header_rows, **layout}
 
     def body_and_footer() -> list:
-        """The rows of charts and markdown (headers and dividers skipped)."""
+        """The rows of charts and markdown (headers and dividers skipped), header
+        and footer included."""
         body = layout.get("rows") if "rows" in layout else [r for leaf in _leaf_tabs(layout) for r in leaf["rows"]]
-        rows = [*(body or []), *layout.get("footer", [])]
+        rows = [*layout.get("header", []), *(body or []), *layout.get("footer", [])]
         return [items for items in (row_items(r) for r in rows) if items is not None]
 
     all_rows = body_and_footer()

@@ -708,6 +708,17 @@ Recorded during the fleet-standards groundwork:
     advice block `apply` carries, and `advise_spec` and `fix_spec` take
     `strict`. Both surfaces build the block through one function
     (`design.advice_payload`), so they cannot report an overlay differently.
+21. **A header counts against every tab's fold budget; a footer does not.**
+    `layout.header` mirrors `layout.footer` everywhere else: its rows are a
+    section of their own (`header row N`) that the sizing and band rules
+    review like the body, and tab balance and the section-header check leave
+    it out. The fold budget is the exception, because the two sit on
+    opposite sides of the fold: every tab opens below the header, so its
+    height is spent before the tab's first row, while a footer comes after
+    the content the budget protects. `layout.fold-budget` therefore starts
+    each tab's count at the header's height and says so ("with the header's
+    N"); a header that alone exceeds the budget is reported once, on the
+    header row where it runs out, not again on every tab.
 
 ## 16. Design defaults (fills)
 

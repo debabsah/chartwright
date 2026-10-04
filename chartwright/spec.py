@@ -1542,14 +1542,18 @@ class DesignConfig(BaseModel):
 
 
 class Layout(_SketchHolder):
-    """Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a footer:
-    rows below all of it, outside any tab, so a tabbed dashboard shows the
-    footer under every tab."""
+    """Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a header
+    and a footer: rows above and below all of it, outside any tab, so a tabbed
+    dashboard shows them above and under every tab."""
 
     model_config = ConfigDict(extra="forbid")
 
     rows: list[Row] | None = None
     tabs: list[Tab] | None = None
+    header: list[Row] | None = Field(
+        default=None,
+        description="Rows above the rows / tabs / sketch, outside any tab (shown above every "
+                    "tab), e.g. a banner or a note on the data")
     footer: list[Row] | None = Field(
         default=None,
         description="Rows below the rows / tabs / sketch, outside any tab (shown under every tab)")
@@ -1577,7 +1581,7 @@ class Layout(_SketchHolder):
     def all_rows(self) -> list[list[RowItem]]:
         """Every row of charts and markdown (headers and dividers skipped)."""
         body = self.rows or [row for tab in self.leaf_tabs() for row in (tab.rows or [])]
-        return item_rows([*body, *(self.footer or [])])
+        return item_rows([*(self.header or []), *body, *(self.footer or [])])
 
     def sketch_holders(self) -> list["_SketchHolder"]:
         if self.sketch:

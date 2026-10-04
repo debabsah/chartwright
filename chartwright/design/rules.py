@@ -420,15 +420,23 @@ def row_fill(ctx: RuleContext):
 
 @rule("layout.fold-budget", "warn", "the dashboard should fit its audience's scroll budget")
 def fold_budget(ctx: RuleContext):
+    # A header sits above every tab, so its height is spent before each tab's own
+    # rows; a footer comes after them, so it is counted on its own.
+    header = sum(b.height for s in ctx.sections if s.header for b in s.bands)
     for si, sec in enumerate(ctx.sections):
-        total = 0.0
+        body = not (sec.header or sec.footer)
+        if body and header > ctx.params.fold_units:
+            continue  # the header alone overflows: reported there, once
+        total = header if body else 0.0
         for bi, band in enumerate(sec.bands):
             total += band.height
             if total > ctx.params.fold_units:
                 where = "the dashboard" if sec.label == "layout" else sec.label
+                with_header = f" (with the header's {header:g})" if body and header else ""
                 yield Finding(
                     "layout.fold-budget", "warn", None, ctx.where_band(si, bi),
-                    f"{where} runs {total:g}+ units against a {ctx.params.audience} budget of "
+                    f"{where} runs {total:g}+ units{with_header} against a "
+                    f"{ctx.params.audience} budget of "
                     f"{ctx.params.fold_units} (~{ctx.params.fold_units * 40}px); the budget runs "
                     f"out at row {bi}; move detail into tabs or prune",
                 )
@@ -1185,9 +1193,11 @@ def color_scheme(ctx: RuleContext):
 def markdown_height(ctx: RuleContext):
     # Operates on the raw layout indices so the fix can address the block
     # (markdown has no name to key on). A container address is None (layout
-    # rows), a tab index, [tab, sub-tab], or "footer"; fix.py reads the same.
+    # rows), a tab index, [tab, sub-tab], "header" or "footer"; fix.py reads the same.
     lay = ctx.spec.layout
     sources = []
+    if lay.header:
+        sources.append(("header", "header", lay.header))
     if lay.rows:
         sources.append((None, "layout", lay.rows))
     for ti, t in enumerate(lay.tabs or []):

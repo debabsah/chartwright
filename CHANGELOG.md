@@ -23,6 +23,17 @@ while the major version is 0, minor bumps may include breaking changes and say s
     `owners` in `dashboard_settings_changed` when they differ.
   - Omitted, `apply` leaves the live owners alone and `plan` doesn't compare them;
     the bundle is the same either way. Chart owners are left as Superset sets them.
+- `layout.header`: rows above the rows, tabs or sketch, outside any tab, so a tabbed
+  dashboard shows them above every tab; the mirror of `layout.footer`.
+  - Header rows compile under their own ids (`ROW-sdc-header-1`, ...), so adding,
+    editing or removing a header leaves every body and footer node as it was, chart
+    placeholders included.
+  - Decompile reads rows above a dashboard's tabs as its header, including rows put
+    there in Superset's UI, which used to flatten the tabs into rows with a loss.
+    Without tabs, only rows compiled as a header read back as one.
+  - `plan` compares it with the rest of the layout. The design review checks header
+    rows like body rows and counts the header's height in every tab's fold budget.
+  - A spec without a header builds the same bundle as before.
 - `dashboard.css`: the dashboard's CSS, the same thing as Superset's own "Edit CSS",
   written into the import bundle's `css` field (which 4.1.4, 5.0.0 and 6.1.0 all import).
   Decompiled (blank CSS reads back as omitted) and compared by `plan` (`css_changed`).

@@ -2354,7 +2354,7 @@
     },
     "Layout": {
       "additionalProperties": false,
-      "description": "Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a footer:\nrows below all of it, outside any tab, so a tabbed dashboard shows the\nfooter under every tab.",
+      "description": "Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a header\nand a footer: rows above and below all of it, outside any tab, so a tabbed\ndashboard shows them above and under every tab.",
       "properties": {
         "sketch": {
           "anyOf": [
@@ -2448,6 +2448,45 @@
           ],
           "default": null,
           "title": "Tabs"
+        },
+        "header": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "$ref": "#/$defs/MarkdownBlock"
+                        }
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "$ref": "#/$defs/StyledRow"
+                  },
+                  {
+                    "$ref": "#/$defs/HeaderBlock"
+                  },
+                  {
+                    "$ref": "#/$defs/DividerBlock"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rows above the rows / tabs / sketch, outside any tab (shown above every tab), e.g. a banner or a note on the data",
+          "title": "Header"
         },
         "footer": {
           "anyOf": [

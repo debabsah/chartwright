@@ -129,11 +129,13 @@ def _normalize(spec: DashboardSpec) -> dict:
             rows.append(row)
         return rows
 
+    if spec.layout.header:
+        norm_rows(spec.layout.header, data["layout"]["header"])
     if spec.layout.footer:
         norm_rows(spec.layout.footer, data["layout"]["footer"])
     if spec.layout.sketch:
-        footer = data["layout"].get("footer")
-        data["layout"] = {"rows": sketch_as_rows(spec.layout), **({"footer": footer} if footer else {})}
+        edges = {k: data["layout"][k] for k in ("header", "footer") if data["layout"].get(k)}
+        data["layout"] = {"rows": sketch_as_rows(spec.layout), **edges}
     elif spec.layout.rows:
         norm_rows(spec.layout.rows, data["layout"]["rows"])
     else:

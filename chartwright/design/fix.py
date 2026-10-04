@@ -14,13 +14,14 @@ from .model import Finding
 def _md_block(data: dict, addr, ri, ii):
     """The raw markdown-block dict at (container, row, item), or None if the
     layout changed under us (stale indices are skipped, never errors). The
-    container is None (layout rows), a tab index, [tab, sub-tab], or "footer"."""
+    container is None (layout rows), a tab index, [tab, sub-tab], "header" or
+    "footer": the header's own address, so a header never shifts a body index."""
     try:
         lay = data["layout"]
         if addr is None:
             rows = lay["rows"]
-        elif addr == "footer":
-            rows = lay["footer"]
+        elif addr in ("header", "footer"):
+            rows = lay[addr]
         elif isinstance(addr, list):
             rows = lay["tabs"][addr[0]]["tabs"][addr[1]]["rows"]
         else:
