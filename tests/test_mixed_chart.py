@@ -181,8 +181,8 @@ def test_every_month_keeps_both_ends_on_lines_and_bars():
     params = _params(_spec(line, scatter, {**BY_MONTH, "x_label_every": True}))
     _, pl = params["Trend"]
     assert json.loads(pl["echart_options"]) == {
-        "xAxis": {"axisLabel": {"showMaxLabel": False}, "boundaryGap": ["3%", "3%"]},
-        "yAxis": {"max": 1}}
+        "xAxis": {"axisLabel": {"showMaxLabel": False}, "boundaryGap": ["3%", "3%"]}}
+    assert pl["y_axis_bounds"] == [None, 1]  # the axis maximum on every release
     _, pm = params["Revenue and revenue per order"]  # bars are padded already
     assert json.loads(pm["echart_options"]) == {"xAxis": {"axisLabel": {"showMaxLabel": False}}}
     _, ps = params["Dots"]  # scatter's 6.1.0 panel has no echart_options

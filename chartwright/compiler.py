@@ -20,9 +20,13 @@ from .resolver import Resolution
 from .spec import (
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
+    FUNNEL_LABEL_TYPES,
+    HEATMAP_DEFAULT_SCHEME,
+    PIVOT_ORDER,
     DashboardSpec,
     MarkdownBlock,
     _AxisChart,
+    _SeriesDisplay,
     parse_metric,
 )
 
@@ -116,13 +120,21 @@ def _format_rule_payload(rule) -> dict:
     return out
 
 
+# Spec field -> the key ColumnConfigControl stores per label (constants.tsx at 4.1.4,
+# 5.0.0 and 6.1.0; customColumnName from 6.1.0, read at TableChart.tsx:859).
+COLUMN_CONFIG_KEYS = {"number_formats": "d3NumberFormat", "column_align": "horizontalAlign",
+                      "column_widths": "columnWidth", "column_headers": "customColumnName"}
+
+
 def _column_config(chart) -> dict:
-    """Per-column table display: hidden columns and d3 number formats."""
+    """Per-column table display: hidden columns, d3 number formats, alignment, minimum
+    widths and header text, merged per label."""
     cfg: dict = {}
     for label in chart.hidden:
         cfg.setdefault(label, {})["visible"] = False
-    for label, fmt in chart.number_formats.items():
-        cfg.setdefault(label, {})["d3NumberFormat"] = fmt
+    for field, key in COLUMN_CONFIG_KEYS.items():
+        for label, value in getattr(chart, field).items():
+            cfg.setdefault(label, {})[key] = value
     return cfg
 
 
@@ -159,7 +171,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         "viz_type": VIZ_TYPE[t],
         # Always explicit: Superset's default time window can be narrow enough
         # to return empty data on correct charts (false-trips the smoke check).
-        "time_range": "No filter",
+        "time_range": chart.time_range or "No filter",
         "adhoc_filters": _adhoc_filters(chart),
     }
 
@@ -183,21 +195,38 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         if chart.number_format:
             p["y_axis_format"] = chart.number_format
         _pin_big_number_fonts(p)
+        # BigNumberWithTrendline controlPanel.tsx, all three releases; `subtitle` 6.1.0+.
+        if chart.compare_lag is not None:
+            p["compare_lag"] = chart.compare_lag
+        if chart.compare_suffix:
+            p["compare_suffix"] = chart.compare_suffix
+        if chart.subtitle:
+            p["subtitle"] = chart.subtitle
+        if chart.trend_color:
+            p["color_picker"] = chart.trend_rgb()
     elif t in ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"):
         p["metrics"] = [metric(m) for m in chart.metrics]
         p["x_axis"] = chart.time_column
         p["time_grain_sqla"] = chart.time_grain or DEFAULT_TIME_GRAIN
-        if chart.time_range:
-            p["time_range"] = chart.time_range
         p["groupby"] = [chart.groupby] if chart.groupby else []
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         p["y_axis_format"] = chart.number_format or "SMART_NUMBER"
         p["rich_tooltip"] = True
-        p["show_legend"] = True
+        p["show_legend"] = chart.show_legend
         if t == "timeseries_area":
-            p["opacity"] = 0.2
+            p["opacity"] = 0.2 if chart.opacity is None else chart.opacity
         if t == "timeseries_scatter":
-            p["markerSize"] = 6
+            p["markerSize"] = 6 if chart.marker_size is None else chart.marker_size
+        if t in ("timeseries_line", "timeseries_area"):
+            # Line and Area controlPanel.tsx, all three releases.
+            if chart.markers:
+                p["markerEnabled"] = True
+            if chart.marker_size is not None:
+                p["markerSize"] = chart.marker_size
+        if t == "timeseries_line" and chart.area:
+            p["area"] = True
+            if chart.opacity is not None:
+                p["opacity"] = chart.opacity
     elif t == "bar":
         p["metrics"] = [metric(m) for m in chart.metrics]
         p["x_axis"] = chart.x_column
@@ -205,13 +234,30 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         p["y_axis_format"] = chart.number_format or "SMART_NUMBER"
         p["rich_tooltip"] = True
-        p["show_legend"] = True
-        # Rankings read sorted by their measure, not by label order. The
-        # horizontal axis renders bottom-up, so ascending puts the largest
-        # bar on top there; vertical wants descending left to right.
-        first = p["metrics"][0]
-        p["x_axis_sort"] = first["label"] if isinstance(first, dict) else first
-        p["x_axis_sort_asc"] = chart.orientation == "horizontal"
+        p["show_legend"] = chart.show_legend
+        if chart.category_sort:
+            # In reading order: "asc" runs left to right, and top to bottom on the
+            # bottom-up horizontal axis.
+            ascending = (chart.category_sort == "asc") != (chart.orientation == "horizontal")
+            if chart.groupby or len(chart.metrics) > 1:
+                # Several series: the plugin sorts the x values itself, by name
+                # (SortSeriesType.Name, utils/series.ts sortRows). 6.1.0 reads x_axis_sort
+                # for it; 4.1.4 and 5.0.0 read x_axis_sort_series, which 6.1.0 dropped.
+                p["x_axis_sort"] = "name"
+                p["x_axis_sort_series"] = "name"
+                p["x_axis_sort_series_ascending"] = ascending
+            else:
+                # One series: the query sorts on the x column, one of x_axis_sort's own
+                # options (operators/sortOperator.ts is_sort_index, all three releases).
+                p["x_axis_sort"] = chart.x_column
+            p["x_axis_sort_asc"] = ascending
+        else:
+            # Rankings read sorted by their measure, not by label order. The
+            # horizontal axis renders bottom-up, so ascending puts the largest
+            # bar on top there; vertical wants descending left to right.
+            first = p["metrics"][0]
+            p["x_axis_sort"] = first["label"] if isinstance(first, dict) else first
+            p["x_axis_sort_asc"] = chart.orientation == "horizontal"
         if chart.orientation == "horizontal":
             p["orientation"] = "horizontal"
         p[SDC_BAR_MARKER] = True
@@ -227,8 +273,6 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["x_axis"] = chart.x_column
         if mixed_time_axis(chart, ds):
             p["time_grain_sqla"] = chart.time_grain or DEFAULT_TIME_GRAIN
-        if chart.time_range:
-            p["time_range"] = chart.time_range
         for suffix, series in (("", chart.a), ("_b", chart.b)):
             p[f"metrics{suffix}"] = [metric(m) for m in series.metrics]
             p[f"groupby{suffix}"] = [series.groupby] if series.groupby else []
@@ -241,21 +285,44 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["y_axis_format"] = chart.number_format or "SMART_NUMBER"
         p["y_axis_format_secondary"] = chart.number_format_secondary or "SMART_NUMBER"
         p["rich_tooltip"] = True
-        p["show_legend"] = True
+        p["show_legend"] = chart.show_legend
         # markerEnabled / markerEnabledB (createCustomizeSection, all three releases);
         # emitted only when set, so pre-feature bundles stay byte-identical.
         for suffix, series in (("", chart.a), ("B", chart.b)):
             if series.markers:
                 p[f"markerEnabled{suffix}"] = True
+            if series.show_value:
+                p[f"show_value{suffix}"] = True
+            if series.stack:
+                p[f"stack{suffix}"] = True  # a checkbox here, not the Stack/Stream select
+            if not series.only_total:
+                p[f"only_total{suffix}"] = False  # 6.1.0 control; older releases ignore it
+        for suffix, series in (("", chart.a), ("_b", chart.b)):
+            _series_limit_params(series, p, suffix, metric)
+        _y_axis_params(chart, p)
+        if chart.y_axis_title_secondary:
+            p["yAxisTitleSecondary"] = chart.y_axis_title_secondary
+            _y_title_layout(p)
+        if chart.y_axis_min_secondary is not None or chart.y_axis_max_secondary is not None:
+            p["y_axis_bounds_secondary"] = [chart.y_axis_min_secondary, chart.y_axis_max_secondary]
+        if chart.y_axis_log_secondary:
+            p["logAxisSecondary"] = True
     elif t == "pie":
         p["metric"] = metric(chart.metric)
         p["groupby"] = [chart.groupby]
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         p["sort_by_metric"] = True
         p["show_labels_threshold"] = 5
-        p["label_type"] = "key_percent"
+        p["label_type"] = chart.label_type or "key_percent"
         if chart.donut:
             p["donut"] = True
+        # Pie controlPanel.tsx, all three releases; emitted only when set.
+        if chart.number_format:
+            p["number_format"] = chart.number_format
+        if chart.show_total:
+            p["show_total"] = True
+        if not chart.labels_outside:
+            p["labels_outside"] = False
     elif t == "table":
         if chart.columns:
             p["query_mode"] = "raw"
@@ -275,7 +342,16 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
                 # 5.0.0 and 6.1.0 alike (tools/contracts/params-contract.json).
                 p["timeseries_limit_metric"] = metric(chart.sort_by)
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
+        # Superset's stored default, read only with server pagination, which the tool never
+        # turns on; the page a viewer sees is page_length (transformProps.ts, all three
+        # releases: pageSize = serverPagination ? server_page_length : page_length).
         p["server_page_length"] = 10
+        if chart.page_length is not None:
+            p["page_length"] = chart.page_length
+        if chart.show_totals:
+            p["show_totals"] = True
+        if chart.search_box:
+            p["include_search"] = True
         if chart.sort_by:
             p["order_desc"] = not chart.sort_ascending
         # Emitted only when set, so pre-feature bundles stay byte-identical.
@@ -283,8 +359,9 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["conditional_formatting"] = [
                 _format_rule_payload(r) for r in chart.conditional_formatting
             ]
-        if chart.hidden or chart.number_formats:
-            p["column_config"] = _column_config(chart)
+        column_config = _column_config(chart)
+        if column_config:
+            p["column_config"] = column_config
         if chart.cell_bars is not None:
             p["show_cell_bars"] = chart.cell_bars
         if chart.date_format:
@@ -293,10 +370,10 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["groupbyRows"] = chart.rows
         p["groupbyColumns"] = chart.columns
         p["metrics"] = [metric(m) for m in chart.metrics]
-        p["aggregateFunction"] = "Sum"
-        p["metricsLayout"] = "COLUMNS"
-        p["rowOrder"] = "key_a_to_z"
-        p["colOrder"] = "key_a_to_z"
+        p["aggregateFunction"] = chart.aggregate_function
+        p["metricsLayout"] = chart.metrics_layout.upper()
+        p["rowOrder"] = PIVOT_ORDER[chart.row_order]
+        p["colOrder"] = PIVOT_ORDER[chart.column_order]
         p["valueFormat"] = chart.number_format or "SMART_NUMBER"
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         # Emitted only when set, so pre-feature bundles stay byte-identical.
@@ -312,6 +389,10 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             # The metric is a column level (PivotTableChart.tsx METRIC_KEY), outermost when
             # not combined, so column subtotals total each metric's block (all three releases).
             p["colSubTotals"] = True
+        if chart.row_subtotals:
+            p["rowSubTotals"] = True
+        if chart.transpose:
+            p["transposePivot"] = True
         if chart.conditional_formatting:
             p["conditional_formatting"] = [
                 _format_rule_payload(r) for r in chart.conditional_formatting
@@ -320,33 +401,56 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["x_axis"] = chart.x_column
         p["groupby"] = chart.y_column
         p["metric"] = metric(chart.metric)
-        p["normalize_across"] = "heatmap"
+        p["normalize_across"] = chart.normalize_across
         p["legend_type"] = "continuous"
-        p["linear_color_scheme"] = "superset_seq_1"
+        p["linear_color_scheme"] = chart.color_scheme or HEATMAP_DEFAULT_SCHEME
         p["sort_x_axis"] = "alpha_asc"
         p["sort_y_axis"] = "alpha_asc"
-        p["show_legend"] = True
+        p["show_legend"] = chart.show_legend
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
+        # Heatmap controlPanel.tsx, all three releases; emitted only when set.
+        if chart.show_values:
+            p["show_values"] = True
+        if not chart.show_percentage:
+            p["show_percentage"] = False  # the control's default is true
+        if chart.number_format:
+            p["y_axis_format"] = chart.number_format  # the cell values' format
     elif t == "histogram":
         p["column"] = chart.column
         p["bins"] = chart.bins
         p["groupby"] = [chart.groupby] if chart.groupby else []
         p["normalize"] = False
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
+        if chart.x_axis_title:
+            p["x_axis_title"] = chart.x_axis_title
+        if chart.y_axis_title:
+            p["y_axis_title"] = chart.y_axis_title
     elif t == "funnel":
         p["metric"] = metric(chart.metric)
         p["groupby"] = [chart.groupby]
         p["sort_by_metric"] = True
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
+        if chart.label_type:
+            p["label_type"] = FUNNEL_LABEL_TYPES.index(chart.label_type)
+        if chart.number_format:
+            p["number_format"] = chart.number_format
     elif t == "treemap":
         p["metric"] = metric(chart.metric)
         p["groupby"] = chart.groupby
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
+        if chart.label_type:
+            p["label_type"] = chart.label_type
+        if chart.number_format:
+            p["number_format"] = chart.number_format
 
+    if isinstance(chart, _SeriesDisplay):
+        _series_display_params(chart, p, metric)
     if isinstance(chart, _AxisChart):
         _x_label_params(chart, p)
-    if getattr(chart, "y_axis_max", None) is not None:
-        p.setdefault("echart_options", {})["yAxis"] = {"max": chart.y_axis_max}
+        if t != "mixed":
+            _y_axis_params(chart, p)
+    if t in LEGEND_TYPES:
+        _legend_params(chart, p)
     if "echart_options" in p:
         # The panel's "ECharts Options" (6.1.0, Timeseries + MixedTimeseries): a JS object
         # literal, parsed without eval and deep-merged into the chart's own options
@@ -365,6 +469,79 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
     if t not in timeseries and not time_x and ds.main_dttm_col:
         p["granularity_sqla"] = ds.main_dttm_col
     return p
+
+
+# Superset's stored value per stack setting (StackControlsValue, EC/constants.ts at
+# 4.1.4, 5.0.0 and 6.1.0); the mixed chart's per-query stack is a checkbox instead.
+STACK_VALUES = {True: "Stack", "stream": "Stream", "expand": "Expand"}
+# contributionMode (ContributionType: Row = 'row', Column = 'column', labelled Series).
+CONTRIBUTION_VALUES = {"row": "row", "series": "column"}
+# Chart types whose panel has the legendSection (EC/controls.tsx; the funnel's lacks legendType).
+LEGEND_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter",
+                "bar", "mixed", "pie", "funnel")
+
+
+def _series_display_params(chart, p: dict, metric) -> None:
+    """Values on the marks, stacking, contribution and the series limit: the
+    Timeseries panels' showValueSection and query section, all three releases.
+    Emitted only when set, so pre-feature bundles stay byte-identical."""
+    if chart.show_value:
+        p["show_value"] = True
+    if chart.stack:
+        p["stack"] = STACK_VALUES[chart.stack]
+    if not chart.only_total:
+        p["only_total"] = False  # the control's default is true
+    if chart.contribution:
+        p["contributionMode"] = CONTRIBUTION_VALUES[chart.contribution]
+    _series_limit_params(chart, p, "", metric)
+
+
+def _series_limit_params(series, p: dict, suffix: str, metric) -> None:
+    # `limit` is the "Series limit" control; on a mixed chart query B's take '_b'.
+    if series.series_limit is not None:
+        p[f"limit{suffix}"] = series.series_limit
+    if series.series_limit_metric:
+        p[f"timeseries_limit_metric{suffix}"] = metric(series.series_limit_metric)
+    if series.series_limit_ascending:
+        p[f"order_desc{suffix}"] = False
+
+
+def _y_title_layout(p: dict) -> None:
+    # Title above the axis, 15 px clear of it: Superset's own default for a bar's y
+    # title at 6.1.0. Without a margin, 6.1.0 reserves no room for the title.
+    p["y_axis_title_margin"] = 15
+    p["y_axis_title_position"] = "Top"
+
+
+def _y_axis_params(chart, p: dict) -> None:
+    """Axis titles, bounds, truncation and log scale: titleControls (sections/chartTitle.tsx)
+    and the panels' Y Axis section, at 4.1.4, 5.0.0 and 6.1.0. transformProps passes
+    y_axis_bounds to ECharts as the axis min and max, so a bound applies on every release."""
+    if chart.x_axis_title:
+        p["x_axis_title"] = chart.x_axis_title
+        # Clear of the tick labels; rotated labels hang lower. 0 (6.1.0's default margin)
+        # draws the title over the labels.
+        p["x_axis_title_margin"] = 50 if chart.x_label_rotation else 30
+    if chart.y_axis_title:
+        p["y_axis_title"] = chart.y_axis_title
+        _y_title_layout(p)
+    if chart.y_axis_min is not None or chart.y_axis_max is not None:
+        p["y_axis_bounds"] = [chart.y_axis_min, chart.y_axis_max]
+    if chart.y_axis_truncate:
+        p["truncateYAxis"] = True
+    if chart.y_axis_log:
+        p["logAxis"] = True
+
+
+def _legend_params(chart, p: dict) -> None:
+    # legendSection (EC/controls.tsx, all three releases). show_legend is written by the
+    # chart types that always wrote it; pie and funnel write it only to hide the legend.
+    if not chart.show_legend:
+        p["show_legend"] = False
+    if chart.legend_position:
+        p["legendOrientation"] = chart.legend_position
+    if chart.legend_type:
+        p["legendType"] = chart.legend_type
 
 
 def mixed_time_axis(chart, ds) -> bool:

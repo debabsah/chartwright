@@ -16,9 +16,14 @@ from typing import Callable, get_args
 
 import yaml
 
-from .compiler import FOOTER_PREFIX, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, VIZ_TYPE
+from .compiler import (
+    COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT,
+    SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
+)
 from .spec import (
-    ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, HEX_COLOUR_RE, FilterOp, metric_label,
+    ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES, HEATMAP_DEFAULT_SCHEME,
+    HEX_COLOUR_RE, PIVOT_ORDER, TREND_DEFAULT_HEX, FilterOp, LabelType, PivotAggregate,
+    SequentialScheme, metric_label,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
@@ -84,6 +89,151 @@ def _x_labels_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
         out["x_label_every"] = True
 
 
+_SERIES_DISPLAY_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area",
+                         "timeseries_scatter", "bar")
+_STACK_SPEC = {v: k for k, v in STACK_VALUES.items()}           # "Stack" -> True, ...
+_STACK_ALLOWED = {"timeseries_bar": (True,), "bar": (True,),
+                  "timeseries_area": (True, "stream", "expand")}  # others: True, "stream"
+_CONTRIBUTION_SPEC = {v: k for k, v in CONTRIBUTION_VALUES.items()}
+_PIVOT_ORDER_SPEC = {v: k for k, v in PIVOT_ORDER.items()}
+_LABEL_TYPES = set(get_args(LabelType))
+_PIVOT_AGGREGATES = set(get_args(PivotAggregate))
+_SEQUENTIAL_SCHEMES = set(get_args(SequentialScheme))
+_COLUMN_CONFIG_SPEC = {v: k for k, v in COLUMN_CONFIG_KEYS.items()}  # d3NumberFormat -> number_formats
+
+
+def _number(v) -> float | int | None:
+    """A stored bound or size as a number; None for null, "" or junk."""
+    if isinstance(v, bool) or v in (None, ""):
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f.is_integer() else f
+
+
+def _set_bounds(p: dict, key: str, out: dict, suffix: str, log: bool, losses: list, name: str) -> None:
+    bounds = p.get(key)
+    if not isinstance(bounds, (list, tuple)) or len(bounds) != 2:
+        return
+    lo, hi = _number(bounds[0]), _number(bounds[1])
+    if lo is not None and hi is not None and lo >= hi:
+        losses.append(Loss(name, f"{key} {list(bounds)}: the minimum is not below the maximum; dropped"))
+        return
+    if log and lo is not None and lo <= 0:
+        lo = None  # a log axis ignores a floor at or below zero
+    if lo is not None:
+        out[f"y_axis_min{suffix}"] = lo
+    if hi is not None:
+        out[f"y_axis_max{suffix}"] = hi
+
+
+def _axis_to_spec(p: dict, out: dict, losses: list, name: str, spec_type: str) -> set[str]:
+    """Axis titles, bounds, truncation and log scale (all with an x axis), plus the mixed
+    chart's secondary axis. Superset's defaults ('' titles, [null, null], false) map to
+    nothing. Returns the params it read."""
+    for key in ("x_axis_title", "y_axis_title"):
+        if isinstance(p.get(key), str) and p[key].strip():
+            out[key] = p[key]
+    if p.get("truncateYAxis") is True:
+        out["y_axis_truncate"] = True
+    if p.get("logAxis") is True:
+        out["y_axis_log"] = True
+    _set_bounds(p, "y_axis_bounds", out, "", bool(p.get("logAxis")), losses, name)
+    read = {"x_axis_title", "y_axis_title", "truncateYAxis", "logAxis", "y_axis_bounds"}
+    if spec_type == "mixed":
+        if isinstance(p.get("yAxisTitleSecondary"), str) and p["yAxisTitleSecondary"].strip():
+            out["y_axis_title_secondary"] = p["yAxisTitleSecondary"]
+        if p.get("logAxisSecondary") is True:
+            out["y_axis_log_secondary"] = True
+        _set_bounds(p, "y_axis_bounds_secondary", out, "_secondary",
+                    bool(p.get("logAxisSecondary")), losses, name)
+        read |= {"yAxisTitleSecondary", "logAxisSecondary", "y_axis_bounds_secondary"}
+    return read
+
+
+def _legend_to_spec(p: dict, out: dict, spec_type: str) -> set[str]:
+    """show_legend false, and where a shown legend sits; the defaults (shown, top,
+    scroll) map to nothing, and a hidden legend's placement does nothing."""
+    if p.get("show_legend") is False:
+        out["show_legend"] = False
+        return {"show_legend", "legendOrientation", "legendType"}
+    if p.get("legendOrientation") in ("bottom", "left", "right"):
+        out["legend_position"] = p["legendOrientation"]
+    if p.get("legendType") == "plain" and spec_type != "funnel":
+        out["legend_type"] = "plain"
+    return {"show_legend", "legendOrientation", "legendType"}
+
+
+def _series_limit_to_spec(p: dict, sfx: str, target: dict, losses: list, name: str) -> None:
+    """limit / timeseries_limit_metric / order_desc (query B: '_b'). A limit only
+    does something with a groupby, so without one it is dropped like Superset ignores it."""
+    limit = _number(p.get(f"limit{sfx}"))
+    if not target.get("groupby") or not isinstance(limit, int) or limit < 1:
+        return
+    target["series_limit"] = limit
+    ranked = p.get(f"timeseries_limit_metric{sfx}")
+    if ranked:
+        m = _metric_to_spec(ranked, losses, name)
+        if m:
+            target["series_limit_metric"] = m
+    if p.get(f"order_desc{sfx}") is False:
+        target["series_limit_ascending"] = True
+
+
+def _series_display_to_spec(p: dict, out: dict, losses: list, name: str, spec_type: str) -> set[str]:
+    if p.get("show_value") is True:
+        out["show_value"] = True
+    stack = p.get("stack")
+    if stack:
+        value = _STACK_SPEC.get(stack)
+        if value is not None and value in _STACK_ALLOWED.get(spec_type, (True, "stream")):
+            out["stack"] = value
+        else:
+            losses.append(Loss(name, f"stack {stack!r} not preserved (not available on {spec_type})"))
+    if p.get("only_total") is False and out.get("show_value") and out.get("stack"):
+        out["only_total"] = False
+    if p.get("contributionMode") in _CONTRIBUTION_SPEC:
+        out["contribution"] = _CONTRIBUTION_SPEC[p["contributionMode"]]
+    _series_limit_to_spec(p, "", out, losses, name)
+    return {"show_value", "stack", "only_total", "contributionMode", "limit",
+            "timeseries_limit_metric", "order_desc"}
+
+
+def _line_style_to_spec(p: dict, out: dict, spec_type: str) -> set[str]:
+    """Markers, marker size, the area under a line and its opacity. Superset's own
+    defaults (no markers, size 6, opacity 0.2) map to nothing."""
+    markers = spec_type in ("timeseries_line", "timeseries_area") and p.get("markerEnabled") is True
+    if markers:
+        out["markers"] = True
+    size = _number(p.get("markerSize"))
+    if (markers or spec_type == "timeseries_scatter") and isinstance(size, int) \
+            and 0 <= size <= 20 and size != 6:
+        out["marker_size"] = size
+    filled = spec_type == "timeseries_area" or (spec_type == "timeseries_line" and p.get("area") is True)
+    if spec_type == "timeseries_line" and filled:
+        out["area"] = True
+    opacity = _number(p.get("opacity"))
+    if filled and opacity is not None and 0 <= opacity <= 1 and opacity != 0.2:
+        out["opacity"] = opacity
+    return {"markerEnabled", "markerSize", "area", "opacity"}
+
+
+def _rgb_to_spec(colour) -> str | None:
+    """A color_picker {r, g, b} as the spec writes it: a named shade, a hex, or None
+    for Superset's own default teal."""
+    if not isinstance(colour, dict):
+        return None
+    try:
+        hexed = "#{:02X}{:02X}{:02X}".format(*(int(colour[k]) for k in "rgb"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if hexed == TREND_DEFAULT_HEX:
+        return None
+    return {v.upper(): k for k, v in FORMAT_TEXT_HEX.items()}.get(hexed, hexed)
+
+
 def _echart_options_to_spec(p: dict, out: dict, losses: list, name: str, spec_type: str) -> None:
     # The compiler writes JSON; an xAxis part is regenerated from x_label_every.
     raw = p.get("echart_options")
@@ -98,7 +248,8 @@ def _echart_options_to_spec(p: dict, out: dict, losses: list, name: str, spec_ty
         opts.pop("xAxis", None)
     y = opts.get("yAxis")
     if spec_type == "timeseries_line" and isinstance(y, dict) and set(y) == {"max"}:
-        out["y_axis_max"] = y["max"]
+        # How the tool wrote y_axis_max before it moved to y_axis_bounds.
+        out.setdefault("y_axis_max", y["max"])
         opts.pop("yAxis")
     if opts:
         losses.append(Loss(name, f"echart_options not preserved: {sorted(opts)}"))
@@ -303,6 +454,16 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             out["time_grain"] = p["time_grain_sqla"]
         if p.get("y_axis_format"):
             out["number_format"] = p["y_axis_format"]
+        lag = _number(p.get("compare_lag"))
+        if isinstance(lag, int) and lag >= 1:
+            out["compare_lag"] = lag
+            if isinstance(p.get("compare_suffix"), str) and p["compare_suffix"].strip():
+                out["compare_suffix"] = p["compare_suffix"]
+        if isinstance(p.get("subtitle"), str) and p["subtitle"].strip():
+            out["subtitle"] = p["subtitle"]
+        colour = _rgb_to_spec(p.get("color_picker"))
+        if colour:
+            out["trend_color"] = colour
     elif spec_type in ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"):
         ms = [metric_one(m) for m in (p.get("metrics") or [])]
         ms = [m for m in ms if m]
@@ -319,8 +480,6 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         out["time_column"] = x
         if p.get("time_grain_sqla"):
             out["time_grain"] = p["time_grain_sqla"]
-        if p.get("time_range") and p["time_range"] != "No filter":
-            out["time_range"] = p["time_range"]
         if p.get("y_axis_format") not in (None, "SMART_NUMBER"):
             out["number_format"] = p["y_axis_format"]
         gb = _groupby_one(p, losses, name)
@@ -337,6 +496,16 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         out["x_column"] = x
         if p.get("orientation") == "horizontal":
             out["orientation"] = "horizontal"
+        # Sorted by the category: on the x column (one series), or by name (several
+        # series: x_axis_sort at 6.1.0, x_axis_sort_series at 4.1.4 and 5.0.0).
+        several = bool(p.get("groupby")) or len(ms) > 1
+        sort, stored_asc = p.get("x_axis_sort"), p.get("x_axis_sort_asc")
+        if several and sort in (None, "") and p.get("x_axis_sort_series") == "name":
+            sort, stored_asc = "name", p.get("x_axis_sort_series_ascending", True)
+        if sort == x or (several and sort == "name"):
+            # In reading order (the horizontal axis runs bottom-up).
+            ascending = bool(stored_asc) != (p.get("orientation") == "horizontal")
+            out["category_sort"] = "asc" if ascending else "desc"
         if p.get("y_axis_format") not in (None, "SMART_NUMBER"):
             out["number_format"] = p["y_axis_format"]
         gb = _groupby_one(p, losses, name)
@@ -353,6 +522,17 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         out["groupby"] = gb
         if p.get("donut"):
             out["donut"] = True
+        label_type = p.get("label_type")
+        if label_type in _LABEL_TYPES and label_type != "key_percent":
+            out["label_type"] = label_type
+        elif label_type not in (None, "key_percent"):
+            losses.append(Loss(name, f"pie label_type {label_type!r} not preserved (key_percent on re-apply)"))
+        if p.get("number_format") not in (None, "", "SMART_NUMBER"):
+            out["number_format"] = p["number_format"]
+        if p.get("show_total") is True:
+            out["show_total"] = True
+        if p.get("labels_outside") is False:
+            out["labels_outside"] = False
         keep_row_limit()
     elif spec_type == "table":
         if p.get("query_mode") == "raw" or p.get("all_columns"):
@@ -383,7 +563,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         rules = _rules_to_spec(p, losses, name, labels, table=True)
         if rules:
             out["conditional_formatting"] = rules
-        hidden, formats = [], {}
+        hidden: list = []
+        per_label: dict[str, dict] = {spec_key: {} for spec_key in COLUMN_CONFIG_KEYS}
         for label, cfg in (p.get("column_config") or {}).items():
             cfg = cfg if isinstance(cfg, dict) else {}
             if label not in labels:
@@ -396,14 +577,29 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             if cfg.get("visible") is False:
                 hidden.append(label)
             if cfg.get("d3NumberFormat"):
-                formats[label] = cfg["d3NumberFormat"]
-            extra = sorted(k for k in cfg if k not in ("visible", "d3NumberFormat"))
+                per_label["number_formats"][label] = cfg["d3NumberFormat"]
+            if cfg.get("horizontalAlign") in ("left", "center", "right"):
+                per_label["column_align"][label] = cfg["horizontalAlign"]
+            width = _number(cfg.get("columnWidth"))
+            if isinstance(width, int) and width >= 1:
+                per_label["column_widths"][label] = width
+            if isinstance(cfg.get("customColumnName"), str) and cfg["customColumnName"].strip():
+                per_label["column_headers"][label] = cfg["customColumnName"]
+            extra = sorted(k for k in cfg if k not in ("visible", *_COLUMN_CONFIG_SPEC))
             if extra:
                 losses.append(Loss(name, f"column_config {label!r} settings not preserved: {extra}"))
         if hidden:
             out["hidden"] = hidden
-        if formats:
-            out["number_formats"] = formats
+        for spec_field, values in per_label.items():
+            if values:
+                out[spec_field] = values
+        page = _number(p.get("page_length"))
+        if isinstance(page, int) and page >= 0:
+            out["page_length"] = page
+        if p.get("show_totals") is True and out.get("metrics"):
+            out["show_totals"] = True
+        if p.get("include_search") is True:
+            out["search_box"] = True
         if "show_cell_bars" in p:
             out["cell_bars"] = bool(p["show_cell_bars"])
         if p.get("table_timestamp_format") not in (None, "", "smart_date"):
@@ -421,8 +617,24 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             out["rows"] = rows
         if cols:
             out["columns"] = cols
-        if (p.get("aggregateFunction") or "Sum") != "Sum":
-            losses.append(Loss(name, f"pivot aggregateFunction {p['aggregateFunction']!r} not preserved (Sum on re-apply)"))
+        aggregate = p.get("aggregateFunction") or "Sum"
+        if aggregate in _PIVOT_AGGREGATES:
+            if aggregate != "Sum":
+                out["aggregate_function"] = aggregate
+        else:
+            losses.append(Loss(name, f"pivot aggregateFunction {aggregate!r} not preserved (Sum on re-apply)"))
+        for key, spec_field in (("rowOrder", "row_order"), ("colOrder", "column_order")):
+            order = _PIVOT_ORDER_SPEC.get(p.get(key) or "key_a_to_z")
+            if order is None:
+                losses.append(Loss(name, f"pivot {key} {p[key]!r} not preserved (a to z on re-apply)"))
+            elif order != "a_to_z":
+                out[spec_field] = order
+        if p.get("metricsLayout") == "ROWS":
+            out["metrics_layout"] = "rows"
+        if p.get("rowSubTotals"):
+            out["row_subtotals"] = True
+        if p.get("transposePivot"):
+            out["transpose"] = True
         if p.get("combineMetric"):
             out["combine_metric"] = True
         if p.get("rowTotals"):
@@ -449,6 +661,22 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         out["metric"] = m
         out["x_column"] = x
         out["y_column"] = y
+        if p.get("show_values") is True:
+            out["show_values"] = True
+        if p.get("show_percentage") is False:
+            out["show_percentage"] = False
+        if p.get("normalize_across") in ("x", "y"):
+            out["normalize_across"] = p["normalize_across"]
+        scheme = p.get("linear_color_scheme")
+        if scheme in _SEQUENTIAL_SCHEMES and scheme != HEATMAP_DEFAULT_SCHEME:
+            out["color_scheme"] = scheme
+        elif scheme not in (None, "", HEATMAP_DEFAULT_SCHEME):
+            losses.append(Loss(name, f"heatmap colour scheme {scheme!r} not preserved "
+                                     f"({HEATMAP_DEFAULT_SCHEME} on re-apply)"))
+        if p.get("y_axis_format") not in (None, "", "SMART_NUMBER"):
+            out["number_format"] = p["y_axis_format"]
+        if p.get("show_legend") is False:
+            out["show_legend"] = False
         keep_row_limit()
     elif spec_type == "histogram":
         col = p.get("column")
@@ -458,6 +686,9 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         out["column"] = col
         if p.get("bins"):
             out["bins"] = p["bins"]
+        for key in ("x_axis_title", "y_axis_title"):
+            if isinstance(p.get(key), str) and p[key].strip():
+                out[key] = p[key]
         gb = _groupby_one(p, losses, name)
         if gb:
             out["groupby"] = gb
@@ -470,6 +701,14 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             return None
         out["metric"] = m
         out["groupby"] = gb
+        index = _number(p.get("label_type"))
+        if isinstance(index, int) and 0 <= index < len(FUNNEL_LABEL_TYPES):
+            if index:
+                out["label_type"] = FUNNEL_LABEL_TYPES[index]
+        elif p.get("label_type") not in (None, ""):
+            losses.append(Loss(name, f"funnel label_type {p['label_type']!r} not preserved (key on re-apply)"))
+        if p.get("number_format") not in (None, "", "SMART_NUMBER"):
+            out["number_format"] = p["number_format"]
         keep_row_limit()
     elif spec_type == "treemap":
         m = metric_one(p.get("metric"))
@@ -479,6 +718,10 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
             return None
         out["metric"] = m
         out["groupby"] = gb
+        if p.get("label_type") in ("key", "value"):
+            out["label_type"] = p["label_type"]
+        if p.get("number_format") not in (None, "", "SMART_NUMBER"):
+            out["number_format"] = p["number_format"]
         keep_row_limit()
     elif spec_type == "mixed":
         x = p.get("x_axis")
@@ -508,15 +751,21 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
                 losses.append(Loss(name, f"query {key.upper()}: multiple groupby {gb}; kept first only"))
             if gb:
                 series["groupby"] = gb[0]
-            if p.get(kind_key.replace("seriesType", "markerEnabled")):  # markerEnabled / markerEnabledB
+            disp = kind_key.replace("seriesType", "")  # "" for query A, "B" for query B
+            if p.get(f"markerEnabled{disp}"):
                 series["markers"] = True
+            if p.get(f"show_value{disp}") is True:
+                series["show_value"] = True
+            if p.get(f"stack{disp}"):
+                series["stack"] = True
+            if p.get(f"only_total{disp}") is False and series.get("show_value") and series.get("stack"):
+                series["only_total"] = False
+            _series_limit_to_spec(p, sfx, series, losses, name)
             out[key] = series
         if _filters_to_spec({"adhoc_filters": p.get("adhoc_filters_b")}, [], name) != (out.get("filters") or []):
             losses.append(Loss(name, "query B filters differ from query A's; not preserved (both take the chart's filters)"))
         if p.get("time_grain_sqla"):
             out["time_grain"] = p["time_grain_sqla"]
-        if p.get("time_range") and p["time_range"] != "No filter":
-            out["time_range"] = p["time_range"]
         if p.get("y_axis_format") not in (None, "SMART_NUMBER"):
             out["number_format"] = p["y_axis_format"]
         if p.get("y_axis_format_secondary") not in (None, "SMART_NUMBER"):
@@ -531,8 +780,30 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         mapped_here = {"metrics_b", "groupby_b", "adhoc_filters_b", "row_limit_b", "seriesTypeB",
                        "yAxisIndex", "yAxisIndexB", "y_axis_format_secondary",
                        "markerEnabled", "markerEnabledB"}
+        mapped_here |= {f"{k}{s}" for k in ("show_value", "stack", "only_total") for s in ("", "B")}
+        mapped_here |= {f"{k}{s}" for k in ("limit", "timeseries_limit_metric", "order_desc")
+                        for s in ("", "_b")}
+    if p.get("time_range") not in (None, "", "No filter"):
+        out["time_range"] = p["time_range"]
+    if spec_type in _SERIES_DISPLAY_TYPES:
+        mapped_here = mapped_here | _series_display_to_spec(p, out, losses, name, spec_type)
+    if spec_type in ("timeseries_line", "timeseries_area", "timeseries_scatter"):
+        mapped_here = mapped_here | _line_style_to_spec(p, out, spec_type)
+    if spec_type in LEGEND_TYPES:
+        mapped_here = mapped_here | _legend_to_spec(p, out, spec_type)
+    if spec_type == "big_number_trend":
+        mapped_here = mapped_here | {"compare_lag", "compare_suffix", "subtitle", "color_picker"}
+    if spec_type == "table":
+        mapped_here = mapped_here | {"page_length", "show_totals", "include_search"}
+    if spec_type == "pivot_table":
+        mapped_here = mapped_here | {"rowSubTotals", "transposePivot"}
+    if spec_type == "histogram":
+        mapped_here = mapped_here | {"x_axis_title", "y_axis_title"}
+    if spec_type == "pie":
+        mapped_here = mapped_here | {"show_total"}
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
+        mapped_here = mapped_here | _axis_to_spec(p, out, losses, name, spec_type)
         _echart_options_to_spec(p, out, losses, name, spec_type)
         mapped_here = mapped_here | _X_LABEL_KEYS | {"echart_options"}
     unmapped = sorted(k for k in p if k not in _IGNORABLE and k not in mapped_here)

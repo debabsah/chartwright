@@ -189,6 +189,9 @@ def _check_column(col: str, chart_name: str, ds: ResolvedDataset, res: Resolutio
 
 def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
     t = chart.type
+    if getattr(chart, "series_limit_metric", None):
+        # The metric that ranks the series for a series limit (line, bar, area, scatter).
+        _check_metric(chart.series_limit_metric, chart.name, ds, res)
     if t in ("big_number_total", "big_number_trend"):
         _check_metric(chart.metric, chart.name, ds, res)
         if t == "big_number_trend":
@@ -212,6 +215,8 @@ def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
                 _check_metric(m, chart.name, ds, res)
             if series.groupby:
                 _check_column(series.groupby, chart.name, ds, res, "groupby")
+            if series.series_limit_metric:
+                _check_metric(series.series_limit_metric, chart.name, ds, res)
     elif t == "pie":
         _check_metric(chart.metric, chart.name, ds, res)
         _check_column(chart.groupby, chart.name, ds, res, "groupby")

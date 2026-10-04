@@ -21,6 +21,19 @@
           "title": "Filters",
           "type": "array"
         },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
         "width": {
           "anyOf": [
             {
@@ -49,6 +62,70 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "x_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title under the x axis",
+          "title": "X Axis Title"
+        },
+        "y_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title above the value axis, e.g. its unit",
+          "title": "Y Axis Title"
+        },
+        "y_axis_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bottom of the value axis. Superset hands the bound to the chart as the axis minimum on every release, so it widens the axis or cuts values below it off at the edge; omitted, the axis fits the data",
+          "title": "Y Axis Min"
+        },
+        "y_axis_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top of the value axis, e.g. 1 for a share that can't pass 100 %. Like y_axis_min it is the axis maximum on every release: values above it are cut off at the edge",
+          "title": "Y Axis Max"
+        },
+        "y_axis_truncate": {
+          "default": false,
+          "description": "Fit the value axis to the data instead of always including zero (Superset's Truncate Y Axis); a y_axis_min or y_axis_max wins on its side",
+          "title": "Y Axis Truncate",
+          "type": "boolean"
+        },
+        "y_axis_log": {
+          "default": false,
+          "description": "A logarithmic value axis",
+          "title": "Y Axis Log",
+          "type": "boolean"
         },
         "x_label_format": {
           "anyOf": [
@@ -83,6 +160,127 @@
           "default": null,
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
+        },
+        "show_legend": {
+          "default": true,
+          "description": "false hides the legend",
+          "title": "Show Legend",
+          "type": "boolean"
+        },
+        "legend_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom",
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "top (Superset's default), bottom, left or right",
+          "title": "Legend Position"
+        },
+        "legend_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "scroll",
+                "plain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scroll (Superset's default: one line with arrows) or plain (every entry, wrapped; the panel calls it List)",
+          "title": "Legend Type"
+        },
+        "show_value": {
+          "default": false,
+          "description": "Write each value on its bar or point",
+          "title": "Show Value",
+          "type": "boolean"
+        },
+        "stack": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "enum": [
+                "stream",
+                "expand"
+              ],
+              "type": "string"
+            }
+          ],
+          "default": false,
+          "description": "true stacks the series; \"stream\" (line, area, scatter) is a streamgraph around a centre line; \"expand\" (area only) stacks to 100 %",
+          "title": "Stack"
+        },
+        "only_total": {
+          "default": true,
+          "description": "With show_value on a stacked chart, label each stack's total only (Superset's default); false labels every segment",
+          "title": "Only Total",
+          "type": "boolean"
+        },
+        "contribution": {
+          "anyOf": [
+            {
+              "enum": [
+                "row",
+                "series"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Plot shares instead of values: \"row\" is each series' share of its x value's total (with stack, a 100 % stacked chart); \"series\" is each value's share of its own series' total",
+          "title": "Contribution"
+        },
+        "series_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With groupby: keep the top N series, ranked by series_limit_metric (default the first metric), largest first",
+          "title": "Series Limit"
+        },
+        "series_limit_metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric that ranks the series for series_limit, written like any metric",
+          "title": "Series Limit Metric"
+        },
+        "series_limit_ascending": {
+          "default": false,
+          "description": "Keep the N smallest series instead of the largest",
+          "title": "Series Limit Ascending",
+          "type": "boolean"
         },
         "type": {
           "const": "bar",
@@ -147,6 +345,23 @@
           "default": null,
           "description": "d3 format for the value axis, e.g. ',.0f'",
           "title": "Number Format"
+        },
+        "category_sort": {
+          "anyOf": [
+            {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Order the bars by their category (x_column) instead of by the first metric: \"asc\" reads A to Z or 0 to 9 (hours, ranks, '1-Mon'), left to right or top to bottom on a horizontal bar; \"desc\" reverses it",
+          "title": "Category Sort"
         }
       },
       "required": [
@@ -178,6 +393,19 @@
           },
           "title": "Filters",
           "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
         },
         "width": {
           "anyOf": [
@@ -272,6 +500,19 @@
           "title": "Filters",
           "type": "array"
         },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
         "width": {
           "anyOf": [
             {
@@ -337,6 +578,68 @@
           ],
           "default": null,
           "title": "Number Format"
+        },
+        "compare_lag": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Compare the latest value with the one this many time-grain steps earlier, shown as a percentage change under the number, e.g. 1 at P1M is month over month",
+          "title": "Compare Lag"
+        },
+        "compare_suffix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Text after the percentage change, e.g. \"vs last month\"",
+          "title": "Compare Suffix"
+        },
+        "subtitle": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A line of context under the number (Superset 6.1.0+; older releases ignore it)",
+          "title": "Subtitle"
+        },
+        "trend_color": {
+          "anyOf": [
+            {
+              "enum": [
+                "green",
+                "amber",
+                "red"
+              ],
+              "type": "string"
+            },
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Colour of the trendline: green, amber or red (the text shades colour rules use) or any #RRGGBB; Superset's default is teal #007A87",
+          "title": "Trend Color"
         }
       },
       "required": [
@@ -666,6 +969,19 @@
           "title": "Filters",
           "type": "array"
         },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
         "width": {
           "anyOf": [
             {
@@ -695,6 +1011,48 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "show_legend": {
+          "default": true,
+          "description": "false hides the legend",
+          "title": "Show Legend",
+          "type": "boolean"
+        },
+        "legend_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom",
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "top (Superset's default), bottom, left or right",
+          "title": "Legend Position"
+        },
+        "legend_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "scroll",
+                "plain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scroll (Superset's default: one line with arrows) or plain (every entry, wrapped; the panel calls it List)",
+          "title": "Legend Type"
+        },
         "type": {
           "const": "funnel",
           "title": "Type",
@@ -720,6 +1078,41 @@
           ],
           "default": null,
           "title": "Row Limit"
+        },
+        "label_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "key",
+                "value",
+                "percent",
+                "key_value",
+                "key_percent",
+                "key_value_percent",
+                "value_percent"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What each stage's label shows: key (the stage, default), value, percent, or a combination such as key_value_percent",
+          "title": "Label Type"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for values in labels and tooltips",
+          "title": "Number Format"
         }
       },
       "required": [
@@ -751,6 +1144,19 @@
           },
           "title": "Filters",
           "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
         },
         "width": {
           "anyOf": [
@@ -810,6 +1216,118 @@
           ],
           "default": null,
           "title": "Row Limit"
+        },
+        "show_values": {
+          "default": false,
+          "description": "Write each cell's value in the cell",
+          "title": "Show Values",
+          "type": "boolean"
+        },
+        "color_scheme": {
+          "anyOf": [
+            {
+              "enum": [
+                "blue_white_yellow",
+                "fire",
+                "white_black",
+                "black_white",
+                "dark_blue",
+                "pink_grey",
+                "greens",
+                "purples",
+                "oranges",
+                "red_yellow_blue",
+                "brown_white_green",
+                "purple_white_green",
+                "superset_seq_1",
+                "superset_seq_2",
+                "superset_div_1",
+                "superset_div_2",
+                "preset_seq_1",
+                "preset_seq_2",
+                "preset_div_1",
+                "preset_div_2",
+                "echarts_gradient",
+                "deck_gl_heatmap_gradient",
+                "schemeRdBu",
+                "schemeBrBG",
+                "schemePRGn",
+                "schemePiYG",
+                "schemePuOr",
+                "schemeRdGy",
+                "schemeRdYlBu",
+                "schemeRdYlGn",
+                "schemeSpectral",
+                "schemeBlues",
+                "schemeGreens",
+                "schemeGrays",
+                "schemeOranges",
+                "schemePurples",
+                "schemeReds",
+                "schemeViridis",
+                "schemeInferno",
+                "schemeMagma",
+                "schemeWarm",
+                "schemeCool",
+                "schemeCubehelixDefault",
+                "schemeBuGn",
+                "schemeBuPu",
+                "schemeGnBu",
+                "schemeOrRd",
+                "schemePuBuGn",
+                "schemePuBu",
+                "schemePuRd",
+                "schemeRdPu",
+                "schemeYlGnBu",
+                "schemeYlGn",
+                "schemeYlOrBr",
+                "schemeYlOrRd"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset's sequential colour scheme for the cells, e.g. schemeBlues, schemeYlOrRd, superset_seq_2; default superset_seq_1",
+          "title": "Color Scheme"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for cell values, e.g. ',.0f'",
+          "title": "Number Format"
+        },
+        "show_percentage": {
+          "default": true,
+          "description": "The tooltip shows the cell's share (of what normalize_across names); false shows the value only",
+          "title": "Show Percentage",
+          "type": "boolean"
+        },
+        "normalize_across": {
+          "default": "heatmap",
+          "description": "What the colour scale and the tooltip share compare a cell with: the whole heatmap (default), its x value's column, or its y value's row",
+          "enum": [
+            "heatmap",
+            "x",
+            "y"
+          ],
+          "title": "Normalize Across",
+          "type": "string"
+        },
+        "show_legend": {
+          "default": true,
+          "description": "false hides the colour scale",
+          "title": "Show Legend",
+          "type": "boolean"
         }
       },
       "required": [
@@ -842,6 +1360,19 @@
           },
           "title": "Filters",
           "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
         },
         "width": {
           "anyOf": [
@@ -912,6 +1443,32 @@
           ],
           "default": null,
           "title": "Row Limit"
+        },
+        "x_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title under the x axis",
+          "title": "X Axis Title"
+        },
+        "y_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title of the count axis",
+          "title": "Y Axis Title"
         }
       },
       "required": [
@@ -1091,7 +1648,7 @@
     },
     "MixedChart": {
       "additionalProperties": false,
-      "description": "Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue\nas bars with revenue per order as a line. ``x_column`` is a time column (bucketed\nby ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and\n``b`` are the two queries; the chart's own ``filters`` apply to both.",
+      "description": "Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue\nas bars with revenue per order as a line. ``x_column`` is a time column (bucketed\nby ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and\n``b`` are the two queries; the chart's own ``filters`` apply to both. The y_axis_*\nfields set the primary (left) axis; their *_secondary twins the right one.",
       "properties": {
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
@@ -1109,6 +1666,19 @@
           },
           "title": "Filters",
           "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
         },
         "width": {
           "anyOf": [
@@ -1138,6 +1708,70 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "x_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title under the x axis",
+          "title": "X Axis Title"
+        },
+        "y_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title above the value axis, e.g. its unit",
+          "title": "Y Axis Title"
+        },
+        "y_axis_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bottom of the value axis. Superset hands the bound to the chart as the axis minimum on every release, so it widens the axis or cuts values below it off at the edge; omitted, the axis fits the data",
+          "title": "Y Axis Min"
+        },
+        "y_axis_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top of the value axis, e.g. 1 for a share that can't pass 100 %. Like y_axis_min it is the axis maximum on every release: values above it are cut off at the edge",
+          "title": "Y Axis Max"
+        },
+        "y_axis_truncate": {
+          "default": false,
+          "description": "Fit the value axis to the data instead of always including zero (Superset's Truncate Y Axis); a y_axis_min or y_axis_max wins on its side",
+          "title": "Y Axis Truncate",
+          "type": "boolean"
+        },
+        "y_axis_log": {
+          "default": false,
+          "description": "A logarithmic value axis",
+          "title": "Y Axis Log",
+          "type": "boolean"
         },
         "x_label_format": {
           "anyOf": [
@@ -1173,6 +1807,48 @@
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
         },
+        "show_legend": {
+          "default": true,
+          "description": "false hides the legend",
+          "title": "Show Legend",
+          "type": "boolean"
+        },
+        "legend_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom",
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "top (Superset's default), bottom, left or right",
+          "title": "Legend Position"
+        },
+        "legend_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "scroll",
+                "plain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scroll (Superset's default: one line with arrows) or plain (every entry, wrapped; the panel calls it List)",
+          "title": "Legend Type"
+        },
         "type": {
           "const": "mixed",
           "title": "Type",
@@ -1194,19 +1870,6 @@
           "default": null,
           "description": "ISO 8601 duration for a time x axis, e.g. P1M",
           "title": "Time Grain"
-        },
-        "time_range": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Superset time range; defaults to \"No filter\"",
-          "title": "Time Range"
         },
         "a": {
           "$ref": "#/$defs/MixedSeries"
@@ -1252,6 +1915,51 @@
           "default": null,
           "description": "d3 format for the secondary axis",
           "title": "Number Format Secondary"
+        },
+        "y_axis_title_secondary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title of the secondary axis",
+          "title": "Y Axis Title Secondary"
+        },
+        "y_axis_min_secondary": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bottom of the secondary axis",
+          "title": "Y Axis Min Secondary"
+        },
+        "y_axis_max_secondary": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top of the secondary axis",
+          "title": "Y Axis Max Secondary"
+        },
+        "y_axis_log_secondary": {
+          "default": false,
+          "description": "A logarithmic secondary axis",
+          "title": "Y Axis Log Secondary",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1313,6 +2021,57 @@
           "description": "A marker at each point (a line over one category draws nothing without them)",
           "title": "Markers",
           "type": "boolean"
+        },
+        "show_value": {
+          "default": false,
+          "description": "Write each value on its bar or point",
+          "title": "Show Value",
+          "type": "boolean"
+        },
+        "stack": {
+          "default": false,
+          "description": "Stack this query's series (needs groupby or several metrics)",
+          "title": "Stack",
+          "type": "boolean"
+        },
+        "only_total": {
+          "default": true,
+          "description": "With show_value and stack, label each stack's total only (Superset 6.1.0+, its default); false labels every segment, as older releases always do",
+          "title": "Only Total",
+          "type": "boolean"
+        },
+        "series_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With groupby: keep the top N series, ranked by series_limit_metric (default the first metric), largest first",
+          "title": "Series Limit"
+        },
+        "series_limit_metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric that ranks the series for series_limit",
+          "title": "Series Limit Metric"
+        },
+        "series_limit_ascending": {
+          "default": false,
+          "description": "Keep the N smallest series instead of the largest",
+          "title": "Series Limit Ascending",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1340,6 +2099,19 @@
           },
           "title": "Filters",
           "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
         },
         "width": {
           "anyOf": [
@@ -1369,6 +2141,48 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "show_legend": {
+          "default": true,
+          "description": "false hides the legend",
+          "title": "Show Legend",
+          "type": "boolean"
+        },
+        "legend_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom",
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "top (Superset's default), bottom, left or right",
+          "title": "Legend Position"
+        },
+        "legend_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "scroll",
+                "plain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scroll (Superset's default: one line with arrows) or plain (every entry, wrapped; the panel calls it List)",
+          "title": "Legend Type"
         },
         "type": {
           "const": "pie",
@@ -1400,6 +2214,53 @@
           ],
           "default": null,
           "title": "Row Limit"
+        },
+        "label_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "key",
+                "value",
+                "percent",
+                "key_value",
+                "key_percent",
+                "key_value_percent",
+                "value_percent"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What each slice's label shows: key (the category), value, percent, or a combination such as key_value; default key_percent",
+          "title": "Label Type"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for values in labels and tooltips",
+          "title": "Number Format"
+        },
+        "show_total": {
+          "default": false,
+          "description": "The total in the middle (best on a donut)",
+          "title": "Show Total",
+          "type": "boolean"
+        },
+        "labels_outside": {
+          "default": true,
+          "description": "false puts the labels on the slices",
+          "title": "Labels Outside",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1431,6 +2292,19 @@
           },
           "title": "Filters",
           "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
         },
         "width": {
           "anyOf": [
@@ -1559,6 +2433,78 @@
           },
           "title": "Conditional Formatting",
           "type": "array"
+        },
+        "aggregate_function": {
+          "default": "Sum",
+          "description": "How a cell combines the rows under it, Superset's names: Sum (default), Average, Median, Count, Minimum, Maximum, Sum as Fraction of Total, ...",
+          "enum": [
+            "Count",
+            "Count Unique Values",
+            "List Unique Values",
+            "Sum",
+            "Average",
+            "Median",
+            "Sample Variance",
+            "Sample Standard Deviation",
+            "Minimum",
+            "Maximum",
+            "First",
+            "Last",
+            "Sum as Fraction of Total",
+            "Sum as Fraction of Rows",
+            "Sum as Fraction of Columns",
+            "Count as Fraction of Total",
+            "Count as Fraction of Rows",
+            "Count as Fraction of Columns"
+          ],
+          "title": "Aggregate Function",
+          "type": "string"
+        },
+        "row_order": {
+          "default": "a_to_z",
+          "description": "Row order: a_to_z or z_to_a by label, value_asc or value_desc by value",
+          "enum": [
+            "a_to_z",
+            "z_to_a",
+            "value_asc",
+            "value_desc"
+          ],
+          "title": "Row Order",
+          "type": "string"
+        },
+        "column_order": {
+          "default": "a_to_z",
+          "description": "Column order, as row_order",
+          "enum": [
+            "a_to_z",
+            "z_to_a",
+            "value_asc",
+            "value_desc"
+          ],
+          "title": "Column Order",
+          "type": "string"
+        },
+        "row_subtotals": {
+          "default": false,
+          "description": "A subtotal under each group of an outer row dimension",
+          "title": "Row Subtotals",
+          "type": "boolean"
+        },
+        "transpose": {
+          "default": false,
+          "description": "Swap rows and columns",
+          "title": "Transpose",
+          "type": "boolean"
+        },
+        "metrics_layout": {
+          "default": "columns",
+          "description": "Lay several metrics out as columns (default) or as rows",
+          "enum": [
+            "columns",
+            "rows"
+          ],
+          "title": "Metrics Layout",
+          "type": "string"
         }
       },
       "required": [
@@ -1856,6 +2802,19 @@
           "title": "Filters",
           "type": "array"
         },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
         "width": {
           "anyOf": [
             {
@@ -2017,6 +2976,62 @@
           "default": null,
           "description": "strftime for date columns, e.g. '%Y-%m-%d'",
           "title": "Date Format"
+        },
+        "page_length": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rows per page, with a pager under the table; 0 shows every row on one page. Omitted, Superset pages at 200 rows only once the table passes 5,000 cells",
+          "title": "Page Length"
+        },
+        "show_totals": {
+          "default": false,
+          "description": "A totals row under the table (aggregate mode)",
+          "title": "Show Totals",
+          "type": "boolean"
+        },
+        "search_box": {
+          "default": false,
+          "description": "A search box over the table's rows",
+          "title": "Search Box",
+          "type": "boolean"
+        },
+        "column_align": {
+          "additionalProperties": {
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ],
+            "type": "string"
+          },
+          "description": "Text alignment per label, e.g. {\"Region\": \"center\"}; Superset's default puts numbers right and text left",
+          "title": "Column Align",
+          "type": "object"
+        },
+        "column_widths": {
+          "additionalProperties": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "description": "Minimum width in pixels per label, e.g. {\"Customer\": 220}; a column still grows when the table has room",
+          "title": "Column Widths",
+          "type": "object"
+        },
+        "column_headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Header text per label, e.g. {\"SUM(revenue)\": \"Revenue\"} (Superset 6.1.0+; older releases show the label)",
+          "title": "Column Headers",
+          "type": "object"
         }
       },
       "required": [
@@ -2081,6 +3096,19 @@
           "title": "Filters",
           "type": "array"
         },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
         "width": {
           "anyOf": [
             {
@@ -2109,6 +3137,70 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "x_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title under the x axis",
+          "title": "X Axis Title"
+        },
+        "y_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title above the value axis, e.g. its unit",
+          "title": "Y Axis Title"
+        },
+        "y_axis_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bottom of the value axis. Superset hands the bound to the chart as the axis minimum on every release, so it widens the axis or cuts values below it off at the edge; omitted, the axis fits the data",
+          "title": "Y Axis Min"
+        },
+        "y_axis_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top of the value axis, e.g. 1 for a share that can't pass 100 %. Like y_axis_min it is the axis maximum on every release: values above it are cut off at the edge",
+          "title": "Y Axis Max"
+        },
+        "y_axis_truncate": {
+          "default": false,
+          "description": "Fit the value axis to the data instead of always including zero (Superset's Truncate Y Axis); a y_axis_min or y_axis_max wins on its side",
+          "title": "Y Axis Truncate",
+          "type": "boolean"
+        },
+        "y_axis_log": {
+          "default": false,
+          "description": "A logarithmic value axis",
+          "title": "Y Axis Log",
+          "type": "boolean"
         },
         "x_label_format": {
           "anyOf": [
@@ -2144,6 +3236,127 @@
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
         },
+        "show_legend": {
+          "default": true,
+          "description": "false hides the legend",
+          "title": "Show Legend",
+          "type": "boolean"
+        },
+        "legend_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom",
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "top (Superset's default), bottom, left or right",
+          "title": "Legend Position"
+        },
+        "legend_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "scroll",
+                "plain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scroll (Superset's default: one line with arrows) or plain (every entry, wrapped; the panel calls it List)",
+          "title": "Legend Type"
+        },
+        "show_value": {
+          "default": false,
+          "description": "Write each value on its bar or point",
+          "title": "Show Value",
+          "type": "boolean"
+        },
+        "stack": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "enum": [
+                "stream",
+                "expand"
+              ],
+              "type": "string"
+            }
+          ],
+          "default": false,
+          "description": "true stacks the series; \"stream\" (line, area, scatter) is a streamgraph around a centre line; \"expand\" (area only) stacks to 100 %",
+          "title": "Stack"
+        },
+        "only_total": {
+          "default": true,
+          "description": "With show_value on a stacked chart, label each stack's total only (Superset's default); false labels every segment",
+          "title": "Only Total",
+          "type": "boolean"
+        },
+        "contribution": {
+          "anyOf": [
+            {
+              "enum": [
+                "row",
+                "series"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Plot shares instead of values: \"row\" is each series' share of its x value's total (with stack, a 100 % stacked chart); \"series\" is each value's share of its own series' total",
+          "title": "Contribution"
+        },
+        "series_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With groupby: keep the top N series, ranked by series_limit_metric (default the first metric), largest first",
+          "title": "Series Limit"
+        },
+        "series_limit_metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric that ranks the series for series_limit, written like any metric",
+          "title": "Series Limit Metric"
+        },
+        "series_limit_ascending": {
+          "default": false,
+          "description": "Keep the N smallest series instead of the largest",
+          "title": "Series Limit Ascending",
+          "type": "boolean"
+        },
         "metrics": {
           "items": {
             "type": "string"
@@ -2168,19 +3381,6 @@
           "default": null,
           "description": "ISO 8601 duration, e.g. P1D, P1W, P1M",
           "title": "Time Grain"
-        },
-        "time_range": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Superset time range; defaults to \"No filter\"",
-          "title": "Time Range"
         },
         "groupby": {
           "anyOf": [
@@ -2225,6 +3425,42 @@
           "const": "timeseries_area",
           "title": "Type",
           "type": "string"
+        },
+        "markers": {
+          "default": false,
+          "description": "A marker at each point",
+          "title": "Markers",
+          "type": "boolean"
+        },
+        "marker_size": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Marker size, 0-20 (Superset's default 6)",
+          "title": "Marker Size"
+        },
+        "opacity": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Opacity of the area fill, 0-1 (default 0.2)",
+          "title": "Opacity"
         }
       },
       "required": [
@@ -2257,6 +3493,19 @@
           "title": "Filters",
           "type": "array"
         },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
         "width": {
           "anyOf": [
             {
@@ -2285,6 +3534,70 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "x_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title under the x axis",
+          "title": "X Axis Title"
+        },
+        "y_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title above the value axis, e.g. its unit",
+          "title": "Y Axis Title"
+        },
+        "y_axis_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bottom of the value axis. Superset hands the bound to the chart as the axis minimum on every release, so it widens the axis or cuts values below it off at the edge; omitted, the axis fits the data",
+          "title": "Y Axis Min"
+        },
+        "y_axis_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top of the value axis, e.g. 1 for a share that can't pass 100 %. Like y_axis_min it is the axis maximum on every release: values above it are cut off at the edge",
+          "title": "Y Axis Max"
+        },
+        "y_axis_truncate": {
+          "default": false,
+          "description": "Fit the value axis to the data instead of always including zero (Superset's Truncate Y Axis); a y_axis_min or y_axis_max wins on its side",
+          "title": "Y Axis Truncate",
+          "type": "boolean"
+        },
+        "y_axis_log": {
+          "default": false,
+          "description": "A logarithmic value axis",
+          "title": "Y Axis Log",
+          "type": "boolean"
         },
         "x_label_format": {
           "anyOf": [
@@ -2320,6 +3633,127 @@
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
         },
+        "show_legend": {
+          "default": true,
+          "description": "false hides the legend",
+          "title": "Show Legend",
+          "type": "boolean"
+        },
+        "legend_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom",
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "top (Superset's default), bottom, left or right",
+          "title": "Legend Position"
+        },
+        "legend_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "scroll",
+                "plain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scroll (Superset's default: one line with arrows) or plain (every entry, wrapped; the panel calls it List)",
+          "title": "Legend Type"
+        },
+        "show_value": {
+          "default": false,
+          "description": "Write each value on its bar or point",
+          "title": "Show Value",
+          "type": "boolean"
+        },
+        "stack": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "enum": [
+                "stream",
+                "expand"
+              ],
+              "type": "string"
+            }
+          ],
+          "default": false,
+          "description": "true stacks the series; \"stream\" (line, area, scatter) is a streamgraph around a centre line; \"expand\" (area only) stacks to 100 %",
+          "title": "Stack"
+        },
+        "only_total": {
+          "default": true,
+          "description": "With show_value on a stacked chart, label each stack's total only (Superset's default); false labels every segment",
+          "title": "Only Total",
+          "type": "boolean"
+        },
+        "contribution": {
+          "anyOf": [
+            {
+              "enum": [
+                "row",
+                "series"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Plot shares instead of values: \"row\" is each series' share of its x value's total (with stack, a 100 % stacked chart); \"series\" is each value's share of its own series' total",
+          "title": "Contribution"
+        },
+        "series_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With groupby: keep the top N series, ranked by series_limit_metric (default the first metric), largest first",
+          "title": "Series Limit"
+        },
+        "series_limit_metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric that ranks the series for series_limit, written like any metric",
+          "title": "Series Limit Metric"
+        },
+        "series_limit_ascending": {
+          "default": false,
+          "description": "Keep the N smallest series instead of the largest",
+          "title": "Series Limit Ascending",
+          "type": "boolean"
+        },
         "metrics": {
           "items": {
             "type": "string"
@@ -2344,19 +3778,6 @@
           "default": null,
           "description": "ISO 8601 duration, e.g. P1D, P1W, P1M",
           "title": "Time Grain"
-        },
-        "time_range": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Superset time range; defaults to \"No filter\"",
-          "title": "Time Range"
         },
         "groupby": {
           "anyOf": [
@@ -2433,6 +3854,19 @@
           "title": "Filters",
           "type": "array"
         },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
         "width": {
           "anyOf": [
             {
@@ -2461,6 +3895,70 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "x_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title under the x axis",
+          "title": "X Axis Title"
+        },
+        "y_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title above the value axis, e.g. its unit",
+          "title": "Y Axis Title"
+        },
+        "y_axis_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bottom of the value axis. Superset hands the bound to the chart as the axis minimum on every release, so it widens the axis or cuts values below it off at the edge; omitted, the axis fits the data",
+          "title": "Y Axis Min"
+        },
+        "y_axis_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top of the value axis, e.g. 1 for a share that can't pass 100 %. Like y_axis_min it is the axis maximum on every release: values above it are cut off at the edge",
+          "title": "Y Axis Max"
+        },
+        "y_axis_truncate": {
+          "default": false,
+          "description": "Fit the value axis to the data instead of always including zero (Superset's Truncate Y Axis); a y_axis_min or y_axis_max wins on its side",
+          "title": "Y Axis Truncate",
+          "type": "boolean"
+        },
+        "y_axis_log": {
+          "default": false,
+          "description": "A logarithmic value axis",
+          "title": "Y Axis Log",
+          "type": "boolean"
         },
         "x_label_format": {
           "anyOf": [
@@ -2496,6 +3994,127 @@
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
         },
+        "show_legend": {
+          "default": true,
+          "description": "false hides the legend",
+          "title": "Show Legend",
+          "type": "boolean"
+        },
+        "legend_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom",
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "top (Superset's default), bottom, left or right",
+          "title": "Legend Position"
+        },
+        "legend_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "scroll",
+                "plain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scroll (Superset's default: one line with arrows) or plain (every entry, wrapped; the panel calls it List)",
+          "title": "Legend Type"
+        },
+        "show_value": {
+          "default": false,
+          "description": "Write each value on its bar or point",
+          "title": "Show Value",
+          "type": "boolean"
+        },
+        "stack": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "enum": [
+                "stream",
+                "expand"
+              ],
+              "type": "string"
+            }
+          ],
+          "default": false,
+          "description": "true stacks the series; \"stream\" (line, area, scatter) is a streamgraph around a centre line; \"expand\" (area only) stacks to 100 %",
+          "title": "Stack"
+        },
+        "only_total": {
+          "default": true,
+          "description": "With show_value on a stacked chart, label each stack's total only (Superset's default); false labels every segment",
+          "title": "Only Total",
+          "type": "boolean"
+        },
+        "contribution": {
+          "anyOf": [
+            {
+              "enum": [
+                "row",
+                "series"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Plot shares instead of values: \"row\" is each series' share of its x value's total (with stack, a 100 % stacked chart); \"series\" is each value's share of its own series' total",
+          "title": "Contribution"
+        },
+        "series_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With groupby: keep the top N series, ranked by series_limit_metric (default the first metric), largest first",
+          "title": "Series Limit"
+        },
+        "series_limit_metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric that ranks the series for series_limit, written like any metric",
+          "title": "Series Limit Metric"
+        },
+        "series_limit_ascending": {
+          "default": false,
+          "description": "Keep the N smallest series instead of the largest",
+          "title": "Series Limit Ascending",
+          "type": "boolean"
+        },
         "metrics": {
           "items": {
             "type": "string"
@@ -2520,19 +4139,6 @@
           "default": null,
           "description": "ISO 8601 duration, e.g. P1D, P1W, P1M",
           "title": "Time Grain"
-        },
-        "time_range": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Superset time range; defaults to \"No filter\"",
-          "title": "Time Range"
         },
         "groupby": {
           "anyOf": [
@@ -2578,9 +4184,38 @@
           "title": "Type",
           "type": "string"
         },
-        "y_axis_max": {
+        "markers": {
+          "default": false,
+          "description": "A marker at each point",
+          "title": "Markers",
+          "type": "boolean"
+        },
+        "marker_size": {
           "anyOf": [
             {
+              "maximum": 20,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Marker size, 0-20 (Superset's default 6)",
+          "title": "Marker Size"
+        },
+        "area": {
+          "default": false,
+          "description": "Fill the area under each line",
+          "title": "Area",
+          "type": "boolean"
+        },
+        "opacity": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
               "type": "number"
             },
             {
@@ -2588,8 +4223,8 @@
             }
           ],
           "default": null,
-          "description": "Top of the value axis, e.g. 1 for a share that can't pass 100 % (Superset 6.1.0+)",
-          "title": "Y Axis Max"
+          "description": "Opacity of the area fill, 0-1 (Superset's default 0.2)",
+          "title": "Opacity"
         }
       },
       "required": [
@@ -2622,6 +4257,19 @@
           "title": "Filters",
           "type": "array"
         },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
         "width": {
           "anyOf": [
             {
@@ -2650,6 +4298,70 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "x_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title under the x axis",
+          "title": "X Axis Title"
+        },
+        "y_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title above the value axis, e.g. its unit",
+          "title": "Y Axis Title"
+        },
+        "y_axis_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Bottom of the value axis. Superset hands the bound to the chart as the axis minimum on every release, so it widens the axis or cuts values below it off at the edge; omitted, the axis fits the data",
+          "title": "Y Axis Min"
+        },
+        "y_axis_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top of the value axis, e.g. 1 for a share that can't pass 100 %. Like y_axis_min it is the axis maximum on every release: values above it are cut off at the edge",
+          "title": "Y Axis Max"
+        },
+        "y_axis_truncate": {
+          "default": false,
+          "description": "Fit the value axis to the data instead of always including zero (Superset's Truncate Y Axis); a y_axis_min or y_axis_max wins on its side",
+          "title": "Y Axis Truncate",
+          "type": "boolean"
+        },
+        "y_axis_log": {
+          "default": false,
+          "description": "A logarithmic value axis",
+          "title": "Y Axis Log",
+          "type": "boolean"
         },
         "x_label_format": {
           "anyOf": [
@@ -2685,6 +4397,127 @@
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
         },
+        "show_legend": {
+          "default": true,
+          "description": "false hides the legend",
+          "title": "Show Legend",
+          "type": "boolean"
+        },
+        "legend_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "bottom",
+                "left",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "top (Superset's default), bottom, left or right",
+          "title": "Legend Position"
+        },
+        "legend_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "scroll",
+                "plain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "scroll (Superset's default: one line with arrows) or plain (every entry, wrapped; the panel calls it List)",
+          "title": "Legend Type"
+        },
+        "show_value": {
+          "default": false,
+          "description": "Write each value on its bar or point",
+          "title": "Show Value",
+          "type": "boolean"
+        },
+        "stack": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "enum": [
+                "stream",
+                "expand"
+              ],
+              "type": "string"
+            }
+          ],
+          "default": false,
+          "description": "true stacks the series; \"stream\" (line, area, scatter) is a streamgraph around a centre line; \"expand\" (area only) stacks to 100 %",
+          "title": "Stack"
+        },
+        "only_total": {
+          "default": true,
+          "description": "With show_value on a stacked chart, label each stack's total only (Superset's default); false labels every segment",
+          "title": "Only Total",
+          "type": "boolean"
+        },
+        "contribution": {
+          "anyOf": [
+            {
+              "enum": [
+                "row",
+                "series"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Plot shares instead of values: \"row\" is each series' share of its x value's total (with stack, a 100 % stacked chart); \"series\" is each value's share of its own series' total",
+          "title": "Contribution"
+        },
+        "series_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With groupby: keep the top N series, ranked by series_limit_metric (default the first metric), largest first",
+          "title": "Series Limit"
+        },
+        "series_limit_metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric that ranks the series for series_limit, written like any metric",
+          "title": "Series Limit Metric"
+        },
+        "series_limit_ascending": {
+          "default": false,
+          "description": "Keep the N smallest series instead of the largest",
+          "title": "Series Limit Ascending",
+          "type": "boolean"
+        },
         "metrics": {
           "items": {
             "type": "string"
@@ -2709,19 +4542,6 @@
           "default": null,
           "description": "ISO 8601 duration, e.g. P1D, P1W, P1M",
           "title": "Time Grain"
-        },
-        "time_range": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Superset time range; defaults to \"No filter\"",
-          "title": "Time Range"
         },
         "groupby": {
           "anyOf": [
@@ -2766,6 +4586,21 @@
           "const": "timeseries_scatter",
           "title": "Type",
           "type": "string"
+        },
+        "marker_size": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Point size, 0-20 (default 6)",
+          "title": "Marker Size"
         }
       },
       "required": [
@@ -2797,6 +4632,19 @@
           },
           "title": "Filters",
           "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
         },
         "width": {
           "anyOf": [
@@ -2856,6 +4704,37 @@
           ],
           "default": null,
           "title": "Row Limit"
+        },
+        "label_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "key",
+                "value",
+                "key_value"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What each tile's label shows: key, value, or key_value (default)",
+          "title": "Label Type"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for values in labels and tooltips",
+          "title": "Number Format"
         }
       },
       "required": [
