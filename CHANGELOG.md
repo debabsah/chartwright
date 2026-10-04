@@ -3,7 +3,17 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
-## Unreleased
+## 0.3.0 (2026-10-04)
+
+Most of what Superset lets you set on a dashboard or chart can now be written in a spec. The design brain fills sensible display defaults into the spec. Standards let an org layer its dashboard rules and content from org to team. The design brain is version 6.
+
+### Upgrading from 0.2
+
+- `plan` now compares more settings: dashboard CSS, colour scheme, description and certification, owners when a spec names them, and tags regardless of order. A dashboard whose CSS or settings were edited in Superset now shows those edits as drift, and the next `apply` replaces them with the spec's.
+- Strict design gates (`advise --strict`, `check`/`apply --design strict` and the MCP strict modes) no longer take anything from a personal `design.yaml`. Put rule settings a team relies on in a standards file instead.
+- `check`, `apply` and `plan` find out which Superset release they talk to, and refuse fields that release can't take (`tags` before 6.0, `show_chart_timestamps` before 6.1) before writing anything. State the release with `--superset-version` when it can't be detected.
+- A spec that uses `design.standard`, `owners`, `layout.header` or any other new field is refused by chartwright 0.2.1 and earlier, so upgrade CI before committing such specs.
+- MCP `build_dashboard` now returns the design advice block.
 
 ### Added
 
@@ -235,7 +245,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
   or `"release"` when a fill passes to the author) and a `why` line. `redesign` still
   applies repairs only and names `advise --fix` when fills are waiting. The brief and the
   skill tell an AI author to leave design defaults unset, run `--fix` before building, and
-  edit the file it wrote. The design brain's version is now 5.
+  edit the file it wrote.
 - `narrative.big-number-format` no longer fires on a COUNT KPI, where
   `default.count-format` offers the same fix.
 - `y_axis_max` now applies on Superset 4.1.4 and 5.0.0 as well as 6.1.0, and on every
