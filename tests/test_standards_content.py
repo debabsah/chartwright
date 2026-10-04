@@ -153,6 +153,7 @@ def test_a_broken_content_block_names_the_file(tmp_path, org, words):
     ("content: {label_colors: {Revenue: '#000000'}}", "which 'org' locks"),
     ("classifications: [public, secret]", "only narrow it"),
     ("disable: [standard.content-locked]", "can't be disabled"),
+    ("disable: [standard.css-hides]", "can't be disabled"),
 ])
 def test_a_lower_layer_cant_loosen_locked_content(tmp_path, team, words):
     org = ("name: org\nclassifications: [public, internal]\n"
@@ -164,6 +165,22 @@ def test_a_lower_layer_cant_loosen_locked_content(tmp_path, team, words):
     with pytest.raises(StandardsError) as e:
         load_standards(std_dir)
     assert e.value.code == "locked" and words in str(e.value)
+
+
+@pytest.mark.parametrize("files", [
+    # the locking file disables the rule itself
+    {"org.yaml": "name: org\ncontent: {footer: [[{markdown: L}]]}\nlocked: {content: [footer]}\n"
+                 "disable: [standard.content-locked]\n"},
+    # a parent disabled it before a lower layer locks content
+    {"org.yaml": "name: org\ndisable: [standard.css-hides]\n",
+     "team.yaml": "name: team\nextends: org\ncontent: {footer: [[{markdown: L}]]}\n"
+                  "locked: {content: [footer]}\n"},
+])
+def test_the_rules_locked_content_needs_cant_be_disabled_anywhere_in_its_chain(tmp_path, files):
+    std_dir = make_repo(tmp_path / "r", files)
+    with pytest.raises(StandardsError) as e:
+        load_standards(std_dir)
+    assert e.value.code == "locked" and "locks content" in str(e.value)
 
 
 def test_a_lower_layer_may_add_keys_rows_and_blocks_under_a_lock(tmp_path):
@@ -1115,6 +1132,88 @@ def test_css_that_could_hide_locked_rows_is_a_warning(repo, capsys):
     [f] = findings(capsys, path, "standard.css-hides")
     assert f["severity"] == "warn" and "the dashboard's own CSS" in f["detail"]
     assert ".dashboard-markdown { display: none }" in f["detail"] and "org locks" in f["detail"]
+
+
+@pytest.mark.parametrize("css, shown", [
+    (".a{height:0;overflow:hidden}", "height: 0; overflow: hidden"),
+    (".a{max-height:0px;overflow-y:clip}", "max-height: 0px; overflow-y: clip"),
+    (".a{position:absolute;left:-9999px}", "left: -9999px"),
+    (".a{text-indent:-10000em}", "text-indent: -10000em"),
+    (".a{color:transparent}", "color: transparent"),
+    (".a{opacity:.0}", "opacity: .0"),
+    (".a{opacity:0%}", "opacity: 0%"),
+    (".a{opacity:0.00 !important}", "opacity: 0.00"),
+    (".a{display:/**/none}", "display: none"),
+    (".a{clip-path:inset(100%)}", "clip-path: inset(100%)"),
+    (".a{clip:rect(0 0 0 0)}", "clip: rect(0 0 0 0)"),
+    (".a{transform:scale(0)}", "transform: scale(0)"),
+    (".a{transform:translateX(0) scaleY(0.0)}", "transform: translateX(0) scaleY(0.0)"),
+    (".a{font-size:0}", "font-size: 0"),
+    (".a{display:none}", "display: none"),
+    ("[data-test='x']:nth-last-child(1){visibility:hidden}", "visibility: hidden"),
+    ("@media screen { .a { visibility: collapse } }", "visibility: collapse"),
+])
+def test_css_hides_knows_the_common_ways_to_hide(repo, capsys, css, shown):
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    edit(path, lambda d: d["dashboard"].update(css=d["dashboard"]["css"] + "\n" + css))
+    [f] = findings(capsys, path, "standard.css-hides")
+    assert f"{{ {shown} }}" in f["detail"], f["detail"]
+
+
+@pytest.mark.parametrize("css", [
+    ".a{opacity:0.5}", ".a{height:0}", ".a{left:-20px}", ".a{color:#000}",
+    ".a{clip-path:none}", ".a{transform:scale(1)}", "/* .a{display:none} */ .b{}",
+    ".a{background-color:transparent}",
+])
+def test_css_hides_leaves_visible_css_alone(repo, capsys, css):
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    edit(path, lambda d: d["dashboard"].update(css=d["dashboard"]["css"] + "\n" + css))
+    assert findings(capsys, path, "standard.css-hides") == []
+
+
+def test_css_hides_names_the_selector_not_a_comment(repo, capsys):
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    edit(path, lambda d: d["dashboard"].update(
+        css=d["dashboard"]["css"] + "\n/* hide { } it */ .x .y { display: none }"))
+    [f] = findings(capsys, path, "standard.css-hides")
+    assert "`.x .y { display: none }`" in f["detail"]
+
+
+def test_css_hides_reads_a_lower_layers_block(repo, capsys):
+    """finance's own block can hide the footer org locks: only the locking layers'
+    blocks are trusted."""
+    fin = repo / "standards" / "teams" / "finance.yaml"
+    fin.write_text(FINANCE.replace("color: #003366;", "display: none;"), encoding="utf-8")
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    [f] = findings(capsys, path, "standard.css-hides")
+    assert "the finance block" in f["detail"]
+
+
+def test_css_hides_needs_locked_rows(tmp_path, capsys):
+    org = ("name: org\ndefault: true\ncontent: {css: '.a { color: red; }'}\n"
+           "locked: {content: [css]}\n")
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo, data={**DATA, "dashboard": {**DATA["dashboard"],
+                                                       "css": ".b { display: none }"}})
+    apply(capsys, str(path))
+    assert findings(capsys, path, "standard.css-hides") == []
+
+
+def test_css_hides_is_locked_with_the_content(repo, capsys):
+    assert load_standards(repo / "standards").get("finance").locked_rules[
+        "standard.css-hides"] == "org"
+    path = spec_file(repo, standard="finance", ignore=["standard.css-hides"])
+    apply(capsys, str(path))
+    edit(path, lambda d: d["dashboard"].update(css=d["dashboard"]["css"] + "\n.a{display:none}"))
+    _, out = run(capsys, "standards", "check", str(path))
+    entry = out["specs"][0]
+    assert [f["rule"] for f in entry["findings"] if f["rule"] == "standard.css-hides"]
+    assert entry["locks"]["refused_ignores"] == [{"entry": "standard.css-hides",
+                                                  "locked_by": "org"}]
 
 
 def test_css_hides_is_checked_when_the_standard_writes_no_css(tmp_path, capsys):

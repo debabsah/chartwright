@@ -41,9 +41,11 @@ from .presets import AUDIENCES, PARAM_NAMES, _check_param_block
 FILE_KEYS = ("name", "extends", "default", "params", "audiences", "severity", "disable",
              "content", "classifications", "locked")
 LOCK_KEYS = ("rules", "params", "content")
-# A standard that locks content locks the rule that reports a locked item the spec lacks,
-# so nothing below it (a lower file, design.ignore, --ignore, design.yaml) silences it.
+# A standard that locks content locks the rules that report a locked item the spec lacks
+# and CSS that could hide one, so nothing below it (a lower file, design.ignore, --ignore,
+# design.yaml) silences them.
 CONTENT_LOCK_RULE = "standard.content-locked"
+CONTENT_LOCK_RULES = (CONTENT_LOCK_RULE, "standard.css-hides")
 # org, unit, team; the dashboard's own design block is the fourth layer. The one
 # place the depth is set (the author chose three files on 2026-10-04).
 MAX_FILES = 3
@@ -392,11 +394,13 @@ def _merge_content(sf: StandardFile, std: Standard) -> None:
     for slot in sf.locked_content:
         std.content_locks.setdefault(slot, []).append(sf.name)
     if sf.locked_content:
-        std.locked_rules.setdefault(CONTENT_LOCK_RULE, sf.name)
-        if CONTENT_LOCK_RULE in std.disable:
-            raise StandardsError(
-                "locked", f"{display(sf.path)}: locks content but {std.disable[CONTENT_LOCK_RULE]!r} "
-                          f"disables {CONTENT_LOCK_RULE}, the rule that reports it")
+        for rule_id in CONTENT_LOCK_RULES:
+            std.locked_rules.setdefault(rule_id, sf.name)
+            if rule_id in std.disable:
+                raise StandardsError(
+                    "locked", f"{display(sf.path)}: locks content but "
+                              f"{std.disable[rule_id]!r} disables {rule_id}, which reports on "
+                              f"locked content; a locked rule can't be disabled")
     if sf.classifications is not None:
         std.classifications = list(sf.classifications)
         std.classifications_layer = sf.name

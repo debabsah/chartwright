@@ -363,7 +363,7 @@ fails when it drifts.
 | `standard.content-locked` | error | - | - | 6 | content a standard locks is in the spec as the standard has it (standards apply writes it; a change goes through the standard's file) |
 | `standard.content-released` | info | - | - | 6 | content a standard has that the author took over (edited or removed): the author's now, and standards apply leaves it alone |
 | `standard.content-stale` | warn | - | - | 6 | content a standard wrote is current: standards apply would change nothing |
-| `standard.css-hides` | warn | - | - | 6 | no CSS outside the locking standard's own blocks hides elements while a standard locks header or footer rows |
+| `standard.css-hides` | warn | - | - | 6 | CSS outside the locking layers' own blocks has no declaration known to hide elements while a standard locks header or footer rows (a heuristic: other ways to hide one pass) |
 
 <!-- END rule-table -->
 
@@ -689,10 +689,12 @@ reversible and none is load-bearing enough to block on:
       `standards check --strict` fails on stale unlocked content, a warn,
       for a team that wants it current.
     - **CSS is the weakest lock** (decision #6): a lower layer's CSS can hide
-      a locked row, so `standard.css-hides` warns on hiding declarations
-      outside the locking layers' blocks; whether a locked row is visible on
-      the rendered dashboard is for a check after deploy, which this phase
-      doesn't build.
+      a locked row. `standard.css-hides` is a heuristic: it warns on the
+      hiding declarations it knows outside the locking layers' blocks, and any
+      other way to hide an element passes it. The real lock on what readers
+      see is a check of the rendered dashboard after deploy, which is not
+      built yet (phase 4). The rule is locked with the content, so nothing
+      below the lock silences it.
     - **Lifecycle and classification are spec-only fields** that standards
       key content off; Superset has nothing they could map to safely (§18).
 
@@ -1567,8 +1569,9 @@ value: a lock on a slot no layer at or above it fills is an error. Below the
 lock a layer may still add its own rows, blocks and keys, but can't change a
 locked colour scheme, certification, label or format: that is an error naming
 both layers. A layer may narrow the `classifications` list it inherits, never
-widen it. A standard that locks content also locks `standard.content-locked`,
-so nothing below it silences that rule. Certification details need
+widen it. A standard that locks content also locks `standard.content-locked`
+and `standard.css-hides`, so nothing below it (a lower file's `disable`,
+`design.ignore`, `--ignore`, `design.yaml`) silences them. Certification details need
 `certified_by` somewhere in the chain.
 
 #### The record: design.standard_written
@@ -1707,7 +1710,7 @@ In every advice run that applies a standard with content (`advise`,
 | `standard.content-stale` | warn | an unlocked item `standards apply` would add, refresh or remove |
 | `standard.content-released` | info | an item the author took over, so a fleet report shows every override |
 | `standard.classification` | error | a classification the standard's list lacks |
-| `standard.css-hides` | warn | a declaration that hides elements (`display: none`, `visibility: hidden`, ...) outside the blocks of the layers that lock header or footer rows; a selector's target is a matter of the rendered dashboard, so the warning names the rule to look at |
+| `standard.css-hides` | warn | a heuristic: a declaration it knows to hide elements, outside the blocks of the layers that lock header or footer rows (a lower layer's block included), comments set aside. It knows `display: none`; `visibility: hidden` or `collapse`; `content-visibility: hidden`; a zero opacity or font size in any spelling; `color: transparent`; a zero height or max-height with hidden overflow; `clip` or `clip-path`; `transform: scale(0)`; and a large negative offset (`left: -9999px`). Any other way to hide an element passes it: the check that locked text is visible on the rendered dashboard is phase 4's and not built yet. The warning names the rule to look at; like `standard.content-locked`, it is locked with the content |
 
 #### explain
 

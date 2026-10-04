@@ -156,19 +156,68 @@ def classification(ctx: RuleContext):
                       f"lists: {', '.join(json.dumps(c) for c in std.classifications)}")
 
 
-# Declarations that make an element invisible. CSS selectors are not a Superset
-# contract (a class can mean another thing on another release), so this reads
-# declarations, not selectors: any of these outside the locking layers' blocks can hide
-# a locked row.
-_HIDING = re.compile(
-    r"(display\s*:\s*none|visibility\s*:\s*hidden|content-visibility\s*:\s*hidden"
-    r"|opacity\s*:\s*0(?:\.0+)?\s*(?:[;}!]|$)|font-size\s*:\s*0(?:px|em|rem|%)?\s*(?:[;}!]|$))",
-    re.I)
+# CSS that makes an element invisible. CSS selectors are not a Superset contract (a class
+# can mean another thing on another release), so this reads declarations, not
+# selectors: any of these outside the locking layers' blocks can hide a locked row. It
+# is a heuristic that knows the forms listed here; any other way to hide an element
+# passes. The real lock on what readers see is a check of the rendered dashboard after
+# deploy, which is not built yet (the decision record's #6, phase 4).
+_RULE = re.compile(r"([^{}]*)\{([^{}]*)\}")
+_OFFSET_PROPS = {"left", "right", "top", "bottom", "text-indent", "margin-left", "margin-top",
+                 "margin-right", "margin-bottom"}
+
+
+def _zero(value: str) -> bool:
+    """A number that is zero, in any spelling and unit: 0, .0, 0.00, 0%, 0px."""
+    m = re.fullmatch(r"([+-]?(?:\d+\.?\d*|\.\d+))(%|[a-z]+)?", value)
+    return bool(m) and float(m.group(1)) == 0
+
+
+def _hiding(decls: dict[str, str]) -> list[str]:
+    """The declarations of one rule that hide its element: `prop: value` as written."""
+    out = []
+    for prop, value in decls.items():
+        v = value.lower()
+        if ((prop == "display" and v == "none")
+                or (prop == "visibility" and v in ("hidden", "collapse"))
+                or (prop == "content-visibility" and v == "hidden")
+                or (prop in ("opacity", "font-size") and _zero(v))
+                or (prop in ("color", "-webkit-text-fill-color") and v == "transparent")
+                or (prop == "clip-path" and v != "none")
+                or (prop == "clip" and v != "auto")
+                or (prop == "transform" and re.search(
+                    r"scale[xy]?\(\s*[+-]?(?:0+\.?0*|\.0+)\s*[,)]", v))
+                or (prop in _OFFSET_PROPS and re.fullmatch(r"-\s*\d{4,}(\.\d*)?[a-z%]*", v))):
+            out.append(f"{prop}: {value}")
+    zero_height = [p for p in ("height", "max-height") if p in decls and _zero(decls[p].lower())]
+    hidden = [p for p in ("overflow", "overflow-y") if decls.get(p, "").lower() in
+              ("hidden", "clip")]
+    if zero_height and hidden:
+        out.append(f"{zero_height[0]}: {decls[zero_height[0]]}; {hidden[0]}: {decls[hidden[0]]}")
+    return out
+
+
+def hiding_rules(css: str) -> list[tuple[str, str]]:
+    """(selector, declarations) of each rule in this CSS that hides its element, comments
+    set aside."""
+    out = []
+    for m in _RULE.finditer(C.strip_comments(css)):
+        selector = " ".join(m.group(1).split(";")[-1].split())
+        decls = {}
+        for part in m.group(2).split(";"):
+            prop, sep, value = part.partition(":")
+            if sep:
+                value = re.sub(r"!\s*important\s*$", "", " ".join(value.split()), flags=re.I)
+                decls[prop.strip().lower()] = value.strip()
+        for found in _hiding(decls):
+            out.append((selector or "(a rule)", found))
+    return out
 
 
 @rule("standard.css-hides", "warn",
-      "no CSS outside the locking standard's own blocks hides elements while a standard "
-      "locks header or footer rows", since="6")
+      "CSS outside the locking layers' own blocks has no declaration known to hide "
+      "elements while a standard locks header or footer rows (a heuristic: other ways "
+      "to hide one pass)", since="6")
 def css_hides(ctx: RuleContext):
     a = _analysis(ctx)
     if a is None:
@@ -195,13 +244,9 @@ def css_hides(ctx: RuleContext):
             text, source = seg.body, f"the {seg.layer} block"
         else:
             text, source = seg, "the dashboard's own CSS"
-        for m in _HIDING.finditer(text):
-            start = text.rfind("}", 0, m.start()) + 1
-            brace = text.find("{", start, m.start())
-            selector = " ".join(text[start:brace].split()) if brace >= 0 else ""
+        for selector, found in hiding_rules(text):
             yield Finding(
                 "standard.css-hides", "warn", None, "dashboard.css",
-                f"{source} has `{selector or '(a rule)'} {{ {m.group(1).strip()} }}`, which "
-                f"can hide the "
-                f"rows {', '.join(sorted(lockers))} locks; standards check can't tell what a "
+                f"{source} has `{selector} {{ {found} }}`, which can hide the rows "
+                f"{', '.join(sorted(lockers))} locks; standards check can't tell what a "
                 f"selector matches on a rendered dashboard, so look at it there")
