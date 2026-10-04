@@ -16,9 +16,10 @@ A spec names its standard in `design.standard`; a spec that names none follows t
 marked `default: true`, if there is one. Standards change advice only: compile, plan and
 decompile never read them, so a bundle depends on the spec alone.
 
-Layers, root first: the org file, an optional unit or team file that extends it, then the
-dashboard's own design block. A chain holds at most two files, so with the spec's block
-it is never more than three layers. Every file and every chain in the directory is
+Layers, root first: the org file, then optionally a unit file and a team file, each
+extending the one before, then the dashboard's own design block. A chain holds at most
+three files (MAX_FILES), so with the spec's block it is never more than four layers.
+Every file and every chain in the directory is
 checked when it loads, whether or not a spec uses it, so a broken file fails every run
 that reads the directory instead of the one dashboard that happens to name it.
 """
@@ -39,8 +40,9 @@ from .presets import AUDIENCES, PARAM_NAMES, _check_param_block
 
 FILE_KEYS = ("name", "extends", "default", "params", "audiences", "severity", "disable", "locked")
 LOCK_KEYS = ("rules", "params")
-# org, then a unit or team; the dashboard's own design block is the third layer.
-MAX_FILES = 2
+# org, unit, team; the dashboard's own design block is the fourth layer. The one
+# place the depth is set (the author chose three files on 2026-10-04).
+MAX_FILES = 3
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 LEVELS = ("error", "warn", "info")
 ENV = "CHARTWRIGHT_STANDARDS_DIR"
@@ -323,12 +325,14 @@ def _chain(name: str, files: dict[str, StandardFile], directory: Path) -> list[S
         chain.append(sf)
         cur = sf.extends
     if len(chain) > MAX_FILES:
+        words = {2: "two", 3: "three", 4: "four"}.get(MAX_FILES, str(MAX_FILES))
         raise StandardsError(
             "standards_depth",
-            f"standard {name!r} extends a chain of {len(chain)} files "
-            f"({' -> '.join(s.name for s in reversed(chain))}); a chain holds at most "
-            f"{MAX_FILES} (the org's, then a unit's or team's), and the dashboard's own "
-            f"design block is the third layer")
+            f"standard {name!r} is a chain over {words} files: "
+            f"{' -> '.join(s.name for s in reversed(chain))} "
+            f"({', '.join(display(s.path) for s in reversed(chain))}); a chain holds at "
+            f"most {MAX_FILES} files, and the dashboard's own design block is the layer "
+            f"after them")
     return list(reversed(chain))
 
 

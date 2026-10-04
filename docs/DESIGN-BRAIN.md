@@ -623,8 +623,9 @@ reversible and none is load-bearing enough to block on:
       severities and disabled rules. Compile, `plan`, decompile and MCP's
       build and plan read only the spec, so the bundle never depends on a
       standards file, as §14.13 already decided for design defaults.
-    - **Explicit, single-parent `extends`, at most three layers** (org, one
-      unit or team, the dashboard's design block), with no folder cascade:
+    - **Explicit, single-parent `extends`, at most three files** (org, unit,
+      team; the dashboard's design block comes after them, §15.23), with no
+      folder cascade:
       ESLint's maintainers wrote that they "would have removed the
       configuration cascade", and diamonds and cycles have no defined
       meaning.
@@ -780,10 +781,14 @@ Recorded during the rules-only standards (§18):
     rule a standard locks it would be a way around the lock that no review
     sees. A locked rule therefore reports on polished charts too; the platform
     team that locked it decides whether the absorbed height or the rule wins.
-23. **A standard chain holds at most two files.** The decision allows three
-    layers, org → unit or team → dashboard; the dashboard's layer is the
-    spec's `design` block, so the files themselves stop at two, and a team
-    that sits under a unit flattens into one file or uses its unit's.
+23. **A standard chain holds at most three files: org → unit → team.** The
+    decision's table says "at most 3 files: org → unit or team → dashboard"
+    and, as its cost, "a team that needs more nests through its unit". The
+    first reading counts the dashboard as the third layer and stops the files
+    at two; the author chose the second on 2026-10-04, reading "nests through
+    its unit" as org → unit → team, so three files with the spec's `design`
+    block after them. The cap is one constant (`MAX_FILES` in
+    `design/standards.py`).
 24. **No mapping file for assignment.** The decision let folder or mapping
     rules seed `design.standard`; `standards assign` takes folders and globs
     as its arguments, which seeds it the same way without a third file whose
@@ -1156,9 +1161,10 @@ it can't know; per-chart exceptions stay in the spec's `design.ignore`.
 
 ### Layers
 
-A chain has at most three layers: the org's file, one unit's or team's file
-that extends it, and the dashboard's own `design` block. A file that extends a
-file that extends another is an error, as are a cycle and a parent no file
+A chain holds at most three files, each extending the one before: the org's,
+a unit's, and a team's (a team directly under the org skips the unit). The
+dashboard's own `design` block is the layer after them. A chain of four files
+is an error that names every file in it, as are a cycle and a parent no file
 names. There is no folder cascade: a file's place in the folder means nothing,
 and only `extends` builds a chain. Every file and chain is checked when the
 folder loads, whether or not a spec uses it, so a broken file fails every run

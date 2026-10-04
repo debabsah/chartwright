@@ -162,7 +162,8 @@ def test_the_standard_sits_between_the_preset_and_the_overlay(repo):
     ({"a.yaml": "name: a\nextends: a\n"}, "standards_cycle", "extends itself"),
     ({"a.yaml": "name: a\nextends: ghost\n"}, "unknown_parent", "ghost"),
     ({"org.yaml": "name: org\n", "unit.yaml": "name: unit\nextends: org\n",
-      "team.yaml": "name: team\nextends: unit\n"}, "standards_depth", "org -> unit -> team"),
+      "team.yaml": "name: team\nextends: unit\n", "squad.yaml": "name: squad\nextends: team\n"},
+     "standards_depth", "org -> unit -> team -> squad"),
     ({"a.yaml": "name: a\nseverity: {size.pie-geometri: warn}\n"}, "unknown_rule",
      "size.pie-geometry"),
     ({"a.yaml": "name: a\ndisable: [nope.rule]\n"}, "unknown_rule", "nope.rule"),
@@ -188,10 +189,30 @@ def test_a_broken_standards_directory_is_a_typed_error(tmp_path, files, code, wo
     assert words in str(e.value)
 
 
-def test_a_two_file_chain_is_the_cap(tmp_path):
+def test_a_three_file_chain_is_the_cap(tmp_path):
+    """org -> unit -> team, with the spec's design block as the fourth layer."""
+    std = make_repo(tmp_path / "r", {"org.yaml": "name: org\nparams: {fold_units: 40}\n",
+                                     "unit.yaml": "name: unit\nextends: org\n"
+                                                  "params: {min_axis_height: 7}\n",
+                                     "team.yaml": "name: team\nextends: unit\n"
+                                                  "params: {fold_units: 30}\n"})
+    team = load_standards(std).get("team")
+    assert team.chain == ["org", "unit", "team"]
+    assert team.params == {"fold_units": 30, "min_axis_height": 7}
+    assert team.origins["params.min_axis_height"] == "unit"
+
+
+def test_a_four_file_chain_names_every_file(tmp_path):
     std = make_repo(tmp_path / "r", {"org.yaml": "name: org\n",
-                                     "unit.yaml": "name: unit\nextends: org\n"})
-    assert load_standards(std).get("unit").chain == ["org", "unit"]
+                                     "unit.yaml": "name: unit\nextends: org\n",
+                                     "team.yaml": "name: team\nextends: unit\n",
+                                     "squad.yaml": "name: squad\nextends: team\n"})
+    with pytest.raises(StandardsError) as e:
+        load_standards(std)
+    assert e.value.code == "standards_depth"
+    assert "a chain over three files" in str(e.value)
+    for f in ("org.yaml", "unit.yaml", "team.yaml", "squad.yaml"):
+        assert f in str(e.value)
 
 
 def test_renamed_rule_ids_resolve_through_the_alias_table(tmp_path, monkeypatch):

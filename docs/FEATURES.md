@@ -82,7 +82,7 @@ into one. Everything below works from that one file.
 
 ## Standards
 - **Design Rules in the Repository**: Keep the design review's settings for many dashboards in a `standards/` folder of YAML files: thresholds, severities, rules turned off. They are reviewed in a pull request, and every machine and every CI run reads the same files ([reference](DESIGN-BRAIN.md#18-standards)).
-    - An org file sets the baseline; a team file `extends` it and adjusts what the org leaves open.
+    - An org file sets the baseline; a unit file `extends` it, and a team file extends the unit's (or the org's directly), each adjusting what the layers above leave open.
     - Keep the folder at or above your specs inside the git repository and every command finds it; `--standards DIR` names another.
     - A spec names its team's standard in `design.standard`; specs that name none follow the file marked `default: true`, if there is one.
     - `chartwright standards assign specs/finance --standard finance` writes that field into every spec in a folder, so moving a dashboard to another team is a one-line diff.

@@ -9,16 +9,17 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 - Standards: design-review settings a repository shares across its dashboards, in a
   `standards/` folder of YAML files (docs/DESIGN-BRAIN.md §18).
-  - Each file is one standard: `name`, an optional parent in `extends` (at most two files
-    in a chain, so with the spec's own `design` block three layers), and design.yaml's
-    `params`, `audiences`, `severity` and `disable`, plus `locked` rules and parameters.
+  - Each file is one standard: `name`, an optional parent in `extends` (at most three
+    files in a chain, org → unit → team, with the spec's own `design` block after them),
+    and design.yaml's `params`, `audiences`, `severity` and `disable`, plus `locked` rules
+    and parameters.
     `default: true` marks the standard for specs that name none.
   - Down a chain, `params` and `audiences` override per parameter, `severity` per rule;
     `disable` and `locked` add up. Below the layer that locks it, a locked rule can't be
     disabled or have its severity lowered, and a locked parameter can't be set. A locked
     parameter needs a value by the layer that locks it (in `params`, or under every
     audience), so a spec's `design.audience` can't move it.
-  - Cycles, an unknown parent, a chain of three files, unknown rule ids and parameters,
+  - Cycles, an unknown parent, a chain of four files, unknown rule ids and parameters,
     a lock on an unset parameter, and a lower file loosening a lock are errors that name
     the file.
   - The folder is `--standards DIR`, or the one `standards/` folder at or above the spec
