@@ -104,6 +104,7 @@ chartwright/design/
   defaults.py      the default.* fills (§16): one decision per field, one shared driver
   explain.py       `chartwright explain`: each design-default field's value and source
   presets.py       audience parameter tables + design.yaml overlay
+  standards.py     repository standards (§18): load, extends, locks, check, report
   fix.py           apply_fixes(spec_data, findings) -> (new_data, applied)
   brief.py         render_brief(audience) -> markdown
   probe.py         bounded cardinality probes (data-aware rules)
@@ -117,10 +118,14 @@ chartwright/design/
 ```
 chartwright advise <spec> [--audience A] [--profile P] [--fix] [--strict]
                           [--ignore rule1,rule2] [--no-probe] [--chart NAME]
-chartwright explain <spec> [--chart NAME] [--audience A] [--json]
+                          [--standards DIR]
+chartwright explain <spec> [--chart NAME] [--audience A] [--json] [--standards DIR]
 chartwright brief [--audience A]
 chartwright redesign <slug-or-id> --profile P [-o spec.json] [--audience A] [--no-probe]
 chartwright calibrate [--write] [--min-samples N] [--since 90d]
+chartwright standards check <specs...> [--strict] [--report] [--standards DIR]
+chartwright standards show [NAME | --for SPEC] [--json] [--standards DIR]
+chartwright standards assign <specs...> --standard NAME [--standards DIR]
 ```
 
 - `advise` (offline by default): evaluates the spec, prints an
@@ -152,11 +157,15 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
     runs.
 - `calibrate`: the learning loop (§13 phase 3). Mines absorb history into
   per-audience recommended heights; `--since` is the decay knob.
+- `standards check | show | assign`: the repository's standards (§18).
+  `advise`, `explain`, `check` and `apply` apply the spec's standard when a
+  standards folder is found; `--standards DIR` names the folder.
 - MCP server: `design_brief`, `advise_spec` (with `chart` and `strict`),
-  `fix_spec` (with `strict`), `explain_spec` (the `explain --json` payload)
-  and `redesign_dashboard` mirror the CLI verbs; `check_spec` and
-  `build_dashboard` carry the advice block and take `design`
-  (`off`/`warn`/`strict`, the CLI's `--design`).
+  `fix_spec` (with `strict`), `explain_spec` (the `explain --json` payload),
+  `standards_check`, `standards_show` and `redesign_dashboard` mirror the CLI
+  verbs; `check_spec` and `build_dashboard` carry the advice block and take
+  `design` (`off`/`warn`/`strict`, the CLI's `--design`). The tools apply the
+  standards in `$CHARTWRIGHT_STANDARDS_DIR` (§18).
 
 ## 5. Spec surface
 
@@ -166,6 +175,7 @@ One additive optional block (models stay `extra="forbid"`):
 "design": {
   "audience": "executive",
   "ignore": ["size.pie-geometry", "layout.fold-budget@Ops Detail"],
+  "standard": "finance",
   "filled": {"Orders": {"page_length": 8, "search_box": true}}
 }
 ```
@@ -177,14 +187,19 @@ One additive optional block (models stay `extra="forbid"`):
   (`rule.id@tab-Ops-row-1`, the finding's `where`, slugified). Suppressions
   are reported in every AdviceReport (`"ignored"`), so silence is always
   visible; entries whose rule id doesn't exist come back as
-  `unmatched_ignores` instead of silently suppressing nothing.
+  `unmatched_ignores` instead of silently suppressing nothing. An entry for a
+  rule the spec's standard locks is refused and reported (§18).
+- `standard`: the name of the repository standard this dashboard follows
+  (§18); omitted, the standard marked `default: true` applies, if any.
+  Compile, plan and decompile ignore it.
 - `filled`: written by `advise --fix`, not by hand: per chart, each field the
   brain filled with a design default and the value it wrote, or null for a
   fill the author deleted (§16). Validated against the charts (a renamed
   chart carries its entry along) and each value against its field's type.
   Compile, plan and decompile ignore it.
 
-Precedence everywhere: CLI flag > spec `design` block > built-in default.
+Precedence everywhere: CLI flag > spec `design` block > built-in default,
+except that nothing silences a rule the spec's standard locks (§18).
 
 ## 6. Audiences
 
@@ -245,9 +260,9 @@ fails the same on every machine. Without a strict gate the overlay applies as
 before. Either way, every advice payload carries an `overlay` block naming the
 file (§10): what it changed in a run it applied to, and what was set aside in
 a gate, so a user sees why their local file had no effect there. Team-wide
-strictness, reviewable in a pull request, belongs in the coming `standards/`
-directory; until then the spec's `design.ignore` is the visible way to except
-a rule from a strict gate.
+settings, reviewable in a pull request and the same on every machine, belong
+in the repository's standards (§18), which apply in strict gates too and can
+lock what the overlay may not change anywhere.
 
 ## 7. The rulebook
 
@@ -442,12 +457,18 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   `disabled: true`). Under a strict gate it holds only `set_aside`: every
   `params`, `disable` and `severity` entry the gate ignored (omitted when the
   file sets none). An overlay typo in `disable` is an `unmatched_ignores`
-  entry only where the list applies, outside a strict gate.
+  entry only where the list applies, outside a strict gate. Outside a strict
+  gate, entries for what the spec's standard locks move from `params`,
+  `disable` and `severity` to `set_aside` (§18).
+- `standard` is present only when the spec follows a standard (§18): its
+  `name`, `chain`, `via`, the `locked` rules and parameters, and any
+  `refused_ignores`. Each finding then also carries `layer` (the standard,
+  `overlay` or `rulebook` that set its severity) and `locked`.
 - Under `apply --design warn`, this object is embedded in the apply report
   as `"advice"` and never affects `apply`'s own `ok`. Under
   `--design strict` the gate fails CLOSED: if advice could not be evaluated
-  at all (a broken `design.yaml`), that blocks too, rather than reporting
-  counts of zero and passing.
+  at all (a broken `design.yaml`, or a standard that can't be resolved), that
+  blocks too, rather than reporting counts of zero and passing.
 
 ## 11. Interactions with the existing system
 
@@ -591,9 +612,38 @@ reversible and none is load-bearing enough to block on:
     disable list, severities (a raise too: it would fail a gate locally that
     passes in CI) and parameters. Outside a strict gate nothing changes, and
     every advice payload names the overlay and what it changed or what was
-    set aside (§6, §10). Team-wide strictness comes from repo standards
-    files, reviewable in a pull request, the fleet-standards decision's next
-    phase.
+    set aside (§6, §10). Team-wide strictness comes from repository
+    standards (§14.15, §18).
+15. **Standards: rule settings in the repository, layered and lockable**
+    (2026-10-03, the second phase of the project's fleet-standards decision
+    record, approved after five reviews and two cross-checks and kept with
+    its research notes outside the repository; it settles decisions 1, 2, 7
+    and 10 there). The rules-only phase of standards is §18:
+    - **Advice only, never compile.** A standard sets the brain's parameters,
+      severities and disabled rules. Compile, `plan`, decompile and MCP's
+      build and plan read only the spec, so the bundle never depends on a
+      standards file, as §14.13 already decided for design defaults.
+    - **Explicit, single-parent `extends`, at most three layers** (org, one
+      unit or team, the dashboard's design block), with no folder cascade:
+      ESLint's maintainers wrote that they "would have removed the
+      configuration cascade", and diamonds and cycles have no defined
+      meaning.
+    - **Assignment lives in the spec** (`design.standard`), because MCP sees
+      specs and never paths; a folder layout only seeds the field through
+      `standards assign`. Older releases reject the field; that cost was
+      accepted.
+    - **Locks are recomputed from the standards files on every run**, never
+      read from the spec, and nothing in a spec, on the command line or in
+      `design.yaml` silences a locked rule. Exceptions to a lock come with
+      the decision's exceptions file, a later phase; until then a locked rule
+      has none.
+    - **One gate concept.** `standards check` is `advise` over a folder with
+      each spec's standard applied and `design.yaml` set aside, and the same
+      standard applies in every advice run, so `advise --strict` and
+      `standards check --strict` give a spec the same verdict.
+    - **The name "standards"** avoids the words already taken: connection
+      profiles, audiences, Superset themes, and "house style", which names
+      `design.yaml`.
 
 ## 15. Implementation deviations (recorded, not silent)
 
@@ -721,6 +771,23 @@ Recorded during the fleet-standards groundwork:
     each tab's count at the header's height and says so ("with the header's
     N"); a header that alone exceeds the budget is reported once, on the
     header row where it runs out, not again on every tab.
+
+Recorded during the rules-only standards (§18):
+
+22. **A locked rule doesn't yield to human polish.** §2.4 has sizing rules
+    stand down on a chart with a fractional height, the mark `absorb` leaves.
+    That signal is inferred, and an author can write `7.5` by hand, so on a
+    rule a standard locks it would be a way around the lock that no review
+    sees. A locked rule therefore reports on polished charts too; the platform
+    team that locked it decides whether the absorbed height or the rule wins.
+23. **A standard chain holds at most two files.** The decision allows three
+    layers, org → unit or team → dashboard; the dashboard's layer is the
+    spec's `design` block, so the files themselves stop at two, and a team
+    that sits under a unit flattens into one file or uses its unit's.
+24. **No mapping file for assignment.** The decision let folder or mapping
+    rules seed `design.standard`; `standards assign` takes folders and globs
+    as its arguments, which seeds it the same way without a third file whose
+    overlapping patterns would need their own precedence rule.
 
 ## 16. Design defaults (fills)
 
@@ -1029,3 +1096,220 @@ pixel facts, and stay so. On page sizes, Nielsen recommends that "it's usually
 better to offer a single default number — such as 10 or 20" ("Users'
 Pagination Preferences and 'View All'", NN/g, 28 April 2013). A search box past
 20 rows follows that scale.
+
+## 18. Standards
+
+A standard is the rule settings a team shares: the parameters, severities and
+disabled rules `design.yaml` holds for one machine, kept in the repository
+instead, where a pull request reviews them and every machine reads the same
+files. A standard can lock rules and parameters so that no team, spec or
+personal file below it loosens them. Standards change advice only: compile,
+`plan` and decompile never read them, and a spec builds the same bundle with
+or without one (§14.15). They write nothing into a spec.
+
+### The files
+
+A `standards/` folder holds YAML files, one standard each, in any subfolder:
+
+```yaml
+# standards/org.yaml
+name: org
+default: true                 # specs without design.standard follow this one
+params:
+  fold_units: 40
+severity:
+  narrative.title-style: warn
+locked:
+  rules: [size.axis-min-height, size.min-width]
+  params: [fold_units]
+```
+
+```yaml
+# standards/teams/finance.yaml
+name: finance
+extends: org
+params:
+  min_axis_height: 7
+audiences:
+  executive: {kpi_row_max: 4}
+severity:
+  size.axis-min-height: error   # raising a locked rule is allowed; lowering it is not
+disable: [narrative.title-style]
+```
+
+| Key | Holds |
+|---|---|
+| `name` | Required. Letters, digits, `-` and `_`; unique in the folder. Specs name it in `design.standard`. |
+| `extends` | Optional. One parent, by name. |
+| `default` | Optional, `true` on at most one file: the standard a spec without `design.standard` follows. |
+| `params` | Parameters for every audience (§6), as in `design.yaml`, `recommended_heights` included. |
+| `audiences` | Parameters for one audience, as in `design.yaml`. |
+| `severity` | Rule id → `error`, `warn` or `info`. |
+| `disable` | Rule ids the standard turns off. |
+| `locked` | `rules`: rule ids, and `params`: parameter names, that no layer below may loosen. |
+
+Rule ids go through the alias table, so a renamed rule keeps working. An
+unknown rule id, parameter or audience is an error that names the file, with
+a did-you-mean: a misspelt lock would otherwise be a lock that never locks. A
+`rule@Chart` entry is refused, since a standard covers dashboards whose charts
+it can't know; per-chart exceptions stay in the spec's `design.ignore`.
+
+### Layers
+
+A chain has at most three layers: the org's file, one unit's or team's file
+that extends it, and the dashboard's own `design` block. A file that extends a
+file that extends another is an error, as are a cycle and a parent no file
+names. There is no folder cascade: a file's place in the folder means nothing,
+and only `extends` builds a chain. Every file and chain is checked when the
+folder loads, whether or not a spec uses it, so a broken file fails every run
+that reads the folder.
+
+How each key combines down the chain:
+
+| Key | A lower layer |
+|---|---|
+| `params` | overrides per parameter; `recommended_heights` per chart type |
+| `audiences` | overrides per audience, per parameter |
+| `severity` | overrides per rule (a locked rule only upward) |
+| `disable` | adds to the list; nothing below turns a disabled rule back on |
+| `locked` | adds to the lists; nothing below unlocks |
+| `name`, `extends`, `default` | belong to their own file, never inherited |
+
+Within the resolved standard, an audience's block beats `params`, as in
+`design.yaml`: a team that wants to override the org's executive value writes
+it under `audiences.executive`.
+
+### Locks
+
+A rule a layer locks:
+
+- can't be disabled below it, by a lower file or by `design.yaml`;
+- can't have its severity lowered below it. The baseline is the level the
+  chain has set so far, or, when none is set, the most severe level the rule
+  emits (so `warn` on a `warn/error` rule is a lowering). Raising is allowed;
+- can't be silenced by the spec's `design.ignore` or by `advise --ignore`, in
+  any form (`rule`, `rule@Chart`, `rule@band`). The entry stays in the spec and
+  shows in the advice as `refused_ignores`;
+- doesn't stand down for a fractional height (§2.4): a hand-written 7.5 would
+  otherwise unlock a sizing rule.
+
+A locked parameter can't be set below the layer that locks it, in `params` or
+in any `audiences` block, and `design.yaml` can't move it. Every layer below
+gets the value it had at the locking layer: set there, set above it, or the
+audience preset's.
+A lower file that loosens a lock is an error naming both layers; the
+spec-level and `design.yaml` attempts are set aside and reported, never
+silently applied. Locks are recomputed from the standards files on every run;
+nothing in a spec can claim or waive one.
+
+### Which standard a spec follows
+
+The spec's `design.standard` names it. A spec without one follows the
+standard marked `default: true`, if any, and otherwise none. Moving a
+dashboard to another team is a one-line diff of that field.
+
+`chartwright standards assign <files|folders|globs> --standard NAME` writes
+the field into every spec it matches, so a folder layout or a list seeds the
+assignment once: `standards assign specs/finance --standard finance`. It
+checks the name first and writes nothing for an unknown one, leaves a spec
+already naming the standard untouched, and never writes a file that isn't a
+valid spec. There is no mapping file: the arguments are the mapping, and the
+field is the one record a reader or an MCP client can see.
+
+Older chartwright releases reject `design.standard` (the spec model forbids
+unknown fields), so CI must run a release that knows it.
+
+### Finding the folder
+
+`--standards DIR` names it. Without the flag, chartwright looks for a
+`standards` folder holding YAML files in the spec's own folder and each folder
+above it, up to the repository root, the first folder holding `.git`:
+
+- it uses the one it finds; nothing merges;
+- two on the way up is an error, so a stray `specs/finance/standards/` can't
+  quietly take over the specs beneath it;
+- outside a git repository it finds nothing; pass `--standards`.
+
+A spec that names a standard when no folder is found is an error, never a
+silent pass. The MCP server sees specs, not paths, so it reads the folder
+`$CHARTWRIGHT_STANDARDS_DIR` names; the CLI never reads that variable, so a
+setting on one machine can't change a CLI run.
+
+### Where a standard applies
+
+`advise` (with `--fix`), `explain`, and the advice `check` and `apply` carry
+apply the spec's standard, on the CLI and through MCP (`advise_spec`,
+`fix_spec`, `explain_spec`, `check_spec`, `build_dashboard`). Each value comes
+from the last of these layers that sets it:
+
+1. the audience preset (§6);
+2. the standard, root first: the org's file, then the team's;
+3. `design.yaml`, only outside a strict gate and only for what no standard
+   locks;
+4. the spec's `design` block: `audience` picks the preset, `ignore` silences
+   open rules;
+5. the CLI's `--audience` and `--ignore`, with the same limits.
+
+A standard applies in strict gates too, since its files are the same on every
+machine. `brief` and `redesign` take no spec, so they don't apply one.
+
+The advice payload (§10) gains, only when a standard applies:
+
+- `standard`: `name`, `chain` (root first), `via` (`design.standard` or
+  `default`), `locked` (`rules` and `params`, each with the layer that locked
+  it) and `refused_ignores` (each refused entry and the layer that locks it);
+- on each finding, `layer`: the standard that set its severity, `overlay`, or
+  `rulebook` for the rule's own level; and `locked`;
+- in the `overlay` block outside a strict gate, `set_aside`: the `params`,
+  `disable` and `severity` entries a lock overrode.
+
+Without a standards folder nothing here appears and nothing changes. `explain`
+names the chain in its header (`standard org -> finance`) and in its JSON.
+A standard that can't be resolved (a broken file, an unknown name) stops
+`advise` and `explain` with a typed `standards` error; in the advice `check`
+and `apply` carry it is an error note that `--design strict` blocks on, as a
+broken `design.yaml` does (§15.14).
+
+### standards check
+
+`chartwright standards check <files|folders|globs> [--strict] [--report]`
+runs `advise` over every spec with its standard applied and `design.yaml` set
+aside entirely: no parameter, severity or disable entry from it reaches the
+result, and the payload names the file it set aside. The specs must find one
+standards folder between them. It exits 1 when any spec has an error finding,
+or a warn under `--strict`, or can't be read, or names a standard the folder
+lacks; a broken standards folder fails the whole run.
+
+Per spec it reports `ok`, `standard`, `chain`, `via`, `audience`, `counts`,
+`findings` (each with `layer` and `locked`), `ignored`, and `locks` (the
+locked rules and parameters, and `refused_ignores`); a failing spec carries a
+`design_gate` error that names any locked rule behind it. MCP
+`standards_check` returns the same entry for one spec.
+
+`--report` prints the fleet report instead: per spec its standard, `ok`,
+`counts`, `by_rule` (findings counted by rule and severity) and `locks_hit`
+(locked rules with a finding or a refused ignore); then `totals` across the
+fleet: specs passed and failed, counts, `by_rule`, `by_standard` and
+`locks_hit`. It reads the repository's specs; it doesn't read a live
+instance.
+
+### standards show
+
+`chartwright standards show [NAME | --for SPEC] [--json]` prints a standard
+after `extends`: each key with its value, the layer that set it and whether
+it is locked, plus the files of the chain. Without a name it shows the
+default. MCP `standards_show` returns the same JSON.
+
+```
+Standard finance: org -> finance
+  org          standards/org.yaml
+  finance      standards/teams/finance.yaml
+
+  params.fold_units                40       org          locked
+  params.min_axis_height           7        finance
+  audiences.executive.kpi_row_max  4        finance
+  severity.narrative.title-style   warn     org
+  severity.size.axis-min-height    error    finance      locked
+  disable.narrative.title-style             finance
+  rule size.min-width                       org          locked
+```

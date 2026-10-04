@@ -7,6 +7,42 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Added
 
+- Standards: design-review settings a repository shares across its dashboards, in a
+  `standards/` folder of YAML files (docs/DESIGN-BRAIN.md §18).
+  - Each file is one standard: `name`, an optional parent in `extends` (at most two files
+    in a chain, so with the spec's own `design` block three layers), and design.yaml's
+    `params`, `audiences`, `severity` and `disable`, plus `locked` rules and parameters.
+    `default: true` marks the standard for specs that name none.
+  - Down a chain, `params` and `audiences` override per parameter, `severity` per rule;
+    `disable` and `locked` add up. Below the layer that locks it, a locked rule can't be
+    disabled or have its severity lowered, and a locked parameter can't be set.
+  - Cycles, an unknown parent, a chain of three files, unknown rule ids and parameters,
+    and a lower file loosening a lock are errors that name the file.
+  - The folder is `--standards DIR`, or the one `standards/` folder at or above the spec
+    inside its git repository; the MCP server reads `$CHARTWRIGHT_STANDARDS_DIR`.
+- `design.standard`: the standard a spec follows. **An older chartwright (0.2.1 and
+  earlier) rejects a spec that sets it** (`extra_forbidden`), so run CI on a release that
+  knows it. The field never reaches the bundle: a spec compiles to the same bytes with or
+  without it.
+- `advise`, `advise --fix`, `explain`, and the advice `check` and `apply` carry, apply the
+  spec's standard between the audience preset and the spec's `design` block, in strict
+  gates too. Without a standards folder nothing changes.
+  - A rule the standard locks can't be silenced by `design.ignore`, `--ignore`,
+    `design.yaml` or a fractional height; refused ignore entries are reported.
+  - The advice gains a `standard` block (name, chain, how the spec got it, locks, refused
+    ignores) and, on each finding, `layer` (what set its severity) and `locked`. Outside
+    a strict gate, the `overlay` block lists what a lock set aside.
+  - `explain` names the chain in its header and JSON.
+- `chartwright standards check <specs>`: the review over many specs, each under its
+  standard, with `design.yaml` set aside; exit 1 on an error finding, or a warn with
+  `--strict`. `--report` prints the fleet report: per spec its standard, pass or fail,
+  finding counts by rule and severity, and the locks it hit; then the totals.
+- `chartwright standards show [NAME | --for SPEC] [--json]`: a standard after `extends`,
+  each key with its value, the layer that set it and whether it is locked.
+- `chartwright standards assign <specs> --standard NAME`: writes `design.standard` into
+  each spec, leaving files that already name it untouched.
+- MCP: `standards_check` and `standards_show`; `advise_spec`, `fix_spec`, `explain_spec`,
+  `check_spec` and `build_dashboard` apply the spec's standard. Thirteen tools.
 - `dashboard.owners`: the dashboard's owners, by Superset username or by the email
   address of each account, e.g. `["jdoe", "ana@example.com"]`. Superset's import makes
   the importing account an owner and its bundle has no owners field, so `apply` now

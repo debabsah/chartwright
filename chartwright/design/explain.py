@@ -17,6 +17,7 @@ from . import advise
 from .defaults import FILLS, _show
 from .model import DESIGN_BRAIN_VERSION, RuleContext
 from .presets import DEFAULT_AUDIENCE, Overlay, load_overlay, params_for
+from .standards import Standard
 
 
 def _row(ctx: RuleContext, chart, fill, pending: dict, ignored: set[str]) -> dict:
@@ -63,12 +64,13 @@ def _row(ctx: RuleContext, chart, fill, pending: dict, ignored: set[str]) -> dic
 
 
 def explain(spec: DashboardSpec, *, audience: str | None = None, chart: str | None = None,
-            overlay: Overlay | None = None) -> dict:
-    """The explain payload. Raises ValueError for an unknown chart or a broken overlay."""
+            overlay: Overlay | None = None, standard: Standard | None = None) -> dict:
+    """The explain payload. Raises ValueError for an unknown chart or a broken overlay.
+    With a `standard`, its parameters apply and the payload names its chain."""
     overlay = overlay if overlay is not None else load_overlay()
-    report = advise(spec, audience=audience, overlay=overlay, chart=chart)
+    report = advise(spec, audience=audience, overlay=overlay, chart=chart, standard=standard)
     aud = report.audience
-    ctx = RuleContext(spec, params_for(aud or DEFAULT_AUDIENCE, overlay))
+    ctx = RuleContext(spec, params_for(aud or DEFAULT_AUDIENCE, overlay, standard))
     pending = {f.key: f for f in report.findings if f.kind != "repair" and f.fix}
     ignored = set(report.ignored)
     charts = []
@@ -78,13 +80,19 @@ def explain(spec: DashboardSpec, *, audience: str | None = None, chart: str | No
         rows = [_row(ctx, c, fill, pending, ignored)
                 for fill in FILLS.values() if c.type in fill.types]
         charts.append({"chart": c.name, "type": c.type, "fields": rows})
-    return {"stage": "explain", "ok": True, "design_brain": DESIGN_BRAIN_VERSION,
-            "audience": aud, "charts": charts}
+    out = {"stage": "explain", "ok": True, "design_brain": DESIGN_BRAIN_VERSION,
+           "audience": aud, "charts": charts}
+    if standard is not None:
+        out["standard"] = {"name": standard.name, "chain": list(standard.chain),
+                           "via": standard.via}
+    return out
 
 
 def render_text(payload: dict) -> str:
-    lines = [f"Design defaults (design brain {payload['design_brain']}, "
-             f"audience {payload['audience']})"]
+    head = f"design brain {payload['design_brain']}, audience {payload['audience']}"
+    if payload.get("standard"):
+        head += f", standard {' -> '.join(payload['standard']['chain'])}"
+    lines = [f"Design defaults ({head})"]
     for c in payload["charts"]:
         lines += ["", f"{c['chart']}  ({c['type']})"]
         if not c["fields"]:

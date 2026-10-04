@@ -50,8 +50,8 @@ approximate it with a different mechanism.
    and `{"divider": true}` entries between rows, an optional
    `layout.header` and `layout.footer` (rows above and below everything,
    shown on every tab), an optional
-   `design` block (audience + rule suppressions; `design.filled` is written
-   by `--fix`, never by you).
+   `design` block (audience, rule suppressions, `standard`; `design.filled`
+   is written by `--fix`, never by you).
 2. Design brain, ON by default: run `CW brief --audience <a>` and follow it
    while authoring. Infer the audience from the request: executive
    scorecard/leadership review -> `executive`; ops monitor/wall display ->
@@ -60,7 +60,13 @@ approximate it with a different mechanism.
    "exactly as I specify"): skip the brief, skip step 6, and pass
    `--design off` to check and apply.
 3. Write the spec to the specs dir (absolute path). Slug lowercase-kebab;
-   chart names unique. Leave the design-default fields unset unless the user
+   chart names unique. When the user names the team the dashboard is for and
+   the repo has a `standards/` folder, write that team's standard in
+   `design.standard`; `CW standards show --for <abs-spec-path>` then shows
+   what it sets, and an unknown name is an error naming the standards that
+   exist. Never create or edit a file in `standards/`
+   unless the user asks you to: those are the team's shared rules, reviewed
+   by their owners. Leave the design-default fields unset unless the user
    asked for a value (the brief lists them: time-axis label format, compare
    suffix, count number formats, table cell bars, page size and search box,
    a single series' legend, values on few bars); step 6 fills them.
@@ -87,8 +93,11 @@ approximate it with a different mechanism.
    `--fix` releases it and never refills it. Never edit `design.filled`.
    `CW explain <abs-spec-path> [--chart NAME]` says where each value came
    from. A finding that is a deliberate exception goes in the spec's
-   `design.ignore` as `"rule.id@Chart Name"`, and you tell the user. At most
-   2 design iterations, then surface the remaining findings verbatim.
+   `design.ignore` as `"rule.id@Chart Name"`, and you tell the user. A
+   finding with `"locked": true` belongs to a rule the spec's standard locks:
+   `design.ignore` can't silence it (the advice lists it under
+   `refused_ignores`), so fix the spec or tell the user the lock blocks it.
+   At most 2 design iterations, then surface the remaining findings verbatim.
 7. `CW apply <abs-spec-path> --profile <profile>`: on success give the user
    the dashboard_url and any smoke warnings verbatim. Apply backs up the
    previous state under `~/.config/chartwright/backups/<profile>/<slug>/` (restore with
@@ -130,6 +139,7 @@ learns from them over time (`CW calibrate`).
 | User wants a chart type outside the 15 | Say it's out of surface; offer the nearest supported type |
 | Retry apply a 4th time with random changes | Stop; surface all errors verbatim |
 | Advice finding seems wrong; hand-tune to dodge it | Record it in the spec's `design.ignore` and tell the user, or report a rule bug |
+| A locked finding blocks; edit `standards/` to loosen the lock, or add the rule to `design.ignore` | Never touch `standards/` unasked; fix the spec, or show the user the finding and the layer that locks it |
 | A design default you'd rather not have; rewrite the spec without it | Delete the field from the file `--fix` wrote (a deleted fill stays deleted), or add `"default.rule@Chart Name"` to `design.ignore`; tell the user |
 | "Quick" dashboard via POST /api/v1/dashboard/ | Never; the guarantee only exists through chartwright |
 | Auth fails; hunt for password variables or files | Show the ProfileError; the user names their env var or password_cmd |

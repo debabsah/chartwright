@@ -384,6 +384,24 @@ running the tool against real instances of all three releases.
   always round-trips dataset records from the target itself, in the
   target's own dialect.
 
+## What a spec carries that a bundle doesn't
+
+These are chartwright's own contracts, not Superset's, stated here because a
+pipeline depends on them the same way.
+
+- **The spec's `design` block never reaches the bundle.** `audience`,
+  `ignore`, `filled` and `standard` steer the design review only; compile
+  never reads them, so a spec builds the same bytes with or without them, and
+  `plan` doesn't compare them. Repository standards
+  (`docs/DESIGN-BRAIN.md` §18) are read by the review alone, never by compile,
+  `plan` or decompile. A test compiles every example and fixture with and
+  without `design.standard` and compares the bytes.
+- **A spec with a field an older chartwright doesn't know fails there.** Every
+  spec model rejects unknown fields, so a spec that uses a field newer than
+  the release reading it fails validation with `extra_forbidden` at that
+  field. `design.standard` is one: 0.2.1 and earlier reject it. Run CI and
+  every pipeline on a release that knows each field your specs use.
+
 ## Checking these facts
 
 Every citation names an immutable release tag: clone the tag shallowly and

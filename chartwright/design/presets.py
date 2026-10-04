@@ -114,30 +114,35 @@ def overlay_path() -> Path:
     return design_dir() / "design.yaml"
 
 
-def _check_heights(rec, where: str) -> dict:
+# The parameters a design.yaml or a standards file may set (`audience` names the
+# preset; it is not a parameter).
+PARAM_NAMES = frozenset(f.name for f in fields(Params)) - {"audience"}
+
+
+def _check_heights(rec, where: str, what: str = "design overlay") -> dict:
     """recommended_heights must be {chart type: 1..100}; the fix loop targets
     these values, so a bad entry would corrupt specs and blame the user."""
     if not isinstance(rec, dict):
-        raise ValueError(f"design overlay: {where} must be a mapping of chart type -> height")
+        raise ValueError(f"{what}: {where} must be a mapping of chart type -> height")
     for t, h in rec.items():
         if not isinstance(h, (int, float)) or isinstance(h, bool) or not 1 <= h <= 100:
             raise ValueError(
-                f"design overlay: {where}[{t!r}] must be a number in 1..100, got {h!r}")
+                f"{what}: {where}[{t!r}] must be a number in 1..100, got {h!r}")
     return rec
 
 
-def _check_param_block(block, where: str) -> dict:
+def _check_param_block(block, where: str, what: str = "design overlay") -> dict:
+    """`what` names the file in an error: the design overlay, or a standards file."""
     if not isinstance(block, dict):
-        raise ValueError(f"design overlay: {where} must be a mapping")
-    valid = {f.name for f in fields(Params)} - {"audience"}
-    bad = sorted(set(block) - valid)
+        raise ValueError(f"{what}: {where} must be a mapping")
+    bad = sorted(set(block) - PARAM_NAMES)
     if bad:
-        raise ValueError(f"design overlay: {where}: unknown parameters {bad} (known: {sorted(valid)})")
+        raise ValueError(f"{what}: {where}: unknown parameters {bad} (known: {sorted(PARAM_NAMES)})")
     for k, v in block.items():
         if k == "recommended_heights":
-            _check_heights(v, f"{where}.recommended_heights")
+            _check_heights(v, f"{where}.recommended_heights", what)
         elif not isinstance(v, (int, float)) or isinstance(v, bool):
-            raise ValueError(f"design overlay: {where}.{k} must be a number, got {v!r}")
+            raise ValueError(f"{what}: {where}.{k} must be a number, got {v!r}")
     return block
 
 
@@ -189,23 +194,41 @@ def load_overlay(path: Path | None = None) -> Overlay:
     return ov
 
 
-def params_for(audience: str, overlay: Overlay | None = None) -> Params:
+def params_for(audience: str, overlay: Overlay | None = None, standard=None) -> Params:
+    """One audience's parameters. Each layer overrides the one before it, parameter by
+    parameter: the audience preset, then the standard's `params` and its block for this
+    audience (design/standards.py), then the overlay's `params` and its block for this
+    audience. The overlay never sets a parameter the standard locks."""
     if audience not in AUDIENCES:
         raise ValueError(f"unknown audience {audience!r}; one of {sorted(AUDIENCES)}")
     p = AUDIENCES[audience]
     overlay = overlay or Overlay()
     per_audience = _check_param_block(overlay.audiences.get(audience) or {}, f"audiences.{audience}")
+    general = _check_param_block(overlay.params, "params")
+    top_heights = _check_heights(overlay.recommended_heights, "recommended_heights")
+    std_general: dict = {}
+    std_audience: dict = {}
+    if standard is not None:
+        std_general = standard.params
+        std_audience = standard.audiences.get(audience) or {}
+        locked = standard.locked_params
+        general = {k: v for k, v in general.items() if k not in locked}
+        per_audience = {k: v for k, v in per_audience.items() if k not in locked}
+        if "recommended_heights" in locked:
+            top_heights = {}
     updates: dict = {}
-    updates.update(_check_param_block(overlay.params, "params"))
-    updates.update(per_audience)
-    # recommended_heights MERGES per key across all four layers (preset,
-    # overlay top-level, overlay params, overlay per-audience) -- a wholesale
-    # replace would silently drop org-wide calibration on any audience that
-    # tunes a single type.
+    for block in (std_general, std_audience, general, per_audience):
+        updates.update(block)
+    # recommended_heights MERGES per key across every layer (preset, standard,
+    # standard per-audience, overlay top-level, overlay params, overlay per-audience)
+    # -- a wholesale replace would silently drop org-wide calibration on any audience
+    # that tunes a single type.
     rec = {
         **p.recommended_heights,
-        **_check_heights(overlay.recommended_heights, "recommended_heights"),
-        **(overlay.params.get("recommended_heights") or {}),
+        **(std_general.get("recommended_heights") or {}),
+        **(std_audience.get("recommended_heights") or {}),
+        **top_heights,
+        **(general.get("recommended_heights") or {}),
         **(per_audience.get("recommended_heights") or {}),
     }
     if rec:

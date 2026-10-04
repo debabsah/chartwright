@@ -1518,6 +1518,12 @@ class DesignConfig(BaseModel):
         default=None, description="Design preset; CLI --audience overrides")
     ignore: list[str] = Field(
         default_factory=list, description="Design rule ids to suppress")
+    standard: str | None = Field(
+        default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+        description="The standard this dashboard follows: the `name` of a file in the "
+                    "repository's standards/ directory. advise, check, apply and "
+                    "`standards check` apply its rule settings; omitted, the standard "
+                    "marked `default: true` applies, if there is one. Compile ignores it.")
     filled: dict[str, dict[str, Any]] = Field(
         default_factory=dict,
         description="Written by `chartwright advise --fix`, not by hand: per chart name, each "

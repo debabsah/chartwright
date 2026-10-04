@@ -48,7 +48,8 @@ def test_features_cli_table_covers_every_verb():
     cli = (REPO / "chartwright" / "cli.py").read_text(encoding="utf-8")
     registered = set(re.findall(r'sub\.add_parser\(\s*"(\w+)"', cli))
     registered |= {"check", "apply", "plan"}          # added in a loop, not literally
-    documented = set(re.findall(r"\| `chartwright (\w+)`",
+    # A verb with sub-verbs (`standards check`) is documented by its sub-verb rows.
+    documented = set(re.findall(r"\| `chartwright (\w+)(?: \w+)?`",
                                 (REPO / "docs" / "FEATURES.md").read_text(encoding="utf-8")))
     assert not registered - documented, (
         f"docs/FEATURES.md CLI Verbs table is missing: {sorted(registered - documented)}")
@@ -60,7 +61,7 @@ def test_documented_mcp_tool_count_is_right():
     """The other half of item 21's sibling, item 20: 'Six tools' outlived the
     design brain adding four more."""
     words = {"Six": 6, "Seven": 7, "Eight": 8, "Nine": 9, "Ten": 10,
-             "Eleven": 11, "Twelve": 12}
+             "Eleven": 11, "Twelve": 12, "Thirteen": 13, "Fourteen": 14}
     actual = len(re.findall(r"^@mcp\.tool\(\)",
                             (REPO / "chartwright" / "mcp_server.py").read_text(encoding="utf-8"),
                             re.M))

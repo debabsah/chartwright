@@ -10,6 +10,9 @@
     chartwright explain spec.json               where each design-default field comes from, and why
     chartwright redesign <slug> --profile P     decompile + audit + safe fixes -> redesigned spec
     chartwright calibrate                       learn recommended heights from absorb history
+    chartwright standards check specs/          check specs against the repository's standards
+    chartwright standards show [NAME]           a standard after extends, each key's layer and lock
+    chartwright standards assign specs/ --standard NAME   write design.standard into specs
 """
 
 from __future__ import annotations
@@ -63,12 +66,36 @@ def _design_blocks(advice: dict) -> str | None:
     return gate_block(advice)
 
 
-def _advice_payload(spec, resolution=None, strict: bool = False) -> dict:
+def _advice_payload(spec, resolution=None, strict: bool = False, standards=None) -> dict:
     """The advice block check/apply carry (design.advice_payload). `strict` is
-    `--design strict`: the per-machine design.yaml then counts for nothing."""
+    `--design strict`: the per-machine design.yaml then counts for nothing. `standards`
+    is where the spec's standard comes from (a StandardsSource), or None for none."""
     from .design import advice_payload
 
-    return advice_payload(spec, resolution, strict=strict)
+    return advice_payload(spec, resolution, strict=strict, standards=standards)
+
+
+def _standards(args, spec_path):
+    """The standards for a spec file: --standards DIR, or the repository's standards/
+    folder found from the spec's own folder (design/standards.py discover)."""
+    from .design.standards import StandardsSource
+
+    return StandardsSource.for_cli(getattr(args, "standards", None), spec_path)
+
+
+def _standard_or_die(args, spec):
+    """The spec's resolved standard, or None; a standard that can't be resolved stops
+    the command with a typed error."""
+    from .design.standards import StandardsError
+
+    try:
+        return _standards(args, args.spec).standard_for(spec)
+    except StandardsError as e:
+        _die({"stage": "standards", "errors": [e.as_dict()]})
+
+
+_STANDARDS_HELP = ("the standards directory (default: a standards/ folder at or above the "
+                   "spec, inside its git repository)")
 
 
 def _client(profile_name: str):
@@ -127,6 +154,7 @@ def _main(argv: list[str] | None = None) -> None:
         if name != "plan":
             p.add_argument("--design", choices=["off", "warn", "strict"], default="warn",
                            help="design-brain advice: warn (report, default), strict (block), off")
+            p.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
 
     from .design.presets import AUDIENCE_NAMES
 
@@ -142,6 +170,7 @@ def _main(argv: list[str] | None = None) -> None:
     adv.add_argument("--no-probe", action="store_true", help="skip cardinality queries (metadata only)")
     adv.add_argument("--chart", default=None, metavar="NAME",
                      help="only this chart's findings, and with --fix only its fixes")
+    adv.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
 
     ex = sub.add_parser("explain",
                         help="where each chart's design-default fields come from, and why (offline)")
@@ -149,6 +178,35 @@ def _main(argv: list[str] | None = None) -> None:
     ex.add_argument("--chart", default=None, metavar="NAME", help="explain this chart only")
     ex.add_argument("--audience", choices=AUDIENCE_NAMES, default=None)
     ex.add_argument("--json", action="store_true", help="the same rows as JSON, for agents")
+    ex.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
+
+    st = sub.add_parser("standards",
+                        help="the repository's standards: check specs against them, show one, "
+                             "assign one to specs")
+    std_verbs = st.add_subparsers(dest="standards_cmd", required=True)
+    stc = std_verbs.add_parser(
+        "check", help="advise each spec with its standard applied, setting design.yaml aside; "
+                      "exit 1 on an error finding (or a warn under --strict)")
+    stc.add_argument("specs", nargs="+", help="spec files, folders (every .json beneath) or globs")
+    stc.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
+    stc.add_argument("--strict", action="store_true", help="warn findings fail too")
+    stc.add_argument("--report", action="store_true",
+                     help="the fleet report: per spec its standard, pass or fail, finding counts "
+                          "by rule and severity and the locks it hit; then the totals")
+    sts = std_verbs.add_parser("show", help="a standard after extends: each key's value, the "
+                                            "layer that set it, and whether it is locked")
+    sts.add_argument("name", nargs="?", default=None,
+                     help="the standard (default: the one marked default: true)")
+    sts.add_argument("--for", dest="for_spec", default=None, metavar="SPEC",
+                     help="the standard this spec follows")
+    sts.add_argument("--standards", default=None, metavar="DIR",
+                     help="the standards directory (default: a standards/ folder at or above "
+                          "the spec, or the working directory, inside its git repository)")
+    sts.add_argument("--json", action="store_true", help="the same as JSON, for agents")
+    sta = std_verbs.add_parser("assign", help="write design.standard into each spec")
+    sta.add_argument("specs", nargs="+", help="spec files, folders (every .json beneath) or globs")
+    sta.add_argument("--standard", required=True, metavar="NAME", help="the standard's name")
+    sta.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
 
     br = sub.add_parser("brief", help="the design brief to read BEFORE authoring a spec")
     br.add_argument("--audience", choices=AUDIENCE_NAMES, default="analytical")
@@ -234,7 +292,8 @@ def _main(argv: list[str] | None = None) -> None:
         gate = False
         if args.design != "off":
             advice = _advice_payload(spec, resolution=res if res.ok else None,
-                                     strict=args.design == "strict")
+                                     strict=args.design == "strict",
+                                     standards=_standards(args, args.spec))
             payload["advice"] = advice
             blocked = _design_blocks(advice) if args.design == "strict" else None
             gate = blocked is not None
@@ -251,7 +310,8 @@ def _main(argv: list[str] | None = None) -> None:
             # Pre-flight, offline (no probes: applies stay fast; data-aware
             # advice is `chartwright advise --profile`). Strict blocks BEFORE
             # anything on the instance is touched.
-            advice = _advice_payload(spec, strict=args.design == "strict")
+            advice = _advice_payload(spec, strict=args.design == "strict",
+                                     standards=_standards(args, args.spec))
             blocked = _design_blocks(advice) if args.design == "strict" else None
             if blocked:
                 _die({"stage": "design", "ok": False, "advice": advice,
@@ -277,8 +337,9 @@ def _main(argv: list[str] | None = None) -> None:
         spec = _load(args.spec)
         from .design.explain import explain, render_text
 
+        standard = _standard_or_die(args, spec)
         try:
-            payload = explain(spec, audience=args.audience, chart=args.chart)
+            payload = explain(spec, audience=args.audience, chart=args.chart, standard=standard)
         except ValueError as e:
             _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
         print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json
@@ -287,6 +348,7 @@ def _main(argv: list[str] | None = None) -> None:
 
     if args.cmd == "advise":
         spec = _load(args.spec)
+        standard = _standard_or_die(args, spec)
         resolution = prober = None
         if args.profile:
             client = _client(args.profile)
@@ -307,7 +369,7 @@ def _main(argv: list[str] | None = None) -> None:
                 new_data, report = advise_and_fix(
                     spec_data, audience=args.audience, ignore=ignore,
                     resolution=resolution, prober=prober, chart=args.chart,
-                    strict=args.strict)
+                    strict=args.strict, standard=standard)
                 if report.fixed:
                     # --fix rewrites the whole file (normalized JSON formatting,
                     # same as absorb); the payload discloses the path.
@@ -317,7 +379,7 @@ def _main(argv: list[str] | None = None) -> None:
             else:
                 report = advise(spec, audience=args.audience, ignore=ignore,
                                 resolution=resolution, prober=prober, chart=args.chart,
-                                strict=args.strict)
+                                strict=args.strict, standard=standard)
         except ValueError as e:
             _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
         payload = report.payload()
@@ -335,6 +397,10 @@ def _main(argv: list[str] | None = None) -> None:
                 "code": "design_gate", "detail": advise_gate_detail(report)})
         print(json.dumps(payload, indent=2))
         sys.exit(1 if report.gate(args.strict) else 0)
+
+    if args.cmd == "standards":
+        _standards_cmd(args)
+        return
 
     if args.cmd == "redesign":
         client = _client(args.profile)
@@ -483,6 +549,69 @@ def _main(argv: list[str] | None = None) -> None:
         report = restore_bundle(blob, slug, client)
         print(report.to_json())
         sys.exit(0 if report.ok else 1)
+
+
+def _standards_cmd(args) -> None:
+    """`chartwright standards check | show | assign` (design/standards.py)."""
+    from .design import standards as st
+
+    def fail(e: st.StandardsError) -> None:
+        _die({"stage": "standards", "ok": False, "errors": [e.as_dict()]})
+
+    if args.standards_cmd == "show":
+        if args.name and args.for_spec:
+            fail(st.StandardsError("usage", "name a standard or pass --for SPEC, not both"))
+        spec = _load(args.for_spec) if args.for_spec else None
+        # Discovery starts in the spec's folder, or without --for in the working directory.
+        source = st.StandardsSource.for_cli(args.standards, args.for_spec or Path.cwd() / "-")
+        try:
+            payload = st.show(source, args.name, spec, spec_label=args.for_spec or "")
+        except st.StandardsError as e:
+            fail(e)
+        print(json.dumps(payload, indent=2) if args.json else st.render_show(payload),
+              end="\n" if args.json else "")
+        return
+
+    try:
+        paths = st.expand_specs(args.specs)
+        if not paths:
+            raise st.StandardsError("no_specs", f"no spec files in {args.specs}")
+        source = st.source_for_specs(args.standards, paths)
+        standards = source.load()
+    except st.StandardsError as e:
+        fail(e)
+
+    if args.standards_cmd == "assign":
+        try:
+            payload = st.assign(paths, args.standard, standards)
+        except st.StandardsError as e:
+            fail(e)
+        print(json.dumps(payload, indent=2))
+        sys.exit(0 if payload["ok"] else 1)
+
+    entries = []
+    for p in paths:
+        spec, err = st.load_spec_file(p)
+        if err is not None:
+            entries.append({"spec": str(p), "ok": False, "standard": None, "errors": [err]})
+        else:
+            entries.append({"spec": str(p), **st.check_spec(spec, source, strict=args.strict)})
+    sdir = st.display(standards.directory)
+    if args.report:
+        payload = st.fleet_report(entries, strict=args.strict, standards_dir=sdir)
+    else:
+        passed = sum(1 for e in entries if e["ok"])
+        payload = {"stage": "standards", "ok": passed == len(entries), "strict": args.strict,
+                   "standards_dir": sdir, "specs": entries,
+                   "totals": {"specs": len(entries), "passed": passed,
+                              "failed": len(entries) - passed}}
+    from .design.presets import overlay_path
+
+    if overlay_path().exists():
+        # Named, never read: a per-machine file must not decide a fleet check.
+        payload["overlay"] = {"path": str(overlay_path()), "set_aside": True}
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    sys.exit(0 if payload["ok"] else 1)
 
 
 if __name__ == "__main__":

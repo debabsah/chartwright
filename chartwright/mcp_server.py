@@ -98,11 +98,30 @@ def validate_spec(spec_json: str) -> str:
     return json.dumps(err or {"ok": True, "stage": "schema"})
 
 
+def _standards():
+    """The server's standards: the directory $CHARTWRIGHT_STANDARDS_DIR names, since a
+    tool sees a spec and never its path (design/standards.py)."""
+    from .design.standards import StandardsSource
+
+    return StandardsSource.from_env()
+
+
+def _standard(spec):
+    """(the spec's resolved standard or None, typed error JSON or None)."""
+    from .design.standards import StandardsError
+
+    try:
+        return _standards().standard_for(spec), None
+    except StandardsError as e:
+        return None, json.dumps({"ok": False, "stage": "standards", "errors": [e.as_dict()]})
+
+
 def _advice(spec, resolution=None, audience: str | None = None, strict: bool = False) -> dict:
     """Advice riding along MCP responses degrades, never raises (the CLI's own helper)."""
     from .design import advice_payload
 
-    return advice_payload(spec, resolution, audience=audience, strict=strict)
+    return advice_payload(spec, resolution, audience=audience, strict=strict,
+                          standards=_standards())
 
 
 def _bad_design(design: str) -> str | None:
@@ -269,6 +288,9 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: st
     bad = _bad_chart(spec, chart)
     if bad:
         return bad
+    standard, err = _standard(spec)
+    if err:
+        return err
     from .design import advise
 
     resolution = prober = None
@@ -281,7 +303,7 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: st
         prober = CardinalityProber(client)
     try:
         report = advise(spec, audience=audience or None, resolution=resolution, prober=prober,
-                        chart=chart or None, strict=strict)
+                        chart=chart or None, strict=strict, standard=standard)
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
     payload = report.payload()
@@ -311,11 +333,14 @@ def fix_spec(spec_json: str, audience: str = "", strict: bool = False) -> str:
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    standard, err = _standard(spec)
+    if err:
+        return err
     from .design import advise_and_fix
 
     try:
         new_data, report = advise_and_fix(json.loads(spec_json), audience=audience or None,
-                                          strict=strict)
+                                          strict=strict, standard=standard)
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
     return json.dumps({"ok": True, "stage": "design", "spec": new_data, "advice": report.payload()})
@@ -336,12 +361,61 @@ def explain_spec(spec_json: str, chart: str = "", audience: str = "") -> str:
     bad = _bad_chart(spec, chart)
     if bad:
         return bad
+    standard, err = _standard(spec)
+    if err:
+        return err
     from .design.explain import explain
 
     try:
-        return json.dumps(explain(spec, audience=audience or None, chart=chart or None))
+        return json.dumps(explain(spec, audience=audience or None, chart=chart or None,
+                                  standard=standard))
     except ValueError as e:
         return json.dumps({"ok": False, "stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
+
+
+@mcp.tool()
+def standards_check(spec_json: str, strict: bool = False) -> str:
+    """The CLI's `standards check` for one spec, offline: the design review with the
+    spec's standard applied (design.standard, or the repository's default standard),
+    setting the per-machine design.yaml aside. ok is false on an error finding, or on a
+    warn when strict. Returns the standard chain, the findings (each with the layer that
+    set its severity and whether a standard locks its rule) and the locks applied. The
+    standards directory is the server's $CHARTWRIGHT_STANDARDS_DIR."""
+    spec, err = _parse_spec(spec_json)
+    if err:
+        return json.dumps(err)
+    from .design.standards import StandardsError, check_spec, display
+
+    source = _standards()
+    try:
+        standards = source.load()
+    except StandardsError as e:
+        return json.dumps({"ok": False, "stage": "standards", "errors": [e.as_dict()]})
+    if standards is None:
+        return json.dumps({"ok": False, "stage": "standards", "errors": [{
+            "code": "no_standards_dir",
+            "detail": f"no standards directory is configured; {source.hint}"}]})
+    return json.dumps({"stage": "standards", "standards_dir": display(standards.directory),
+                       "strict": strict, **check_spec(spec, source, strict=strict)})
+
+
+@mcp.tool()
+def standards_show(name: str = "", spec_json: str = "") -> str:
+    """The CLI's `standards show --json`: a standard after its extends chain, each key
+    with its value, the layer that set it and whether it is locked. Name the standard,
+    or pass spec_json for the standard that spec follows; neither shows the default
+    standard. The standards directory is the server's $CHARTWRIGHT_STANDARDS_DIR."""
+    from .design.standards import StandardsError, show
+
+    spec = None
+    if spec_json:
+        spec, err = _parse_spec(spec_json)
+        if err:
+            return json.dumps(err)
+    try:
+        return json.dumps(show(_standards(), name or None, spec))
+    except StandardsError as e:
+        return json.dumps({"ok": False, "stage": "standards", "errors": [e.as_dict()]})
 
 
 @mcp.tool()

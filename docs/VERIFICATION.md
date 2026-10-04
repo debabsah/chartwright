@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1036 tests, 56 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1120 tests, 57 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
@@ -118,6 +118,17 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   back as its header; the critic advises header rows in place, spends the
   header in every tab's fold budget, and fixes header markdown by its own
   address.
+- **Standards** (`test_standards.py`): `extends` merges each key as
+  documented and records the layer behind it; cycles, unknown parents, a
+  third file, unknown rule ids and parameters, and every way a lower file
+  could loosen a lock are typed errors; discovery stops at the repository
+  root and refuses two folders; `design.standard`, the default and
+  `standards assign` pick and write the standard; a locked rule survives
+  `design.ignore`, `--ignore`, `design.yaml` and a fractional height;
+  `standards check` exits on the right findings and reads nothing from
+  `design.yaml`; the fleet report's shape; the MCP tools return what the CLI
+  prints; without a standards folder the advice is unchanged; and every
+  example and fixture compiles to the same bytes with `design.standard` set.
 - **Dashboard owners** (`test_dashboard_owners.py`): owners never reach
   the bundle; usernames resolve where the security API answers and emails
   everywhere, an unknown or ambiguous owner is a resolve-stage error with
