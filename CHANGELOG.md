@@ -180,17 +180,6 @@ while the major version is 0, minor bumps may include breaking changes and say s
   - MCP: `check_spec` and `build_dashboard` take `design` (`off`, `warn`, `strict`), the
     CLI's `--design`, and `build_dashboard` now carries the advice block `apply`
     carries; `advise_spec` and `fix_spec` take `strict`.
-- Line, bar, area and scatter charts, trendline KPIs, and mixed charts over time ignored
-  both their own `time_range` and the dashboard's time filter, on Superset 4.1.4, 5.0.0
-  and 6.1.0. They drew every date while the filter bar counted them as filtered. They
-  now carry the time-range filter that Superset's own charts put on their time axis,
-  so both ranges work. While the dashboard's time filter has a value, it replaces the
-  chart's own range, as it already did on every other chart type.
-  - The next `apply` rewrites those charts. `plan` does not list them as changed, so
-    run `apply` even when `plan` is clean.
-  - This fix changes the bundle only for these charts, which gain that filter.
-- `apply`'s data check queried every chart over all dates. It now uses each chart's own
-  `time_range`, so a range that matches no rows shows up as an empty-chart warning.
 - Tables and pivots that hid their last rows passed `size.table-window`,
   `size.pivot-window`, `size.grid-fit` and the apply-time smoke warning. Their shared
   grid model was a guess. It is now measured on rendered Superset 4.1.4, 5.0.0 and 6.1.0
@@ -209,6 +198,19 @@ while the major version is 0, minor bumps may include breaking changes and say s
   control the panel declares at 4.1.4, 5.0.0 and 6.1.0, and
   `tools/extract_mixed_contract.py` extracts it from the plugin source (`--check` says
   when the JSON no longer matches).
+
+## 0.2.1 (2026-10-04)
+
+### Fixed
+
+- Charts over time (line, bar, area and scatter charts, trendline KPIs, and mixed charts
+  with a time x axis) ignored both their own `time_range`, when set, and the dashboard's
+  time filter. They showed every date while the filter bar counted them as filtered.
+  - The next `apply` rewrites those charts, so both ranges work.
+  - `plan` does not flag dashboards built with 0.2.0, so run `apply` on them even when
+    `plan` is clean.
+- `apply`'s data check queried every chart over all dates. It now uses each chart's own
+  `time_range`, so a range that matches no rows shows up as an empty-chart warning.
 
 ## 0.2.0 (2026-10-03)
 
