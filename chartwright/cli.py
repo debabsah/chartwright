@@ -290,7 +290,7 @@ def _main(argv: list[str] | None = None) -> None:
         bundle = compile_bundle(spec, stub_resolution(spec))
         out = Path(args.output or f"{spec.dashboard.slug}.zip")
         out.write_bytes(bundle)
-        payload = {"ok": True, "stage": "compile", "output": str(out), "bytes": len(bundle),
+        payload = {"ok": True, "stage": "compile", "output": out.as_posix(), "bytes": len(bundle),
                    "note": "stub resolution (fake dataset ids); use apply for a real import"}
         if checked is not None:
             payload["superset_version"] = checked.version
@@ -398,7 +398,7 @@ def _main(argv: list[str] | None = None) -> None:
                     # same as absorb); the payload discloses the path.
                     Path(args.spec).write_text(
                         json.dumps(new_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-                    written = str(args.spec)
+                    written = Path(args.spec).as_posix()
             else:
                 report = advise(spec, audience=args.audience, ignore=ignore,
                                 resolution=resolution, prober=prober, chart=args.chart,
@@ -460,10 +460,10 @@ def _main(argv: list[str] | None = None) -> None:
         if args.output is None and out.exists():
             _die({"stage": "redesign", "errors": [{
                 "code": "output_exists",
-                "detail": f"{out} already exists (likely a previous redesign); "
+                "detail": f"{out.as_posix()} already exists (likely a previous redesign); "
                           f"pass -o to choose where to write"}]})
         out.write_text(json.dumps(new_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        payload["output"] = str(out)
+        payload["output"] = out.as_posix()
         if resolution.errors:
             payload["resolution_errors"] = [e.as_dict() for e in resolution.errors]
         print(json.dumps(payload, indent=2))
@@ -538,7 +538,7 @@ def _main(argv: list[str] | None = None) -> None:
             _die({"stage": "decompile", "errors": [{"code": "decompile", "detail": str(e)}]})
         if args.output:
             Path(args.output).write_text(json.dumps(result.spec, indent=2) + "\n")
-            print(json.dumps({"ok": True, "stage": "decompile", "output": args.output,
+            print(json.dumps({"ok": True, "stage": "decompile", "output": Path(args.output).as_posix(),
                               "losses": result.losses_json()}, indent=2))
         else:
             print(json.dumps({"spec": result.spec, "losses": result.losses_json()}, indent=2))

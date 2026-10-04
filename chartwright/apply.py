@@ -373,7 +373,7 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
             # the owner. (No-op on Windows; custom dirs are the user's to manage.)
             os.chmod(backup_dir.parent.parent, 0o700)
         backup_bytes = client.export_dashboard(existing["id"])
-        report.backup = str(write_backup(backup_dir, backup_bytes))
+        report.backup = write_backup(backup_dir, backup_bytes).as_posix()
 
     def _auto_restore(reason: str) -> None:
         """Import failed mid-mutation: put the previous state back rather
