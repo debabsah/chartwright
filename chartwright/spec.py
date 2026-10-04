@@ -47,6 +47,9 @@ def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS) ->
 
 ADHOC_AGGREGATES = ("SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX")
 _ADHOC_RE = re.compile(r"^(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((.+?)\)(?:\s+AS\s+(.+))?$")
+# A custom-SQL metric: SQL(<any SQL expression>) AS <label>. The label is
+# required: Superset otherwise labels the series with the (truncated) SQL.
+_SQL_METRIC_RE = re.compile(r"^SQL\((.+)\)\s+AS\s+(.+)$", re.S)
 
 # The categorical colour schemes every supported release ships (superset-ui-core
 # color/colorSchemes/categorical/*.ts; the same 18 ids at 4.1.4, 5.0.0 and 6.1.0).
@@ -89,11 +92,22 @@ class DatasetRef(BaseModel):
 
 def parse_metric(metric: str) -> dict | None:
     """{'aggregate','column','label'} for ad-hoc metrics, None for saved-metric
-    names. Optional display label via ``AGG(col) AS Pretty Label`` (AS uppercase)."""
+    names. Optional display label via ``AGG(col) AS Pretty Label`` (AS uppercase).
+    A custom-SQL metric, ``SQL(expr) AS Label``, gives {'sql','label'} with
+    aggregate and column None."""
+    s = _SQL_METRIC_RE.match(metric)
+    if s and s.group(1).strip() and s.group(2).strip():
+        return {"aggregate": None, "column": None, "sql": s.group(1).strip(),
+                "label": s.group(2).strip()}
     m = _ADHOC_RE.match(metric)
     if not m:
         return None
     return {"aggregate": m.group(1), "column": m.group(2).strip(), "label": m.group(3)}
+
+
+def malformed_sql_metric(metric: str) -> bool:
+    """A string that starts like a custom-SQL metric but is not one (no label, empty SQL)."""
+    return metric.startswith("SQL(") and (parse_metric(metric) or {}).get("sql") is None
 
 
 def metric_label(metric: str) -> str:
@@ -105,16 +119,33 @@ def metric_label(metric: str) -> str:
 
 
 class ChartFilter(BaseModel):
-    """A WHERE-clause condition on the chart's dataset."""
+    """A WHERE-clause condition on the chart's dataset: column/op/value, or
+    ``sql`` for a custom SQL condition."""
 
     model_config = ConfigDict(extra="forbid")
 
-    column: str
+    column: str | None = None
     op: FilterOp = "=="
     value: str | int | float | bool | list[str | int | float] | None = None
+    sql: str | None = Field(
+        default=None,
+        description="A custom SQL WHERE condition instead of column/op/value, e.g. "
+                    "\"amount > 0 OR status = 'refunded'\". `check` cannot verify the "
+                    "columns inside SQL; apply's data check runs the query.",
+    )
 
     @model_validator(mode="after")
     def _value_shape(self) -> "ChartFilter":
+        if self.sql is not None:
+            if not self.sql.strip():
+                raise ValueError("filter sql must be a non-empty SQL condition")
+            # op keeps its default: a dumped-and-reloaded sql filter carries it
+            if self.column is not None or self.value is not None or self.op != "==":
+                raise ValueError("a sql filter takes no column, op or value")
+            self.sql = self.sql.strip()
+            return self
+        if self.column is None:
+            raise ValueError("a filter needs a column (or sql)")
         if self.op in _NULL_OPS:
             if self.value is not None:
                 raise ValueError(f"filter op {self.op!r} takes no value")
@@ -1026,6 +1057,17 @@ class DashboardSpec(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _sql_metrics_labelled(self) -> "DashboardSpec":
+        for c in self.charts:
+            for m in chart_metrics(c):
+                if malformed_sql_metric(m):
+                    raise ValueError(
+                        f"chart {c.name!r}: metric {m!r} looks like a custom-SQL metric but is not "
+                        "one; write SQL(<expression>) AS <Label>, e.g. "
+                        "\"SQL(100.0 * SUM(a) / NULLIF(SUM(b), 0)) AS Rate\"")
+        return self
+
+    @model_validator(mode="after")
     def _layout_consistent(self) -> "DashboardSpec":
         by_name = {c.name: c for c in self.charts}
         placed: set[str] = set()
@@ -1131,6 +1173,20 @@ class DashboardSpec(BaseModel):
         if sc is not None:
             return sc.height
         return chart.default_height()
+
+
+def chart_metrics(chart) -> list[str]:
+    """Every metric string a chart names: its metric(s), a mixed chart's two
+    queries, and an aggregate table's sort metric."""
+    out: list[str] = []
+    if getattr(chart, "metric", None):
+        out.append(chart.metric)
+    out += list(getattr(chart, "metrics", None) or [])
+    if chart.type == "mixed":
+        out += [*chart.a.metrics, *chart.b.metrics]
+    if chart.type == "table" and chart.sort_by and not chart.columns:
+        out.append(chart.sort_by)
+    return out
 
 
 def load_spec(data: dict) -> DashboardSpec:

@@ -287,6 +287,11 @@ def _metric_to_spec(m, losses: list[Loss], chart: str) -> str | None:
                 if m.get("hasCustomLabel") and m.get("label"):
                     return f"{base} AS {m['label']}"
                 return base
+            if sql:
+                # Any other custom SQL keeps its expression and the label Superset
+                # shows (a default label is the SQL itself, sometimes shortened).
+                label = (m.get("label") or "").strip() or sql
+                return f"SQL({sql}) AS {label}"
         losses.append(Loss(chart, f"metric not representable, dropped: {m}"))
         return None
     losses.append(Loss(chart, f"unrecognized metric shape, dropped: {m!r}"))
@@ -305,8 +310,13 @@ def _filters_to_spec(params: dict, losses: list[Loss], chart: str) -> list[dict]
             if op in _FILTER_OPS:
                 out.append({"column": f.get("subject"), "op": op, "comparator": f.get("comparator")})
                 continue
+        if (f.get("expressionType") == "SQL" and f.get("clause", "WHERE") == "WHERE"
+                and (f.get("sqlExpression") or "").strip()):
+            out.append({"sql": f["sqlExpression"].strip()})
+            continue
         losses.append(Loss(chart, f"filter not representable, dropped: {f}"))
     return [
+        f if "sql" in f else
         {"column": f["column"], "op": f["op"], **({} if f["op"] in ("IS NULL", "IS NOT NULL") else {"value": f["comparator"]})}
         for f in out
     ]

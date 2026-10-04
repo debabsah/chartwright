@@ -72,6 +72,15 @@ def _metric_payload(metric: str, slug: str, chart_name: str) -> str | dict:
         return metric
     option = "metric_sdc_" + uuid.uuid5(ids.NAMESPACE, f"{slug}/chart/{chart_name}/metric/{metric}").hex[:12]
     label = adhoc["label"] or metric
+    if adhoc.get("sql") is not None:
+        # Custom SQL (the metric popover's "Custom SQL" tab), in every release.
+        return {
+            "expressionType": "SQL",
+            "sqlExpression": adhoc["sql"],
+            "label": label,
+            "optionName": option,
+            "hasCustomLabel": True,
+        }
     if adhoc["column"] == "*":
         return {
             "expressionType": "SQL",
@@ -131,8 +140,17 @@ def _column_config(chart) -> dict:
 
 
 def _adhoc_filters(chart) -> list[dict]:
+    return _adhoc_filter_list(chart.filters)
+
+
+def _adhoc_filter_list(filters) -> list[dict]:
     out = []
-    for f in chart.filters:
+    for f in filters:
+        if f.sql is not None:
+            # The filter popover's "Custom SQL" tab: the backend ANDs the
+            # sqlExpression into WHERE (all three releases).
+            out.append({"clause": "WHERE", "expressionType": "SQL", "sqlExpression": f.sql})
+            continue
         out.append({
             "clause": "WHERE",
             "expressionType": "SIMPLE",

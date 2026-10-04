@@ -725,11 +725,19 @@
     },
     "ChartFilter": {
       "additionalProperties": false,
-      "description": "A WHERE-clause condition on the chart's dataset.",
+      "description": "A WHERE-clause condition on the chart's dataset: column/op/value, or\n``sql`` for a custom SQL condition.",
       "properties": {
         "column": {
-          "title": "Column",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Column"
         },
         "op": {
           "default": "==",
@@ -785,11 +793,21 @@
           ],
           "default": null,
           "title": "Value"
+        },
+        "sql": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A custom SQL WHERE condition instead of column/op/value, e.g. \"amount > 0 OR status = 'refunded'\". `check` cannot verify the columns inside SQL; apply's data check runs the query.",
+          "title": "Sql"
         }
       },
-      "required": [
-        "column"
-      ],
       "title": "ChartFilter",
       "type": "object"
     },
