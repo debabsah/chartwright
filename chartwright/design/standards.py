@@ -133,6 +133,9 @@ class Standards:
     resolved: dict[str, Standard]
     waivers: list = field(default_factory=list)       # design/waivers.py Waiver
     waivers_file: Path | None = None
+    # Load-time warnings ({"code", "detail"}) that fail nothing: a file whose min_superset
+    # holds back content a lock covers, so that lock is suspended on older instances.
+    warnings: list = field(default_factory=list)
 
     def get(self, name: str) -> Standard:
         if name not in self.resolved:
@@ -492,7 +495,37 @@ def load_standards(directory: Path) -> Standards:
     wpath = waivers_path(directory)
     waivers = parse_waivers(wpath, files, display(wpath)) if wpath else []
     return Standards(directory, files, defaults[0] if defaults else None, resolved,
-                     waivers=waivers, waivers_file=wpath)
+                     waivers=waivers, waivers_file=wpath,
+                     warnings=floor_lock_warnings(files, resolved))
+
+
+def floor_lock_warnings(files: dict, resolved: dict) -> list[dict]:
+    """A file with min_superset holds its own content back from older instances, locks
+    included: a locked footer, CSS block or label colour it contributes then reaches those
+    instances not at all. Not an error (the decision record's #9 asks for exactly that
+    holding), but worth knowing, so each such locked slot is named once."""
+    from . import content as C
+
+    seen: dict[tuple[str, str], str] = {}
+    for std in resolved.values():
+        for k, (layer, content) in enumerate(std.content_layers):
+            floor = std.floors.get(layer)
+            if not floor:
+                continue
+            for slot, value in content.items():
+                if slot in C.GATED_SLOTS or not value:
+                    continue
+                locker = C._locked_by(std, slot, k)
+                if locker is not None:
+                    seen.setdefault((layer, slot), locker)
+    out = []
+    for (layer, slot), locker in sorted(seen.items()):
+        out.append({"code": "floor_suspends_lock", "detail": (
+            f"{display(files[layer].path)}: min_superset {files[layer].min_superset} holds "
+            f"back its content.{slot} from older instances, and {locker!r} locks it, so the "
+            f"lock does not apply there; move content every release must show to a file "
+            f"without min_superset")})
+    return out
 
 
 # -- discovery ----------------------------------------------------------------
@@ -698,6 +731,10 @@ def show_payload(standards: Standards, std: Standard) -> dict:
     if std.classifications is not None:
         out["classifications"] = {"value": list(std.classifications),
                                   "layer": std.classifications_layer}
+    warned = [w for w in standards.warnings
+              if any(display(standards.files[n].path) in w["detail"] for n in std.chain)]
+    if warned:
+        out["warnings"] = warned
     return out
 
 
@@ -768,6 +805,8 @@ def render_show(payload: dict) -> str:
             rows.append((key, describe(e["value"], e["slot"]), e["layer"], e["locked"]))
     if not rows:
         lines.append("  sets nothing: the rulebook and the audience presets apply as they are")
+    for w in payload.get("warnings", []):
+        lines.insert(len(payload["chain"]) + 1, f"  warning: {w['detail']}")
     width = max((len(r[0]) for r in rows), default=0)
     vwidth = max([8, *(len(r[1]) for r in rows)])
     for key, value, layer, locked in rows:
@@ -1035,6 +1074,9 @@ class InstanceSpec:
     held: list = field(default_factory=list)    # {"item", "layer", "reason"}
     release: str | None = None                  # the release held to, when asked
     warning: str | None = None                  # why nothing could be held, if so
+    # A typed refusal ({"code", "detail"}): the release stated for the instance is not
+    # the one it reports, so holding by it could drop locked content the instance takes.
+    error: dict | None = None
 
 
 def holds_anything(std: Standard | None) -> bool:
@@ -1049,14 +1091,18 @@ def holds_anything(std: Standard | None) -> bool:
 
 
 def for_instance(spec, source: StandardsSource | None, release_of, *,
-                 spec_path: str | Path | None = None) -> InstanceSpec:
+                 spec_path: str | Path | None = None, stated: str | None = None) -> InstanceSpec:
     """The spec check, apply and plan send to one instance (the decision record's #9): each
     item of the spec's standard that the instance's release can't take (a layer's
     min_superset, or a version-gated field such as dashboard.theme) is held back, when
     the spec holds it as the standard has it. The author's own values are never held: a
     field the author wrote stays and meets the version check like any other. The spec on
-    disk is untouched. `release_of` gives the instance's release, asked only when the
-    standard could hold something. Without a standards folder nothing changes."""
+    disk is untouched. `release_of` gives the release the instance reports, asked only
+    when the standard could hold something. A `stated` release (--superset-version) is
+    checked against it: a different one is refused, since holding by a release the
+    instance doesn't run drops content, locked content included, that it would take; when
+    the instance doesn't report one, the stated release is used with a warning. Without
+    a standards folder nothing changes."""
     from . import content as C
 
     if source is None:
@@ -1068,14 +1114,35 @@ def for_instance(spec, source: StandardsSource | None, release_of, *,
                                           f"instance: {e}")
     if not holds_anything(std):
         return InstanceSpec(spec)
-    release = release_of()
+    from ..versions import parse_version, stated_release
+
+    try:
+        detected = stated_release(release_of())
+    except Exception:  # noqa: BLE001 - a failed probe is an unknown release
+        detected = None
+    warning = None
+    if stated is not None:
+        if detected is not None and parse_version(detected) != parse_version(stated):
+            return InstanceSpec(spec, error={
+                "code": "superset_version_mismatch",
+                "detail": f"--superset-version says {stated}, but the instance reports "
+                          f"{detected}; standard content is held back by the instance's "
+                          f"release, so state {detected} or leave the flag out"})
+        if detected is None:
+            warning = (f"the instance did not report its Superset release, so standard "
+                       f"content was held back by the stated {stated}, unconfirmed")
+        release = stated
+    else:
+        release = detected
     if release is None:
         return InstanceSpec(spec, warning="the instance did not report its Superset release, "
                                           "so no standard content was held back; pass "
                                           "--superset-version")
-    held = {i.id: r for i, r in C.held_items(dataclasses.replace(std, release=release), spec)}
+    held_list = C.held_items(dataclasses.replace(std, release=release), spec)
+    held = {i.id: r for i, r in held_list}
+    lockers = {i.id: i.locked_by for i, _ in held_list}
     if not held:
-        return InstanceSpec(spec, release=release)
+        return InstanceSpec(spec, release=release, warning=warning)
     analysis = C.analyze(dataclasses.replace(std, release=None), spec)
     removals = [C.Decision(d.id, d.slot, d.layer, "remove", None, found=d.found,
                            record="drop", at=d.at)
@@ -1083,15 +1150,21 @@ def for_instance(spec, source: StandardsSource | None, release_of, *,
                 if d.item is not None and d.id in held and d.conforms and d.found is not None
                 and not d.unmarked]
     if not removals:
-        return InstanceSpec(spec, release=release)
+        return InstanceSpec(spec, release=release, warning=warning)
     from ..spec import load_spec
 
     data = spec.model_dump(mode="json", exclude_unset=True)
     new, _ = C.execute(data, spec, C.Analysis(decisions=removals, segments=analysis.segments))
     by_id = {d.id: d for d in removals}
-    return InstanceSpec(load_spec(new), release=release,
-                        held=[{"item": i, "layer": by_id[i].layer, "reason": held[i]}
-                              for i in sorted(by_id)])
+    out = [{"item": i, "layer": by_id[i].layer, "reason": held[i],
+            **({"locked_by": lockers[i]} if lockers.get(i) else {})} for i in sorted(by_id)]
+    locked = [h["item"] for h in out if "locked_by" in h]
+    if locked:
+        # A floor suspends its file's locks on an older instance: say so where it happens.
+        note = (f"held back locked content on this {release} instance: {', '.join(locked)}; "
+                f"its lock does not apply here")
+        warning = f"{warning}; {note}" if warning else note
+    return InstanceSpec(load_spec(new), release=release, held=out, warning=warning)
 
 
 def apply_spec(data: dict, spec, std: Standard, *, locked: bool = False,

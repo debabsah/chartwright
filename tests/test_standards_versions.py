@@ -254,3 +254,98 @@ def test_mcp_check_spec_holds_like_the_cli(repo, capsys, monkeypatch):
     assert out["ok"] and [h["item"] for h in out["held"]][1] == "dashboard.theme"
     out = mcp_call("standards_check", spec_json=path.read_text(), superset_version="5.0.0")
     assert [h["item"] for h in out["held"]][1] == "dashboard.theme"
+
+
+# -- a stated release is checked against the instance -------------------------------
+
+
+def test_a_stated_release_the_instance_contradicts_is_refused(repo, capsys, monkeypatch):
+    """--superset-version 5.0.0 against a 6.1.0 instance used to hold the theme back
+    unchecked; holding by a release the instance doesn't run drops content it takes."""
+    path = written(capsys, repo, "brand")
+    import chartwright.apply as apply_mod
+
+    monkeypatch.setattr(apply_mod, "apply", lambda *a, **k: pytest.fail("apply ran"))
+    code, out = cli_check(capsys, monkeypatch, path, "6.1.0", "--design", "off",
+                          "--superset-version", "5.0.0")
+    assert code == 1 and out["stage"] == "version"
+    assert out["errors"][0]["code"] == "superset_version_mismatch"
+    assert "reports 6.1.0" in out["errors"][0]["detail"]
+    code, out = run(capsys, "apply", str(path), "--profile", "p", "--design", "off",
+                    "--superset-version", "5.0.0")
+    assert code == 1 and out["errors"][0]["code"] == "superset_version_mismatch"
+    code, out = run(capsys, "plan", str(path), "--profile", "p", "--superset-version", "5.0")
+    assert code == 1 and out["errors"][0]["code"] == "superset_version_mismatch"
+
+
+def test_a_stated_release_that_agrees_is_used(repo, capsys, monkeypatch):
+    path = written(capsys, repo, "brand")
+    code, out = cli_check(capsys, monkeypatch, path, "5.0.0", "--design", "off",
+                          "--superset-version", "5.0")
+    assert code == 0 and [h["item"] for h in out["held"]][1] == "dashboard.theme"
+    assert "warnings" not in out
+
+
+def test_a_stated_release_the_instance_cannot_confirm_holds_with_a_warning(repo, capsys,
+                                                                          monkeypatch):
+    path = written(capsys, repo, "brand")
+    code, out = cli_check(capsys, monkeypatch, path, None, "--design", "off",
+                          "--superset-version", "5.0.0")
+    assert code == 0 and out["held"] and "unconfirmed" in out["warnings"][0]
+
+
+def test_mcp_refuses_a_contradicted_release_too(repo, capsys, monkeypatch):
+    pytest.importorskip("mcp")
+    import chartwright.mcp_server as server
+    from test_mcp_server import _call
+
+    path = written(capsys, repo, "brand")
+    monkeypatch.setattr(server, "_client", lambda profile: Client("6.1.0"))
+    monkeypatch.setenv("CHARTWRIGHT_STANDARDS_DIR", str(repo / "standards"))
+    for tool in ("check_spec", "plan_dashboard", "build_dashboard"):
+        out = _call(tool, {"spec_json": path.read_text(), "superset_version": "5.0.0",
+                           **({"design": "off"} if tool != "plan_dashboard" else {})}, "p")
+        assert out["errors"][0]["code"] == "superset_version_mismatch", tool
+
+
+# -- a floor suspends its file's locks ------------------------------------------------
+
+FUTURE = """\
+name: org
+default: true
+min_superset: "7.0"
+content:
+  footer:
+    - [{markdown: "Acme Corp. Internal.", width: 12, height: 1}]
+  label_colors: {Revenue: "#1FA8C9"}
+locked:
+  content: [footer, label_colors]
+"""
+
+
+def test_a_floor_over_locked_content_warns_when_the_folder_loads(tmp_path, capsys):
+    repo = make_repo(tmp_path / "repo", {"org.yaml": FUTURE}).parent
+    standards = load_standards(repo / "standards")
+    assert [w["code"] for w in standards.warnings] == ["floor_suspends_lock"] * 2
+    assert "content.footer" in standards.warnings[0]["detail"]
+    assert "min_superset 7.0.0" in standards.warnings[0]["detail"]
+    path = written(capsys, repo)
+    code, out = run(capsys, "standards", "check", str(path))
+    assert out["standards_warnings"] == standards.warnings
+    shown = run_ok(capsys, "standards", "show", "--standards", str(repo / "standards"),
+                   "--json")
+    assert shown["warnings"] == standards.warnings
+    # Without the floor, or with nothing locked under it, there is nothing to say.
+    assert load_standards(make_repo(tmp_path / "b", {
+        "org.yaml": FUTURE.replace('min_superset: "7.0"\n', "")}).parent / "standards"
+    ).warnings == []
+    assert load_standards(repo.parent / "repo" / "standards").files["org"].min_superset
+
+
+def test_holding_locked_content_names_it_and_says_the_lock_is_off(tmp_path, capsys):
+    repo = make_repo(tmp_path / "repo", {"org.yaml": FUTURE}).parent
+    spec = load_spec(read(written(capsys, repo)))
+    inst = for_instance(spec, source(repo), lambda: "6.1.0")
+    assert {h["item"]: h.get("locked_by") for h in inst.held} == {
+        "dashboard.label_colors[Revenue]": "org", "layout.footer[org][0]": "org"}
+    assert "its lock does not apply here" in inst.warning

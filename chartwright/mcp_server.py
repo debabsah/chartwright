@@ -146,8 +146,8 @@ def _for_instance(spec, source, client, version):
     from .design.standards import for_instance
     from .versions import stated_release
 
-    return for_instance(spec, source,
-                        lambda: version or stated_release(client.superset_version()))
+    return for_instance(spec, source, lambda: stated_release(client.superset_version()),
+                        stated=version or None)
 
 
 def _held(out: dict, inst) -> None:
@@ -226,6 +226,8 @@ def check_spec(spec_json: str, profile: str, superset_version: str = "",
     client = _client(profile)
     source = _standards(day)
     inst = _for_instance(spec, source, client, version)
+    if inst.error:
+        return json.dumps({"ok": False, "stage": "version", "errors": [inst.error]})
     res = check(inst.spec, client, version)
     out = {"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]}
     if res.superset_version:
@@ -282,6 +284,8 @@ def build_dashboard(spec_json: str, profile: str, superset_version: str = "",
 
     client = _client(profile)
     inst = _for_instance(spec, source, client, version)
+    if inst.error:
+        return json.dumps({"ok": False, "stage": "version", "errors": [inst.error]})
     out = json.loads(run_apply(inst.spec, client, profile, version).to_json())
     _held(out, inst)
     if advice is not None:
@@ -306,6 +310,8 @@ def plan_dashboard(spec_json: str, profile: str, superset_version: str = "") -> 
 
     client = _client(profile)
     inst = _for_instance(spec, _standards(), client, version)
+    if inst.error:
+        return json.dumps({"ok": False, "stage": "version", "errors": [inst.error]})
     p = run_plan(inst.spec, client, version)
     p.held, p.warnings = inst.held, [inst.warning] if inst.warning else []
     return p.to_json()
@@ -470,7 +476,9 @@ def standards_check(spec_json: str, strict: bool = False, as_of: str = "",
             "code": "no_standards_dir",
             "detail": f"no standards directory is configured; {source.hint}"}]})
     return json.dumps({"stage": "standards", "standards_dir": display(standards.directory),
-                       "strict": strict, **check_spec(spec, source, strict=strict)})
+                       "strict": strict, **check_spec(spec, source, strict=strict),
+                       **({"standards_warnings": standards.warnings} if standards.warnings
+                          else {})})
 
 
 @mcp.tool()

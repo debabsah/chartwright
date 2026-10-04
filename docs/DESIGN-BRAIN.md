@@ -2055,7 +2055,12 @@ An item is held back from a release when:
 
 The deploying command asks the instance its release when the spec's standard
 could hold something (a file with content declares `min_superset`, or the
-content sets a gated field), or takes `--superset-version`. It removes each
+content sets a gated field). A `--superset-version` stated as well is checked
+against the release the instance reports: a different one is refused with
+`superset_version_mismatch` before anything is resolved or written, since
+holding by a release the instance doesn't run would drop content it takes;
+when the instance reports none, the stated release is used and a warning says
+it is unconfirmed. It removes each
 held item the spec holds as the standard has it from what it sends (rows,
 CSS blocks and settings alike), and lists it under `held` with the reason;
 compile, the version check and `plan` see the spec without it. The spec on
@@ -2063,6 +2068,17 @@ disk is untouched. A value the author wrote, edited or released is never
 held: it meets the version check and is refused there, as any field is. When
 the instance doesn't report its release, nothing is held and a warning says
 to pass `--superset-version`.
+
+**A floor suspends its file's locks on older instances.** A file's
+`min_superset` holds back everything that file contributes, locked content
+included: an org file with `min_superset: "7.0"` and a locked legal footer
+sends no footer to a 6.1 instance, and nothing there fails for it. That is
+what decision #9 asks for, so it is not an error, but it is never silent: the
+folder warns when it loads (`floor_suspends_lock`, under `standards_warnings`
+in `standards check` and `warnings` in `standards show`), and a deploy that
+holds locked content lists it with `locked_by` and a warning that its lock does
+not apply there. Content every release must show belongs in a file without
+`min_superset`.
 
 `standards check --superset-version 5.0.0` (MCP `standards_check`'s
 `superset_version`) shows the same offline: each spec's entry gains

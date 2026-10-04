@@ -122,10 +122,11 @@ def _for_instance(spec, source, client, args):
     from .design.standards import for_instance
     from .versions import stated_release
 
-    return for_instance(
-        spec, source,
-        lambda: args.superset_version or stated_release(client.superset_version()),
-        spec_path=args.spec)
+    inst = for_instance(spec, source, lambda: stated_release(client.superset_version()),
+                        spec_path=args.spec, stated=args.superset_version)
+    if inst.error:   # before anything is resolved or written
+        _die({"ok": False, "stage": "version", "errors": [inst.error]})
+    return inst
 
 
 def _held(payload: dict, inst) -> None:
@@ -754,6 +755,8 @@ def _standards_cmd(args) -> None:
                    "standards_dir": sdir, "specs": entries, "skipped": skipped,
                    "totals": {"specs": len(entries), "passed": passed,
                               "failed": len(entries) - passed}}
+    if standards.warnings:
+        payload["standards_warnings"] = standards.warnings
     if standards.waivers:
         from .design.waivers import past_dated
 
