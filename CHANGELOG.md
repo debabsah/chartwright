@@ -75,7 +75,6 @@ while the major version is 0, minor bumps may include breaking changes and say s
   the release instead; `compile --superset-version` runs the same check offline.
 - A colour scheme name Superset doesn't ship gets a `narrative.color-scheme` warning (with
   a did-you-mean for a case slip); a deployment's own registered schemes are accepted.
-  The design brain's version is now 4.
 - `annotations` on line, bar, area, scatter and mixed charts: goal and trend lines, as
   Superset's FORMULA annotation layers, e.g. `{"name": "Goal", "value": 80, "style":
   "dashed"}`, with colour, width and opacity. Decompile keeps formula layers and names
