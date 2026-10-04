@@ -124,7 +124,7 @@ class _BackslashPath(type(Path())):
         return super().__str__()
 
     def as_posix(self):              # as Windows' as_posix gives forward slashes
-        return super().__str__()
+        return super().as_posix()
 
 
 def test_calibrate_and_overlay_errors_print_forward_slashes(monkeypatch, tmp_path):
