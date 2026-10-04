@@ -3,9 +3,9 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
-## Unreleased
+## 0.4.0 (2026-10-04)
 
-Standards gain recorded exceptions, a minimum Superset release per file, a lockable classification and a Superset theme, and a browser check that locked text is visible on the deployed dashboard.
+Standards gain recorded exceptions, a minimum Superset release per file, a lockable classification and a Superset theme, and a browser check that locked text is visible on the deployed dashboard. A fill you edit stays yours, and renaming a chart no longer breaks a spec that had fills. The design brain is version 7.
 
 ### Upgrading from 0.3
 
