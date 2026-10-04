@@ -270,7 +270,7 @@ def test_a_spec_that_follows_no_standard_is_left_alone(tmp_path, capsys):
     path = spec_file(repo)
     before = path.read_bytes()
     code, out = apply(capsys, str(path))
-    assert code == 0 and out["no_standard"] == [str(path)] and path.read_bytes() == before
+    assert code == 0 and out["no_standard"] == [path.as_posix()] and path.read_bytes() == before
 
 
 def test_no_standards_directory_changes_nothing(tmp_path, capsys):
@@ -1206,10 +1206,10 @@ def test_the_summary_groups_a_rollout_by_standard_and_item(repo, capsys):
     items = {i["item"]: i for i in fin["items"]}
     scheme = items["dashboard.color_scheme"]
     assert scheme["changes"] == [{"action": "refresh", "to": "googleCategory10c",
-                                  "specs": [str(paths[1]), str(paths[2])]}]
-    assert scheme["released"] == [str(paths[0])] and scheme["current"] == 0
+                                  "specs": [paths[1].as_posix(), paths[2].as_posix()]}]
+    assert scheme["released"] == [paths[0].as_posix()] and scheme["current"] == 0
     footer = items["layout.footer[org][0]"]
-    assert footer["locked_by"] == "org" and footer["locked"] == [str(paths[1])]
+    assert footer["locked_by"] == "org" and footer["locked"] == [paths[1].as_posix()]
     assert footer["current"] == 2
     text = run(capsys, "standards", "apply", *map(str, paths), "--check")[1]
     assert "dashboard.color_scheme: 1 released by authors, skipped" in text
@@ -1230,7 +1230,7 @@ def test_one_pull_request_per_team(repo, capsys):
     fin = spec_file(repo, "f.json", standard="finance")
     org = spec_file(repo, "o.json")
     code, out = apply(capsys, str(fin), str(org), "--standard", "finance")
-    assert code == 0 and out["other_standards"] == [str(org)]
+    assert code == 0 and out["other_standards"] == [org.as_posix()]
     assert "standard_written" not in read(org).get("design", {})
     code, out = run(capsys, "standards", "apply", str(fin), "--standard", "fiance")
     assert code == 1 and "did you mean 'finance'" in out["errors"][0]["detail"]

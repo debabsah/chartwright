@@ -425,8 +425,8 @@ def test_assign_writes_the_field_and_leaves_the_rest(repo, capsys):
     before_b = b.read_bytes()
     code, payload = run(capsys, "standards", "assign", str(repo / "specs"), "--standard", "finance")
     assert code == 0 and payload["ok"]
-    assert payload["written"] == [{"spec": str(a), "was": None}, {"spec": str(c), "was": "org"}]
-    assert payload["unchanged"] == [str(b)]
+    assert payload["written"] == [{"spec": a.as_posix(), "was": None}, {"spec": c.as_posix(), "was": "org"}]
+    assert payload["unchanged"] == [b.as_posix()]
     assert b.read_bytes() == before_b
     assert json.loads(a.read_text())["design"] == {"standard": "finance"}
     assert json.loads(c.read_text())["design"] == {"standard": "finance"}
@@ -450,7 +450,7 @@ def test_assign_never_writes_a_file_that_is_not_a_valid_spec(repo, capsys):
     code, payload = run(capsys, "standards", "assign", str(repo / "specs" / "*.json"),
                         "--standard", "org")
     assert code == 1
-    assert [e["spec"] for e in payload["errors"]] == [str(bad)]
+    assert [e["spec"] for e in payload["errors"]] == [bad.as_posix()]
     assert bad.read_text() == '{"spec_version": "1"}'
     assert json.loads(good.read_text())["design"] == {"standard": "org"}
 
@@ -738,8 +738,8 @@ def test_json_files_that_are_not_specs_are_skipped_and_listed(repo, capsys, othe
     pkg.write_text(other, encoding="utf-8")
     code, payload = run(capsys, "standards", "check", str(repo / "specs"))
     assert code == 0 and payload["ok"] is True, payload
-    assert [e["spec"] for e in payload["specs"]] == [str(spec)]
-    assert payload["skipped"] == [str(pkg)]
+    assert [e["spec"] for e in payload["specs"]] == [spec.as_posix()]
+    assert payload["skipped"] == [pkg.as_posix()]
     assert payload["totals"] == {"specs": 1, "passed": 1, "failed": 0}
     before = pkg.read_bytes()
     code, payload = run(capsys, "standards", "assign", str(repo / "specs"), "--standard", "finance")
@@ -764,7 +764,7 @@ def test_the_fleet_report(repo, capsys):
     assert code == 1
     assert set(payload) == {"stage", "report", "ok", "strict", "standards_dir", "specs",
                             "skipped", "totals"}
-    assert payload["skipped"] == [str(repo / "specs" / "package.json")]
+    assert payload["skipped"] == [(repo / "specs" / "package.json").as_posix()]
     rows = {Path(r["spec"]).name: r for r in payload["specs"]}
     assert rows["fin.json"] == {
         "spec": str(repo / "specs" / "fin.json"), "standard": "finance", "ok": False,
