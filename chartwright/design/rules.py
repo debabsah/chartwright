@@ -20,10 +20,10 @@ from datetime import date
 from ..spec import (
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
-    GRID_HEADER_UNITS,
     SUPERSET_COLOR_SCHEMES,
     HeaderBlock,
     _ColorSchemeMixin,
+    grid_header,
     grid_rows_visible,
     grid_units_for_rows,
     row_items,
@@ -142,9 +142,6 @@ def heatmap_geometry(ctx: RuleContext):
             )
 
 
-_PAGER_ROWS = 1  # a paged table's pager takes about one grid row under the rows
-
-
 def _table_page(c) -> int | None:
     """Rows on one page of a paged table (page_length > 0), never more than row_limit;
     None when every row is on one page."""
@@ -169,34 +166,36 @@ def table_window(ctx: RuleContext):
         if c.type != "table" or (c.row_limit is None and not c.page_length):
             continue
         h = ctx.height(c.name)
-        # Same grid model as size.grid-fit and apply-time smoke: offline this
-        # can only reason about row_limit (the ceiling), where grid-fit probes
-        # the real count -- but both now measure a row the same way, so they
-        # can no longer give one chart contradictory verdicts.
-        visible = grid_rows_visible(h)
+        # Same grid model as size.grid-fit, the fills and apply-time smoke (spec.py):
+        # offline this can only reason about row_limit (the ceiling), where grid-fit
+        # probes the real count, but all of them measure a table the same way. The
+        # header counts the search bar, the page-size bar and the pager the chart draws.
+        header, row = grid_header(c, c.row_limit)
+        visible = grid_rows_visible(h, header, row)
         # Whole rows, rounded down: rounding 6.67 up once told a 6-row page it showed
         # ~7 rows while asking for more height (the pager was what didn't fit).
         fits = f"table at {h:g} units fits {math.floor(visible)} full rows"
         page = _table_page(c)
         if page is not None:
-            # A paged table shows one page at a time, plus its pager: the whole page
-            # should fit, but rows beyond it are a click away, not a scroll.
-            want = page + _PAGER_ROWS
-            shown = f"{fits}; its {page}-row page plus the pager needs {want} rows"
+            # A paged table shows one page at a time, plus its page controls: the whole
+            # page should fit, but rows beyond it are a click away, not a scroll.
+            want = page
+            shown = f"{fits} beside its page controls, short of its {page}-row page"
         else:
             want = ctx.params.table_visible_ratio * c.row_limit
             shown = f"{fits} of its {c.row_limit}"
         if visible < want:
             brain = page is not None and _brain_page(ctx, c)
+            target = grid_units_for_rows(want, header, row)
             yield Finding(
                 "size.table-window", "warn", c.name, ctx.where(c.name),
                 f"{shown} (a scroll dungeon); "
                 + ("the page is a design default: advise --fix refits it to the panel"
                    if brain else
-                   f"raise height to ~{math.ceil(grid_units_for_rows(want))} or "
+                   f"raise height to ~{math.ceil(target)} or "
                    + ("lower page_length" if page is not None else "lower row_limit")),
-                fix=ctx.fix_height(c, math.ceil(grid_units_for_rows(want)))
-                if grid_units_for_rows(want) <= 20 and not brain else None,
+                fix=ctx.fix_height(c, math.ceil(target))
+                if target <= 20 and not brain else None,
                 height_driven=True,
             )
 
@@ -225,17 +224,19 @@ def pivot_window(ctx: RuleContext):
         if c.type != "pivot_table" or c.row_limit is None:
             continue
         h = ctx.height(c.name)
-        header = GRID_HEADER_UNITS + (1 if c.columns else 0)  # nested column headers cost one more
-        visible = grid_rows_visible(h, header)
+        # Header rows per column dimension, the horizontal-scrollbar allowance and the
+        # pinned totals row: the shared grid model (spec.py), the one smoke reads.
+        header, row = grid_header(c)
+        visible = grid_rows_visible(h, header, row)
         want = ctx.params.table_visible_ratio * c.row_limit
         if visible < want:
+            target = grid_units_for_rows(want, header, row)
             yield Finding(
                 "size.pivot-window", "warn", c.name, ctx.where(c.name),
-                f"pivot shows ~{visible:.0f} of {c.row_limit} rows at {h:g} units "
+                f"pivot shows ~{math.floor(visible)} of {c.row_limit} rows at {h:g} units "
                 f"({header:g} header units); raise height to "
-                f"~{math.ceil(grid_units_for_rows(want, header))} or lower row_limit",
-                fix=ctx.fix_height(c, math.ceil(grid_units_for_rows(want, header)))
-                if grid_units_for_rows(want, header) <= 20 else None,
+                f"~{math.ceil(target)} or lower row_limit",
+                fix=ctx.fix_height(c, math.ceil(target)) if target <= 20 else None,
                 height_driven=True,
             )
 
@@ -251,9 +252,9 @@ def grid_fit(ctx: RuleContext):
         return
     for c in ctx.spec.charts:
         if c.type == "pivot_table" and len(c.rows) == 1:
-            dim, extra_header = c.rows[0], (1 if c.columns else 0)
+            dim = c.rows[0]
         elif c.type == "table" and (c.groupby or []) and len(c.groupby) == 1 and not c.columns:
-            dim, extra_header = c.groupby[0], 0
+            dim = c.groupby[0]
         else:
             continue
         ds = ctx.dataset_for(c)
@@ -264,11 +265,13 @@ def grid_fit(ctx: RuleContext):
         if n is None:
             continue
         n = min(n, cap)
+        # Shared grid model (chartwright/spec.py), same numbers smoke uses: the
+        # header counts the controls, pager, header rows and totals the chart draws.
+        header, row = grid_header(c, n)
         page = _table_page(c) if c.type == "table" else None
         if page is not None:
-            n = min(n, page) + _PAGER_ROWS  # one page and its pager, not every row
-        # Shared grid model (chartwright/spec.py), same numbers smoke uses.
-        needed = math.ceil(grid_units_for_rows(n, GRID_HEADER_UNITS + extra_header))
+            n = min(n, page)  # one page (its pager is in the header), not every row
+        needed = math.ceil(grid_units_for_rows(n, header, row))
         h = ctx.height(c.name)
         if needed <= h:
             continue

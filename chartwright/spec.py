@@ -27,24 +27,70 @@ DEFAULT_ROW_LIMIT = {
 }
 DEFAULT_TIME_GRAIN = "P1D"
 
-# How a rendered table/pivot grid consumes spec height. ONE model, used by the
-# design critic (size.table-window, size.pivot-window, size.grid-fit) and by
-# apply-time smoke, so offline advice, data-aware advice, and the apply warning
-# can never disagree about the same chart. ~30px per grid row over a 40px unit;
-# 3 units of card title + column header (one more when a pivot nests column
-# dimensions). Calibration knob, same status as ROW_UNITS_PER_SPEC_UNIT.
-GRID_UNITS_PER_ROW = 0.75
-GRID_HEADER_UNITS = 3
+# How a rendered table or pivot spends spec height. ONE model, read by the design
+# critic (size.table-window, size.pivot-window, size.grid-fit), the page-length and
+# search-box fills, and apply-time smoke, so offline advice, data-aware advice, the
+# fills and the apply warning can never disagree about the same chart.
+#
+# Measured 2026-10-03 on rendered Superset 4.1.4, 5.0.0 and 6.1.0 (1600 px viewport,
+# default theme; docs/DESIGN-BRAIN.md, "Calibration"). Each constant is the largest
+# the three releases draw, rounded up, so the model may leave a row empty but never
+# counts a row the panel hides. 1 unit = 40 px.
+GRID_UNITS_PER_ROW = 0.74      # table body row: 29.4 px at 6.1.0, 27.8 px at 4.1.4 and 5.0.0
+GRID_HEADER_UNITS = 2.5        # card title, column header and card padding: 99.4 px / 97.8 px
+GRID_CONTROLS_UNITS = 1.05     # the bar above the rows that search_box or any page_length
+                               # adds: 41.1 px / 39.1 px (6.1.0 draws 33.1 px for a page size alone)
+GRID_PAGER_UNITS = 1.45        # the pager under a table of more than one page: 57.9 px / 42.9 px
+PIVOT_UNITS_PER_ROW = 0.65     # pivot body row: 25.8 px on average (19 rows: 490.1 px)
+PIVOT_FRAME_UNITS = 2.55       # pivot card title, margins and padding: 101 px
+PIVOT_HEADER_ROW_UNITS = 0.66  # one pivot header row: 26.3 px; a pivot draws one per column
+                               # dimension plus two (the metric row and the row-dimension names)
+PIVOT_TOTALS_UNITS = 0.72      # the totals row column_totals pins over the bottom rows: 28.8 px
+PIVOT_HSCROLL_UNITS = 0.45     # the horizontal scrollbar under a pivot whose column dimensions
+                               # outgrow the panel: 11 px in Chromium's classic scrollbars, and
+                               # Windows draws 17 px; overlay scrollbars (macOS) take none
 
 
-def grid_units_for_rows(rows: float, header_units: float = GRID_HEADER_UNITS) -> float:
+def grid_units_for_rows(rows: float, header_units: float = GRID_HEADER_UNITS,
+                        row_units: float = GRID_UNITS_PER_ROW) -> float:
     """Spec height units needed to render `rows` grid rows without an inner scrollbar."""
-    return rows * GRID_UNITS_PER_ROW + header_units
+    return rows * row_units + header_units
 
 
-def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS) -> float:
+def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS,
+                      row_units: float = GRID_UNITS_PER_ROW) -> float:
     """Inverse: grid rows visible at `height` before the inner scrollbar starts."""
-    return max(0.0, (height - header_units) / GRID_UNITS_PER_ROW)
+    return max(0.0, (height - header_units) / row_units)
+
+
+def table_header_units(*, controls: bool = False, pager: bool = False) -> float:
+    """Everything a table draws besides its body rows: card title, column header and
+    padding, plus the bar above the rows (`controls`: a search box, or any
+    page_length, which draws a page-size picker even on one page) and the pager under
+    them (`pager`: more rows than one page holds)."""
+    return (GRID_HEADER_UNITS + (GRID_CONTROLS_UNITS if controls else 0)
+            + (GRID_PAGER_UNITS if pager else 0))
+
+
+def pivot_header_units(column_dims: int, *, totals: bool = False) -> float:
+    """Everything a pivot draws besides its body rows: card frame, a header row per
+    column dimension plus two, room for a horizontal scrollbar when column dimensions
+    can outgrow the panel, and the pinned totals row (`column_totals`)."""
+    return (PIVOT_FRAME_UNITS + PIVOT_HEADER_ROW_UNITS * (column_dims + 2)
+            + (PIVOT_HSCROLL_UNITS if column_dims else 0)
+            + (PIVOT_TOTALS_UNITS if totals else 0))
+
+
+def grid_header(chart, rows: int | None = None) -> tuple[float, float]:
+    """(header units, units per body row) of a table or pivot chart as configured,
+    drawing `rows` body rows (None: unknown, so a paged table counts its pager)."""
+    if chart.type == "pivot_table":
+        return (pivot_header_units(len(chart.columns), totals=chart.column_totals),
+                PIVOT_UNITS_PER_ROW)
+    page = chart.page_length or 0
+    return (table_header_units(controls=bool(page) or chart.search_box,
+                               pager=bool(page) and (rows is None or rows > page)),
+            GRID_UNITS_PER_ROW)
 
 ADHOC_AGGREGATES = ("SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX")
 _ADHOC_RE = re.compile(r"^(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((.+?)\)(?:\s+AS\s+(.+))?$")
@@ -715,7 +761,8 @@ class TableChart(_ChartBase):
     search_box: bool = Field(
         default=False,
         description="A search box over the table's rows. `advise --fix` fills true on a raw "
-                    "table with a row_limit above 20 (search_min_rows in design.yaml)")
+                    "table with a row_limit above 20 (search_min_rows in design.yaml), "
+                    "when the search bar pushes none of its rows out of the panel")
     column_align: dict[str, Literal["left", "center", "right"]] = Field(
         default_factory=dict,
         description="Text alignment per label, e.g. {\"Region\": \"center\"}; Superset's "

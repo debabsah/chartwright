@@ -18,7 +18,8 @@ from chartwright.design.defaults import FILLS
 from chartwright.design.explain import explain, render_text
 from chartwright.design.presets import Overlay
 from chartwright.resolver import ResolvedDataset, Resolution
-from chartwright.spec import BRAIN_FILLABLE_FIELDS, grid_rows_visible, load_spec
+from chartwright.spec import (BRAIN_FILLABLE_FIELDS, grid_header, grid_rows_visible,
+                              grid_units_for_rows, load_spec, table_header_units)
 from chartwright.testing import stub_resolution
 
 DS = {"database": "db", "table": "orders"}
@@ -72,6 +73,11 @@ def filled_value(data, rule, chart="L"):
 def fix(data, **kw):
     kw.setdefault("overlay", EMPTY)
     return advise_and_fix(data, **kw)
+
+
+def page_at(height):
+    """The page default.page-length fills: whole rows beside the page controls."""
+    return math.floor(grid_rows_visible(height, table_header_units(controls=True, pager=True)))
 
 
 # -- the registry ------------------------------------------------------------------
@@ -242,11 +248,11 @@ def test_cell_bars_with_types_needs_a_numeric_identifier():
 
 
 @pytest.mark.parametrize("row_limit,height,want", [
-    (400, 8, 5),     # 6.67 rows fit -> 6 whole rows, one for the pager
-    (400, 11, 9),
-    (20, 9, 7),
-    (6, 8, None),    # every row fits
-    (400, 5, None),  # 2 rows fit: too few to page
+    (400, 8, 4),     # 4.05 rows fit beside the page-size bar and the pager
+    (400, 11, 8),
+    (20, 9, 5),      # 7 rows fit on one page, 5 beside the page controls
+    (7, 8, None),    # every row fits on one page
+    (400, 7, None),  # 2 rows fit beside a pager: too few to page
 ])
 def test_page_length_pages_by_whole_rows(row_limit, height, want):
     data = mk([raw_table(row_limit=row_limit, height=height)])
@@ -265,13 +271,17 @@ def test_page_fill_never_ratchets_table_window(row_limit, height):
     whatever the fix loop settles on advises clean, and a second run is a no-op."""
     data = mk([raw_table(row_limit=row_limit, height=height)])
     fixed, rep = fix(data)
-    assert not any(f.rule in ("size.table-window", "design.fix-stalled") for f in rep.findings)
+    assert not any(f.rule == "design.fix-stalled" for f in rep.findings)
     assert not any(f.fix for f in rep.findings)
     again, rep2 = fix(fixed)
     assert again == fixed and rep2.fixed == []
     t = fixed["charts"][0]
     if "page_length" in t:
-        assert t["page_length"] == math.floor(grid_rows_visible(t["height"])) - 1
+        assert t["page_length"] == page_at(t["height"])
+    if any(f.rule == "size.table-window" for f in rep.findings):
+        # Only where nothing fixes it: a pager leaves room for fewer than page_min_rows
+        # rows (6 and 7 units), and showing half the rows needs more than 20 units.
+        assert "page_length" not in t and page_at(t["height"]) < 3
 
 
 def test_fills_wait_for_geometry_repairs():
@@ -282,14 +292,15 @@ def test_fills_wait_for_geometry_repairs():
     assert kinds.index("fill") > kinds.index("repair")
     t = fixed["charts"][0]
     assert t["height"] > 5
-    assert t["page_length"] == math.floor(grid_rows_visible(t["height"])) - 1
+    assert t["page_length"] == page_at(t["height"])
 
 
 # -- default.search-box ----------------------------------------------------------------
 
 
 def test_search_box_on_long_raw_tables():
-    data = mk([raw_table(name="Big", row_limit=50), raw_table(name="Small", row_limit=20),
+    data = mk([raw_table(name="Big", row_limit=50, page_length=4),
+               raw_table(name="Small", row_limit=20, page_length=4),
                raw_table(name="Unset"),
                {"type": "table", "name": "Agg", "dataset": DS, "groupby": ["r"],
                 "metrics": ["SUM(x)"], "row_limit": 500}])
@@ -297,8 +308,35 @@ def test_search_box_on_long_raw_tables():
 
 
 def test_search_threshold_comes_from_the_audience_params():
-    data = mk([raw_table(row_limit=50)])
+    data = mk([raw_table(row_limit=50, page_length=4)])
     assert fills(data, "default.search-box", overlay=Overlay(params={"search_min_rows": 100})) == {}
+
+
+def test_a_search_box_on_one_page_needs_room_for_its_bar():
+    """The search bar sits above the rows (41.1 px at 6.1.0): on a table that shows
+    every row on one page it takes room from them. 25 rows fit at height 21 without
+    it and 23 with it, so the fill stands down there, and fills at height 23."""
+    assert fills(mk([raw_table(row_limit=25, height=21, page_length=0)]),
+                 "default.search-box") == {}
+    assert "T" in fills(mk([raw_table(row_limit=25, height=23, page_length=0)]),
+                        "default.search-box")
+    # A paged table already draws the bar (its page-size picker): no room to find.
+    assert "T" in fills(mk([raw_table(row_limit=400, height=8, page_length=4)]),
+                        "default.search-box")
+
+
+@pytest.mark.parametrize("row_limit", [21, 24, 30, 50, 400])
+@pytest.mark.parametrize("height", range(6, 21))
+def test_a_search_box_fill_never_hides_a_row(row_limit, height):
+    """Whatever the fix loop settles on, a filled search box leaves the first page
+    (every row, on an unpaged table) inside the panel: the grid model counts the bar."""
+    fixed, rep = fix(mk([raw_table(row_limit=row_limit, height=height)]))
+    assert not any(f.rule == "design.fix-stalled" for f in rep.findings)
+    t = fixed["charts"][0]
+    if t.get("search_box"):
+        shown = min(t.get("page_length") or row_limit, row_limit)
+        header, row = grid_header(load_spec(fixed).charts[0], row_limit)
+        assert grid_units_for_rows(shown, header, row) <= t["height"], t
 
 
 # -- default.single-series-legend -----------------------------------------------------
@@ -374,24 +412,25 @@ def _paged(row_limit=400, height=10, **kw):
 
 
 def test_an_author_edit_to_a_filled_value_is_kept():
-    """The reported case: a page the brain filled at 8, set to 5 by the author and
-    left in design.filled, must stay 5. The record says the brain wrote 8, so 5 is
-    the author's: --fix releases the record and keeps the value."""
+    """The reported case: a page the brain filled (at 8 then; 6 since the measured
+    grid), set to 5 by the author and left in design.filled, must stay 5. The record
+    says the brain wrote 6, so 5 is the author's: --fix releases the record and keeps
+    the value."""
     filled, _ = fix(_paged())
-    assert filled["charts"][0]["page_length"] == 8
-    assert filled["design"]["filled"] == {"T": {"page_length": 8}}
+    assert filled["charts"][0]["page_length"] == 6
+    assert filled["design"]["filled"] == {"T": {"page_length": 6}}
     filled["charts"][0]["page_length"] = 5
     kept, rep = fix(filled)
     assert kept["charts"][0]["page_length"] == 5 and "design" not in kept
     assert [(e["kind"], e["set"]) for e in rep.fixed] == [("release", {})]
-    assert "8" in rep.fixed[0]["why"] and "5" in rep.fixed[0]["why"]
+    assert "6" in rep.fixed[0]["why"] and "5" in rep.fixed[0]["why"]
     # ...and from then on it is the author's: nothing to fill, nothing to release.
     again, rep2 = fix(kept)
     assert again == kept and rep2.fixed == []
 
 
 @pytest.mark.parametrize("change,want", [
-    ({"height": 14}, 13),        # a taller panel: 14 units fits 14 rows, one for the pager
+    ({"height": 14}, 12),        # a taller panel: 14 units fits 12 rows beside the pager
     ({"row_limit": 6}, None),    # every row now fits: the fill and its record go
 ])
 def test_an_untouched_fill_follows_its_inputs(change, want):
@@ -438,7 +477,7 @@ def test_a_deleted_fill_stays_deleted_until_its_record_goes():
     assert fills(tomb, "default.page-length") == {}
     del tomb["design"]                                 # the author lifts it...
     refilled, _ = fix(tomb)
-    assert refilled["charts"][0]["page_length"] == 8   # ...and the fill comes back
+    assert refilled["charts"][0]["page_length"] == 6   # ...and the fill comes back
 
 
 def test_a_value_written_after_deleting_a_fill_is_the_authors():
@@ -510,7 +549,7 @@ def test_fills_apply_to_sketch_charts_and_leave_the_drawing_true():
     assert {e["rule"] for e in rep.fixed} >= {"default.x-label-format", "default.page-length"}
     t = next(c for c in fixed["charts"] if c["name"] == "T")
     sketch_height = load_spec(fixed).resolved_height("T")
-    assert t["page_length"] == math.floor(grid_rows_visible(sketch_height)) - 1
+    assert t["page_length"] == page_at(sketch_height)
 
 
 def test_an_unrecorded_written_field_is_never_touched_even_at_superset_default():

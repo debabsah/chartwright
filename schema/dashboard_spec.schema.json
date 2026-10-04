@@ -4465,7 +4465,7 @@
         },
         "search_box": {
           "default": false,
-          "description": "A search box over the table's rows. `advise --fix` fills true on a raw table with a row_limit above 20 (search_min_rows in design.yaml)",
+          "description": "A search box over the table's rows. `advise --fix` fills true on a raw table with a row_limit above 20 (search_min_rows in design.yaml), when the search bar pushes none of its rows out of the panel",
           "title": "Search Box",
           "type": "boolean"
         },

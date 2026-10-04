@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from .client import SupersetClient
 from .compiler import _metric_payload, mixed_time_axis
 from .resolver import Resolution
-from .spec import GRID_HEADER_UNITS, DashboardSpec, grid_units_for_rows
+from .spec import DashboardSpec, grid_header, grid_units_for_rows
 
 
 def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
@@ -39,21 +39,21 @@ def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
         if not chart.rows:
             return None  # columns-only pivot: a single metric band, height-safe
         leaf = len({tuple(r.get(d) for d in chart.rows) for r in data})
-        header_units = GRID_HEADER_UNITS + (1 if chart.columns else 0)
-        what = f"pivot renders ~{leaf} leaf rows"
+        header, row = grid_header(chart)
+        what = f"pivot renders ~{leaf} leaf rows" + (" and its totals row" if chart.column_totals else "")
     else:
         leaf = len(data)  # already capped by the query's row_limit
-        header_units = GRID_HEADER_UNITS
+        header, row = grid_header(chart, leaf)
         what = f"table renders ~{leaf} rows"
         if chart.page_length and leaf > chart.page_length:
-            # A paged table renders one page and its pager (size.table-window's model).
-            leaf = chart.page_length + 1
+            # A paged table renders one page and its page controls (size.table-window's model).
+            leaf = chart.page_length
             what = f"table renders a {chart.page_length}-row page and its pager"
     height = spec.resolved_height(chart.name)
     # Shared grid model (chartwright/spec.py): the design critic's
     # size.grid-fit and size.table-window read the same numbers, so pre-apply
     # advice and this post-apply warning can never contradict each other.
-    needed = grid_units_for_rows(leaf, header_units)
+    needed = grid_units_for_rows(leaf, header, row)
     if needed <= height:
         return None
     return (f"{what} (~{needed * 40:.0f}px) but height={height:g} ({height * 40:.0f}px): "

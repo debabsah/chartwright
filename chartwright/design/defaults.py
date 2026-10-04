@@ -31,9 +31,10 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ..spec import DEFAULT_TIME_GRAIN, grid_rows_visible, metric_label, parse_metric
+from ..spec import (DEFAULT_TIME_GRAIN, grid_rows_visible, metric_label, parse_metric,
+                    table_header_units)
 from .model import KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
-from .rules import _PAGER_ROWS, _span_days
+from .rules import _span_days
 
 
 @dataclass(frozen=True)
@@ -260,28 +261,30 @@ def _cell_bars(ctx: RuleContext, c):
 
 
 @_fill("default.page-length", "page_length", {"table"},
-       "a table whose row_limit outgrows its panel pages by what fits, one row left for "
-       "the pager",
+       "a table whose row_limit outgrows its panel pages by the rows that fit beside "
+       "its page controls",
        superset=None, superset_text="Superset's own paging (200 rows once past 5,000 cells)",
        override="write page_length yourself (0 shows every row on one page)")
 def _page_length(ctx: RuleContext, c):
     if not ctx.written(c, "row_limit"):
         return None, "row_limit is not set, so Superset pages on its own"
     h = ctx.height(c.name)
-    # The one grid formula size.table-window reads: a page plus its pager fills the
-    # whole rows that fit, so a fill can never make that rule ask for more height.
-    fits = math.floor(grid_rows_visible(h))
+    # The one grid model size.table-window reads (spec.py): a page fills the whole rows
+    # that fit beside the page-size bar and the pager, so a fill can never make that
+    # rule ask for more height.
+    fits = math.floor(grid_rows_visible(h, table_header_units(controls=c.search_box)))
     if c.row_limit <= fits:
         return None, f"all {c.row_limit} rows fit at height {h:g}"
-    page = fits - _PAGER_ROWS
+    page = math.floor(grid_rows_visible(h, table_header_units(controls=True, pager=True)))
     if page < ctx.params.page_min_rows:
-        return None, f"height {h:g} fits {fits} rows, too few to page; raise the height"
-    return page, (f"row_limit {c.row_limit} at height {h:g}: {fits} rows fit, "
-                  f"{page} per page and one for the pager")
+        return None, f"height {h:g} fits {page} rows beside a pager, too few to page; raise the height"
+    return page, (f"row_limit {c.row_limit} at height {h:g}: {fits} rows fit on one page, "
+                  f"{page} beside the page controls")
 
 
 @_fill("default.search-box", "search_box", {"table"},
-       "a raw table of more than ~20 rows gets a search box (threshold unsourced)",
+       "a raw table of more than ~20 rows gets a search box, when its rows still fit "
+       "beside it (the 20 is judgement)",
        superset=False, superset_text="no search box",
        override="write search_box: false")
 def _search_box(ctx: RuleContext, c):
@@ -292,8 +295,16 @@ def _search_box(ctx: RuleContext, c):
     n = ctx.params.search_min_rows
     if c.row_limit <= n:
         return None, f"row_limit {c.row_limit} is {n} rows or fewer"
+    if not c.page_length:
+        # A paged table already draws the bar the search box sits in. On one page, the
+        # bar takes room from the rows, and must not push any behind the scrollbar.
+        h = ctx.height(c.name)
+        fits = math.floor(grid_rows_visible(h, table_header_units(controls=True)))
+        if c.row_limit > fits:
+            return None, (f"{c.row_limit} rows on one page at height {h:g}: a search bar "
+                          f"would leave room for {fits}; page the table or raise the height")
     return True, (f"up to {c.row_limit} raw rows: searching beats scrolling "
-                  f"(the {n}-row threshold is unsourced)")
+                  f"(the {n}-row threshold is judgement)")
 
 
 # -- legends and labels -------------------------------------------------------------

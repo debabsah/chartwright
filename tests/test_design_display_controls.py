@@ -65,10 +65,13 @@ def test_a_row_limit_on_a_category_sorted_bar_with_a_series_limit_warns():
 
 
 def test_a_paged_table_needs_room_for_one_page_not_every_row():
+    # Measured: at 12 units a paged table shows 9 rows on 6.1.0 (10 on 4.1.4 and 5.0.0),
+    # so a 9-row page fits and a 10-row page hides its last row on 6.1.0.
     table = {"name": "T", "type": "table", "dataset": DS, "metrics": ["COUNT(*)"],
              "groupby": ["c"], "sort_by": "COUNT(*)", "row_limit": 500, "height": 12}
     assert _fired("size.table-window", [table])
-    assert not _fired("size.table-window", [{**table, "page_length": 10}])
+    assert not _fired("size.table-window", [{**table, "page_length": 9}])
+    assert _fired("size.table-window", [{**table, "page_length": 10}])
     (f,) = _fired("size.table-window", [{**table, "page_length": 50}])
     assert "50-row page" in f.detail and "page_length" in f.detail
     # 0 is every row on one page: judged like an unpaged table
@@ -76,18 +79,18 @@ def test_a_paged_table_needs_room_for_one_page_not_every_row():
 
 
 def test_the_table_window_message_never_shows_more_rows_than_it_says_are_missing():
-    """At 8 units a table fits 6.67 rows; rounded, the warning read "shows ~7 rows of
-    its 6-row page" while asking for more height (the pager is what doesn't fit)."""
+    """Rounded, the warning once read "shows ~7 rows of its 6-row page" while asking
+    for more height. At 8 units a paged table fits 4.05 rows beside its page controls
+    (measured: 4 on 6.1.0, 5 on 4.1.4 and 5.0.0); the message says the whole 4."""
     table = {"name": "T", "type": "table", "dataset": DS, "metrics": ["COUNT(*)"],
              "groupby": ["c"], "sort_by": "COUNT(*)", "row_limit": 500, "height": 8,
              "page_length": 6}
     (f,) = _fired("size.table-window", [table])
-    assert "fits 6 full rows" in f.detail
-    assert "6-row page plus the pager needs 7 rows" in f.detail
-    assert "~9" in f.detail and "page_length" in f.detail
+    assert "fits 4 full rows beside its page controls, short of its 6-row page" in f.detail
+    assert "~10" in f.detail and "page_length" in f.detail
     # Unpaged: whole rows, never rounded up past what fits.
     (f,) = _fired("size.table-window", [{**table, "page_length": None, "row_limit": 20}])
-    assert "fits 6 full rows of its 20" in f.detail and "row_limit" in f.detail
+    assert "fits 7 full rows of its 20" in f.detail and "row_limit" in f.detail
     for height in (4, 5, 6, 7, 8, 9, 10, 11, 12):
         for page in (2, 5, 6, 8, 10, 12):
             for f in _fired("size.table-window", [{**table, "height": height, "page_length": page}]):
@@ -100,12 +103,15 @@ def test_grid_fit_and_smoke_count_one_page_of_a_paged_table():
              "groupby": ["c"], "sort_by": "COUNT(*)", "row_limit": 60, "height": 12}
     kw = {"resolution": resolution(c=1), "prober": FakeProber({"c": 60})}
     assert _fired("size.grid-fit", [table], **kw)
-    assert not _fired("size.grid-fit", [{**table, "page_length": 10}], **kw)
+    assert not _fired("size.grid-fit", [{**table, "page_length": 9}], **kw)
+    assert _fired("size.grid-fit", [{**table, "page_length": 10}], **kw)
     rows = [{"data": [{"c": i} for i in range(60)]}]
     spec = _spec([table])
     assert _fit_warning(spec.charts[0], spec, rows)
-    spec = _spec([{**table, "page_length": 10}])
+    spec = _spec([{**table, "page_length": 9}])
     assert _fit_warning(spec.charts[0], spec, rows) is None
+    spec = _spec([{**table, "page_length": 10}])
+    assert _fit_warning(spec.charts[0], spec, rows)
 
 
 def test_series_limit_quiets_the_spaghetti_warning():
