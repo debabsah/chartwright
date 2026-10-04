@@ -105,8 +105,7 @@ def test_an_empty_waivers_file_is_fine(tmp_path):
     (waiver(rule="layout.footer[nobody][0]"), "names the layer 'nobody'"),
     (waiver(rule="standard.waiver-expired"), "no waiver covers it"),
     (waiver(layer="nobody"), "names no standard"),
-    (waiver(spec="specs/s.json"), "by slug or by spec path"),
-    (waiver(slug=None), "by slug or by spec path"),
+    (waiver(slug=None), "by spec path (preferred) or slug"),
     (waiver(slug="Not A Slug"), "is not a dashboard slug"),
     ({**waiver(), "approved_by": "me"}, "unknown keys"),
 ])
@@ -273,7 +272,7 @@ def test_a_deploy_warns_on_an_expired_waiver_and_never_blocks(tmp_path, capsys):
     source = StandardsSource(repo / "standards", as_of=dt.date(2026, 10, 4))
     advice = advice_payload(spec, strict=True, standards=source, spec_path=path)
     assert advice["waived"][0]["status"] == "expired"
-    assert "expired on 2026-09-30" in advice["warnings"][0]
+    assert any("expired on 2026-09-30" in w for w in advice["warnings"])
     assert gate_block(advice) is None     # --design strict lets the deploy through
 
 
@@ -433,3 +432,51 @@ def test_a_waiver_written_before_the_first_apply_keeps_the_item_off(tmp_path, ca
     (repo / "standards" / "waivers.yaml").write_text(waivers_yaml(), encoding="utf-8")
     apply(capsys, str(path))
     assert "Acme Corp" in json.dumps(read(path)["layout"]["footer"])
+
+
+# -- the trust boundary: a slug is the author's, a path the repository's -------------
+
+
+def test_a_slug_waiver_is_flagged_where_the_path_is_known(tmp_path, capsys):
+    """Before: an author edits a spec's slug to a waived one and inherits the waiver,
+    with nothing said. The waiver still matches (slug-only waivers exist), but every run
+    with a path names the risk and the fix."""
+    repo = make(tmp_path, waiver())
+    path = applied(capsys, repo)
+    code, out = check(capsys, str(path), "--as-of", "2026-10-04")
+    entry = out["specs"][0]
+    assert code == 0 and entry["waived"]
+    assert any("matches by slug t alone" in w and "pin it with spec: specs/s.json" in w
+               for w in entry["warnings"])
+
+
+def test_a_pinned_waiver_ignores_another_spec_that_takes_its_slug(tmp_path, capsys):
+    repo = make(tmp_path, waiver(spec="specs/wallboard.json"))      # slug t, pinned
+    impostor = applied(capsys, repo, "impostor.json")               # also slug t
+    code, out = check(capsys, str(impostor), "--as-of", "2026-10-04")
+    entry = out["specs"][0]
+    assert code == 1 and "waived" not in entry
+    assert any("is for spec specs/wallboard.json" in w and "does not apply" in w
+               for w in entry["warnings"])
+    real = applied(capsys, repo, "wallboard.json")
+    code, out = check(capsys, str(real), "--as-of", "2026-10-04")
+    assert code == 0 and out["specs"][0]["waived"][0]["spec"] == "specs/wallboard.json"
+    assert "warnings" not in out["specs"][0]
+
+
+def test_the_report_flags_a_waiver_matched_by_more_than_one_spec(tmp_path, capsys):
+    repo = make(tmp_path, waiver())
+    a = applied(capsys, repo, "a.json")
+    applied(capsys, repo, "b.json")          # the same slug, t
+    code, out = check(capsys, str(a.parent), "--report", "--as-of", "2026-10-04")
+    [shared] = out["waivers"]["matched_more_than_once"]
+    assert shared["slug"] == "t" and shared["specs"] == sorted(
+        [(a.parent / "a.json").as_posix(), (a.parent / "b.json").as_posix()])
+
+
+def test_mcp_matches_a_pinned_waiver_by_slug_and_says_so(tmp_path, capsys, monkeypatch):
+    repo = make(tmp_path, waiver(spec="specs/s.json"))
+    path = applied(capsys, repo)
+    monkeypatch.setenv("CHARTWRIGHT_STANDARDS_DIR", str(repo / "standards"))
+    out = mcp_call("standards_check", spec_json=path.read_text(), as_of="2026-10-04")
+    assert out["ok"] and any("no spec path here to confirm" in w for w in out["warnings"])

@@ -4,7 +4,7 @@
 `standards/waivers.yaml`, beside the standards files and never a standard itself:
 
     waivers:
-      - slug: ops-wallboard                  # or spec: specs/ops/wallboard.json
+      - spec: specs/ops/wallboard.json       # pins the dashboard; slug: may be added
         rule: layout.footer[acme][0]         # a rule id, or a content item's address
         owner: "@acme/data-platform"
         reason: The wallboard has no room for the legal row; legal agreed on 2026-09-30.
@@ -56,7 +56,7 @@ class Waiver:
 
     @property
     def target(self) -> str:
-        return f"slug {self.slug}" if self.slug else f"spec {self.spec}"
+        return f"spec {self.spec}" if self.spec else f"slug {self.slug}"
 
     def expired(self, as_of: dt.date) -> bool:
         """Past its expiry date: a waiver is valid through the day it names."""
@@ -69,7 +69,7 @@ class Waiver:
         return "expired" if self.expired(as_of) else "active"
 
     def as_dict(self, as_of: dt.date | None = None) -> dict:
-        out = {"slug": self.slug} if self.slug else {"spec": self.spec}
+        out = {k: v for k, v in (("slug", self.slug), ("spec", self.spec)) if v}
         out.update(rule=self.rule, owner=self.owner, reason=self.reason,
                    expires=self.expires.isoformat())
         if self.layer:
@@ -140,8 +140,8 @@ def parse_waivers(path: Path, standard_names, where: str) -> list[Waiver]:
         if unknown:
             fail(f"{at}: unknown keys {unknown} (known: {list(ENTRY_KEYS)})")
         slug, spec = raw.get("slug"), raw.get("spec")
-        if (slug is None) == (spec is None):
-            fail(f"{at} names its dashboard by slug or by spec path: one of the two")
+        if slug is None and spec is None:
+            fail(f"{at} names its dashboard by spec path (preferred) or slug, or both")
         if slug is not None and not (isinstance(slug, str) and SLUG_RE.match(slug)):
             fail(f"{at}: slug {slug!r} is not a dashboard slug (lowercase kebab-case)")
         if spec is not None:
@@ -205,23 +205,53 @@ def waivers_path(directory: Path) -> Path | None:
     return None
 
 
-def matching(waivers: list[Waiver], spec, spec_path: Path | None, base: Path | None) -> list[Waiver]:
-    """The waivers that name this spec: by its slug, or by its path (relative to `base`,
-    the folder holding the standards folder). A spec seen without a path (an MCP tool's)
-    matches by slug only."""
-    out = []
-    target = None
-    if spec_path is not None and base is not None:
-        try:
-            target = Path(spec_path).resolve().relative_to(base.resolve()).as_posix()
-        except ValueError:
-            target = None
+def _target(spec_path: Path | None, base: Path | None) -> str | None:
+    if spec_path is None or base is None:
+        return None
+    try:
+        return Path(spec_path).resolve().relative_to(base.resolve()).as_posix()
+    except ValueError:
+        return None
+
+
+def resolve_matches(waivers: list[Waiver], spec, spec_path: Path | None,
+                    base: Path | None) -> tuple[list[Waiver], list[str]]:
+    """(the waivers that name this spec, notes about how they matched).
+
+    The trust boundary: a spec's path is the repository's, a slug is a field the spec's
+    author edits in the same pull request. So a waiver with `spec` matches only the file
+    at that path (relative to `base`, the folder holding the standards folder), and with
+    `slug` too, only while that file keeps the slug; a slug-only waiver matches any spec
+    with that slug, and is flagged wherever the path is known. A spec seen without a path
+    (an MCP tool's) can only match by slug, and says so."""
+    out: list[Waiver] = []
+    notes: list[str] = []
+    target = _target(spec_path, base)
+    slug = spec.dashboard.slug
     for w in waivers:
-        if w.slug is not None and w.slug == spec.dashboard.slug:
+        if w.spec is not None:
+            if target is not None:
+                if w.spec == target and (w.slug is None or w.slug == slug):
+                    out.append(w)
+                elif w.slug is not None and w.slug == slug:
+                    notes.append(f"waivers[{w.index}] is for spec {w.spec} (slug {w.slug}); "
+                                 f"this spec at {target} carries that slug too, so the "
+                                 f"waiver does not apply to it")
+            elif w.slug is not None and w.slug == slug:
+                out.append(w)
+                notes.append(f"waivers[{w.index}] matched by slug {slug} alone: no spec path "
+                             f"here to confirm it is {w.spec}")
+        elif w.slug == slug:
             out.append(w)
-        elif w.spec is not None and target is not None and w.spec == target:
-            out.append(w)
-    return out
+            if target is not None:
+                notes.append(f"waivers[{w.index}] matches by slug {slug} alone, a field the "
+                             f"spec's author can edit; pin it with spec: {target}")
+    return out, notes
+
+
+def matching(waivers: list[Waiver], spec, spec_path: Path | None, base: Path | None) -> list[Waiver]:
+    """The waivers that name this spec (resolve_matches)."""
+    return resolve_matches(waivers, spec, spec_path, base)[0]
 
 
 def pick(waivers: list[Waiver], rule: str, item: str | None, lock_layer: str | None,
@@ -232,15 +262,20 @@ def pick(waivers: list[Waiver], rule: str, item: str | None, lock_layer: str | N
     return (active or hits or [None])[0]
 
 
-def file_summary(waivers: list[Waiver], as_of: dt.date, matched: set[int],
+def file_summary(waivers: list[Waiver], as_of: dt.date, matched: dict[int, list[str]],
                  expiring_within: int = EXPIRING_DAYS) -> dict:
     """`standards check --report`'s waivers block: every waiver in the file, counted, with
-    the expired ones, the ones expiring within `expiring_within` days, and the ones naming
-    no spec the run read."""
+    the expired ones, the ones expiring within `expiring_within` days, the ones naming no
+    spec the run read, and the ones that matched more than one spec (`matched`: waiver
+    index -> the specs it matched). Two specs can share a slug only by mistake or by
+    design: a slug is the spec author's to edit, so a waiver matched twice is flagged."""
     expired = [w.as_dict(as_of) for w in waivers if w.expired(as_of)]
     soon = [w.as_dict(as_of) for w in waivers
             if not w.expired(as_of) and w.days_left(as_of) <= expiring_within]
-    unmatched = [w.as_dict(as_of) for w in waivers if w.index not in matched]
+    unmatched = [{**w.as_dict(as_of), "reason": "names no spec this run read"}
+                 for w in waivers if not matched.get(w.index)]
+    shared = [{**w.as_dict(as_of), "specs": sorted(matched[w.index])}
+              for w in waivers if len(matched.get(w.index, ())) > 1]
     by_owner: dict[str, int] = {}
     by_rule: dict[str, int] = {}
     for w in waivers:
@@ -249,7 +284,8 @@ def file_summary(waivers: list[Waiver], as_of: dt.date, matched: set[int],
     return {"as_of": as_of.isoformat(), "total": len(waivers),
             "active": len(waivers) - len(expired), "expired": expired,
             "expiring_within_days": expiring_within, "expiring": soon,
-            "unmatched": unmatched, "by_owner": dict(sorted(by_owner.items())),
+            "unmatched": unmatched, "matched_more_than_once": shared,
+            "by_owner": dict(sorted(by_owner.items())),
             "by_rule": dict(sorted(by_rule.items()))}
 
 

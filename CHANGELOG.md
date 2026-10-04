@@ -17,7 +17,7 @@ Standards gain recorded exceptions, a minimum Superset release per file, a locka
 ### Added
 
 - Waivers: `standards/waivers.yaml` lists the dashboards that may deviate from a lock, each with an owner, a reason and an expiry (docs/DESIGN-BRAIN.md §18, "Waivers").
-  - An entry names a dashboard by slug (or spec path), a locked rule or content item (`layout.footer[org][0]`, `dashboard.classification`), and optionally the layer whose lock it covers.
+  - An entry names a dashboard by its spec path (preferred: a slug is the spec author's to edit, so a slug-only match is flagged, and a waiver naming both applies only while both match), a locked rule or content item (`layout.footer[org][0]`, `dashboard.classification`), and optionally the layer whose lock it covers.
   - The finding passes and is listed under `waived` with who, why and until when; `standards apply` leaves the item as the dashboard has it. `design.ignore` still can't silence a lock.
   - An expired waiver fails `standards check` and `advise` (new rule `standard.waiver-expired`) for the specs checked, and only warns in `standards apply`, `check`, `apply` and `plan`; `restore` never reads the file. `--as-of DATE` reads expiry as of a day.
   - `standards check --report` lists expired, expiring (`--expiring-within`, 30 days by default) and unmatched waivers; every `standards check` lists past-dated entries under `waiver_warnings`.

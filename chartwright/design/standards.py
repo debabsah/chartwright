@@ -118,6 +118,7 @@ class Standard:
     # fails (standards check, advise) or still applies with a warning (everything
     # else), and the Superset release content is held to (None: hold nothing).
     waivers: list = field(default_factory=list)
+    waiver_notes: list = field(default_factory=list)   # how they matched (trust notes)
     as_of: object = None
     enforce_expiry: bool = False
     release: str | None = None
@@ -639,17 +640,18 @@ class StandardsSource:
         std = self._standard(spec)
         if std is None:
             return None
-        from .waivers import EXPIRED_RULE, matching
+        from .waivers import EXPIRED_RULE, resolve_matches
 
         standards = self._loaded
-        waivers = matching(standards.waivers, spec,
-                           Path(spec_path) if spec_path is not None else None,
-                           standards.directory.parent)
+        waivers, notes = resolve_matches(standards.waivers, spec,
+                                         Path(spec_path) if spec_path is not None else None,
+                                         standards.directory.parent)
         locked = dict(std.locked_rules)
         if waivers:
             # An expired waiver's finding can't be silenced below the waivers file either.
             locked.setdefault(EXPIRED_RULE, "waivers")
-        return dataclasses.replace(std, waivers=waivers, as_of=self.today(),
+        return dataclasses.replace(std, waivers=waivers, waiver_notes=notes,
+                                   as_of=self.today(),
                                    enforce_expiry=enforce_expiry, release=self.release,
                                    locked_rules=locked)
 
@@ -948,6 +950,8 @@ def check_spec(spec, source: StandardsSource, *, strict: bool = False,
         out["polished"] = payload["polished"]
     if payload.get("waived"):
         out["waived"] = payload["waived"]
+    if payload.get("warnings"):
+        out["warnings"] = payload["warnings"]
     if std is not None and std.release is not None:
         from . import content as C
 

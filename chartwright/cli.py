@@ -727,14 +727,14 @@ def _standards_cmd(args) -> None:
     from .design.waivers import matching
 
     entries = []
-    matched: set[int] = set()     # waivers naming a spec this run read
+    matched: dict[int, list[str]] = {}   # waiver -> the specs this run read it names
     for p in paths:
         spec, err = st.load_spec_file(p)
         if err is not None:
             entries.append({"spec": p.as_posix(), "ok": False, "standard": None, "errors": [err]})
         else:
-            matched |= {w.index for w in matching(standards.waivers, spec, p,
-                                                  standards.directory.parent)}
+            for w in matching(standards.waivers, spec, p, standards.directory.parent):
+                matched.setdefault(w.index, []).append(p.as_posix())
             entries.append({"spec": p.as_posix(),
                             **st.check_spec(spec, source, strict=args.strict, spec_path=p)})
     sdir = st.display(standards.directory)

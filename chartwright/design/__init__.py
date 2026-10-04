@@ -103,7 +103,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     ignored: list[str] = []
     polished: list[str] = []
     waived: list[dict] = []
-    warnings: list[str] = []
+    warnings: list[str] = list(getattr(standard, "waiver_notes", None) or [])
     waivers = standard.waivers if standard is not None else []
     for r in RULES.values():
         if r.data_aware and resolution is None:

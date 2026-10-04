@@ -106,7 +106,7 @@ into one. Everything below works from that one file.
     - Lock the classification a standard assigns, and a dashboard reclassified away from it, or with the field removed, is an error; its locked confidential footer stays expected while the error stands.
     - `--claim` records content a decompiled or adopted dashboard already carries, and apply never adds it a second time.
 - **Recorded, Expiring Exceptions**: When one dashboard must deviate from a lock, add it to `standards/waivers.yaml` with an owner, a reason and an expiry date; nothing in the spec itself can lift a lock ([reference](DESIGN-BRAIN.md#waivers)).
-    - Name the dashboard by slug (or spec path), and the locked rule or content item: `layout.footer[org][0]`, `dashboard.classification`, `size.min-width`.
+    - Name the dashboard by its spec file's path (a slug alone is the spec author's to edit, and every run says so), and the locked rule or content item: `layout.footer[org][0]`, `dashboard.classification`, `size.min-width`.
     - The finding passes, listed as waived with its owner, reason and expiry; `standards apply` leaves that item as the dashboard has it.
     - An expired waiver fails `standards check` and `advise` for the dashboards being checked, so a pull request fails only for the dashboards it touches; run `standards check` on the changed specs in CI. `check`, `apply` and `plan` keep the waiver with a warning, so an expiry never blocks a deploy or a rollback, and `restore` never reads the file.
     - `standards check --report` lists every expired waiver, every one expiring within 30 days (`--expiring-within` changes it) and those that name no dashboard; `--as-of 2026-12-01` repeats any run exactly.

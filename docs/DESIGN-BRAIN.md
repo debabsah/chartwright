@@ -1938,12 +1938,13 @@ folder.
 ```yaml
 # standards/waivers.yaml
 waivers:
-  - slug: ops-wallboard                # or spec: specs/ops/wallboard.json
+  - spec: specs/ops/wallboard.json      # the spec file: what pins the dashboard
+    slug: ops-wallboard                # optional: must match too
     rule: layout.footer[acme][0]       # a content item, or a rule id
     owner: "@acme/data-platform"
     reason: The wallboard has no room for the legal row; legal agreed on 2026-09-30.
     expires: 2026-12-31                # valid through this day
-  - slug: partner-revenue
+  - spec: specs/finance/partner-revenue.json
     rule: dashboard.classification
     owner: Dana Reyes (legal)
     reason: Published to partners under contract C-114 as internal.
@@ -1953,7 +1954,7 @@ waivers:
 
 | Key | Holds |
 |---|---|
-| `slug` or `spec` | The dashboard: its slug, or its spec's path relative to the folder that holds the standards folder. One of the two. The MCP server sees no paths, so there a waiver matches by slug only. |
+| `spec` and/or `slug` | The dashboard: its spec's path relative to the folder that holds the standards folder (preferred), its slug, or both, when both must match. At least one. |
 | `rule` | A rule id (through the alias table, as everywhere), whose locked findings on the dashboard it covers; or a content item as `design.standard_written` keys it (`layout.footer[acme][0]`, `dashboard.css[acme]`, `dashboard.classification`), whose `standard.content-locked` finding it covers. `rule: standard.content-locked` covers every locked item. |
 | `owner` | Required: who approved the exception, a CODEOWNERS team or a person. |
 | `reason` | Required: why this dashboard may deviate. |
@@ -1965,6 +1966,18 @@ that is neither a rule id nor a content item, a layer no standards file names,
 `standard.waiver-expired` as the rule, and a second entry for the same
 dashboard, rule and layer are errors naming the entry, and fail every run that
 reads the folder, as a broken standards file does.
+
+**The trust boundary.** A spec's path belongs to the repository, where
+CODEOWNERS and review decide who may move or add a file; its slug is a field
+the spec's author edits in the same pull request as anything else. So a waiver
+naming `spec` applies only to the file at that path, and with `slug` as well
+only while that file keeps the slug: another spec that takes the slug gets
+nothing, and its run says so. A slug-only waiver applies to any spec with that
+slug; it still works, but every run that knows the spec's path warns that it
+matches by slug alone and names the `spec:` line to add, and `--report` lists
+a waiver that matched more than one spec under `matched_more_than_once`. The
+MCP server sees specs and never paths, so there a waiver can match only by its
+slug, and a pinned one that does says the path went unconfirmed. Name the spec.
 
 What a waiver does, while it holds:
 
