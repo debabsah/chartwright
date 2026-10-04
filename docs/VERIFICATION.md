@@ -81,6 +81,12 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   **backup layout** (`test_backup_layout.py`: backups are separated per
   profile and the location override is honored), plus dedicated suites for
   pivot formatting, range filters, layout sketches, and absorb.
+- **Dashboard and filter controls** (`test_dashboard_settings.py`,
+  `test_chart_metadata.py`, `test_annotations.py`, `test_filter_controls.py`,
+  `test_sql_metrics.py`, `test_layout_headers.py`): each setting compiles to
+  the shape Superset saves, compiles to the earlier output when omitted,
+  decompiles back, shows up in `plan` when changed live, and names a bad
+  value.
 - **The design brain** (`test_design*.py`, `test_calibrate.py`,
   `test_redesign.py`): every rule table-driven against violating and clean
   specs; fix-loop convergence, idempotence, and the no-fractional-heights
