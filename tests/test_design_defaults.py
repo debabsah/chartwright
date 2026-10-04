@@ -389,6 +389,31 @@ def test_value_labels(kw, want):
     assert filled_value(data, "default.value-labels", "B") == want
 
 
+@pytest.mark.parametrize("row_limit,height,want", [
+    (12, 8, None),   # measured: 12 labels overlapped at 8 units on 4.1.4 and 5.0.0
+    (12, 10, True),  # 4.5 + 12 x 0.4125 = 9.45 units
+    (8, 8, True),    # cleared on every release
+    (4, 7, True),
+])
+def test_horizontal_value_labels_need_height_not_width(row_limit, height, want):
+    """A horizontal bar's label sits beside it: the height spaces the labels, so a
+    4/12 panel (measured: no label clipped) takes them when it is tall enough."""
+    other = {"type": "big_number_total", "name": "K", "dataset": DS, "metric": "SUM(x)",
+             "number_format": ",.0f", "width": 8}
+    data = mk([bar(orientation="horizontal", row_limit=row_limit, height=height, width=4),
+               other], layout={"rows": [["B", "K"]]})
+    assert filled_value(data, "default.value-labels", "B") == want
+
+
+def test_vertical_value_labels_stand_down_below_six_twelfths():
+    """Measured: 12 labels like '12,345' overlapped at 4/12 on every release (bands
+    of 29.5 to 30.8 px for 37.5 to 38.7 px labels) and cleared each other at 6/12."""
+    other = {"type": "big_number_total", "name": "K", "dataset": DS, "metric": "SUM(x)",
+             "number_format": ",.0f", "width": 8}
+    data = mk([bar(row_limit=12, width=4), other], layout={"rows": [["B", "K"]]})
+    assert filled_value(data, "default.value-labels", "B") is None
+
+
 # -- provenance: design.filled -------------------------------------------------------------
 
 

@@ -35,14 +35,19 @@ class Params:
     pie_max_slices: int
     series_max: int              # lines per timeseries
     max_filter_selects: int = 6  # select pickers in the native filter bar
-    # Thresholds of the design defaults (default.* fills, docs/DESIGN-BRAIN.md sec.16).
-    # Unsourced judgement like the rest of this table until a live calibration
-    # measures them; the same for every audience until one is shown to differ.
+    # Thresholds of the design defaults (default.* fills, docs/DESIGN-BRAIN.md sec.16),
+    # the same for every audience until one is shown to differ. The value-label pair
+    # was checked against rendered Superset 4.1.4, 5.0.0 and 6.1.0 (DESIGN-BRAIN.md,
+    # "Calibration"); search_min_rows and page_min_rows are usability judgement.
     search_min_rows: int = 20          # raw table: row_limit above this gets a search box
     value_label_max_bars: int = 12     # bar: values on the bars up to this many bars
-    value_label_min_width: int = 6     # ... on a panel at least this many twelfths wide
+    # ... on a vertical bar at least this many twelfths wide: 12 labels like '12,345'
+    # overlapped at 4/12 on every release and cleared each other by 12+ px at 6/12.
+    value_label_min_width: int = 6
     page_min_rows: int = 3             # table: a smaller page than this isn't worth paging
-    day_label_max_span_days: int = 366  # '%d %b' day labels drop the year past this span
+    # '%d %b' names a single date only within 365 days: a 366-day span without a
+    # 29 February starts and ends on the same day and month.
+    day_label_max_span_days: int = 365
     # chart type -> height (spec units); calibrate/overlay feed this,
     # size-rule autofixes target it.
     recommended_heights: dict[str, float] = field(default_factory=dict)

@@ -281,7 +281,7 @@ fails when it drifts.
 | `default.page-length` | info | ✔ | - | 5 | a table whose row_limit outgrows its panel pages by the rows that fit beside its page controls |
 | `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows gets a search box, when its rows still fit beside it (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
-| `default.value-labels` | info | ✔ | - | 5 | few bars on a wide panel carry their values (<= 12 bars, >= 6/12 wide; thresholds unsourced) |
+| `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or tall enough to space the labels (horizontal) |
 | `default.x-label-format` | info | ✔ | - | 5 | a time axis labels its points in its grain's own format ('Sep 2026' by month); day and week labels only over a year or less |
 | `filters.count` | warn | - | - | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
 | `filters.duplicate-column` | info | - | - | 2 | two filters on the same column fight each other |

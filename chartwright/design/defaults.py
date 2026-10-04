@@ -330,9 +330,18 @@ def _single_series_legend(ctx: RuleContext, c):
     return False, f"one series, {label!r}, already named by the {where[0]}"
 
 
+# A horizontal bar's value label sits beside it, so the panel's height spaces the
+# labels, not its width. Measured (docs/DESIGN-BRAIN.md, "Calibration"): the chart
+# spends 180 px on its title, legend and axis (5.0.0; 164 px on 4.1.4 and 6.1.0), and
+# a label is 14.25 px tall (12.25 px on 6.1.0), so a bar needs 16.5 px to keep its
+# label clear of the next one. 12 bars at 8 units overlapped on 4.1.4 and 5.0.0.
+HBAR_FRAME_UNITS = 4.5
+HBAR_LABEL_UNITS = 0.4125
+
+
 @_fill("default.value-labels", "show_value", {"bar"},
-       "few bars on a wide panel carry their values (<= 12 bars, >= 6/12 wide; "
-       "thresholds unsourced)",
+       "few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or "
+       "tall enough to space the labels (horizontal)",
        superset=False, superset_text="no values on the bars",
        override="write show_value: false")
 def _value_labels(ctx: RuleContext, c):
@@ -343,10 +352,17 @@ def _value_labels(ctx: RuleContext, c):
     if not ctx.written(c, "row_limit"):
         return None, "row_limit is not set, so the number of bars is unknown"
     most, min_w = ctx.params.value_label_max_bars, ctx.params.value_label_min_width
-    if c.row_limit > most:
-        return None, f"up to {c.row_limit} bars, more than {most}"
+    n = c.row_limit
+    if n > most:
+        return None, f"up to {n} bars, more than {most}"
+    if c.orientation == "horizontal":
+        h = ctx.height(c.name)
+        need = HBAR_FRAME_UNITS + HBAR_LABEL_UNITS * n
+        if h < need:
+            return None, (f"{n} horizontal bars at height {h:g}: their labels need "
+                          f"~{math.ceil(need)} units to clear each other")
+        return True, f"at most {n} bars at height {h:g}: each value reads without the axis"
     w = ctx.width(c.name)
     if w < min_w:
         return None, f"{w}/12 wide, narrower than {min_w}/12"
-    return True, (f"at most {c.row_limit} bars at {w}/12 wide: each value reads without "
-                  f"the axis (thresholds {most} bars and {min_w}/12 are unsourced)")
+    return True, f"at most {n} bars at {w}/12 wide: each value reads without the axis"
