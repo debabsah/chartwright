@@ -406,3 +406,17 @@ def test_tls_is_verified_unless_the_profile_turns_it_off(live_repo, capsys, monk
     code, out = run(capsys, "standards", "verify-visible", str(path), "--profile", "s")
     assert code == 0 and calls["context"]["ignore_https_errors"] is ignore
     assert (note in out["tls"]) if note else "tls" not in out
+
+
+def test_ci_fails_on_a_verify_visible_regression_once_the_browser_installs():
+    """The check used to run under continue-on-error, so a regression only reported."""
+    import yaml
+
+    ci = yaml.safe_load((Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml")
+                        .read_text(encoding="utf-8"))
+    steps = ci["jobs"]["live"]["steps"]
+    install = next(s for s in steps if "visual" in str(s.get("run", "")) and "pip" in s["run"])
+    check = next(s for s in steps if "ci_live_visible.py" in str(s.get("run", "")))
+    assert install.get("continue-on-error") is True and install.get("id")
+    assert "continue-on-error" not in check
+    assert f"steps.{install['id']}.outcome == 'success'" in check["if"]
