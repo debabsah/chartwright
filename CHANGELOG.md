@@ -99,17 +99,20 @@ while the major version is 0, minor bumps may include breaking changes and say s
   spec that was never fixed builds the same bundle. Eight `default.*` rules, each an
   `info` finding with a fix that `check` and `apply` list too:
   - `x_label_format` from the time grain (`%b %Y` monthly, `%Y` yearly, `%d %b` daily
-    or weekly over a year or less);
+    or weekly over 365 days or less);
   - `compare_suffix` from the grain and `compare_lag` ("vs previous month");
   - `,.0f` for charts whose metrics are all COUNT or COUNT_DISTINCT;
   - on tables, `cell_bars: false` with id, code, year or zip columns, `page_length` set to
-    the rows that fit when an explicit `row_limit` outgrows the panel, and `search_box`
-    on raw tables of more than 20 rows;
+    the rows that fit beside the page controls when an explicit `row_limit` outgrows the
+    panel, and `search_box` on raw tables of more than 20 rows when no row loses its
+    place to the search bar;
   - `show_legend: false` on a single series the title names, `show_value` on a bar of 12
-    bars or fewer at least half the page wide.
+    bars or fewer: at least half the page wide, or on a horizontal bar, tall enough to
+    space its labels.
   None writes Superset's own value; the thresholds are audience parameters
   (`search_min_rows`, `value_label_max_bars`, `value_label_min_width`, `page_min_rows`,
-  `day_label_max_span_days`), tunable in `design.yaml`.
+  `day_label_max_span_days`), tunable in `design.yaml`. The grid and value-label numbers
+  were measured on rendered Superset 4.1.4, 5.0.0 and 6.1.0 (DESIGN-BRAIN §17).
 - `design.filled` records, per chart, each field `--fix` filled and the value it wrote.
   While the chart still holds that value, `--fix` keeps it up to date as the chart changes
   and removes it when it stops applying. A field you write is never touched. Edit a filled
@@ -138,6 +141,16 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- Tables and pivots that hid their last rows passed `size.table-window`,
+  `size.pivot-window`, `size.grid-fit` and the apply-time smoke warning. Their shared
+  grid model was a guess. It is now measured on rendered Superset 4.1.4, 5.0.0 and 6.1.0
+  (DESIGN-BRAIN §17), and counts what the old one missed:
+  - a search box;
+  - the page-size bar any `page_length` draws, and the pager's real height;
+  - pivot header rows and the pinned totals row;
+  - a horizontal scrollbar under a pivot with column dimensions.
+  So these checks now warn where they used to pass. For example, a 5-row pivot by month
+  at 8 units hid its last row, and a 10-row page at 12 units hides one on 6.1.0.
 - A table's page size can now be set: `page_length`. The bundle carried
   `server_page_length: 10`, which Superset reads only with server pagination, so tables
   never paged by it; that key still ships, unchanged, and does nothing.

@@ -13,11 +13,14 @@
 > (`tools/gen_rule_table.py`, checked by `tests/test_docs.py`). The v2 claim
 > that it was pointed at a placeholder snippet, and the table had drifted.
 >
-> **Still pending: rendering-quality verification against a live Superset.**
-> The thresholds come from the skill's field notes and BI literature, not
-> from measured pixels, and `docs/CONTRACTS.md` carries no design entries
-> while citing every other Superset behaviour to source. Treat the numbers as
-> informed judgement until a visual harness lands.
+> **Rendering verification: partial.** §17 records what was measured on
+> rendered Superset 4.1.4, 5.0.0 and 6.1.0: the table and pivot grid model
+> (row, header, search bar and pager heights) and the value-label and day-label
+> thresholds of the design defaults. The other thresholds still come from the
+> skill's field notes and BI literature, not from measured pixels: axis
+> heights, pie and heatmap geometry, the horizontal-bar height per bar,
+> vertical-bar category counts, KPI heights and the audience budgets. Treat
+> those as informed judgement.
 
 ## 1. Problem
 
@@ -200,11 +203,11 @@ minus Superset chrome is ≈ 22 units).
 | `vbar_max_categories` | 6 | 8 | 8 |
 | `pie_max_slices` | 5 | 7 | 7 |
 | `series_max` (lines per timeseries) | 5 | 10 | 8 |
-| `search_min_rows` (§16, unsourced) | 20 | 20 | 20 |
-| `value_label_max_bars` (§16, unsourced) | 12 | 12 | 12 |
-| `value_label_min_width` (§16, unsourced) | 6 | 6 | 6 |
-| `page_min_rows` (§16) | 3 | 3 | 3 |
-| `day_label_max_span_days` (§16) | 366 | 366 | 366 |
+| `search_min_rows` (§16, judgement) | 20 | 20 | 20 |
+| `value_label_max_bars` (§16, §17) | 12 | 12 | 12 |
+| `value_label_min_width` (§16, §17) | 6 | 6 | 6 |
+| `page_min_rows` (§16, judgement) | 3 | 3 | 3 |
+| `day_label_max_span_days` (§16) | 365 | 365 | 365 |
 
 Presets are data (`presets.py`), not branches: rules never test the audience
 name, only parameters. Adding an audience is adding a row.
@@ -437,13 +440,14 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   while rendered rows are data-driven, and data that grows after authoring hides
   new rows behind the chart's inner scrollbar with everything looking green.
   Smoke now compares the rows its query already fetched against the
-  configured height and warns on every apply (`~9 leaf rows (~430px) but
+  configured height and warns on every apply (`~9 leaf rows (~433px) but
   height=8 (320px)`); the data-aware `size.grid-fit` rule catches the same
   class pre-apply for single-dimension grids. All of it, meaning smoke,
-  `size.grid-fit`, `size.table-window`, `size.pivot-window`, reads ONE grid
-  model (`grid_units_for_rows` / `grid_rows_visible` in `chartwright/spec.py`),
-  so the offline critic, the data-aware critic, and the apply-time warning
-  cannot give one chart three different verdicts.
+  `size.grid-fit`, `size.table-window`, `size.pivot-window`, and the
+  page-length and search-box fills, reads ONE grid model (`grid_header`,
+  `grid_units_for_rows` and `grid_rows_visible` in `chartwright/spec.py`,
+  measured in §17), so the offline critic, the data-aware critic, the fills and
+  the apply-time warning cannot give one chart different verdicts.
 - **Chart identity:** no rule may ever autofix a chart `name`: names seed
   uuid5 identity; a rename is a delete+create on the live instance.
 - **`plan`/golden tests:** advise is pure spec-side analysis; compiled bytes
@@ -595,7 +599,10 @@ Recorded during the post-merge review burn-down:
     each modelled a rendered grid row differently, so a 20-row table at
     height 8 passed offline while the data-aware rule and the apply warning
     both said it hid ten rows. The constants now live once in
-    `chartwright/spec.py`; the rules and smoke import them.
+    `chartwright/spec.py`; the rules, the fills and smoke import them. §17
+    replaced the shared guesses with measured sizes: the search bar, the
+    page-size bar, the pager, pivot header rows and the pinned totals row are
+    now part of the model, which had none of them.
 12. **`table_visible_ratio` is 0.5 for every audience**, up from 0.25 on
     `analytical`/`operational`. Below half, the MAJORITY of the rows the
     author deliberately asked for sit behind the inner scrollbar: the exact
@@ -661,19 +668,19 @@ exactly as before, and a spec that was never fixed builds the same bytes.
 Every fill is an `info` finding with a fix, never writes Superset's own
 value (a fill that draws nothing new is only noise in the spec), and
 changes no query. Thresholds are audience params (§6),
-so `design.yaml` tunes them; those marked unsourced are judgement awaiting
-the live calibration this page's status note asks for.
+so `design.yaml` tunes them. §17 measured the grid and the value-label
+thresholds; those marked judgement are usability choices, not pixel facts.
 
 | rule | field | fills | only when |
 |---|---|---|---|
-| `default.x-label-format` | `x_label_format` | `%b %Y` at P1M, `%Y` at P1Y, `%d %b` at P1D or P1W | a timeseries chart (line, bar, area, scatter); for day labels, the chart's `time_range` spans at most `day_label_max_span_days` (366), since `%d %b` drops the year. An omitted grain is read as its P1D default. Not on a categorical bar or a mixed chart, whose x axis may not be time |
+| `default.x-label-format` | `x_label_format` | `%b %Y` at P1M, `%Y` at P1Y, `%d %b` at P1D or P1W | a timeseries chart (line, bar, area, scatter); for day labels, the chart's `time_range` spans at most `day_label_max_span_days` (365), since `%d %b` drops the year, and a 366-day span without a 29 February starts and ends on the same day and month. An omitted grain is read as its P1D default. Not on a categorical bar or a mixed chart, whose x axis may not be time |
 | `default.compare-suffix` | `compare_suffix` | `vs previous month`, `vs 12 months earlier` | a trendline KPI with `compare_lag`, at a grain with a plain name (hour, day, week, month, quarter, year) |
 | `default.count-format` | `number_format` | `,.0f` | every metric the chart shows is `COUNT` or `COUNT_DISTINCT`, on a chart with one `number_format` (not a table or a mixed chart); not with `contribution`, a 100 % stack, or a pivot aggregation that leaves fractions |
 | `default.cell-bars` | `cell_bars` | `false` | a raw-mode table with a column named `id`, `code`, `year`, `zip`, `zipcode` or `postcode` as a whole trailing token (`order_id`, `fiscal_year`; not `uuid` or `zip_count`). With column types (`--profile`), only a numeric one counts. Aggregate tables draw bars on metrics only, so they never need it |
-| `default.page-length` | `page_length` | whole rows that fit, minus one for the pager | a table with an explicit `row_limit` larger than the rows that fit, and a page of at least `page_min_rows` (3). The one grid formula `size.table-window` reads, so the fill can never make that rule ask for more height |
-| `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, unsourced) |
+| `default.page-length` | `page_length` | the whole rows that fit beside the page-size bar and the pager | a table with an explicit `row_limit` larger than the rows that fit on one page, and a page of at least `page_min_rows` (3, judgement). The one grid model `size.table-window` reads, so the fill can never make that rule ask for more height |
+| `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, judgement), when the bar the box sits in hides no row: a paged table already draws it, and a table on one page must still fit every row beside it |
 | `default.single-series-legend` | `show_legend` | `false` | a timeseries chart or categorical bar with one metric, no groupby, no series limit, no goal lines and no legend placement written, whose shown title or `y_axis_title` contains the metric's label. Never a heatmap, whose legend is the colour scale |
-| `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12) and a width of at least `value_label_min_width` (6/12); both unsourced |
+| `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17) |
 
 `narrative.big-number-format` stands down where `default.count-format`
 offers the same remedy with a fix: one remedy, one finding.
@@ -755,3 +762,201 @@ its `next` line names `advise --fix` when some are waiting.
   fill, or Superset's own default, the value `design.filled` recorded, the
   rule, the reason, and how to change it. MCP `explain_spec` returns the same
   JSON.
+
+## 17. Calibration
+
+Measured on 2026-10-03 against rendered Superset 4.1.4, 5.0.0 and 6.1.0, each
+with the example data and its default theme, in headless Chromium at a 1600 px
+wide viewport. Every holder measured exactly 40 px per spec unit on all three
+releases.
+
+### Method
+
+- `chartwright apply` built calibration dashboards (slugs `cw-calib-*`):
+  - raw tables at heights 6 to 20, four ways: plain, paged, with a search box,
+    and with both;
+  - pivots of 19 rows: with no column dimension or one, each with and without
+    a totals row;
+  - a 5-row by 12-month pivot at widths 4, 6 and 12 and heights 7 to 10;
+  - categorical bars, vertical and horizontal, at widths 4, 6, 8 and 12 with
+    4, 8, 12, 16 and 24 bars, labelled `12,345`-style (`,.0f`) or `71.4`-style
+    (`.1f`);
+  - time axes in each fill's label format.
+- A Playwright script logged in, scrolled each chart into view and read the
+  DOM:
+  - the holder, title and header heights;
+  - the bar above the rows and the pager;
+  - each body row, and the rows that sit wholly inside every clipping
+    ancestor, which are the rows a reader sees without the inner scrollbar.
+- Value labels were read from each chart's ECharts instance: every label's
+  box, whether ECharts hid it, and which labels overlap. Screenshots of every
+  chart back the numbers.
+
+### Tables
+
+| | 4.1.4 | 5.0.0 | 6.1.0 | model |
+|---|---|---|---|---|
+| body row | 27.8 px | 27.8 px | 29.4 px | 0.74 units (29.6 px) |
+| title, column header and padding | 97.8 px | 97.8 px | 99.4 px | 2.5 units (100 px) |
+| bar above the rows (search box, or any `page_length`) | 39.1 px | 39.1 px | 41.1 px (33.1 px for a page size alone) | 1.05 units (42 px) |
+| pager, when there is more than one page | 42.9 px | 42.9 px | 57.9 px | 1.45 units (58 px) |
+
+A table with `page_length` draws the page-size bar even when every row is on
+one page; the pager appears only with a second page.
+
+Full rows visible at each height, from 6 to 20 units:
+
+| table | 4.1.4 and 5.0.0 | 6.1.0 |
+|---|---|---|
+| plain | 5 6 8 9 10 12 13 15 16 18 19 20 22 23 25 | 4 6 7 8 10 11 12 14 15 17 18 19 21 22 23 |
+| paged | 2 3 5 6 7 9 10 12 13 15 16 18 19 20 22 | 1 3 4 5 7 8 9 11 12 13 15 16 18 19 20 |
+| search box | 3 5 6 8 9 10 12 13 15 16 18 19 21 22 23 | 3 4 6 7 8 10 11 12 14 15 17 18 19 21 22 |
+| paged, with a search box | 2 3 5 6 7 9 10 12 13 15 16 18 19 20 22 | 1 2 4 5 6 8 9 10 12 13 15 16 17 19 20 |
+
+### Pivots
+
+The three releases drew pivots identically:
+
+- a body row is 25.8 px on average (19 rows: 490.1 px);
+- a header row is 26.3 px. A pivot with one metric draws a header row per
+  column dimension, plus two;
+- the card frame is 101 px;
+- `column_totals` pins a 28.8 px totals row over the bottom of the grid, so it
+  covers the last data row rather than adding one below it.
+
+| pivot | rows visible at 6 to 20 units |
+|---|---|
+| no column dimension | 3 4 6 7 9 11 12 14 15 17 18 19 (all 19 from 17 units) |
+| one column dimension | 2 3 5 6 8 10 11 13 14 16 17 19 (all 19 from 17 units) |
+| no column dimension, totals (data rows clear of the totals row) | 2 3 5 6 8 10 11 13 14 16 17 19 |
+| one column dimension, totals | 1 2 4 5 7 9 10 12 13 15 16 18 19 |
+
+A pivot whose columns outgrow the panel scrolls sideways. Headless Chromium
+draws overlay scrollbars, which take no room. With classic scrollbars the
+horizontal bar took 11 px; Windows draws 17 px, which was not measured here.
+
+The finding this explains: smoke called a 5-row cause by month pivot fine at
+height 8, and its last row was hidden. Five rows under three header rows leave
+11.6 px to spare at 8 units. A totals row (28.8 px) or a Windows scrollbar
+(17 px) takes that room. The 5 by 12-month pivot with a totals row hid its fifth
+row at 8 units on every release.
+
+### The model, old and new
+
+| constant (`chartwright/spec.py`) | before | now |
+|---|---|---|
+| `GRID_UNITS_PER_ROW` | 0.75 | 0.74 |
+| `GRID_HEADER_UNITS` | 3 | 2.5 |
+| `GRID_CONTROLS_UNITS` (search box or page size) | none | 1.05 |
+| `GRID_PAGER_UNITS` (`_PAGER_ROWS` = 1 row, 0.75 units, in `rules.py`) | 0.75 | 1.45 |
+| `PIVOT_UNITS_PER_ROW` | 0.75 | 0.65 |
+| pivot header (`PIVOT_FRAME_UNITS` + `PIVOT_HEADER_ROW_UNITS` per header row) | 3, or 4 with column dimensions | 2.55 + 0.66 × (column dimensions + 2) |
+| `PIVOT_TOTALS_UNITS` | none | 0.72 |
+| `PIVOT_HSCROLL_UNITS` (pivots with column dimensions) | none | 0.45 |
+
+Each constant is the largest of the three releases, rounded up, so the model
+never counts a row any release hides. On 6.1.0 it counts at most one row fewer
+than the screen shows: two on a pivot with column dimensions, for the
+scrollbar allowance. `tests/test_grid_calibration.py` holds the measured
+counts and checks both bounds.
+
+What the old model got wrong:
+
+- It knew nothing of the search box. A search box took a row from every
+  table, and no rule or fill counted it.
+- It counted the pager as one row (30 px). A paged table spends 82 to 91 px
+  on its page-size bar and pager.
+- The page fill therefore wrote pages the panel could not hold. At 8 units it
+  wrote 5 rows where 6.1.0 shows 4, and at 12 units 11 where 6.1.0 shows 9.
+- It gave pivots 120 px of header, or 160 px with column dimensions. They
+  draw 154 px and 180 px, so at 6, 7 and 9 units it counted a row the pivot
+  hid.
+- It ignored the totals row.
+
+### What changed
+
+- `grid_header(chart, rows)` in `spec.py` gives every consumer the same header
+  and row size for a table or pivot as configured. `size.table-window`,
+  `size.pivot-window`, `size.grid-fit`, smoke, `default.page-length` and
+  `default.search-box` all read it. `_PAGER_ROWS` is gone.
+- `default.page-length` writes the whole rows that fit beside the page-size
+  bar and the pager.
+- `default.search-box` stands down on a table that shows every row on one
+  page when the bar would push a row behind the scrollbar. A paged table
+  already draws the bar, so a search box there costs nothing. Filling a
+  search box can no longer hide a row.
+- Smoke counts a pivot's totals row and names it in the warning.
+- `default.value-labels` treats a horizontal bar separately (below).
+- `day_label_max_span_days` is 365, down from 366.
+
+Rendered check of the fills: tables at heights 6 to 20 filled by
+`advise --fix` and applied to all three releases:
+
+- from 8 to 20 units, every filled page fit with its page controls, and on
+  raw tables its search box, with no inner scrollbar on any release;
+- at 6 and 7 units no page fits beside a pager, so no page is filled and
+  `size.table-window` keeps its warning;
+- a 25-row table on one page took the search box at 23 units and showed all
+  25 rows. At 21 units the fill stood down.
+
+### Value labels on categorical bars
+
+Superset sets no overlap handling on bar value labels (no `labelLayout`), so
+ECharts never drops one: crowded labels overlap. A `12,345` label is 37.5 px
+wide on 6.1.0 and 38.7 px on 4.1.4 and 5.0.0. A `71.4` label is 25.4 px. Labels
+are 14.25 px tall on 4.1.4 and 5.0.0, and 12.25 px on 6.1.0.
+
+| vertical bars | overlapping, on every release |
+|---|---|
+| `12,345` labels | 4/12 with 12, 16 or 24 bars; 6/12 with 24 bars |
+| `71.4` labels | 4/12 with 16 or 24 bars |
+
+- At 6/12 with 12 bars, `12,345` labels clear each other by 12 px or more.
+- `value_label_max_bars` (12) and `value_label_min_width` (6/12) hold for
+  labels up to six characters. Wider labels such as `1,234,567` need more room
+  than the fill can see.
+- Narrower panels hold fewer labels. At 4/12, 8 bars cleared on every release;
+  the fill still waits for 6/12.
+
+Horizontal bars put each label beside its bar, so the panel's height spaces
+the labels, not its width:
+
+- no label was clipped at any width, 4/12 included;
+- 12 bars at 8 units overlapped on 4.1.4 and 5.0.0. 16 bars at 10 units and
+  24 bars at 14 units did not;
+- the chart spends 180 px on its title, legend and axis (5.0.0; 164 px on
+  4.1.4 and 6.1.0), and a bar needs 16.5 px to keep its label clear;
+- the fill now asks a horizontal bar for 4.5 units plus 0.4125 units a bar,
+  instead of a width. Before, it filled labels on any horizontal bar at 6/12
+  or wider, including the overlapping 12 bars at 8 units.
+
+### Time-axis labels
+
+`%b %Y` (monthly, 29 points), `%Y` (yearly) and `%d %b` (daily and weekly
+windows of 30 to 366 days) rendered legibly at 4/12, 6/12 and 12/12 on every
+release, with no overlapping labels. ECharts thins the ticks to fit.
+`day_label_max_span_days` dropped from 366 to 365. A window of 366 days without
+a 29 February starts and ends on the same day and month, so `%d %b` could name
+two dates. Superset's `Last year` spans 365 days and still takes the fill.
+
+### Not measured
+
+- Other viewports and themes. The constants are pixel sizes, so a
+  deployment with a larger font or denser theme needs its own measurement.
+- Windows scrollbars. The 17 px allowance comes from the platform default,
+  not from a rendered measurement.
+- Pivot subtotal rows (`row_subtotals`), transposed pivots, metrics laid out
+  as rows, and wrapped header text. They draw extra rows the model does not
+  count.
+- Wide raw tables that scroll sideways. The model reserves no scrollbar room
+  for tables.
+- Vertical bars at 5/12, and labels longer than six characters.
+- The other thresholds this page names: axis heights, pie and heatmap
+  geometry, the horizontal-bar height per bar in `size.hbar-window`, and
+  `vbar_max_categories`.
+
+`search_min_rows` (20) and `page_min_rows` (3) are usability judgement, not
+pixel facts, and stay so. On page sizes, Nielsen recommends that "it's usually
+better to offer a single default number — such as 10 or 20" ("Users'
+Pagination Preferences and 'View All'", NN/g, 28 April 2013). A search box past
+20 rows follows that scale.
