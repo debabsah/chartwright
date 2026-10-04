@@ -137,6 +137,7 @@ class Standards:
     resolved: dict[str, Standard]
     waivers: list = field(default_factory=list)       # design/waivers.py Waiver
     waivers_file: Path | None = None
+    waiver_problems: dict = field(default_factory=dict)  # waiver index -> why it names nothing
     # Load-time warnings ({"code", "detail"}) that fail nothing: a file whose min_superset
     # holds back content a lock covers, so that lock is suspended on older instances.
     warnings: list = field(default_factory=list)
@@ -479,7 +480,15 @@ def load_standards(directory: Path) -> Standards:
         raise StandardsError("standards_dir",
                              f"{display(directory)} holds no .yaml standards files")
     files: dict[str, StandardFile] = {}
+    from .waivers import WAIVERS_FILES
+
     for p in paths:
+        if p.name in WAIVERS_FILES:   # the top one is skipped; this one is in a subfolder
+            raise StandardsError(
+                "waivers_file",
+                f"{display(p)}: a waivers file belongs at the top of the standards folder "
+                f"({display(directory / p.name)}), where it is read as waivers; in a "
+                f"subfolder it would be read as a standard")
         sf = parse_file(p)
         if sf.name in files:
             raise StandardsError(
@@ -500,7 +509,49 @@ def load_standards(directory: Path) -> Standards:
     waivers = parse_waivers(wpath, files, display(wpath)) if wpath else []
     return Standards(directory, files, defaults[0] if defaults else None, resolved,
                      waivers=waivers, waivers_file=wpath,
-                     warnings=floor_lock_warnings(files, resolved))
+                     warnings=floor_lock_warnings(files, resolved),
+                     waiver_problems=waiver_problems(waivers, files, resolved))
+
+
+def waiver_problems(waivers: list, files: dict, resolved: dict) -> dict[int, str]:
+    """Waivers that name nothing the standards have, by index, with why: a row, CSS block,
+    setting or label no standards file writes, or a rule no standard locks. They load (a
+    standard may gain the item later) but can lift nothing, so the report lists them as
+    unmatched and every check warns. A chart's number format depends on the spec, so it
+    isn't judged here."""
+    from ..spec import standard_item_kind
+
+    content_locked = any(std.content_locks for std in resolved.values())
+    locked_rules = {r for std in resolved.values() for r in std.locked_rules}
+    out: dict[int, str] = {}
+    for w in waivers:
+        if w.kind == "rule":
+            if w.rule == "standard.content-locked" and content_locked:
+                continue
+            if w.rule not in locked_rules:
+                out[w.index] = f"no standard locks {w.rule}, so the waiver lifts nothing"
+            continue
+        kind, m = standard_item_kind(w.rule)
+        if kind == "row":
+            slot, layer, cond, value, n = m.groups()
+            content = files[layer].content
+            rows = (content.get("header_by_lifecycle" if slot == "header"
+                                else "footer_by_classification", {}).get(value, [])
+                    if cond else content.get(slot, []))
+            if int(n) >= len(rows):
+                where = f"{cond}={value} " if cond else ""
+                out[w.index] = (f"the {layer} standard has no {slot} row {n} {where}(it has "
+                                f"{len(rows)}), so the waiver names nothing")
+        elif kind == "css":
+            if "css" not in files[m.group(1)].content:
+                out[w.index] = f"the {m.group(1)} standard writes no CSS block"
+        elif kind == "scalar":
+            if not any(m.group(1) in f.content for f in files.values()):
+                out[w.index] = f"no standards file sets content.{m.group(1)}"
+        elif kind == "label":
+            if not any(m.group(1) in f.content.get("label_colors", {}) for f in files.values()):
+                out[w.index] = f"no standards file sets a colour for label {m.group(1)!r}"
+    return out
 
 
 def floor_lock_warnings(files: dict, resolved: dict) -> list[dict]:

@@ -268,7 +268,8 @@ def pick(waivers: list[Waiver], rule: str, item: str | None, lock_layer: str | N
 
 
 def file_summary(waivers: list[Waiver], as_of: dt.date, matched: dict[int, list[str]],
-                 expiring_within: int = EXPIRING_DAYS) -> dict:
+                 expiring_within: int = EXPIRING_DAYS,
+                 problems: dict[int, str] | None = None) -> dict:
     """`standards check --report`'s waivers block: every waiver in the file, counted, with
     the expired ones, the ones expiring within `expiring_within` days, the ones naming no
     spec the run read, and the ones that matched more than one spec (`matched`: waiver
@@ -277,8 +278,10 @@ def file_summary(waivers: list[Waiver], as_of: dt.date, matched: dict[int, list[
     expired = [w.as_dict(as_of) for w in waivers if w.expired(as_of)]
     soon = [w.as_dict(as_of) for w in waivers
             if not w.expired(as_of) and w.days_left(as_of) <= expiring_within]
-    unmatched = [{**w.as_dict(as_of), "reason": "names no spec this run read"}
-                 for w in waivers if not matched.get(w.index)]
+    problems = problems or {}
+    unmatched = [{**w.as_dict(as_of),
+                  "reason": problems.get(w.index) or "names no spec this run read"}
+                 for w in waivers if w.index in problems or not matched.get(w.index)]
     shared = [{**w.as_dict(as_of), "specs": sorted(matched[w.index])}
               for w in waivers if len(matched.get(w.index, ())) > 1]
     by_owner: dict[str, int] = {}
@@ -294,10 +297,14 @@ def file_summary(waivers: list[Waiver], as_of: dt.date, matched: dict[int, list[
             "by_rule": dict(sorted(by_rule.items()))}
 
 
-def past_dated(waivers: list[Waiver], as_of: dt.date) -> list[dict]:
-    """Warnings for waivers already expired: an entry written with a past date waives
-    nothing in the checks that enforce expiry."""
-    return [{"code": "waiver_expired", "waiver": w.index,
+def past_dated(waivers: list[Waiver], as_of: dt.date,
+               problems: dict[int, str] | None = None) -> list[dict]:
+    """Warnings for waivers already expired (an entry written with a past date waives
+    nothing in the checks that enforce expiry) and for waivers naming nothing the
+    standards have (`problems`)."""
+    return [{"code": "waiver_names_nothing", "waiver": i,
+             "detail": f"waivers[{i}]: {why}"} for i, why in sorted((problems or {}).items())] + [
+            {"code": "waiver_expired", "waiver": w.index,
              "detail": f"waivers[{w.index}] ({w.target}, {w.rule}) expired on "
                        f"{w.expires.isoformat()}; standards check fails for that dashboard "
                        f"until it is renewed or removed"}

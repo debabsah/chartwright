@@ -748,7 +748,7 @@ def _standards_cmd(args) -> None:
                 "file": st.display(standards.waivers_file),
                 **W.file_summary(standards.waivers, source.today(), matched,
                                  args.expiring_within if args.expiring_within is not None
-                                 else W.EXPIRING_DAYS)}
+                                 else W.EXPIRING_DAYS, standards.waiver_problems)}
     else:
         passed = sum(1 for e in entries if e["ok"])
         payload = {"stage": "standards", "ok": passed == len(entries), "strict": args.strict,
@@ -760,7 +760,7 @@ def _standards_cmd(args) -> None:
     if standards.waivers:
         from .design.waivers import past_dated
 
-        late = past_dated(standards.waivers, source.today())
+        late = past_dated(standards.waivers, source.today(), standards.waiver_problems)
         if late:
             # Every past-dated waiver in the file, checked spec or not: a warning, never a
             # failure; only the checked specs' own expired waivers fail (their findings).

@@ -517,3 +517,39 @@ def test_dates_are_yyyy_mm_dd_exactly(tmp_path, capsys, text):
     repo2 = make(tmp_path / "b", waiver(expires=text))
     with pytest.raises(StandardsError, match="must be a date"):
         load_standards(repo2 / "standards")
+
+
+# -- waivers that name nothing, and a waivers file in the wrong place ------------------
+
+
+@pytest.mark.parametrize("rule, why", [
+    ("layout.footer[org][9]", "the org standard has no footer row 9 (it has 1)"),
+    ("layout.footer[org][classification=confidential][3]", "no footer row 3"),
+    ("dashboard.theme", "no standards file sets content.theme"),
+    ("dashboard.label_colors[Profit]", "no standards file sets a colour for label 'Profit'"),
+    ("size.min-width", "no standard locks size.min-width"),
+])
+def test_a_waiver_naming_nothing_is_reported_as_unmatched_with_why(tmp_path, capsys, rule, why):
+    """layout.footer[org][9] used to load and sit there silently."""
+    # Beside it, waivers that name real things: never reported.
+    repo = make(tmp_path, waiver(rule=rule), waiver(rule="dashboard.css[finance]"),
+                waiver(rule="standard.content-locked"))
+    path = applied(capsys, repo, drop_footer=False)
+    code, out = check(capsys, str(path), "--report", "--as-of", "2026-10-04")
+    reasons = {u["rule"]: u["reason"] for u in out["waivers"]["unmatched"]}
+    assert why in reasons[rule]
+    assert "dashboard.css[finance]" not in reasons and "standard.content-locked" not in reasons
+    assert [w["detail"] for w in out["waiver_warnings"]
+            if w["code"] == "waiver_names_nothing"] == [f"waivers[0]: {reasons[rule]}"]
+
+
+def test_a_waivers_file_in_a_subfolder_says_where_it_belongs(tmp_path, capsys):
+    """standards/teams/waivers.yaml used to fail as a standard with unknown keys
+    ['waivers'], which pointed nowhere useful."""
+    repo = make_repo(tmp_path / "repo", {"org.yaml": ORG, "teams/finance.yaml": FINANCE,
+                                         "teams/waivers.yaml": waivers_yaml(waiver())}).parent
+    with pytest.raises(StandardsError) as e:
+        load_standards(repo / "standards")
+    assert e.value.code == "waivers_file"
+    assert "belongs at the top of the standards folder" in str(e.value)
+    assert "standards/waivers.yaml" in str(e.value) and "unknown keys" not in str(e.value)

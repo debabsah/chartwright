@@ -1980,7 +1980,14 @@ A malformed entry, an unknown key, a missing owner, reason or expiry, a rule
 that is neither a rule id nor a content item, a layer no standards file names,
 `standard.waiver-expired` as the rule, and a second entry for the same
 dashboard, rule and layer are errors naming the entry, and fail every run that
-reads the folder, as a broken standards file does.
+reads the folder, as a broken standards file does. So is a `waivers.yaml` in a
+subfolder, whose error says the file belongs at the top of the standards
+folder. Dates are `YYYY-MM-DD` exactly. An entry that names something no
+standards file has (a footer row past the last one, a CSS block, setting or
+label colour no file writes, a rule no standard locks) loads, since a standard
+may gain it later, but lifts nothing: every `standards check` warns about it
+under `waiver_warnings` (`waiver_names_nothing`), and the report lists it as
+unmatched with the reason.
 
 **The trust boundary.** A spec's path belongs to the repository, where
 CODEOWNERS and review decide who may move or add a file; its slug is a field
@@ -2029,8 +2036,9 @@ spec or not, without failing.
 
 `standards check --report` adds a `waivers` block for a scheduled job: every
 entry counted (`total`, `active`), the `expired` ones, those `expiring` within
-30 days (`--expiring-within DAYS`), those naming no spec the run read
-(`unmatched`), and counts `by_owner` and `by_rule`. `--as-of DATE` (on
+30 days (`--expiring-within DAYS`), those naming no spec the run read or
+nothing the standards have (`unmatched`, each with its `reason`), and counts
+`by_owner` and `by_rule`. `--as-of DATE` (on
 `standards check`, `standards apply`, `advise`, `check`, `apply`, and `as_of`
 on the MCP tools) reads expiry as of that day, so a run repeats exactly.
 
