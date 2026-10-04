@@ -341,7 +341,9 @@ class BigNumberTrendChart(_ChartBase):
                     "month over month",
     )
     compare_suffix: str | None = Field(
-        default=None, description='Text after the percentage change, e.g. "vs last month"')
+        default=None,
+        description='Text after the percentage change, e.g. "vs last month". Leave it unset '
+                    "unless asked: `advise --fix` fills it from the grain and compare_lag")
     subtitle: str | None = Field(
         default=None,
         description="A line of context under the number (Superset 6.1.0+; older releases "
@@ -407,7 +409,8 @@ class _AxisChart(_ChartBase):
     x_label_format: str | None = Field(
         default=None,
         description="d3 time format for the labels of a time x axis, e.g. '%b' (Sep); "
-                    "omit for Superset's adaptive format",
+                    "omit for Superset's adaptive format. On a timeseries chart, leave it "
+                    "unset unless asked: `advise --fix` fills one from the time grain",
     )
     x_label_every: bool = Field(
         default=False,
@@ -695,18 +698,23 @@ class TableChart(_ChartBase):
     cell_bars: bool | None = Field(
         default=None,
         description="Bars behind numeric cells (Superset draws them by default; false for ids, "
-                    "years or a column a colour rule already speaks for)",
+                    "years or a column a colour rule already speaks for). `advise --fix` "
+                    "fills false on a raw table with id, code, year or zip columns",
     )
     date_format: str | None = Field(default=None, description="strftime for date columns, e.g. '%Y-%m-%d'")
     page_length: int | None = Field(
         default=None, ge=0,
         description="Rows per page, with a pager under the table; 0 shows every row on one "
                     "page. Omitted, Superset pages at 200 rows only once the table passes "
-                    "5,000 cells",
+                    "5,000 cells. Leave it unset unless asked: `advise --fix` fills the rows "
+                    "that fit the panel when row_limit outgrows it",
     )
     show_totals: bool = Field(
         default=False, description="A totals row under the table (aggregate mode)")
-    search_box: bool = Field(default=False, description="A search box over the table's rows")
+    search_box: bool = Field(
+        default=False,
+        description="A search box over the table's rows. `advise --fix` fills true on a raw "
+                    "table with a row_limit above 20 (search_min_rows in design.yaml)")
     column_align: dict[str, Literal["left", "center", "right"]] = Field(
         default_factory=dict,
         description="Text alignment per label, e.g. {\"Region\": \"center\"}; Superset's "
@@ -1415,6 +1423,12 @@ class DashboardMeta(BaseModel):
         return self
 
 
+# The chart fields the design brain may fill with a design default (`advise --fix`,
+# docs/DESIGN-BRAIN.md section 16). design.filled may list only these.
+BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "number_format", "page_length",
+                         "search_box", "show_legend", "show_value", "x_label_format")
+
+
 class DesignConfig(BaseModel):
     """Per-dashboard design-brain settings (see docs/DESIGN-BRAIN.md).
 
@@ -1429,6 +1443,25 @@ class DesignConfig(BaseModel):
         default=None, description="Design preset; CLI --audience overrides")
     ignore: list[str] = Field(
         default_factory=list, description="Design rule ids to suppress")
+    filled: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Written by `chartwright advise --fix`: per chart name, the fields it "
+                    "filled with a design default. It keeps those fields up to date and "
+                    "never touches a field not listed here. Remove a field from its list "
+                    "to keep the value as yours. Compile ignores this block.",
+    )
+
+    @field_validator("filled")
+    @classmethod
+    def _filled_fields(cls, filled: dict[str, list[str]]) -> dict[str, list[str]]:
+        for chart, names in filled.items():
+            bad = sorted(set(names) - set(BRAIN_FILLABLE_FIELDS))
+            if bad:
+                raise ValueError(f"design.filled[{chart!r}]: {bad} are not fields the design "
+                                 f"brain fills (it fills {list(BRAIN_FILLABLE_FIELDS)})")
+            if len(set(names)) != len(names):
+                raise ValueError(f"design.filled[{chart!r}] lists a field twice")
+        return filled
 
 
 class Layout(_SketchHolder):
@@ -1498,6 +1531,21 @@ class DashboardSpec(BaseModel):
             seen.add(c.name)
         return charts
 
+    @model_validator(mode="after")
+    def _filled_names_charts(self) -> "DashboardSpec":
+        """design.filled names real charts and fields that chart has: a renamed chart
+        must carry its entry along, or the brain would lose track of its own fills."""
+        by_name = {c.name: c for c in self.charts}
+        for name, fields in (self.design.filled if self.design else {}).items():
+            chart = by_name.get(name)
+            if chart is None:
+                raise ValueError(f"design.filled names chart {name!r}, which is not in charts; "
+                                 "rename its entry with the chart, or delete the entry")
+            foreign = [f for f in fields if f not in type(chart).model_fields]
+            if foreign:
+                raise ValueError(f"design.filled[{name!r}]: a {chart.type} chart has no "
+                                 f"{foreign}; delete them from the list")
+        return self
     @field_validator("filters")
     @classmethod
     def _unique_filter_names(cls, filters: list[DashboardFilter]) -> list[DashboardFilter]:

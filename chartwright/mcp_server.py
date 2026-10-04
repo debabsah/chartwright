@@ -239,9 +239,13 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "") -> str:
 
 @mcp.tool()
 def fix_spec(spec_json: str, audience: str = "") -> str:
-    """Apply the design brain's safe, presentation-only fixes (heights, bar
-    orientation) to a spec. Returns {spec, advice}: the patched spec JSON and
-    the advice report with .fixed listing what changed. Offline."""
+    """Apply the design brain's safe, presentation-only fixes to a spec: repairs
+    (heights, bar orientation), then design defaults it fills into fields left
+    unset (time-axis label format, count number format, table paging, ...),
+    recorded in design.filled. Returns {spec, advice}: the patched spec JSON and
+    the advice report; each .fixed entry has kind "fill" or "repair" and a why.
+    Run it before build_dashboard; keep the returned spec and edit THAT, never a
+    regenerated one. Offline."""
     bad = _bad_audience(audience)
     if bad:
         return bad

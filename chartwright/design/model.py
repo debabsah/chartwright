@@ -18,7 +18,10 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # is told -- a new warn-severity rule can newly block a `--design strict`
 # pipeline, so consumers keying on this get an honest signal.
 # "4" = narrative.color-scheme, a new warn-severity rule (same reason).
-DESIGN_BRAIN_VERSION = "4"
+# "5" = the default.* family: info-severity fills that `advise --fix` writes into
+# the spec, tracked in design.filled (sec.16). New fixable findings change what
+# `--fix` writes, so consumers keying on this get the signal.
+DESIGN_BRAIN_VERSION = "5"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
@@ -44,6 +47,14 @@ class Finding:
     # human-polished (fractional, absorb-written) height. Width and data
     # complaints survive polish -- absorb can never write widths.
     height_driven: bool = False
+    # Why the fix is right, one line, carried into the `fixed` record. A fill sets it;
+    # a repair's reason is its detail.
+    why: str | None = None
+
+    @property
+    def kind(self) -> str:
+        """'fill' for a design default (the default.* family), 'repair' otherwise."""
+        return "fill" if self.rule.startswith("default.") else "repair"
 
     @property
     def key(self) -> str:
@@ -61,6 +72,7 @@ class Finding:
         d = asdict(self)
         d.pop("fix")
         d.pop("height_driven")
+        d.pop("why")
         d["fixable"] = self.fix is not None
         return d
 
@@ -70,7 +82,7 @@ class AdviceReport:
     ok: bool                 # False iff any error-severity finding
     audience: str
     findings: list[Finding] = field(default_factory=list)
-    fixed: list[str] = field(default_factory=list)
+    fixed: list[dict] = field(default_factory=list)
     ignored: list[str] = field(default_factory=list)
 
     @property
@@ -203,6 +215,22 @@ class RuleContext:
         chart to taste in the UI. Sizing rules stay silent on it."""
         h = self.charts[name].height
         return isinstance(h, float) and not float(h).is_integer()
+
+    def written(self, chart, field: str) -> bool:
+        """The spec holds a value for this field (validation's model_fields_set: an
+        omitted field is unset even where Superset's own default fills it in, and a
+        written default counts as written). An explicit null is unset, as compile
+        reads it."""
+        return field in chart.model_fields_set and getattr(chart, field) is not None
+
+    def filled(self, name: str) -> set[str]:
+        """Fields of this chart the brain filled itself (design.filled)."""
+        design = self.spec.design
+        return set(design.filled.get(name, ())) if design else set()
+
+    def authored(self, chart, field: str) -> bool:
+        """Written and not the brain's fill: the author's value, never touched."""
+        return self.written(chart, field) and field not in self.filled(chart.name)
 
     def dataset_for(self, chart) -> ResolvedDataset | None:
         if self.resolution is None:

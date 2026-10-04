@@ -249,6 +249,14 @@ fails when it drifts.
 | `data.row-limit-intent` | info | - | - | 1 | row limits doing design work should be deliberate, not defaults |
 | `data.top-n-sort` | warn | - | - | 2 | a limit without an order is a sample, not a ranking |
 | `data.unwindowed-history` | warn | - | - | 3 | timeseries charts with no way to bound the window draw ALL history at their grain |
+| `default.cell-bars` | info | ✔ | - | 5 | a raw table with id, code, year or zip columns draws no cell bars (a bar behind an identifier reads as an amount) |
+| `default.compare-suffix` | info | ✔ | - | 5 | a trendline KPI's change says what it compares against ('vs previous month') |
+| `default.count-format` | info | ✔ | - | 5 | counts read as whole numbers with thousands separators (',.0f') |
+| `default.page-length` | info | ✔ | - | 5 | a table whose row_limit outgrows its panel pages by what fits, one row left for the pager |
+| `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows gets a search box (threshold unsourced) |
+| `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
+| `default.value-labels` | info | ✔ | - | 5 | few bars on a wide panel carry their values (<= 12 bars, >= 6/12 wide; thresholds unsourced) |
+| `default.x-label-format` | info | ✔ | - | 5 | a time axis labels its points in its grain's own format ('Sep 2026' by month); day and week labels only over a year or less |
 | `filters.count` | warn | - | - | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
 | `filters.duplicate-column` | info | - | - | 2 | two filters on the same column fight each other |
 | `filters.range-default` | info | - | - | 2 | a range slider with no default bounds spans the whole domain |

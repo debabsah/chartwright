@@ -153,6 +153,17 @@ def _table_page(c) -> int | None:
     return min(c.page_length, c.row_limit) if c.row_limit else c.page_length
 
 
+def _brain_page(ctx: RuleContext, c) -> bool:
+    """The page is default.page-length's own fill (listed in design.filled, a page it
+    could write). That page follows the height, so a sizing rule must not raise the
+    height to fit a stale one: the fill phase refreshes it to the panel instead. The
+    rule still REPORTS a page that doesn't fit, without a height fix: brain output must
+    never silence a rule (the v2 echo chamber), and a stale page whose fill is ignored
+    would otherwise pass unseen."""
+    return ("page_length" in ctx.filled(c.name) and isinstance(c.page_length, int)
+            and c.page_length >= 1)
+
+
 @rule("size.table-window", "warn", "a table's height should show a meaningful share of its row_limit")
 def table_window(ctx: RuleContext):
     for c in ctx.spec.charts:
@@ -177,13 +188,16 @@ def table_window(ctx: RuleContext):
             want = ctx.params.table_visible_ratio * c.row_limit
             shown = f"{fits} of its {c.row_limit}"
         if visible < want:
+            brain = page is not None and _brain_page(ctx, c)
             yield Finding(
                 "size.table-window", "warn", c.name, ctx.where(c.name),
-                f"{shown} (a scroll dungeon); raise height to "
-                f"~{math.ceil(grid_units_for_rows(want))} or "
-                + ("lower page_length" if page is not None else "lower row_limit"),
+                f"{shown} (a scroll dungeon); "
+                + ("the page is a design default: advise --fix refits it to the panel"
+                   if brain else
+                   f"raise height to ~{math.ceil(grid_units_for_rows(want))} or "
+                   + ("lower page_length" if page is not None else "lower row_limit")),
                 fix=ctx.fix_height(c, math.ceil(grid_units_for_rows(want)))
-                if grid_units_for_rows(want) <= 20 else None,
+                if grid_units_for_rows(want) <= 20 and not brain else None,
                 height_driven=True,
             )
 
@@ -259,12 +273,14 @@ def grid_fit(ctx: RuleContext):
         h = ctx.height(c.name)
         if needed <= h:
             continue
+        # A brain-filled page follows the height: report, but leave the fix to the fill.
+        brain = page is not None and _brain_page(ctx, c)
         yield Finding(
             "size.grid-fit", "warn", c.name, ctx.where(c.name),
             f"{dim!r} yields ~{n} rendered rows needing ~{needed} units; height {h:g} "
             f"hides the tail behind an inner scrollbar -- and row counts grow with the "
             f"data, so this only gets worse",
-            fix=ctx.fix_height(c, needed) if needed <= 20 else None,
+            fix=ctx.fix_height(c, needed) if needed <= 20 and not brain else None,
             height_driven=True,
         )
 
@@ -1011,8 +1027,13 @@ def title_style(ctx: RuleContext):
 
 @rule("narrative.big-number-format", "info", "hero numbers deserve a number format")
 def big_number_format(ctx: RuleContext):
+    from .defaults import FILLS  # function-level: defaults imports this module
+
+    counts = FILLS["default.count-format"]
     for c in ctx.spec.charts:
         if c.type in KPI_TYPES and c.number_format is None:
+            if counts.decide(ctx, c)[0] is not None:
+                continue  # default.count-format offers this remedy with a fix; one finding
             yield Finding(
                 "narrative.big-number-format", "info", c.name, ctx.where(c.name),
                 "no number_format: raw float precision on a hero number; ',.0f' or '.3s' read better",

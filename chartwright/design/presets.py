@@ -35,6 +35,14 @@ class Params:
     pie_max_slices: int
     series_max: int              # lines per timeseries
     max_filter_selects: int = 6  # select pickers in the native filter bar
+    # Thresholds of the design defaults (default.* fills, docs/DESIGN-BRAIN.md sec.16).
+    # Unsourced judgement like the rest of this table until a live calibration
+    # measures them; the same for every audience until one is shown to differ.
+    search_min_rows: int = 20          # raw table: row_limit above this gets a search box
+    value_label_max_bars: int = 12     # bar: values on the bars up to this many bars
+    value_label_min_width: int = 6     # ... on a panel at least this many twelfths wide
+    page_min_rows: int = 3             # table: a smaller page than this isn't worth paging
+    day_label_max_span_days: int = 366  # '%d %b' day labels drop the year past this span
     # chart type -> height (spec units); calibrate/overlay feed this,
     # size-rule autofixes target it.
     recommended_heights: dict[str, float] = field(default_factory=dict)

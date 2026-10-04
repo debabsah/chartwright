@@ -8,6 +8,8 @@ touched (the ownership guard would refuse the original slug anyway).
 
 Structural findings (re-composition, chart-type swaps) stay findings: the
 spec author acts on them between redesign and apply. Advice, not authority.
+Design defaults (the default.* fills) are not written here: only advise --fix
+and fix_spec write them, so `next` names the command instead.
 """
 
 from __future__ import annotations
@@ -32,9 +34,10 @@ def redesign_spec(spec_data: dict, losses: list, *, owned: bool,
 
     new_data, report = advise_and_fix(
         data, audience=audience, ignore=ignore,
-        resolution=resolution, prober=prober, overlay=overlay)
+        resolution=resolution, prober=prober, overlay=overlay, fills=False)
 
     remaining = [f for f in report.findings if f.severity != "info"]
+    fills = [f for f in report.findings if f.kind == "fill" and f.fix]
     payload = {
         "stage": "redesign",
         "ok": report.ok,
@@ -48,6 +51,8 @@ def redesign_spec(spec_data: dict, losses: list, *, owned: bool,
             + (f"{len(report.fixed)} geometry fix(es) applied. " if report.fixed else "")
             + (f"{len(remaining)} structural finding(s) remain: edit the spec for them, then apply."
                if remaining else "no structural findings: review the spec, then apply.")
+            + (f" `chartwright advise --fix` on the written spec fills {len(fills)} design "
+               "default(s) first." if fills else "")
         ),
     }
     return new_data, payload
