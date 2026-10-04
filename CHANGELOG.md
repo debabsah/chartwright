@@ -3,6 +3,32 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
+## Unreleased
+
+Standards gain recorded exceptions, a minimum Superset release per file, a lockable classification and a Superset theme, and a browser check that locked text is visible on the deployed dashboard.
+
+### Upgrading from 0.3
+
+- A spec with `dashboard.theme` is refused by chartwright 0.3.0 and earlier (`extra_forbidden`); upgrade CI before committing one.
+- `check`, `apply` and `plan` now hold back a standard's content that the instance's release can't take instead of refusing the spec, and list it under `held`. They read the standards folder for this even with `--design off`; `plan` takes `--standards`.
+- `standards/waivers.yaml` is no longer read as a standards file. A repository that kept a standard in a file of that name at the top of the folder must rename it.
+- Printed paths use forward slashes everywhere, including `compile`'s and `redesign`'s `output`, `advise --fix`'s `written` and `apply`'s `backup`.
+
+### Added
+
+- Waivers: `standards/waivers.yaml` lists the dashboards that may deviate from a lock, each with an owner, a reason and an expiry (docs/DESIGN-BRAIN.md §18, "Waivers").
+  - An entry names a dashboard by slug (or spec path), a locked rule or content item (`layout.footer[org][0]`, `dashboard.classification`), and optionally the layer whose lock it covers.
+  - The finding passes and is listed under `waived` with who, why and until when; `standards apply` leaves the item as the dashboard has it. `design.ignore` still can't silence a lock.
+  - An expired waiver fails `standards check` and `advise` (new rule `standard.waiver-expired`) for the specs checked, and only warns in `standards apply`, `check`, `apply` and `plan`; `restore` never reads the file. `--as-of DATE` reads expiry as of a day.
+  - `standards check --report` lists expired, expiring (`--expiring-within`, 30 days by default) and unmatched waivers; every `standards check` lists past-dated entries under `waiver_warnings`.
+  - Malformed entries, a missing owner, reason or expiry, unknown rules, items or layers, and duplicates are errors naming the entry.
+- `min_superset` in a standards file: the release its content is for. `check`, `apply` and `plan`, on the CLI and through MCP, hold back for each instance the standard's content its release can't take (a later `min_superset`, or a theme before 6.0) and report it under `held`; an author's own field is never held. `standards check --superset-version` shows the same offline.
+- `dashboard.theme`: a Superset 6.0+ theme by name, resolved on each instance at the resolve stage (`theme_not_found`, `theme_ambiguous`, `theme_lookup_failed`), compiled as the target's `theme_id`, read back by decompile and compared by `plan` when the spec names one. 4.1.4 and 5.0.0 refuse it. Omitted, the theme chosen in Superset stays.
+- Content slots `theme` and `classification`. A standard can assign a classification and lock it: changing or dropping it is a `standard.content-locked` error, and its classification rows follow the standard's value.
+- `chartwright standards verify-visible <spec> --profile P`: opens the deployed dashboard in headless Chromium and checks every locked header and footer line is on the page and readable (rendered, sized, on the page, not clipped, transparent, tiny or covered, and with enough contrast); exits 1 naming each hidden line. Needs the optional extra `pip install 'chartwright[visual]'` and `playwright install chromium`.
+- MCP: `as_of` on `standards_check`, `standards_apply`, `advise_spec`, `check_spec` and `build_dashboard`; `superset_version` on `standards_check`; `held` on `check_spec`, `build_dashboard` and `plan_dashboard`. The tool count is unchanged.
+- `standards show` names each chain file's `min_superset`.
+
 ## 0.3.0 (2026-10-04)
 
 Most of what Superset lets you set on a dashboard or chart can now be written in a spec. The design brain fills sensible display defaults into the spec. Standards let an org layer its dashboard rules and content from org to team. The design brain is version 6.

@@ -102,6 +102,9 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     findings: list[Finding] = []
     ignored: list[str] = []
     polished: list[str] = []
+    waived: list[dict] = []
+    warnings: list[str] = []
+    waivers = standard.waivers if standard is not None else []
     for r in RULES.values():
         if r.data_aware and resolution is None:
             continue
@@ -119,6 +122,9 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
             if standard is not None:
                 f.layer = set_by.get(f.rule, "rulebook")
                 f.locked = f.rule in locked
+            # A waiver (standards/waivers.yaml) is the one way past a lock.
+            if f.locked and waivers and _waive(f, standard, waived, warnings):
+                continue
             # Explicit intent first: an ignore entry is ALWAYS visible in
             # `ignored`, even when the polish skip below would also apply.
             if _suppressed_by(suppressed, f):
@@ -159,6 +165,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
         ignored = [k for k in ignored if k.endswith(f"@{chart}")]
         polished = [k for k in polished if k.endswith(f"@{chart}")]
         changed = [c for c in changed if c["finding"].endswith(f"@{chart}")]
+        waived = [w for w in waived if w["finding"].endswith(f"@{chart}")]
     findings.sort(key=lambda f: (SEVERITY_RANK[f.severity], f.rule, f.chart or ""))
     return AdviceReport(
         ok=not any(f.severity == "error" for f in findings),
@@ -166,7 +173,38 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
         unmatched_ignores=unmatched, polished=sorted(set(polished)),
         overlay=_overlay_report(overlay, aud, strict, changed, standard),
         standard=report_block(standard, refused) if standard else None,
+        waived=sorted(waived, key=lambda w: w["finding"]), warnings=warnings,
     )
+
+
+def _waive(f: Finding, standard: Standard, waived: list[dict], warnings: list[str]) -> bool:
+    """Let a locked finding pass when a waiver covers it, recording who, why and until
+    when. An expired waiver still lets it pass, with a warning, except where the run
+    enforces expiry (standards check, advise): there the finding stays, and
+    standard.waiver-expired reports the waiver."""
+    from .waivers import EXPIRED_RULE, pick
+
+    if f.rule == EXPIRED_RULE:
+        return False
+    item = f.where if f.rule == "standard.content-locked" else None
+    lock_layer = f.lock_layer or standard.locked_rules.get(f.rule)
+    w = pick(standard.waivers, f.rule, item, lock_layer, standard.as_of)
+    if w is None:
+        return False
+    expired = w.expired(standard.as_of)
+    if expired and standard.enforce_expiry:
+        return False
+    key = f.key if f.chart else f.scope_key
+    # The waiver's fields, then the finding's: its rule is the finding's (a waiver
+    # naming a content item has that item as the finding's where).
+    waived.append({**w.as_dict(standard.as_of), "waiver": w.index, "finding": key,
+                   "rule": f.rule, "where": f.where, "severity": f.severity})
+    if expired:
+        warnings.append(
+            f"waivers[{w.index}] ({w.target}, {w.rule}) expired on {w.expires.isoformat()} "
+            f"and still lets {key} pass here; standards check fails for this dashboard until "
+            f"the waiver is renewed or removed (owner: {w.owner})")
+    return True
 
 
 def _overlay_report(overlay: Overlay, audience: str, strict: bool,
@@ -262,13 +300,16 @@ def advise_and_fix(spec_data: dict, *, audience: str | None = None,
 
 def advice_payload(spec: DashboardSpec, resolution: Resolution | None = None, *,
                    audience: str | None = None, strict: bool = False,
-                   standards: StandardsSource | None = None) -> dict:
+                   standards: StandardsSource | None = None, spec_path=None) -> dict:
     """The advice block check and apply (CLI and MCP alike) carry. It never breaks the
     pipeline: a bad overlay, or a standard that can't be resolved from `standards`,
     degrades to an error note inside the block, not a crash. Under a strict gate that
-    note BLOCKS (see gate_block); otherwise it is reported and the pipeline continues."""
+    note BLOCKS (see gate_block); otherwise it is reported and the pipeline continues.
+    A deploy never enforces waiver expiry: an expired waiver still applies, with a
+    warning in the block (the decision record's #5)."""
     try:
-        standard = standards.standard_for(spec) if standards is not None else None
+        standard = (standards.standard_for(spec, spec_path=spec_path)
+                    if standards is not None else None)
         return advise(spec, audience=audience, resolution=resolution, strict=strict,
                       standard=standard).payload()
     except Exception as e:  # noqa: BLE001 - advice must NEVER break check/apply

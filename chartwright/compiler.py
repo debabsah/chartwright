@@ -1164,6 +1164,15 @@ def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
     if d.tags is not None:
         # ImportV1DashboardSchema has `tags` from 6.0.0 (docs/CONTRACTS.md).
         out["tags"] = list(d.tags)
+    if d.theme is not None:
+        # The theme resolved by name on the target (resolver._resolve_theme), as the id
+        # ImportV1DashboardSchema takes from 6.0.0 and the importer sets on the
+        # dashboard (Dashboard.extra_import_fields). Not theme_uuid: the importer maps a
+        # theme_uuid only through a themes/ file in the same bundle and otherwise sets
+        # the theme to none (docs/CONTRACTS.md, "Dashboard theme").
+        if resolution.theme_id is None:
+            raise ValueError(f"dashboard.theme {d.theme!r} is not resolved; run check first")
+        out["theme_id"] = resolution.theme_id
     return out
 
 

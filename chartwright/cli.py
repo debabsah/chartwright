@@ -14,6 +14,7 @@
     chartwright standards show [NAME]           a standard after extends, each key's layer and lock
     chartwright standards assign specs/ --standard NAME   write design.standard into specs
     chartwright standards apply specs/          write each standard's content into its specs
+    chartwright standards verify-visible s.json --profile P   locked text visible on the dashboard
 """
 
 from __future__ import annotations
@@ -55,6 +56,20 @@ _VERSION_HELP = ("the Superset release to hold the spec to, e.g. 5.0.0; fields t
                  "can't take are refused, fields it ignores warn")
 
 
+def _date(text: str):
+    """argparse type for --as-of: a date, YYYY-MM-DD."""
+    import datetime as dt
+
+    try:
+        return dt.date.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a date, YYYY-MM-DD") from None
+
+
+_AS_OF_HELP = ("read waiver expiry (standards/waivers.yaml) as of this day, YYYY-MM-DD, so a "
+               "run can be repeated exactly (default: today)")
+
+
 def _die(payload: dict, code: int = 1) -> None:
     print(json.dumps(payload, indent=2, default=str))
     sys.exit(code)
@@ -67,32 +82,59 @@ def _design_blocks(advice: dict) -> str | None:
     return gate_block(advice)
 
 
-def _advice_payload(spec, resolution=None, strict: bool = False, standards=None) -> dict:
+def _advice_payload(spec, resolution=None, strict: bool = False, standards=None,
+                    spec_path=None) -> dict:
     """The advice block check/apply carry (design.advice_payload). `strict` is
     `--design strict`: the per-machine design.yaml then counts for nothing. `standards`
     is where the spec's standard comes from (a StandardsSource), or None for none."""
     from .design import advice_payload
 
-    return advice_payload(spec, resolution, strict=strict, standards=standards)
+    return advice_payload(spec, resolution, strict=strict, standards=standards,
+                          spec_path=spec_path)
 
 
 def _standards(args, spec_path):
     """The standards for a spec file: --standards DIR, or the repository's standards/
-    folder found from the spec's own folder (design/standards.py discover)."""
+    folder found from the spec's own folder (design/standards.py discover), read with
+    the run's --as-of."""
     from .design.standards import StandardsSource
 
-    return StandardsSource.for_cli(getattr(args, "standards", None), spec_path)
+    source = StandardsSource.for_cli(getattr(args, "standards", None), spec_path)
+    source.as_of = getattr(args, "as_of", None)
+    return source
 
 
-def _standard_or_die(args, spec):
+def _standard_or_die(args, spec, enforce_expiry: bool = False):
     """The spec's resolved standard, or None; a standard that can't be resolved stops
     the command with a typed error."""
     from .design.standards import StandardsError
 
     try:
-        return _standards(args, args.spec).standard_for(spec)
+        return _standards(args, args.spec).standard_for(
+            spec, spec_path=args.spec, enforce_expiry=enforce_expiry)
     except StandardsError as e:
         _die({"stage": "standards", "errors": [e.as_dict()]})
+
+
+def _for_instance(spec, source, client, args):
+    """The spec as this instance gets it: standard content its release can't take held
+    back (design/standards.py for_instance)."""
+    from .design.standards import for_instance
+    from .versions import stated_release
+
+    return for_instance(
+        spec, source,
+        lambda: args.superset_version or stated_release(client.superset_version()),
+        spec_path=args.spec)
+
+
+def _held(payload: dict, inst) -> None:
+    """The held block and its warning on a check, apply or plan payload, only when there
+    is something to say, so a spec whose standard holds nothing reads as before."""
+    if inst.held:
+        payload["held"] = inst.held
+    if inst.warning:
+        payload.setdefault("warnings", []).append(inst.warning)
 
 
 _STANDARDS_HELP = ("the standards directory (default: a standards/ folder at or above the "
@@ -155,7 +197,8 @@ def _main(argv: list[str] | None = None) -> None:
         if name != "plan":
             p.add_argument("--design", choices=["off", "warn", "strict"], default="warn",
                            help="design-brain advice: warn (report, default), strict (block), off")
-            p.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
+            p.add_argument("--as-of", type=_date, default=None, metavar="DATE", help=_AS_OF_HELP)
+        p.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
 
     from .design.presets import AUDIENCE_NAMES
 
@@ -172,6 +215,7 @@ def _main(argv: list[str] | None = None) -> None:
     adv.add_argument("--chart", default=None, metavar="NAME",
                      help="only this chart's findings, and with --fix only its fixes")
     adv.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
+    adv.add_argument("--as-of", type=_date, default=None, metavar="DATE", help=_AS_OF_HELP)
 
     ex = sub.add_parser("explain",
                         help="where each chart's design-default fields come from, and why (offline)")
@@ -193,7 +237,16 @@ def _main(argv: list[str] | None = None) -> None:
     stc.add_argument("--strict", action="store_true", help="warn findings fail too")
     stc.add_argument("--report", action="store_true",
                      help="the fleet report: per spec its standard, pass or fail, finding counts "
-                          "by rule and severity and the locks it hit; then the totals")
+                          "by rule and severity and the locks it hit; then the totals, and every "
+                          "expired and soon-to-expire waiver")
+    stc.add_argument("--as-of", type=_date, default=None, metavar="DATE", help=_AS_OF_HELP)
+    stc.add_argument("--expiring-within", type=int, default=None, metavar="DAYS",
+                     help="with --report, list waivers expiring within this many days "
+                          "(default: 30)")
+    stc.add_argument("--superset-version", type=_release, default=None,
+                     help="hold the standards' content to this Superset release, e.g. 5.0.0, "
+                          "as check and apply do for an instance: content the release can't "
+                          "take is listed as held and not expected")
     sts = std_verbs.add_parser("show", help="a standard after extends: each key's value, the "
                                             "layer that set it, and whether it is locked")
     sts.add_argument("name", nargs="?", default=None,
@@ -230,6 +283,26 @@ def _main(argv: list[str] | None = None) -> None:
                      help="only the specs that follow this standard, for one pull request "
                           "per team")
     stp.add_argument("--json", action="store_true", help="the full result as JSON")
+    stp.add_argument("--as-of", type=_date, default=None, metavar="DATE", help=_AS_OF_HELP)
+    stv = std_verbs.add_parser(
+        "verify-visible",
+        help="after apply, check in a real browser that the text a standard locks (its "
+             "header and footer rows) is visible on the rendered dashboard; needs "
+             "pip install 'chartwright[visual]'")
+    stv.add_argument("spec")
+    stv.add_argument("--profile", required=True)
+    stv.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
+    stv.add_argument("--superset-version", type=_release, default=None,
+                     help="the instance's release, for content held back from it "
+                          "(default: ask the instance)")
+    stv.add_argument("--as-of", type=_date, default=None, metavar="DATE", help=_AS_OF_HELP)
+    stv.add_argument("--min-contrast", type=float, default=None, metavar="RATIO",
+                     help="the lowest text-to-background contrast that counts as visible "
+                          "(default: 2.0; white on white is 1.0)")
+    stv.add_argument("--timeout", type=float, default=60.0, metavar="SECONDS",
+                     help="how long to wait for the dashboard to draw every locked row")
+    stv.add_argument("--screenshot", default=None, metavar="PNG",
+                     help="also save a full-page screenshot of the dashboard here")
 
     br = sub.add_parser("brief", help="the design brief to read BEFORE authoring a spec")
     br.add_argument("--audience", choices=AUDIENCE_NAMES, default="analytical")
@@ -303,7 +376,9 @@ def _main(argv: list[str] | None = None) -> None:
         client = _client(args.profile)
         from .apply import check
 
-        res = check(spec, client, args.superset_version)
+        source = _standards(args, args.spec)
+        inst = _for_instance(spec, source, client, args)
+        res = check(inst.spec, client, args.superset_version)
         payload = {"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]}
         if res.superset_version:
             payload["superset_version"] = res.superset_version
@@ -312,11 +387,13 @@ def _main(argv: list[str] | None = None) -> None:
         if res.unchecked_sql:
             # Custom SQL is not checkable by name; say so instead of passing it silently.
             payload["unchecked_sql"] = res.unchecked_sql
+        _held(payload, inst)
         gate = False
         if args.design != "off":
+            source.release = inst.release
             advice = _advice_payload(spec, resolution=res if res.ok else None,
                                      strict=args.design == "strict",
-                                     standards=_standards(args, args.spec))
+                                     standards=source, spec_path=args.spec)
             payload["advice"] = advice
             blocked = _design_blocks(advice) if args.design == "strict" else None
             gate = blocked is not None
@@ -328,13 +405,15 @@ def _main(argv: list[str] | None = None) -> None:
 
     if args.cmd == "apply":
         spec = _load(args.spec)
+        source = _standards(args, args.spec)
         advice = None
         if args.design != "off":
             # Pre-flight, offline (no probes: applies stay fast; data-aware
             # advice is `chartwright advise --profile`). Strict blocks BEFORE
             # anything on the instance is touched.
+            source.release = args.superset_version
             advice = _advice_payload(spec, strict=args.design == "strict",
-                                     standards=_standards(args, args.spec))
+                                     standards=source, spec_path=args.spec)
             blocked = _design_blocks(advice) if args.design == "strict" else None
             if blocked:
                 _die({"stage": "design", "ok": False, "advice": advice,
@@ -342,10 +421,14 @@ def _main(argv: list[str] | None = None) -> None:
         client = _client(args.profile)
         from .apply import apply as run_apply
 
-        report = run_apply(spec, client, args.profile, args.superset_version)
+        inst = _for_instance(spec, source, client, args)
+        report = run_apply(inst.spec, client, args.profile, args.superset_version)
         out = json.loads(report.to_json())
+        _held(out, inst)
         if advice is not None:
             out["advice"] = advice
+            # An expired waiver warns here and never blocks (the decision record's #5).
+            out["warnings"] = out.get("warnings", []) + advice.get("warnings", [])
         print(json.dumps(out, indent=2))
         sys.exit(0 if report.ok else 1)
 
@@ -371,7 +454,8 @@ def _main(argv: list[str] | None = None) -> None:
 
     if args.cmd == "advise":
         spec = _load(args.spec)
-        standard = _standard_or_die(args, spec)
+        # advise is the author's gate, as standards check is: an expired waiver fails it.
+        standard = _standard_or_die(args, spec, enforce_expiry=True)
         resolution = prober = None
         if args.profile:
             client = _client(args.profile)
@@ -493,7 +577,9 @@ def _main(argv: list[str] | None = None) -> None:
         client = _client(args.profile)
         from .dashdiff import plan as run_plan
 
-        p = run_plan(spec, client, args.superset_version)
+        inst = _for_instance(spec, _standards(args, args.spec), client, args)
+        p = run_plan(inst.spec, client, args.superset_version)
+        p.held, p.warnings = inst.held, [inst.warning] if inst.warning else []
         print(p.to_json())
         sys.exit(0 if p.clean else 1)
 
@@ -595,6 +681,10 @@ def _standards_cmd(args) -> None:
               end="\n" if args.json else "")
         return
 
+    if args.standards_cmd == "verify-visible":
+        _verify_visible(args)
+        return
+
     try:
         # JSON without a top-level spec_version (a package.json) is listed, not failed.
         paths, skipped = st.split_specs(st.expand_specs(args.specs))
@@ -604,6 +694,8 @@ def _standards_cmd(args) -> None:
                 + (f" (skipped, no spec_version: {[p.as_posix() for p in skipped]})" if skipped
                    else ""))
         source = st.source_for_specs(args.standards, paths)
+        source.as_of = getattr(args, "as_of", None)
+        source.release = getattr(args, "superset_version", None)
         standards = source.load()
     except st.StandardsError as e:
         fail(e)
@@ -631,28 +723,99 @@ def _standards_cmd(args) -> None:
         print(json.dumps(payload, indent=2))
         sys.exit(0 if payload["ok"] else 1)
 
+    from .design.waivers import matching
+
     entries = []
+    matched: set[int] = set()     # waivers naming a spec this run read
     for p in paths:
         spec, err = st.load_spec_file(p)
         if err is not None:
             entries.append({"spec": p.as_posix(), "ok": False, "standard": None, "errors": [err]})
         else:
-            entries.append({"spec": p.as_posix(), **st.check_spec(spec, source, strict=args.strict)})
+            matched |= {w.index for w in matching(standards.waivers, spec, p,
+                                                  standards.directory.parent)}
+            entries.append({"spec": p.as_posix(),
+                            **st.check_spec(spec, source, strict=args.strict, spec_path=p)})
     sdir = st.display(standards.directory)
     if args.report:
         payload = st.fleet_report(entries, strict=args.strict, standards_dir=sdir,
                                   skipped=skipped)
+        if standards.waivers_file is not None:
+            from .design import waivers as W
+
+            payload["waivers"] = {
+                "file": st.display(standards.waivers_file),
+                **W.file_summary(standards.waivers, source.today(), matched,
+                                 args.expiring_within if args.expiring_within is not None
+                                 else W.EXPIRING_DAYS)}
     else:
         passed = sum(1 for e in entries if e["ok"])
         payload = {"stage": "standards", "ok": passed == len(entries), "strict": args.strict,
                    "standards_dir": sdir, "specs": entries, "skipped": skipped,
                    "totals": {"specs": len(entries), "passed": passed,
                               "failed": len(entries) - passed}}
+    if standards.waivers:
+        from .design.waivers import past_dated
+
+        late = past_dated(standards.waivers, source.today())
+        if late:
+            # Every past-dated waiver in the file, checked spec or not: a warning, never a
+            # failure; only the checked specs' own expired waivers fail (their findings).
+            payload["waiver_warnings"] = late
     from .design.presets import overlay_path
 
     if overlay_path().exists():
         # Named, never read: a per-machine file must not decide a fleet check.
         payload["overlay"] = {"path": overlay_path().as_posix(), "set_aside": True}
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    sys.exit(0 if payload["ok"] else 1)
+
+
+def _verify_visible(args) -> None:
+    """`chartwright standards verify-visible`: chartwright/visible.py."""
+    from . import visible
+    from .design.standards import StandardsError, holds_anything
+    from .profiles import ProfileError, load_profile
+    from .versions import stated_release
+
+    spec = _load(args.spec)
+    try:
+        profile = load_profile(args.profile)
+    except ProfileError as e:
+        _die({"stage": "profile", "errors": [{"code": "profile", "detail": str(e)}]})
+    if profile.api_token:
+        _die({"stage": "visible", "ok": False, "errors": [{
+            "code": "visible_needs_password",
+            "detail": "verify-visible signs in to Superset's own sign-in page with a username "
+                      "and password; a Preset API token opens no browser session"}]})
+    source = _standards(args, args.spec)
+    try:
+        std = source.standard_for(spec, spec_path=args.spec)
+        if std is not None and holds_anything(std):
+            from .client import SupersetClient
+
+            source.release = args.superset_version or stated_release(
+                SupersetClient.from_profile(profile).superset_version())
+            std = source.standard_for(spec, spec_path=args.spec)
+    except StandardsError as e:
+        _die({"stage": "standards", "ok": False, "errors": [e.as_dict()]})
+    if std is None:
+        _die({"stage": "visible", "ok": False, "errors": [{
+            "code": "no_standard",
+            "detail": "the spec follows no standard, so no text is locked on it"}]})
+    try:
+        payload = visible.verify(
+            std, spec, base_url=profile.base_url.rstrip("/"), username=profile.username,
+            password=profile.password,
+            min_contrast=args.min_contrast if args.min_contrast is not None
+            else visible.MIN_CONTRAST,
+            timeout_s=args.timeout, screenshot=args.screenshot,
+            verify_tls=bool(profile.verify) and not profile.ca_bundle)
+    except visible.VisualUnavailable as e:
+        _die({"stage": "visible", "ok": False, "errors": [{
+            "code": "visual_extra_missing", "detail": str(e)}]})
+    except RuntimeError as e:
+        _die({"stage": "visible", "ok": False, "errors": [{"code": "visible", "detail": str(e)}]})
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     sys.exit(0 if payload["ok"] else 1)
 

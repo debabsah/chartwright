@@ -25,6 +25,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 mcp = ["mcp>=1.0,<3"]  # 1 and 2 both tested in CI (mcp_server.py imports either)
+# standards verify-visible: a headless browser checks locked text shows on the dashboard.
+# Never a core dependency; after installing, run: playwright install chromium
+visual = ["playwright>=1.40"]
 
 [project.scripts]
 chartwright = "chartwright.cli:main"

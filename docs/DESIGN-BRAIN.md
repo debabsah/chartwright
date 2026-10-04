@@ -366,6 +366,7 @@ fails when it drifts.
 | `standard.content-released` | info | - | - | 6 | content a standard has that the author took over (edited or removed): the author's now, and standards apply leaves it alone |
 | `standard.content-stale` | warn | - | - | 6 | content a standard wrote is current: standards apply would change nothing |
 | `standard.css-hides` | warn | - | - | 6 | CSS outside the locking layers' own blocks has no declaration known to hide elements while a standard locks header or footer rows (a heuristic: other ways to hide one pass) |
+| `standard.waiver-expired` | error | - | - | 6 | no waiver naming this dashboard in standards/waivers.yaml has expired (checked by standards check and advise; a deploy warns instead) |
 
 <!-- END rule-table -->
 
@@ -697,6 +698,39 @@ reversible and none is load-bearing enough to block on:
       below the lock silences it.
     - **Lifecycle and classification are spec-only fields** that standards
       key content off; Superset has nothing they could map to safely (§18).
+17. **Exceptions, mixed releases, a theme, and a check of what readers see**
+    (2026-10-04, the fourth phase of the same decision record, which settles
+    its decisions 4, 5, 6 and 9). §18, "Waivers" onwards:
+    - **Exceptions live in `standards/waivers.yaml`, under CODEOWNERS**
+      (decision #4): dashboard, rule or content item, owner, reason, expiry,
+      optional layer. A waiver is the only way past a lock; the spec's
+      `design.ignore` still can't silence one, because an exception written
+      in the spec is self-granted in the same pull request.
+    - **Expiry fails only the author-side gates, for the specs checked**
+      (decision #5): `standards check` and `advise` fail on an expired waiver;
+      `standards apply`, `check`, `apply` and `plan` keep applying it with a
+      warning; `restore` never reads it. CI checks the changed specs, so an
+      expiry fails only pull requests touching that dashboard, and a
+      scheduled `standards check --report` lists every expired and expiring
+      waiver. `--as-of` makes any run repeatable.
+    - **A standards file declares the release its content is for**
+      (decision #9): `min_superset`, one release, in versions.py's form
+      ("6.0" read as 6.0.0), never a range. Below it, and below a gated
+      field's own release, the deploying commands hold the standard's
+      content back per instance and list it as held, so a newer-only item
+      never fails a fleet deploy.
+    - **A theme by name, resolved per instance** (decision #6):
+      `dashboard.theme`, gated at 6.0.0, resolved through the theme API and
+      written as the target's `theme_id`; a standard may set it. Superset
+      owns the theme's tokens; chartwright names the theme.
+    - **A lockable classification is a scalar slot.** A standard assigns one
+      classification to the dashboards that follow it; locked, a spec can't
+      change or drop it, and its classification rows follow the standard's
+      value. Per-dashboard exceptions are waivers.
+    - **The real lock on visible text is a rendered check** (decision #6):
+      `standards verify-visible` opens the deployed dashboard in a headless
+      browser and fails when a locked line is hidden. The browser is an
+      optional extra, never a dependency.
 
 ## 15. Implementation deviations (recorded, not silent)
 
@@ -925,7 +959,8 @@ Recorded during the content standards (§18, "Content"):
     even when it carries a record from an earlier standard: removing a
     standard's `default: true` must not strip every dashboard that
     followed it.
-33. **Left for phase 4**, with where each plugs in:
+33. **Left for phase 4**, with where each plugs in (what phase 4 did with
+    each is in 34-40; the last two items stay open, see 40):
     - the version floor filters the content a spec expects per instance
       release (`expected_items` in `design/content.py`). No content slot is
       version-gated today: header and footer rows, CSS, colours,
@@ -945,6 +980,59 @@ Recorded during the content standards (§18, "Content"):
     - design.filled entries for a renamed or removed chart, which
       validation still refuses, where design.standard_written accepts them
       and `standards apply` drops them.
+
+Recorded during exceptions, mixed releases and the theme (§18, "Waivers"
+onwards):
+
+34. **Waivers are their own file, read with the standards.** The waivers file
+    sits at the top of the standards folder, the place CODEOWNERS already
+    guards, and is parsed when the folder loads, so a malformed entry fails
+    every run as a broken standards file does. It is skipped by standards
+    discovery: the folder still counts only when a YAML file declares a
+    standard. A waiver names a dashboard by slug or by spec path; the MCP
+    server sees no paths, so it matches slugs only, and slugs are the form to
+    prefer.
+35. **An expired waiver fails its dashboard even when nothing is left to
+    cover.** The decision record says expiry is an error on pull requests
+    touching the dashboard; read literally, that holds for a dashboard that
+    conforms again, so the stale entry leaves the file at its next pull
+    request. A softer reading (fail only while the waiver still covers a
+    finding) was weighed and not taken: it would let expired entries pile
+    up, the sprawl the adversarial review warned of.
+36. **A waived item is left as the dashboard has it, everywhere.**
+    `standards apply` adds, refreshes and rewrites nothing a waiver covers,
+    even before the first apply, and even after expiry (with a warning):
+    expiry is reported where the decision puts it, in `standards check` on the
+    dashboard's next pull request and in the scheduled report, and never
+    changes a spec by itself. Taking the waiver out of the file puts the
+    standard's content back on the next apply.
+37. **`min_superset`, one release per file, not a range.** The decision says
+    "minimum release"; versions.py states releases as `since` strings, so the
+    key takes one release in the same form. It covers the content its own
+    file contributes, not the files that extend it, so an org can mark a
+    6.x-only block without holding back a team's rows. Holding happens where
+    the instance is known (`check`, `apply`, `plan` and their MCP tools) and
+    removes only content the spec holds as the standard has it; an author's
+    value is never held, so it can't be used to dodge the version check. The
+    spec on disk is untouched: compile still reads one spec, and the instance
+    picks what it can take.
+38. **A theme travels as `theme_id`, not `theme_uuid`.** Superset's importer
+    maps a `theme_uuid` only through a `themes/` file in the same bundle and
+    otherwise clears the theme (docs/CONTRACTS.md, "Dashboard theme");
+    shipping the target's theme file would recreate it if it were deleted
+    mid-apply. The id is resolved by name at the resolve stage, as datasets
+    are, so the bundle stays deterministic for a given resolution. An omitted
+    theme stays unmanaged, as omitted tags and owners do, so a theme chosen in
+    the UI survives every apply.
+39. **A classification lock keys rows off the standard's value.** Without
+    that, `--locked` would restore the classification and, in the same run,
+    drop the confidential row it keys, because the rows were computed from the
+    spec's changed value. An unlocked assignment writes the classification and
+    its rows in one run, so a first apply converges.
+40. **Still open from §15.33:** fills keep dropping their record after an
+    edit (so a deleted edited fill is filled again), and design.filled still
+    refuses entries for a renamed chart. Both are design-defaults work, not
+    standards work, and stay as they were.
 
 ## 16. Design defaults (fills)
 
@@ -1264,8 +1352,10 @@ disabled rules `design.yaml` holds for one machine, kept in the repository
 instead, where a pull request reviews them and every machine reads the same
 files. A standard can lock rules and parameters so that no team, spec or
 personal file below it loosens them. A standard can also carry content (header
-and footer rows, CSS, colours, certification, number formats) that
-`standards apply` writes into its specs ("Content", below). Compile, `plan`
+and footer rows, CSS, colours, certification, number formats, a Superset theme,
+a classification) that `standards apply` writes into its specs ("Content",
+below). One dashboard may deviate from a lock only through the waivers file,
+with an owner, a reason and an expiry ("Waivers", below). Compile, `plan`
 and decompile never read a standards file, and a spec builds the same bundle
 with or without one (§14.15); content reaches a dashboard only as fields
 written in its spec. Rule settings also change what `advise --fix` writes,
@@ -1306,6 +1396,7 @@ disable: [narrative.title-style]
 | `name` | Required. Letters, digits, `-` and `_`; unique in the folder. Specs name it in `design.standard`. |
 | `extends` | Optional. One parent, by name. |
 | `default` | Optional, `true` on at most one file: the standard a spec without `design.standard` follows. |
+| `min_superset` | Optional, a release such as `"6.0"`: the content this file contributes is for that Superset release or later, and is held back from older instances ("Mixed Superset releases", below). Quote it, so YAML reads `"6.10"` as a release and not the number 6.1. |
 | `params` | Parameters for every audience (§6), as in `design.yaml`, `recommended_heights` included. |
 | `audiences` | Parameters for one audience, as in `design.yaml`. |
 | `severity` | Rule id → `error`, `warn` or `info`. |
@@ -1371,7 +1462,9 @@ the values the standard set.
 A lower file that loosens a lock is an error naming both layers; the
 spec-level and `design.yaml` attempts are set aside and reported, never
 silently applied. Locks are recomputed from the standards files on every run;
-nothing in a spec can claim or waive one.
+nothing in a spec can claim or waive one. Only `standards/waivers.yaml`, beside
+the standards files, lets one dashboard deviate from a lock ("Waivers",
+below).
 
 ### Which standard a spec follows
 
@@ -1442,7 +1535,10 @@ The advice payload (§10) gains, only when a standard applies:
 - on each finding, `layer`: the standard that set its severity, `overlay`, or
   `rulebook` for the rule's own level; and `locked`;
 - in the `overlay` block outside a strict gate, `set_aside`: the `params`,
-  `disable` and `severity` entries a lock overrode.
+  `disable` and `severity` entries a lock overrode;
+- `waived`: locked findings a waiver let pass, and `warnings` for an expired
+  waiver that still applied ("Waivers", below), only when a waiver names the
+  dashboard.
 
 Without a standards folder nothing here appears and nothing changes. `explain`
 names the chain in its header (`standard org -> finance`) and in its JSON.
@@ -1471,15 +1567,20 @@ data-aware rule is enforced only where advice has a live resolution, by
 Per spec it reports `ok`, `standard`, `chain`, `via`, `audience`, `counts`,
 `findings` (each with `layer` and `locked`), `ignored`, and `locks` (the
 locked rules and parameters, and `refused_ignores`); a failing spec carries a
-`design_gate` error that names any locked rule behind it. MCP
-`standards_check` returns the same entry for one spec.
+`design_gate` error that names any locked rule behind it, and, when they
+apply, `waived` and, under `--superset-version`, `superset_version` and
+`held` ("Waivers" and "Mixed Superset releases", below). MCP
+`standards_check` returns the same entry for one spec. `--as-of DATE` reads
+waiver expiry as of that day.
 
 `--report` prints the fleet report instead: per spec its standard, `ok`,
 `counts`, `by_rule` (findings counted by rule and severity) and `locks_hit`
 (locked rules with a finding or a refused ignore); then `totals` across the
 fleet: specs passed and failed, counts, `by_rule`, `by_standard` and
-`locks_hit`. Its exit code is the check's: 1 when any spec fails. It reads
-the repository's specs; it doesn't read a live instance.
+`locks_hit`. A spec with waived findings or held items lists them, and with a
+waivers file the report adds its `waivers` block. Its exit code is the
+check's: 1 when any spec fails. It reads the repository's specs; it doesn't
+read a live instance.
 
 ### standards show
 
@@ -1505,7 +1606,8 @@ Standard finance: org -> finance
 A standard with content lists it too: each item with its value, layer and
 lock, the rows of every lifecycle state and classification, and a number
 format per metric label (`content.footer[org][0]`, `content.number_format[Orders]`).
-`--json` adds `content`, `locked.content` and `classifications`.
+`--json` adds `content`, `locked.content` and `classifications`, and each
+chain file's `min_superset` when it declares one.
 
 ### Content
 
@@ -1558,6 +1660,8 @@ content:
 | `footer_by_classification` | rows per `dashboard.classification`, after the layer's footer rows | adds up, as `footer` |
 | `css` | one marked block per layer at the start of `dashboard.css`, root first, the author's CSS after them | adds up: one block per layer |
 | `color_scheme`, `certified_by`, `certification_details` | the dashboard setting | the innermost layer's value |
+| `theme` | `dashboard.theme`: a Superset theme by name, 6.0 or later ("A theme", below) | the innermost layer's value |
+| `classification` | `dashboard.classification`, which must be in the `classifications` list ("Lifecycle and classification", below) | the innermost layer's value |
 | `label_colors` | each label's colour | per label: keys add up, the innermost layer's colour wins a key |
 | `number_format` | a chart's `number_format`, per metric label | per label, as `label_colors` |
 
@@ -1729,7 +1833,8 @@ In every advice run that applies a standard with content (`advise`,
 | `standard.content-stale` | warn | an unlocked item `standards apply` would add, refresh or remove |
 | `standard.content-released` | info | an item the author took over, so a fleet report shows every override |
 | `standard.classification` | error | a classification the standard's list lacks |
-| `standard.css-hides` | warn | a heuristic: a declaration it knows to hide elements, outside the blocks of the layers that lock header or footer rows (a lower layer's block included), comments set aside. It knows `display: none`; `visibility: hidden` or `collapse`; `content-visibility: hidden`; a zero opacity or font size in any spelling; `color: transparent`; a zero height or max-height with hidden overflow; `clip` or `clip-path`; `transform: scale(0)`; and a large negative offset (`left: -9999px`). Any other way to hide an element passes it: the check that locked text is visible on the rendered dashboard is phase 4's and not built yet. The warning names the rule to look at; like `standard.content-locked`, it is locked with the content |
+| `standard.waiver-expired` | error | a waiver naming this dashboard that has expired, in `standards check` and `advise` only ("Waivers", below). Locked whenever a waiver names the dashboard, and no waiver covers it |
+| `standard.css-hides` | warn | a heuristic: a declaration it knows to hide elements, outside the blocks of the layers that lock header or footer rows (a lower layer's block included), comments set aside. It knows `display: none`; `visibility: hidden` or `collapse`; `content-visibility: hidden`; a zero opacity or font size in any spelling; `color: transparent`; a zero height or max-height with hidden overflow; `clip` or `clip-path`; `transform: scale(0)`; and a large negative offset (`left: -9999px`). Any other way to hide an element passes it; `standards verify-visible` checks the rendered dashboard ("Checking what readers see", below). The warning names the rule to look at; like `standard.content-locked`, it is locked with the content |
 
 #### explain
 
@@ -1763,13 +1868,47 @@ reach a dashboard through a standard's `header_by_lifecycle` and
 `standards apply`.
 
 A lock on `footer_by_classification` (or `header_by_lifecycle`) holds the rows
-of the classification (or state) the spec has now; the classification and the
-lifecycle are the author's fields. Reclassifying a confidential dashboard as
-public therefore removes its locked confidential row on the next
-`standards apply`, and `standards check` reports that change only as a
-`standard.content-stale` warning until then. A platform team that must control
-the classification itself reviews that field in the pull request; a lockable
-classification is phase 4 work (§15.33).
+of the classification (or state) the spec has now. Without more, the
+classification and the lifecycle are the author's fields: reclassifying a
+confidential dashboard as public removes its locked confidential row on the
+next `standards apply`, and `standards check` reports that change only as a
+`standard.content-stale` warning until then.
+
+A standard that must control the classification assigns it, as a scalar slot,
+and locks it:
+
+```yaml
+# standards/teams/finance-board.yaml
+name: finance-board
+extends: finance
+content:
+  classification: confidential
+locked:
+  content: [classification]
+```
+
+`standards apply` writes `dashboard.classification: confidential` and records
+it like the colour scheme. Locked, a spec that changes it or removes it fails
+`standards check` with `standard.content-locked` on
+`dashboard.classification`, and `standards apply --locked` puts it back. The
+classification footer rows then follow the standard's value, not the spec's,
+so a reclassified dashboard keeps expecting its locked confidential row while
+the error stands, and `--locked` restores the classification without removing
+that row. A dashboard that needs another classification follows another
+standard, or gets a waiver for `dashboard.classification`, under which its rows
+follow its own field again. Unlocked, the assignment is a default: written
+once, and the author's to change or delete, as any unlocked item. A lower layer
+can't change a locked classification, and the value must be in the
+`classifications` list.
+
+A standard assigns one classification to every dashboard that follows it,
+rather than one per dashboard, because the standards files are the only trusted
+record: a per-dashboard value kept in the spec is the author's to edit in the
+same pull request (the decision record's #4), and a list of dashboards in a
+standards file would be a second assignment mechanism beside
+`design.standard`. Dashboards of different sensitivity follow different team
+standards, and the exceptions go in the waivers file, which is guarded like the
+standards.
 
 Superset has no field to carry them, checked at 4.1.4, 5.0.0 and 6.1.0:
 
@@ -1787,3 +1926,240 @@ Superset has no field to carry them, checked at 4.1.4, 5.0.0 and 6.1.0:
   dashboard's settings on 4.1.4 and 5.0.0 (`validate_json_metadata`,
   `superset/dashboards/schemas.py:107`), as `show_chart_timestamps` does
   (docs/CONTRACTS.md), and dashboard tags need 6.0.
+
+### Waivers
+
+`standards/waivers.yaml` records the dashboards that may deviate from a lock,
+each with who approved it, why, and until when. It sits at the top of the
+standards folder and is no standard: discovery and validation of standards
+files skip it, and a folder holding only a waivers file is no standards
+folder.
+
+```yaml
+# standards/waivers.yaml
+waivers:
+  - slug: ops-wallboard                # or spec: specs/ops/wallboard.json
+    rule: layout.footer[acme][0]       # a content item, or a rule id
+    owner: "@acme/data-platform"
+    reason: The wallboard has no room for the legal row; legal agreed on 2026-09-30.
+    expires: 2026-12-31                # valid through this day
+  - slug: partner-revenue
+    rule: dashboard.classification
+    owner: Dana Reyes (legal)
+    reason: Published to partners under contract C-114 as internal.
+    expires: 2027-03-31
+    layer: acme                        # only what the acme layer locks
+```
+
+| Key | Holds |
+|---|---|
+| `slug` or `spec` | The dashboard: its slug, or its spec's path relative to the folder that holds the standards folder. One of the two. The MCP server sees no paths, so there a waiver matches by slug only. |
+| `rule` | A rule id (through the alias table, as everywhere), whose locked findings on the dashboard it covers; or a content item as `design.standard_written` keys it (`layout.footer[acme][0]`, `dashboard.css[acme]`, `dashboard.classification`), whose `standard.content-locked` finding it covers. `rule: standard.content-locked` covers every locked item. |
+| `owner` | Required: who approved the exception, a CODEOWNERS team or a person. |
+| `reason` | Required: why this dashboard may deviate. |
+| `expires` | Required: a date, `YYYY-MM-DD`, the last day the waiver holds. |
+| `layer` | Optional: the waiver covers only what this layer locks, so a waiver approved for a team's lock can't lift the org's. |
+
+A malformed entry, an unknown key, a missing owner, reason or expiry, a rule
+that is neither a rule id nor a content item, a layer no standards file names,
+`standard.waiver-expired` as the rule, and a second entry for the same
+dashboard, rule and layer are errors naming the entry, and fail every run that
+reads the folder, as a broken standards file does.
+
+What a waiver does, while it holds:
+
+- the locked finding it covers leaves `findings` for `waived`: each entry has
+  the finding, its rule and where, and the waiver's dashboard, owner, reason,
+  expiry, `status` (`active` or `expired`) and `days_left`. `design.ignore`,
+  `--ignore` and `design.yaml` still can't silence a lock: the waivers file is
+  the only way past one;
+- `standards apply` leaves a waived item as the dashboard has it: it adds,
+  refreshes and, under `--locked`, rewrites nothing waived, and keeps the
+  item's record as it is. `--check` passes it, the entry lists it under
+  `waived`, and the summary says "differ under a waiver". A waiver written
+  before the first apply keeps the item off the dashboard;
+- under a waiver for `dashboard.classification`, the classification footer
+  rows follow the dashboard's own classification again.
+
+Expiry, as the decision record's #5 has it:
+
+| Where | An expired waiver |
+|---|---|
+| `standards check`, `advise` (CLI and MCP) | fails: the finding it covered counts again, and `standard.waiver-expired` names the waiver, its owner and reason. Only for the specs the command was asked to check |
+| `standards apply` | still applies, with a warning on the spec's entry |
+| `check`, `apply`, `plan` (CLI and MCP) | still applies, with a warning in the advice block and in `apply`'s warnings; a strict design gate doesn't block on it |
+| `restore` | never reads the waivers file |
+
+So CI checks the specs a pull request changes with `standards check`, and an
+expiry fails only the pull requests that touch that dashboard; a hotfix to
+another dashboard, a deploy and a rollback never trip on it. An expired waiver
+fails the dashboard's next pull request even when the dashboard conforms
+again, so the stale entry is removed from the file. Every `standards check`
+also lists, under `waiver_warnings`, each past-dated entry in the file, checked
+spec or not, without failing.
+
+`standards check --report` adds a `waivers` block for a scheduled job: every
+entry counted (`total`, `active`), the `expired` ones, those `expiring` within
+30 days (`--expiring-within DAYS`), those naming no spec the run read
+(`unmatched`), and counts `by_owner` and `by_rule`. `--as-of DATE` (on
+`standards check`, `standards apply`, `advise`, `check`, `apply`, and `as_of`
+on the MCP tools) reads expiry as of that day, so a run repeats exactly.
+
+```yaml
+# .github/workflows/standards.yml (sketch)
+on:
+  pull_request:
+  schedule: [{cron: "0 7 * * 1"}]
+jobs:
+  standards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - run: pip install chartwright
+      - if: github.event_name == 'pull_request'
+        run: |
+          changed=$(git diff --name-only --diff-filter=d origin/${{ github.base_ref }} -- 'specs/*.json')
+          [ -z "$changed" ] || chartwright standards check $changed
+      - if: github.event_name == 'schedule'
+        run: chartwright standards check specs/ --report
+```
+
+The file needs the same guard as the standards: a CODEOWNERS line that sends
+every change to the platform team, with the code host's required reviews on.
+
+```
+# .github/CODEOWNERS
+/standards/            @acme/data-platform
+/standards/waivers.yaml @acme/data-platform @acme/legal
+```
+
+Chartwright can't enforce CODEOWNERS or check that `owner` names someone who
+approved the change: it reads the file as committed. Required reviews on the
+code host are what make an exception platform-approved.
+
+### Mixed Superset releases
+
+One spec often deploys to instances on different releases, and it carries its
+standard's content for all of them. Content a release can't take would fail
+every deploy to that release, so `check`, `apply` and `plan` (and the MCP
+`check_spec`, `build_dashboard` and `plan_dashboard`) hold it back per
+instance instead.
+
+An item is held back from a release when:
+
+- the standards file that contributes it declares a later `min_superset`
+  (each file's own content; a file that extends it declares its own); or
+- it writes a version-gated field (`chartwright/versions.py`) the release
+  can't take: today `theme`, which needs 6.0.0.
+
+The deploying command asks the instance its release when the spec's standard
+could hold something (a file with content declares `min_superset`, or the
+content sets a gated field), or takes `--superset-version`. It removes each
+held item the spec holds as the standard has it from what it sends (rows,
+CSS blocks and settings alike), and lists it under `held` with the reason;
+compile, the version check and `plan` see the spec without it. The spec on
+disk is untouched. A value the author wrote, edited or released is never
+held: it meets the version check and is refused there, as any field is. When
+the instance doesn't report its release, nothing is held and a warning says
+to pass `--superset-version`.
+
+`standards check --superset-version 5.0.0` (MCP `standards_check`'s
+`superset_version`) shows the same offline: each spec's entry gains
+`superset_version` and `held`, and held items are not expected, so a spec
+that lacks one isn't reported for it on that release. Their records in
+`design.standard_written` are kept as they are, never read as items the
+standard dropped. Verified live: a standard's theme was held on 4.1.4 and
+5.0.0, the dashboard applied and `plan` was clean, while an author's own
+theme was refused.
+
+### A theme
+
+`dashboard.theme` names a Superset theme by the name Superset lists it under
+(6.0 or later); a standard sets it with the `theme` slot. `check`, `apply` and
+`plan` resolve the name on each instance before anything is written and
+compile writes the theme's id into the bundle; decompile reads the name back
+from an export, and `plan` reports `theme` when the live dashboard shows
+another one. Left out, apply doesn't touch the theme and `plan` doesn't
+compare it, so a theme chosen in the UI stays. docs/CONTRACTS.md, "Dashboard
+theme", has the Superset source for each step. A theme carries palette and
+fonts as Superset's own tokens; CSS stays the fallback for releases before 6.0
+and for what tokens don't cover, as the decision record's #6 has it.
+
+### Checking what readers see
+
+`standard.css-hides` reads declarations and knows a list of ways to hide an
+element. The real lock on what readers see is a check of the deployed
+dashboard (the decision record's #6):
+
+```
+chartwright standards verify-visible specs/ops/delays.json --profile prod \
+    [--standards DIR] [--superset-version R] [--as-of DATE] \
+    [--min-contrast 2.0] [--timeout 60] [--screenshot delays.png]
+```
+
+It needs a browser, an optional extra never installed with chartwright
+itself: `pip install 'chartwright[visual]'`, then `playwright install
+chromium`. Without it the command exits 1 with `visual_extra_missing` and the
+two commands to run.
+
+What it looks for: each locked header and footer row of the spec's standard
+that the spec holds as the standard has it, one target per rendered line
+(markdown blocks by line, a header row by its text). A locked row the spec
+lacks or changed is listed under `skipped` (`standards check` reports it),
+and so is a row a waiver covers or the instance's release holds back.
+
+How: it signs in on Superset's own sign-in page with the profile's username
+and password (a Preset API token opens no browser session, and is refused),
+opens the dashboard in headless Chromium at 1600×1200, scrolls it so rows
+that render on scroll are drawn, and runs one script in the page. For each
+target the script finds the deepest element whose text holds it (markdown
+marks and case set aside), preferring a copy that renders, scrolls the
+window (never the element's containers) to it, and reads its box, its
+rendered text, its own and its containers' computed styles, and the element at
+the centre of its visible part. Python then judges each one. A line is hidden
+when it is:
+
+- not on the page, or not rendered (`display: none` or `content-visibility`
+  on it or a container, or its rendered text lacks it);
+- `visibility: hidden`;
+- without size, or off the page: right of the window's width, left of it, or
+  outside the document;
+- cut off by containers that clip their overflow, with less than half of it
+  showing;
+- transparent: the product of the opacities, `filter: opacity()` included,
+  below 0.1; or clipped by `clip-path`, `clip` or `filter: brightness(0)`;
+- smaller than 6 px;
+- of a colour whose WCAG contrast with the first opaque background behind it
+  is below `--min-contrast` (2.0 by default; white on white is 1.0, `#ccc` on
+  white 1.6), the text colour's alpha composited first;
+- covered: another element is on top of its centre, or an opaque, positioned
+  `::before` or `::after` sits on it or a container.
+
+It prints the `items` (each with its text, `visible`, the `reasons` and the
+measured `contrast`), `skipped` and `hidden`, and exits 1 when any line is
+hidden. Verified live on 4.1.4, 5.0.0 and 6.1.0 with six author stylesheets
+hiding the locked footer: `display: none`, `visibility: hidden`, near-white
+text, `filter: opacity(0)`, a white `::after` overlay, and a shift 4000 px to
+the right. It caught all six on every release; `standard.css-hides` warned on
+the first two only. The unchanged dashboard passed.
+
+Limits, each a way a line could be hidden and still pass:
+
+- a background image or gradient behind the text leaves its contrast
+  unmeasured;
+- a pseudo-element overlay is judged by its style alone (opaque, positioned),
+  since the browser reports no box for it; one beside the text, not over it,
+  is reported anyway;
+- part of a line hidden by its own child (`strong { color: white }`) is judged
+  by the line's element;
+- a text matched in two places counts as visible when either copy is, which
+  still means a reader sees it;
+- the check opens the dashboard's first tab; header and footer rows are
+  outside tabs, so they show on every tab;
+- it reads one moment after the dashboard settles; a rule that hides text
+  later, on hover or by script, isn't seen.
+
+The live CI job runs it on the three releases as an optional step that reports
+without failing the job (`tools/ci_live_visible.py`), since the browser is an
+optional extra; elsewhere it is a post-deploy step you add after `apply`.

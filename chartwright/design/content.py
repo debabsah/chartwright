@@ -36,9 +36,10 @@ repair writes: they add or replace whole rows, a CSS block, a dashboard setting,
 colour or a chart's number_format, which no repair touches (the markdown-height repair
 leaves rows a standard owns alone).
 
-Phase-4 plug points, not built yet: a standard's minimum Superset release filters
-`expected_items` per instance, and the exceptions file is consulted where a locked
-mismatch is decided (`_violation`).
+A run held to a Superset release (Standard.release) holds back the items that release
+can't take (held_reason: a layer's min_superset, or a version-gated slot such as
+`theme`), and a waiver (design/waivers.py) lets a locked item differ where the locked
+mismatch is decided (Decision.waiver).
 """
 
 from __future__ import annotations
@@ -54,11 +55,15 @@ from ..spec import (CLASSIFICATION_PATTERN, GRID_WIDTH, LIFECYCLE_STATES, Row, m
                     row_items, standard_item_kind)
 
 ROW_SLOTS = ("header", "footer")
-SCALAR_SLOTS = ("color_scheme", "certified_by", "certification_details")
+SCALAR_SLOTS = ("color_scheme", "certified_by", "certification_details", "theme",
+                "classification")
 KEYED_SLOTS = ("label_colors", "number_format")
 CONTENT_KEYS = ("header", "footer", "header_by_lifecycle", "footer_by_classification", "css",
-                "color_scheme", "certified_by", "certification_details", "label_colors",
-                "number_format")
+                "color_scheme", "certified_by", "certification_details", "theme",
+                "classification", "label_colors", "number_format")
+# Content slots that write a version-gated spec field (chartwright/versions.py): held
+# back on a release before the field's own (held_items).
+GATED_SLOTS = {"theme": "theme"}
 # The pivot aggregations that keep a metric in its own unit, so its format still fits.
 _UNIT_AGGREGATES = {"Sum", "Average", "Median", "Minimum", "Maximum", "First", "Last"}
 # Charts with one number_format for every metric they show (the count-format fill's set).
@@ -215,6 +220,12 @@ def parse_content(raw, where: str) -> dict:
     for slot in SCALAR_SLOTS:
         if slot in raw:
             out[slot] = _text(raw[slot], f"{where}: content.{slot}")
+    if "classification" in out and not re.match(CLASSIFICATION_PATTERN, out["classification"]):
+        raise ValueError(f"{where}: content.classification {out['classification']!r} is not a "
+                         f"classification (letters, digits, spaces, '-', '_', '.')")
+    if "theme" in out and out["theme"] != out["theme"].strip():
+        raise ValueError(f"{where}: content.theme {out['theme']!r} must be a theme's name as "
+                         f"Superset lists it, without surrounding spaces")
     if "label_colors" in raw:
         block = raw["label_colors"]
         if not isinstance(block, dict) or not block:
@@ -306,6 +317,11 @@ def check_layer(name: str, where: str, content: dict, locks: list[str],
         if stray:
             raise ValueError(f"{where}: content.footer_by_classification names {stray}, "
                              f"which the classifications list {allowed} lacks")
+        assigned = content.get("classification") or next(
+            (c["classification"] for _, c in reversed(above) if "classification" in c), None)
+        if assigned is not None and assigned not in allowed:
+            raise ValueError(f"{where}: content.classification {assigned!r} is not in the "
+                             f"classifications list {allowed}")
 
 
 def check_resolved(std) -> None:
@@ -390,6 +406,77 @@ def chart_number_format(std, chart) -> tuple[str, int] | None:
     return found[0][0], max(f[1] for f in found)
 
 
+def _merged_scalar(std, slot: str) -> tuple[str, int] | None:
+    """(value, index of the innermost layer that sets it) for a scalar slot, or None."""
+    at = [k for k, (_, c) in enumerate(std.content_layers) if slot in c]
+    return (std.content_layers[at[-1]][1][slot], at[-1]) if at else None
+
+
+def waiver_for(std, item_id: str, lock_layer: str | None):
+    """The waiver that lets this locked item differ in this run, or None: an active one,
+    or an expired one where the run doesn't enforce expiry (design/waivers.py)."""
+    waivers = getattr(std, "waivers", None)
+    if not waivers or lock_layer is None:
+        return None
+    from .waivers import pick
+
+    w = pick(waivers, "standard.content-locked", item_id, lock_layer, std.as_of)
+    if w is None or (w.expired(std.as_of) and std.enforce_expiry):
+        return None
+    return w
+
+
+def classification_for(std, spec) -> str | None:
+    """The classification a standard's footer rows are keyed off. The spec's own, unless
+    the standard assigns one (content.classification): a locked assignment is the
+    standard's value whatever the spec says (unless a waiver lets this dashboard differ),
+    so an author can't drop a locked confidential row by reclassifying the dashboard; an
+    unlocked one is a default, the spec's value once it has one, and none once the
+    author deleted it."""
+    own = spec.dashboard.classification
+    found = _merged_scalar(std, "classification")
+    if found is None:
+        return own
+    value, k = found
+    locker = _locked_by(std, "classification", k)
+    if locker is not None and waiver_for(std, "dashboard.classification", locker) is None:
+        return value
+    if own is not None:
+        return own
+    rec = _records(spec).get("dashboard.classification", MISSING)
+    return None if rec is not MISSING and _released(rec) else value
+
+
+def held_reason(std, item: Item) -> str | None:
+    """Why this run holds the item back from the release it is held to (Standard.release),
+    or None: the item's layer declares a later min_superset, or the item writes a
+    version-gated field (versions.py) the release can't take."""
+    release = getattr(std, "release", None)
+    if release is None:
+        return None
+    from ..versions import GATED_FIELDS, parse_version
+
+    rel = parse_version(release)
+    if rel is None:
+        return None
+    floor = std.floors.get(item.layer)
+    if floor and parse_version(floor) > rel:
+        return (f"the {item.layer} standard's content is for Superset {floor} or later "
+                f"(min_superset), and this run holds to {release}")
+    field_name = GATED_SLOTS.get(item.slot)
+    if field_name:
+        since = next(g.since for g in GATED_FIELDS if g.field == field_name)
+        if parse_version(since) > rel:
+            return (f"dashboard.{field_name} needs Superset {since} or later, and this run "
+                    f"holds to {release}")
+    return None
+
+
+def held_items(std, spec) -> list[tuple[Item, str]]:
+    """The items of this spec's standard held back from the run's release, with why."""
+    return [(i, r) for i in expected_items(std, spec) if (r := held_reason(std, i))]
+
+
 def expected_items(std, spec) -> list[Item]:
     """Every item the standard expects in this spec, each slot in its canonical order:
     header rows root layer first (each layer's lifecycle banner, then its rows), footer
@@ -398,7 +485,7 @@ def expected_items(std, spec) -> list[Item]:
     layers = std.content_layers
     lifecycle = spec.dashboard.lifecycle
     state = lifecycle.state if lifecycle else "active"
-    cls = spec.dashboard.classification
+    cls = classification_for(std, spec)
     items: list[Item] = []
     for k, (layer, c) in enumerate(layers):
         for n, row in enumerate(c.get("header_by_lifecycle", {}).get(state, [])):
@@ -556,6 +643,7 @@ class Decision:
     #                                list changed (_realign)
     near: int | None = None  # rows: a row of the item's shape where it stood that reads
     #                          differently: the author's own, kept
+    waiver: Any = None       # a locked item a waiver lets differ (design/waivers.py)
 
     @property
     def locked_by(self) -> str | None:
@@ -574,7 +662,7 @@ class Decision:
     def violation(self) -> bool:
         """A locked item the author changed or removed: only --locked rewrites it."""
         return (self.locked_by is not None and not self.conforms
-                and self.state not in ("add", "refresh"))
+                and self.state not in ("add", "refresh") and self.waiver is None)
 
 
 def _same(item: Item, value) -> bool:
@@ -588,6 +676,9 @@ class Analysis:
     decisions: list[Decision] = field(default_factory=list)
     errors: list[dict] = field(default_factory=list)   # {"item", "detail"}
     segments: list | None = None    # dashboard.css parsed, when it parsed
+    # Items held back from the run's release (held_reason), with why: neither expected
+    # nor removed, and their records kept as they are.
+    held: list = field(default_factory=list)
 
 
 def _spec_view(spec) -> dict:
@@ -605,6 +696,11 @@ def analyze(std, spec) -> Analysis:
     records = _records(spec)
     expected = expected_items(std, spec)
     out = Analysis()
+    out.held = [(i, r) for i in expected if (r := held_reason(std, i))]
+    if out.held:
+        held_ids = {i.id for i, _ in out.held}
+        expected = [i for i in expected if i.id not in held_ids]
+        records = {k: v for k, v in records.items() if k not in held_ids}
     for slot in ROW_SLOTS:
         _rows_slot(out, slot, view, [i for i in expected if i.slot == slot], records)
     _css_slot(out, view, [i for i in expected if i.slot == "css"], records)
@@ -653,6 +749,9 @@ def analyze(std, spec) -> Analysis:
         else:
             out.decisions.append(Decision(item_id, slot, layer, "forget", None,
                                           found=current, record="drop"))
+    for d in out.decisions:
+        if d.locked_by and not d.conforms:
+            d.waiver = waiver_for(std, d.id, d.locked_by)
     return out
 
 
@@ -1075,6 +1174,8 @@ def plan_changes(analysis: Analysis, *, locked: bool = False,
     keep the record in step (`release`, `tombstone`, `forget`, `record`)."""
     out = []
     for d in analysis.decisions:
+        if d.waiver is not None:
+            continue    # a waiver lets this dashboard keep the item as it is, record and all
         item = d.item
         new = _shown(item.value, d.slot) if item else None
         found = _shown(d.found, d.slot)
@@ -1114,7 +1215,7 @@ def plan_changes(analysis: Analysis, *, locked: bool = False,
 
 def stale(analysis: Analysis) -> bool:
     """Apply would change the spec's content (an add, refresh or removal), locked or not."""
-    return any(d.state in WRITES for d in analysis.decisions)
+    return any(d.state in WRITES and d.waiver is None for d in analysis.decisions)
 
 
 def locked_stale(analysis: Analysis) -> list[str]:
@@ -1124,7 +1225,8 @@ def locked_stale(analysis: Analysis) -> list[str]:
     read while a block in it is locked. Unlocked content lags without failing: teams
     take an unlocked change in their own pull request, and `standards check --strict`
     fails on it (a warn) for a team that wants it current."""
-    out = [d.id for d in analysis.decisions if d.locked_by and not d.conforms]
+    out = [d.id for d in analysis.decisions
+           if d.locked_by and not d.conforms and d.waiver is None]
     out += [e["item"] for e in analysis.errors if e.get("locked_by")]
     return out
 

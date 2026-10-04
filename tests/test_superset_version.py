@@ -82,6 +82,7 @@ def test_the_registry_gates_the_unsafe_fields_and_warns_for_the_ignored_ones():
     by_field = {g.field: g for g in GATED_FIELDS}
     assert {f: (g.since, g.severity) for f, g in by_field.items()} == {
         "tags": ("6.0.0", "error"),
+        "theme": ("6.0.0", "error"),  # no theme in the import schema before 6.0.0
         "show_chart_timestamps": ("6.1.0", "error"),
         "x_label_every": ("6.1.0", "warn"),  # a time axis needs force_max_interval (6.1.0)
         "subtitle": ("6.0.0", "warn"),

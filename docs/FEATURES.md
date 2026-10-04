@@ -41,7 +41,8 @@ into one. Everything below works from that one file.
     - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).
     - Chart: colour scheme, description (viewers open it from the chart menu), certification badge, cache timeout, and a shorter title shown on the dashboard.
     - Tags on Superset 6.0+ (with Superset's `TAGGING_SYSTEM` flag on), and chart timestamps on every card on Superset 6.1+.
-    - Record where a dashboard is in its life (`"lifecycle": {"state": "deprecated", "successor": "sales-v2"}`) and how sensitive it is (`"classification": "confidential"`). Both are kept in the spec, since Superset has a field for neither; a standard shows them on the dashboard as a banner or a footer row (below).
+    - A Superset theme on 6.0+, by the name Superset lists it under (`"theme": "Acme Brand"`). `check` confirms the name on each instance before anything is written, `plan` reports a dashboard showing another theme, and `decompile` reads it back. Leave it out and the theme chosen in Superset stays.
+    - Record where a dashboard is in its life (`"lifecycle": {"state": "deprecated", "successor": "sales-v2"}`) and how sensitive it is (`"classification": "confidential"`). Both are kept in the spec, since Superset has a field for neither; a standard shows them on the dashboard as a banner or a footer row, and can assign the classification and lock it (below).
 - **Named Owners**: List the dashboard's owners in the spec (`"owners": ["jdoe", "ana@example.com"]`), so a dashboard applied from CI belongs to the people responsible for it, and its drafts stay visible to them.
     - Each owner is checked against the instance before anything is written; a misspelt one comes back with the closest accounts.
     - Name owners by email on 4.1.4 and 5.0.0, whose API returns usernames only with `FAB_ADD_SECURITY_API` on; usernames work on 6.1.0.
@@ -92,20 +93,34 @@ into one. Everything below works from that one file.
 - **Locked Rules**: Lock a rule, or a threshold together with its value, in a standard, and every dashboard that follows it, or a standard extending it, keeps it: no team file, `design.ignore` entry, `--ignore` flag or personal `design.yaml` can turn the rule off, lower its severity, or change the threshold.
     - Give a locked threshold one value, or one value per audience; with per-audience values, a spec's `design.audience` picks among the values the standard set.
     - A team can still raise a locked rule's severity.
-    - A finding of a locked rule is fixed in the spec; to change the lock itself, edit the file that sets it in a pull request.
+    - A finding of a locked rule is fixed in the spec; to change the lock itself, edit the file that sets it in a pull request, and to exempt one dashboard, record an exception (below).
 - **Shared Headers, Footers and Branding**: Put content every dashboard of a team carries in its standard, and `chartwright standards apply specs/` writes it into each spec as ordinary fields you review in the diff ([reference](DESIGN-BRAIN.md#content)).
-    - Header and footer rows, a CSS block per standard, the colour scheme, label colours, certification, and number formats per metric label.
+    - Header and footer rows, a CSS block per standard, the colour scheme, label colours, certification, number formats per metric label, a Superset theme, and the dashboard's classification.
     - An org's legal footer, a unit's CSS and a team's header stack up, and a dashboard keeps its own rows and CSS beside them.
     - Banner rows per `dashboard.lifecycle` state (a "deprecated" notice naming the successor) and footer rows per `dashboard.classification`.
     - When the standard changes, run `standards apply` again: it updates what it wrote, prints one summary line per item (`dashboard.css[org]: same change × 412 (refresh …); 3 released by authors, skipped: …; 85 already current`), and rewrites only the files that change. `--standard finance` limits the run to one team, for one pull request per team.
 - **Your Edits Stay Yours**: Edit or delete an unlocked item a standard wrote and the dashboard keeps your version; every other item keeps following the standard. `design.standard_written` records what the standard wrote, item by item, and `chartwright explain` shows each item's source and how to change it.
 - **Locked Content**: Lock content in a standard, such as a legal footer, and an edited or missing copy is an error in `standards check` that names the locking file. `standards apply --locked` puts the standard's version back, showing what it replaces.
     - `standards apply --check` fails CI when a spec lacks locked content as the standard has it now; unlocked changes are listed and reach each team in its own pull request. Add `--strict` to fail on any change at all.
-    - A warning names CSS that could hide locked rows, so you can check it on the dashboard.
+    - A warning names CSS that could hide locked rows; `standards verify-visible` then checks the rendered dashboard (below).
+    - Lock the classification a standard assigns, and a dashboard reclassified away from it, or with the field removed, is an error; its locked confidential footer stays expected while the error stands.
     - `--claim` records content a decompiled or adopted dashboard already carries, and apply never adds it a second time.
+- **Recorded, Expiring Exceptions**: When one dashboard must deviate from a lock, add it to `standards/waivers.yaml` with an owner, a reason and an expiry date; nothing in the spec itself can lift a lock ([reference](DESIGN-BRAIN.md#waivers)).
+    - Name the dashboard by slug (or spec path), and the locked rule or content item: `layout.footer[org][0]`, `dashboard.classification`, `size.min-width`.
+    - The finding passes, listed as waived with its owner, reason and expiry; `standards apply` leaves that item as the dashboard has it.
+    - An expired waiver fails `standards check` and `advise` for the dashboards being checked, so a pull request fails only for the dashboards it touches; run `standards check` on the changed specs in CI. `check`, `apply` and `plan` keep the waiver with a warning, so an expiry never blocks a deploy or a rollback, and `restore` never reads the file.
+    - `standards check --report` lists every expired waiver, every one expiring within 30 days (`--expiring-within` changes it) and those that name no dashboard; `--as-of 2026-12-01` repeats any run exactly.
+    - Guard the file with a CODEOWNERS line such as `/standards/waivers.yaml @acme/data-platform`. Chartwright can't tell who approved a change to the file; your code host's required reviews do that.
+- **Mixed Superset Releases**: Deploy one spec to instances on different releases. `check`, `apply` and `plan` hold back, for each instance, the standard's content its release can't take, and list it as held, so a theme in a standard never blocks a deploy to 5.0.
+    - A standards file declares `min_superset: "6.0"` when its content is for that release or later; content that sets a newer field, such as a theme, holds itself back on older releases.
+    - Only the standard's own content is held: a field you wrote yourself still meets the release check.
+    - `standards check --superset-version 5.0.0` shows offline what a 5.0 instance would get.
+- **Checking What Readers See**: `chartwright standards verify-visible spec.json --profile prod` opens the dashboard in a headless browser after deploy and checks that every locked header and footer line is on the page and readable. It catches a line hidden by display or visibility, transparency, clipping, a container cutting it off, a position off the page, an element drawn over it, a tiny font, or a colour close to its background.
+    - It exits 1 and names each hidden line and why, ready as a post-deploy step.
+    - It needs a browser, installed only on request: `pip install 'chartwright[visual]'`, then `playwright install chromium`.
 - **One Check for the Whole Folder**: `chartwright standards check specs/` reviews every spec under its standard and exits 1 on any error finding, or on warnings too with `--strict`, ready as a CI gate. It sets `design.yaml` aside, so it gives the same result on every machine.
-    - `--report` sums up the folder as JSON: per dashboard its standard, pass or fail, findings by rule and severity, and the locks it hit; then totals per rule and per standard.
-- Through MCP, start the server inside the repository, or point `CHARTWRIGHT_STANDARDS_DIR` at the folder: the advice tools then apply each spec's standard, `standards_apply` writes a standard's content into a spec, and `standards_check` and `standards_show` answer as the CLI does.
+    - `--report` sums up the folder as JSON: per dashboard its standard, pass or fail, findings by rule and severity, the locks it hit and what was waived; then totals per rule and per standard, and the waivers file's expired and expiring entries.
+- Through MCP, start the server inside the repository, or point `CHARTWRIGHT_STANDARDS_DIR` at the folder: the advice tools then apply each spec's standard and its waivers (matched by slug), `standards_apply` writes a standard's content into a spec, `standards_check` and `standards_show` answer as the CLI does, and `check_spec`, `build_dashboard` and `plan_dashboard` hold content back per release.
 - Compile reads only the spec: a standard's content reaches a dashboard as the fields `standards apply` wrote, so `plan` and decompile see what you reviewed. Without a `standards/` folder, none of this applies.
 
 ## Dashboards as Code
@@ -119,7 +134,7 @@ into one. Everything below works from that one file.
 - **Environment Promotion**: Specs name their data (connection, schema, table), never instance ids, so the same file applies to dev, staging, and production when they share connection names; where names differ, generate one copy per instance.
 - **PR-Gated Dashboard Changes**: Specs live in git; `chartwright plan` passes when the live dashboard matches the spec and fails when it drifted, ready as a merge gate; read-only `chartwright check` runs safely on any schedule.
 - **Offline Compilation**: Build the import bundle with `chartwright compile`, no server needed; the output is reproducible byte-for-byte.
-- **Instance Migration**: Decompile from one Superset, apply the spec to another; it applies to 4.1.4 and 5.0.0 even when it came from 6.1.0, whose exports those releases reject. `chartwright check` names any setting the target release can't take, such as tags before 6.0, for you to remove first.
+- **Instance Migration**: Decompile from one Superset, apply the spec to another; it applies to 4.1.4 and 5.0.0 even when it came from 6.1.0, whose exports those releases reject. `chartwright check` names any setting the target release can't take, such as tags or a theme before 6.0, for you to remove first.
 - **Git as the Source of Truth**: A lost or mangled dashboard is one re-apply away from its spec.
 
 ## Safety and Recovery
@@ -128,7 +143,7 @@ into one. Everything below works from that one file.
 - **Self-Healing Applies**: When an apply fails while preparing, importing or updating charts, the previous state is restored automatically, whatever the error. A failure after that (linkage, filter scopes, chart queries) leaves the new version live, and the report gives the backup to restore.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once: an error fails the apply, and a chart that returns no rows is named. Any failure says what went wrong and where.
-    - Your spec is held to the instance's Superset release too: a setting the release can't take (tags on 4.1.4 or 5.0.0, chart timestamps before 6.1) stops the apply before anything is written and names the field to remove; one it would ignore, such as a trendline subtitle before 6.0, comes back as a warning. Offline, `chartwright compile --superset-version 5.0.0` runs the same check.
+    - Your spec is held to the instance's Superset release too: a setting the release can't take (tags or a theme on 4.1.4 or 5.0.0, chart timestamps before 6.1) stops the apply before anything is written and names the field to remove; one it would ignore, such as a trendline subtitle before 6.0, comes back as a warning. Offline, `chartwright compile --superset-version 5.0.0` runs the same check.
 - **Ownership Guard**: The tool only ever overwrites dashboards it created. To manage a hand-built dashboard, decompile it into a spec and build it at a new slug; the original stays untouched.
 
 ## Enterprise Ready
@@ -170,6 +185,7 @@ into one. Everything below works from that one file.
 | `chartwright standards show` | Show a standard after `extends`: each setting, the file that set it, and whether it is locked |
 | `chartwright standards assign` | Write `design.standard` into every spec in a folder or glob |
 | `chartwright standards apply` | Write each standard's content into its specs, with a summary grouped by item; `--check` fails on missing locked content, `--locked` restores it, `--claim` records content already there |
+| `chartwright standards verify-visible` | Check in a headless browser that a deployed dashboard's locked header and footer text is readable; needs `chartwright[visual]` |
 | `chartwright restore` | Bring back a backed-up dashboard, completely |
 
 ## Testing and Evidence

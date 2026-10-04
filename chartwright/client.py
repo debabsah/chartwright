@@ -248,6 +248,26 @@ class SupersetClient:
         r = self._send(lambda: self.session.delete(f"{self.base_url}/api/v1/chart/{chart_id}", timeout=60))
         self._raise_for(r, f"delete chart {chart_id} failed")
 
+    # -- themes (6.0.0+) ----------------------------------------------------
+
+    def themes(self) -> list[dict]:
+        """Every theme on the instance: id, uuid and theme_name, from the theme list API
+        (ThemeRestApi, resource "theme", superset/themes/api.py at 6.0.0 and 6.1.0).
+        Themes are few, so all pages are read and names matched here: theme_name has no
+        unique constraint (models/core.py class Theme), and the API's only name search is
+        a substring match over name and JSON alike (themes/filters.py ThemeAllTextFilter)."""
+        out: list[dict] = []
+        page = 0
+        while page < 100:   # 10,000 themes: a runaway guard, not an expected ceiling
+            rows = self.get("/api/v1/theme/", q={
+                "columns": ["id", "uuid", "theme_name"], "page": page, "page_size": 100,
+            })["result"]
+            out += rows
+            if len(rows) < 100:
+                break
+            page += 1
+        return out
+
     # -- import / export ----------------------------------------------------
 
     def import_dashboard_bundle(self, zip_bytes: bytes, overwrite: bool = True) -> requests.Response:

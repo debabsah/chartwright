@@ -35,10 +35,11 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1292 tests, 58 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1409 tests, 63 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
+| Locked text visible (optional) | `standards verify-visible` in headless Chromium: the standards fixture's locked footer shows, and the same dashboard with near-white footer CSS is caught; reports without failing the job, since the browser is an optional extra | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
 | Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every PR and push to main, all 3 versions |
 | Fault injection | A typed failure at every stage boundary; complete restore | every PR and push to main, all 3 versions |
@@ -130,6 +131,44 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   `design.yaml`; the fleet report's shape; the MCP tools return what the CLI
   prints; without a standards folder the advice is unchanged; and every
   example and fixture compiles to the same bytes with `design.standard` set.
+- **Waivers** (`test_standards_waivers.py`): the waivers file is no
+  standard and makes no standards folder; every malformed entry is a typed
+  error naming it; a waiver lets a locked content item or a locked rule pass
+  for its dashboard, by slug or spec path, scoped to a layer when it says so,
+  reported with owner, reason and expiry, while `design.ignore` still can't;
+  an expired waiver fails `standards check` and `advise` only for the specs
+  checked, and `--as-of` reproduces a run; a deploy's advice and `apply` warn
+  and pass a strict gate; `restore` never reads the folder; `standards apply`
+  leaves a waived item (even before the first apply) and `--check` passes
+  it; the report lists expired, expiring and unmatched waivers; the MCP
+  tools match the CLI; without a waivers file payloads are as before.
+- **A standard's release floor** (`test_standards_versions.py`):
+  `min_superset` reads as a release and `standards show` names it; `standards
+  check --superset-version` holds back a floor's content and a theme, never
+  expects them and keeps their records; `check`, `apply`, `plan` and MCP
+  `check_spec` hold the standard's content on an older instance instead of
+  refusing it, while an author's own theme is still refused; the release is
+  asked only when something could be held, and an unknown one holds nothing
+  and says so.
+- **Classification locks** (`test_standards_classification.py`): a
+  standard's classification is written and recorded with its rows in one
+  run; unlocked it is the author's to change; locked, a change or a removal
+  is an error, its rows follow the standard's value and `--locked` restores
+  it without losing them; a waiver lets one dashboard differ; the value must
+  be in the list and a lower layer can't change it.
+- **Dashboard theme** (`test_dashboard_theme.py`): the name is validated;
+  4.1.4 and 5.0.0 refuse it before any theme lookup; resolve finds the exact
+  name and names an unknown, ambiguous or unreadable theme; the bundle
+  carries the resolved `theme_id` and nothing without a theme; decompile
+  reads the name from an export and names what it can't; `plan` compares it
+  when the spec names one and leaves a UI-chosen theme alone otherwise.
+- **Visible locked text** (`test_visible.py`): the verdict over a fake
+  page's measurements names each way text is hidden (missing, unrendered,
+  hidden, sizeless, off the page, cut off, transparent, clipped, tiny, low
+  contrast, covered); the targets are the locked rows the spec holds; the
+  command exits 1 naming hidden items, and without the visual extra says how
+  to install it; Playwright is no core dependency. A live test runs the real
+  browser when `CHARTWRIGHT_VISIBLE_LIVE` names a Superset.
 - **Dashboard owners** (`test_dashboard_owners.py`): owners never reach
   the bundle; usernames resolve where the security API answers and emails
   everywhere, an unknown or ambiguous owner is a resolve-stage error with
@@ -301,6 +340,8 @@ python tools/ci_live_check.py --base-url http://localhost:8098   # kitchen sink
 python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_display_controls.json
 python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
 python tools/ci_live_standards.py --base-url http://localhost:8098   # tests/fixtures/standards_live
+pip install -e ".[visual]" && playwright install chromium
+python tools/ci_live_visible.py --base-url http://localhost:8098     # locked text visible
 python tools/soak.py       --base-url http://localhost:8098 --cycles 500 --seed 1
 python tools/adversary.py  --base-url http://localhost:8098
 python tools/faultline.py  --base-url http://localhost:8098

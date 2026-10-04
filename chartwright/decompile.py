@@ -1183,7 +1183,8 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
     return rows
 
 
-def _dashboard_settings_to_spec(dash: dict, losses: list[Loss]) -> dict:
+def _dashboard_settings_to_spec(dash: dict, losses: list[Loss],
+                                themes: dict[str, str] | None = None) -> dict:
     """The dashboard's own settings, each emitted only when it differs from
     what an omitted spec field compiles to, so neither side drifts in plan."""
     meta = dash.get("metadata") or {}
@@ -1211,7 +1212,28 @@ def _dashboard_settings_to_spec(dash: dict, losses: list[Loss]) -> dict:
     tags = _tags_to_spec(dash.get("tags"), losses, "dashboard")
     if tags:
         out["tags"] = tags
+    theme = _theme_to_spec(dash, themes or {}, losses)
+    if theme:
+        out["theme"] = theme
     return out
+
+
+def _theme_to_spec(dash: dict, themes: dict[str, str], losses: list[Loss]) -> str | None:
+    """dashboard.theme, by name: a 6.0+ export names the dashboard's theme by
+    theme_uuid and ships the theme itself under themes/ (commands/dashboard/export.py
+    :164-165 and :199-203 at 6.0.0 and 6.1.0), whose theme_name the spec uses."""
+    u = dash.get("theme_uuid")
+    if u:
+        name = themes.get(str(u))
+        if name:
+            return name
+        losses.append(Loss("dashboard", f"theme {u} has no themes/ file in the bundle; "
+                                        f"theme not preserved"))
+    elif dash.get("theme_id") is not None:
+        # A compiled bundle: the id is the target's own, with no name beside it.
+        losses.append(Loss("dashboard", f"theme_id {dash['theme_id']} can't be named "
+                                        f"offline; theme not preserved"))
+    return None
 
 
 def _leaf_tabs(layout: dict) -> list[dict]:
@@ -1228,6 +1250,13 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
     if len(dash_files) > 1:
         losses.append(Loss("dashboard", f"bundle has {len(dash_files)} dashboards; decompiling the first only"))
     dash = yaml.safe_load(zf.read(dash_files[0]))
+
+    themes: dict[str, str] = {}   # theme uuid -> theme_name, from an export's themes/
+    for n in zf.namelist():
+        if "/themes/" in n and n.endswith(".yaml"):
+            ty = yaml.safe_load(zf.read(n)) or {}
+            if ty.get("uuid") and isinstance(ty.get("theme_name"), str) and ty["theme_name"]:
+                themes[str(ty["uuid"])] = ty["theme_name"]
 
     charts_by_name: dict[str, dict] = {}
     dataset_uuids: dict[str, str] = {}
@@ -1386,7 +1415,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             **({"label_colors": dict(label_colors)} if label_colors else {}),
             # "Edit CSS"; blank or absent (Superset stores null) reads as omitted.
             **({"css": css} if css.strip() else {}),
-            **_dashboard_settings_to_spec(dash, losses),
+            **_dashboard_settings_to_spec(dash, losses, themes),
         },
         "charts": ordered,
         "layout": layout,

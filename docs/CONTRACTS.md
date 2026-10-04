@@ -177,6 +177,54 @@ running the tool against real instances of all three releases.
   compares owners as user ids, the spec's as resolved, so the two forms
   never read as drift.
 
+## Dashboard theme
+
+- **Themes arrived in 6.0.0.** A dashboard points at one theme through
+  `theme_id`, a foreign key to the `themes` table (`Dashboard.theme_id`,
+  6.0.0 `superset/models/dashboard.py:139`, 6.1.0 `:140`), and the theme has
+  a `theme_name` with no unique constraint (`class Theme`, 6.0.0
+  `superset/models/core.py:118-134`, 6.1.0 `:120-136`). 4.1.4 and 5.0.0 have
+  neither: their `class Dashboard` has no theme column and their import
+  schema no theme field (`ImportV1DashboardSchema`, 4.1.4
+  `superset/dashboards/schemas.py:458`, 5.0.0 `:474`), so a bundle naming a
+  theme fails to import there. `dashboard.theme` is gated at 6.0.0 in
+  `chartwright/versions.py`.
+- **An export names the theme by uuid and ships it; the importer maps a uuid
+  only through that file.** The export writes `theme_uuid` on the dashboard
+  and the theme itself under `themes/` (`superset/commands/dashboard/export.py`
+  `:164-165` and `:199-203`, 6.0.0 and 6.1.0). On import, a `theme_uuid`
+  becomes a `theme_id` only when a `themes/` file in the same bundle carries
+  that uuid; otherwise the theme is set to none
+  (`superset/commands/dashboard/importers/v1/__init__.py`, 6.0.0
+  `:105-111,170-177`, 6.1.0 `:105-111,175-182`). The import schema also takes
+  `theme_id` directly (`ImportV1DashboardSchema`, 6.0.0
+  `superset/dashboards/schemas.py:503-504`, 6.1.0 `:520-521`), and
+  `import_from_dict` sets it, since `theme_id` is one of the dashboard's
+  `extra_import_fields` (6.0.0 `superset/models/dashboard.py:182`, 6.1.0
+  `:193`).
+- **So the bundle carries the theme's id on the target.** `check`, `apply`
+  and `plan` resolve `dashboard.theme` by its exact name through the theme
+  list API (`ThemeRestApi`, resource `theme`, `superset/themes/api.py`, 6.0.0
+  and 6.1.0), reading every page and matching names here: the API's only
+  name search is a substring match over the name and the theme's JSON alike
+  (`ThemeAllTextFilter`, `superset/themes/filters.py`). An unknown name is
+  `theme_not_found` with the closest names, two themes of one name
+  `theme_ambiguous`, and a list the account can't read `theme_lookup_failed`,
+  all at the resolve stage before anything is written. Compile writes the
+  resolved id as `theme_id`.
+- **A theme chosen in the UI survives an apply whose spec names none.** With
+  no `theme_uuid` and no `theme_id` in the bundle, `import_from_dict` leaves
+  the column as it is (it sets only the keys the bundle has), so a spec
+  without `theme` doesn't manage it, and `plan` doesn't compare it. Verified
+  live on 6.1.0: a theme set through the dashboard API stayed after a
+  re-apply, and `plan` was clean.
+- **Decompile and `plan` read the theme by name.** A 6.x export carries the
+  theme's file, whose `theme_name` decompile writes as `dashboard.theme`, so
+  `plan` reports `theme` among the changed settings when the live dashboard
+  shows another one. Verified live on 6.1.0 (apply, `plan` clean, decompile
+  reads the name, an author's change shows in `plan` and the next apply sets
+  it). 6.0.x was read from its source, not tested live.
+
 ## Which release is on the other end
 
 - **6.1.0 reports its version at `/version`; 4.1.4 and 5.0.0 report it in
@@ -198,8 +246,8 @@ running the tool against real instances of all three releases.
   development build reports 0.0.0, which counts as unknown.
 - **A field a release can't take is refused before anything is written.**
   `chartwright/versions.py` lists each version-gated field with the first
-  release that takes it: `tags` (6.0.0) and `show_chart_timestamps`
-  (6.1.0), for the reasons above. Against an older instance, the spec gets
+  release that takes it: `tags` and `theme` (6.0.0) and
+  `show_chart_timestamps` (6.1.0), for the reasons above. Against an older instance, the spec gets
   a `superset_version_too_old` error at the resolve stage, so `apply` stops
   before its backup, import or any update; remove the field for that
   instance. When the instance doesn't report its version, the error is
@@ -207,6 +255,19 @@ running the tool against real instances of all three releases.
   (the MCP tools' `superset_version`), which also skips the lookup.
   `compile --superset-version` runs the same check offline; without it,
   `compile` writes the same bundle for every release.
+- **A standard's content a release can't take is held back, not refused.**
+  A spec carries its standard's content for every instance it deploys to, so
+  a theme the standard writes, or content from a standards file that
+  declares a later `min_superset`, would otherwise fail every deploy to an
+  older instance. `check`, `apply` and `plan` (and the MCP `check_spec`,
+  `build_dashboard` and `plan_dashboard`) ask the instance its release
+  when the spec's standard could hold something, remove from what they send
+  each such item the spec holds as the standard wrote it, and list it under
+  `held` with the reason. Compile and the version check then see a spec
+  without it. A field the author wrote is never held and meets the check
+  above. Verified live: a standard's theme was held on 4.1.4 and 5.0.0, the
+  dashboard applied and `plan` was clean, while an author's own theme was
+  refused with `superset_version_too_old`.
 - **A field a release ignores is a warning.** A trendline's `subtitle` and
   a table's `column_headers` write controls that 6.0.0 added and older
   plugins never read (next section). `x_label_every` warns before 6.1.0: a
@@ -418,13 +479,18 @@ pipeline depends on them the same way.
   the record `standards apply` keeps of the content it wrote, is the same: a
   test compiles every example and fixture with and without it.
 - **A standard's content reaches Superset only as spec fields.** `standards
-  apply` writes header and footer rows, CSS, colours, certification and
-  number formats into the spec; compile builds them like any author's. A CSS
+  apply` writes header and footer rows, CSS, colours, certification,
+  number formats, a theme and a classification into the spec; compile builds
+  them like any author's (the classification is spec-only, below). A CSS
   block's markers (`/* cw:std org <hash> */ ... /* cw:end org */`) are CSS
   comments inside `dashboard.css`, so Superset stores them and decompile
   reads them back as written: verified on 4.1.4, 5.0.0 and 6.1.0 by applying
   a spec with an org footer, a team header and two CSS blocks, with `plan`
   clean afterwards and on a second apply.
+- **`standards/waivers.yaml` is read by the review alone.** `standards
+  check`, `advise`, `standards apply` and the advice `check` and `apply`
+  carry read it; compile, `plan`, decompile and `restore` never do, and
+  nothing in it reaches a spec or a bundle.
 - **`dashboard.lifecycle` and `dashboard.classification` are spec-only.**
   Compile, `plan` and decompile ignore them; Superset's dashboard model has
   no column for either (`superset/models/dashboard.py`, `class Dashboard`, at
@@ -435,7 +501,7 @@ pipeline depends on them the same way.
   the release reading it fails validation with `extra_forbidden` at that
   field. `design.standard`, `design.standard_written`, `dashboard.lifecycle`
   and `dashboard.classification` are such fields: 0.2.1 and earlier reject
-  them. Run CI and
+  them; 0.3.0 and earlier reject `dashboard.theme`. Run CI and
   every pipeline on a release that knows each field your specs use.
 
 ## Checking these facts

@@ -42,6 +42,7 @@ class ResolutionError:
     code: str          # dataset_not_found | dataset_ambiguous | column_not_found | metric_not_found | bad_metric
     #                    | superset_version_too_old | superset_version_unknown (chartwright.versions)
     #                    | owner_not_found | owner_ambiguous | owner_account_unknown (chartwright.owners)
+    #                    | theme_not_found | theme_ambiguous | theme_lookup_failed (dashboard.theme)
     chart: str | None
     ref: str
     detail: str
@@ -71,6 +72,11 @@ class Resolution:
     # accounts plus the signed-in one, chartwright.owners); None when the spec
     # leaves owners alone.
     owner_ids: list[int] | None = None
+    # dashboard.theme resolved on this instance (Superset 6.0+): the theme's id, which
+    # the bundle carries as theme_id, and its uuid, which an export names. None when
+    # the spec names no theme.
+    theme_id: int | None = None
+    theme_uuid: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -123,6 +129,8 @@ def resolve(spec: DashboardSpec, client: SupersetClient,
             ))
         if f.type == "time_column" and f.default:
             _check_column(f.default, where, ds, res, "time_column default")
+    if spec.dashboard.theme is not None and not any(e.ref == "theme" for e in res.errors):
+        _resolve_theme(spec.dashboard.theme, client, res)
     if spec.dashboard.owners is not None:
         from .owners import resolve_owners
 
@@ -145,6 +153,43 @@ def _check_version(spec: DashboardSpec, client: SupersetClient, res: Resolution,
     res.superset_version = checked.version
     res.version_warnings = checked.warnings
     res.errors += [ResolutionError(e["code"], e["chart"], e["ref"], e["detail"]) for e in checked.errors]
+
+
+def _resolve_theme(name: str, client: SupersetClient, res: Resolution) -> None:
+    """dashboard.theme by name -> the instance's theme (Superset 6.0+). Names match
+    exactly; theme_name has no unique constraint, so two themes of one name are an
+    error, never a guess. Runs only after the version check passed: a release before
+    6.0.0 has no theme API."""
+    import difflib
+
+    from .client import SupersetAPIError
+
+    try:
+        themes = client.themes()
+    except SupersetAPIError as e:
+        res.errors.append(ResolutionError(
+            "theme_lookup_failed", None, "theme",
+            f"the instance's themes could not be read ({e}); the account needs read access "
+            f"to themes (Superset's \"can read on Theme\") to apply dashboard.theme"))
+        return
+    found = [t for t in themes if t.get("theme_name") == name]
+    if len(found) == 1:
+        res.theme_id, res.theme_uuid = found[0]["id"], str(found[0].get("uuid"))
+        return
+    names = sorted({str(t.get("theme_name")) for t in themes if t.get("theme_name")})
+    if found:
+        res.errors.append(ResolutionError(
+            "theme_ambiguous", None, "theme",
+            f"{len(found)} themes are named {name!r} on this instance (ids "
+            f"{sorted(t['id'] for t in found)}); rename all but one in Superset "
+            f"(Settings > Themes)"))
+        return
+    near = difflib.get_close_matches(name, names, n=3, cutoff=0.5)
+    hint = f"; did you mean {', '.join(repr(n) for n in near)}?" if near else "."
+    res.errors.append(ResolutionError(
+        "theme_not_found", None, "theme",
+        f"no theme named {name!r} on this instance{hint} Themes: "
+        f"{', '.join(names) if names else 'none'}", near))
 
 
 def _check_where(filters, where: str, ds: "ResolvedDataset", res: "Resolution", what: str) -> None:

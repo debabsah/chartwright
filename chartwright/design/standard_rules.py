@@ -52,7 +52,8 @@ def content_locked(ctx: RuleContext):
         if err.get("locked_by"):
             yield Finding("standard.content-locked", "error", None, err["item"],
                           f"{err['item']}: {err['detail']}; standards apply can't read the "
-                          f"blocks {err['locked_by']} locks until the markers are fixed by hand")
+                          f"blocks {err['locked_by']} locks until the markers are fixed by hand",
+                          lock_layer=err["locked_by"])
     for d in a.decisions:
         if not d.locked_by or d.conforms:
             continue
@@ -82,7 +83,12 @@ def content_locked(ctx: RuleContext):
                 detail += (f". The row at layout.{d.slot}[{d.near}] has its shape but reads "
                            f"differently, so it stays as yours and --locked adds the "
                            f"standard's beside it")
-        yield Finding("standard.content-locked", "error", None, d.id, detail)
+        if d.id == "dashboard.classification":
+            detail += (". The standard assigns this dashboard's classification; a dashboard "
+                       "that needs another follows another standard, or gets a waiver in "
+                       "standards/waivers.yaml")
+        yield Finding("standard.content-locked", "error", None, d.id, detail,
+                      lock_layer=d.locked_by)
 
 
 @rule("standard.content-stale", "warn",
@@ -266,3 +272,20 @@ def css_hides(ctx: RuleContext):
                 f"{source} has `{selector} {{ {found} }}`, which can hide the rows "
                 f"{', '.join(sorted(lockers))} locks; standards check can't tell what a "
                 f"selector matches on a rendered dashboard, so look at it there")
+
+
+@rule("standard.waiver-expired", "error",
+      "no waiver naming this dashboard in standards/waivers.yaml has expired (checked by "
+      "standards check and advise; a deploy warns instead)", since="6")
+def waiver_expired(ctx: RuleContext):
+    std = getattr(ctx, "standard", None)
+    if std is None or not std.waivers or not std.enforce_expiry:
+        return
+    for w in std.waivers:
+        if w.expired(std.as_of):
+            yield Finding(
+                "standard.waiver-expired", "error", None, f"waivers[{w.index}]",
+                f"the waiver for {w.rule} on this dashboard ({w.target}) expired on "
+                f"{w.expires.isoformat()} (owner: {w.owner}; reason: {w.reason}); the "
+                f"finding it covered counts again. Renew or remove it in "
+                f"standards/waivers.yaml, or bring the dashboard back to the standard")

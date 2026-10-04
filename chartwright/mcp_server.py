@@ -97,31 +97,64 @@ def validate_spec(spec_json: str) -> str:
     return json.dumps(err or {"ok": True, "stage": "schema"})
 
 
-def _standards():
+def _standards(as_of=None):
     """The server's standards: the directory $CHARTWRIGHT_STANDARDS_DIR names, or the one
     discovered from the server's working directory, since a tool sees a spec and never
-    its path (design/standards.py)."""
+    its path (design/standards.py). Waivers match a spec by its slug here."""
     from .design.standards import StandardsSource
 
-    return StandardsSource.from_env()
+    source = StandardsSource.from_env()
+    source.as_of = as_of
+    return source
 
 
-def _standard(spec):
+def _as_of(text: str):
+    """(date or None, error JSON or None) for a tool's as_of argument."""
+    if not text:
+        return None, None
+    import datetime as dt
+
+    try:
+        return dt.date.fromisoformat(text), None
+    except ValueError:
+        return None, json.dumps({"ok": False, "stage": "standards", "errors": [{
+            "code": "bad_as_of", "detail": f"as_of {text!r} is not a date, YYYY-MM-DD"}]})
+
+
+def _standard(spec, as_of=None, enforce_expiry: bool = False):
     """(the spec's resolved standard or None, typed error JSON or None)."""
     from .design.standards import StandardsError
 
     try:
-        return _standards().standard_for(spec), None
+        return _standards(as_of).standard_for(spec, enforce_expiry=enforce_expiry), None
     except StandardsError as e:
         return None, json.dumps({"ok": False, "stage": "standards", "errors": [e.as_dict()]})
 
 
-def _advice(spec, resolution=None, audience: str | None = None, strict: bool = False) -> dict:
+def _advice(spec, resolution=None, audience: str | None = None, strict: bool = False,
+            source=None) -> dict:
     """Advice riding along MCP responses degrades, never raises (the CLI's own helper)."""
     from .design import advice_payload
 
     return advice_payload(spec, resolution, audience=audience, strict=strict,
-                          standards=_standards())
+                          standards=source if source is not None else _standards())
+
+
+def _for_instance(spec, source, client, version):
+    """The spec as this instance gets it, standard content its release can't take held
+    back (the CLI's own helper)."""
+    from .design.standards import for_instance
+    from .versions import stated_release
+
+    return for_instance(spec, source,
+                        lambda: version or stated_release(client.superset_version()))
+
+
+def _held(out: dict, inst) -> None:
+    if inst.held:
+        out["held"] = inst.held
+    if inst.warning:
+        out.setdefault("warnings", []).append(inst.warning)
 
 
 def _bad_design(design: str) -> str | None:
@@ -166,14 +199,16 @@ def _bad_chart(spec, chart: str) -> str | None:
 @mcp.tool()
 @_typed_errors
 def check_spec(spec_json: str, profile: str, superset_version: str = "",
-               design: str = "warn") -> str:
+               design: str = "warn", as_of: str = "") -> str:
     """Pre-flight referential resolution against the live Superset instance:
     every dataset triple, column, and metric must exist, and every field must
     suit the instance's Superset release. Returns typed errors plus a
     design-brain advice block. superset_version (optional, e.g. "5.0.0") names the
     instance's Superset release; omitted, the instance is asked. design is the CLI's
     --design: warn (advice rides along), strict (error and warn findings fail the check;
-    the per-machine design.yaml is set aside), off (no advice)."""
+    the per-machine design.yaml is set aside), off (no advice). Standard content the
+    release can't take is held back and listed under held. as_of (YYYY-MM-DD) reads
+    waiver expiry as of that day; an expired waiver warns here, never fails."""
     bad = _bad_design(design)
     if bad:
         return bad
@@ -183,9 +218,15 @@ def check_spec(spec_json: str, profile: str, superset_version: str = "",
     version, err = _stated_version(superset_version)
     if err:
         return err
+    day, err = _as_of(as_of)
+    if err:
+        return err
     from .apply import check
 
-    res = check(spec, _client(profile), version)
+    client = _client(profile)
+    source = _standards(day)
+    inst = _for_instance(spec, source, client, version)
+    res = check(inst.spec, client, version)
     out = {"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]}
     if res.superset_version:
         out["superset_version"] = res.superset_version
@@ -194,16 +235,18 @@ def check_spec(spec_json: str, profile: str, superset_version: str = "",
     if res.unchecked_sql:
         # Custom SQL is not checkable by name; say so instead of passing it silently.
         out["unchecked_sql"] = res.unchecked_sql
+    _held(out, inst)
     if design != "off":
+        source.release = inst.release
         _gate(out, _advice(spec, resolution=res if res.ok else None,
-                           strict=design == "strict"), design)
+                           strict=design == "strict", source=source), design)
     return json.dumps(out)
 
 
 @mcp.tool()
 @_typed_errors
 def build_dashboard(spec_json: str, profile: str, superset_version: str = "",
-                    design: str = "warn") -> str:
+                    design: str = "warn", as_of: str = "") -> str:
     """Compile the spec and apply it to the live Superset instance
     (resolve -> import -> linkage -> data smoke). Returns the full apply report
     including the dashboard URL. A field the instance's release can't take
@@ -211,7 +254,9 @@ def build_dashboard(spec_json: str, profile: str, superset_version: str = "",
     instance's Superset release; omitted, the instance is asked. design is the CLI's
     apply --design: warn (offline advice rides along), strict (error and warn findings
     stop the build before anything is written; the per-machine design.yaml is set
-    aside), off."""
+    aside), off. Standard content the release can't take is held back and listed under
+    held. as_of (YYYY-MM-DD) reads waiver expiry as of that day; an expired waiver warns
+    here, never blocks."""
     bad = _bad_design(design)
     if bad:
         return bad
@@ -221,18 +266,27 @@ def build_dashboard(spec_json: str, profile: str, superset_version: str = "",
     version, err = _stated_version(superset_version)
     if err:
         return err
+    day, err = _as_of(as_of)
+    if err:
+        return err
+    source = _standards(day)
     advice = None
     if design != "off":
         # Offline, before signing in, as the CLI's apply does: strict blocks first.
-        advice = _advice(spec, strict=design == "strict")
+        source.release = version
+        advice = _advice(spec, strict=design == "strict", source=source)
         blocked: dict = {"stage": "design", "ok": False}
         if _gate(blocked, advice, design):
             return json.dumps(blocked)
     from .apply import apply as run_apply
 
-    out = json.loads(run_apply(spec, _client(profile), profile, version).to_json())
+    client = _client(profile)
+    inst = _for_instance(spec, source, client, version)
+    out = json.loads(run_apply(inst.spec, client, profile, version).to_json())
+    _held(out, inst)
     if advice is not None:
         out["advice"] = advice
+        out["warnings"] = out.get("warnings", []) + advice.get("warnings", [])
     return json.dumps(out, indent=2)
 
 
@@ -250,7 +304,11 @@ def plan_dashboard(spec_json: str, profile: str, superset_version: str = "") -> 
         return err
     from .dashdiff import plan as run_plan
 
-    return run_plan(spec, _client(profile), version).to_json()
+    client = _client(profile)
+    inst = _for_instance(spec, _standards(), client, version)
+    p = run_plan(inst.spec, client, version)
+    p.held, p.warnings = inst.held, [inst.warning] if inst.warning else []
+    return p.to_json()
 
 
 @mcp.tool()
@@ -272,13 +330,14 @@ def design_brief(audience: str = "analytical") -> str:
 @mcp.tool()
 @_typed_errors
 def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: str = "",
-                strict: bool = False) -> str:
+                strict: bool = False, as_of: str = "") -> str:
     """Design review of a spec against the design-brain rulebook (offline;
     pass a profile for data-aware rules: column types and cardinality).
     Audiences: executive | analytical | operational. `chart` keeps one chart's
     findings (the CLI's advise --chart). `strict` is advise --strict: warn findings
     fail too (a design_gate error), and the per-machine design.yaml is set aside;
-    the `overlay` block says what was set aside."""
+    the `overlay` block says what was set aside. as_of (YYYY-MM-DD) reads waiver expiry
+    as of that day: an expired waiver fails here, as in standards check."""
     bad = _bad_audience(audience)
     if bad:
         return bad
@@ -288,7 +347,10 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: st
     bad = _bad_chart(spec, chart)
     if bad:
         return bad
-    standard, err = _standard(spec)
+    day, err = _as_of(as_of)
+    if err:
+        return err
+    standard, err = _standard(spec, day, enforce_expiry=True)
     if err:
         return err
     from .design import advise
@@ -374,20 +436,31 @@ def explain_spec(spec_json: str, chart: str = "", audience: str = "") -> str:
 
 
 @mcp.tool()
-def standards_check(spec_json: str, strict: bool = False) -> str:
+def standards_check(spec_json: str, strict: bool = False, as_of: str = "",
+                    superset_version: str = "") -> str:
     """The CLI's `standards check` for one spec, offline: the design review with the
     spec's standard applied (design.standard, or the repository's default standard),
     setting the per-machine design.yaml aside. ok is false on an error finding, or on a
     warn when strict. Returns the standard chain, the findings (each with the layer that
     set its severity and whether a standard locks its rule) and the locks applied. The
     standards directory is the server's $CHARTWRIGHT_STANDARDS_DIR, or the one found
-    from its working directory."""
+    from its working directory. Waivers in its waivers.yaml that name the spec's slug
+    let locked findings pass (listed under waived); an expired one fails, read as of
+    as_of (YYYY-MM-DD, default today). superset_version holds the standard's content to
+    that release: what it can't take is listed under held."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    day, err = _as_of(as_of)
+    if err:
+        return err
+    version, err = _stated_version(superset_version)
+    if err:
+        return err
     from .design.standards import StandardsError, check_spec, display
 
-    source = _standards()
+    source = _standards(day)
+    source.release = version
     try:
         standards = source.load()
     except StandardsError as e:
@@ -423,7 +496,7 @@ def standards_show(name: str = "", spec_json: str = "") -> str:
 @mcp.tool()
 @_typed_errors
 def standards_apply(spec_json: str, check: bool = False, locked: bool = False,
-                    claim: bool = False, strict: bool = False) -> str:
+                    claim: bool = False, strict: bool = False, as_of: str = "") -> str:
     """The CLI's `standards apply` for one spec, offline: writes the content of the spec's
     standard into it (header and footer rows, CSS blocks, colour scheme, label colours,
     certification, number formats), recording each item in design.standard_written, and
@@ -434,15 +507,19 @@ def standards_apply(spec_json: str, check: bool = False, locked: bool = False,
     as it is now (the CLI's --check; `stale` says whether unlocked content would change
     too), and with strict, ok false on any change apply would make (--check --strict);
     locked also rewrites locked items the author changed (--locked); claim
-    records items that already hold the standard's value (--claim). The standards
-    directory is the server's $CHARTWRIGHT_STANDARDS_DIR, or the one found from its
-    working directory."""
+    records items that already hold the standard's value (--claim). A locked item a
+    waiver in waivers.yaml covers is left as it is and listed under waived (as_of,
+    YYYY-MM-DD, is the day expiry is read against). The standards directory is the
+    server's $CHARTWRIGHT_STANDARDS_DIR, or the one found from its working directory."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    day, err = _as_of(as_of)
+    if err:
+        return err
     from .design.standards import StandardsError, apply_spec, display
 
-    source = _standards()
+    source = _standards(day)
     try:
         standards = source.load()
         std = source.standard_for(spec)

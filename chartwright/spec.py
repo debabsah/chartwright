@@ -1506,6 +1506,16 @@ class DashboardMeta(BaseModel):
                     "the live owners alone and plan doesn't compare them. Accounts only: "
                     "Superset's owners are users, not roles.",
     )
+    theme: str | None = Field(
+        default=None, min_length=1, max_length=250,
+        description="A Superset theme for the dashboard, by its name as Superset lists it "
+                    "(Settings > Themes), e.g. \"Acme Brand\". Superset 6.0.0 or later: "
+                    "check, apply and plan resolve the name on each instance and refuse an "
+                    "unknown or ambiguous one before anything is written; 4.1.4 and 5.0.0 "
+                    "have no themes and refuse the import, so check refuses the field there. "
+                    "Omitted, apply leaves the dashboard's theme as it is (a theme chosen in "
+                    "the UI stays) and plan doesn't compare it.",
+    )
     lifecycle: Lifecycle | None = Field(
         default=None,
         description="Where the dashboard is in its life: {\"state\": \"deprecated\", "
@@ -1535,6 +1545,14 @@ class DashboardMeta(BaseModel):
                 raise ValueError(f"dashboard owners: {name!r} is listed twice")
             seen.add(name.casefold())
         return owners
+
+    @field_validator("theme")
+    @classmethod
+    def _theme_name(cls, v: str | None) -> str | None:
+        if v is not None and (not v.strip() or v != v.strip()):
+            raise ValueError(f"dashboard theme: {v!r} must be a theme's name as Superset "
+                             "lists it, without surrounding spaces")
+        return v
 
     @field_validator("css")
     @classmethod
@@ -1573,7 +1591,8 @@ STANDARD_ITEM_KEYS = {
         rf"^layout\.(header|footer)\[({STANDARD_NAME})\]"
         r"(?:\[(lifecycle|classification)=([^\]=]+)\])?\[(\d+)\]$"),
     "css": re.compile(rf"^dashboard\.css\[({STANDARD_NAME})\]$"),
-    "scalar": re.compile(r"^dashboard\.(color_scheme|certified_by|certification_details)$"),
+    "scalar": re.compile(
+        r"^dashboard\.(color_scheme|certified_by|certification_details|theme|classification)$"),
     "label": re.compile(r"^dashboard\.label_colors\[(.+)\]$", re.S),
     "number_format": re.compile(r"^charts\[(.+)\]\.number_format$", re.S),
 }
@@ -1595,7 +1614,8 @@ def _check_written_entry(key: str, record) -> None:
         raise ValueError(
             f"design.standard_written: {key!r} names no item a standard writes (layout.header"
             f"[layer][n], layout.footer[layer][n], dashboard.css[layer], dashboard.color_scheme, "
-            f"dashboard.certified_by, dashboard.certification_details, dashboard.label_colors"
+            f"dashboard.certified_by, dashboard.certification_details, dashboard.theme, "
+            f"dashboard.classification, dashboard.label_colors"
             f"[label], charts[name].number_format)")
     kind, m = found
     if kind == "row" and m.group(3) and (m.group(1), m.group(3)) not in (

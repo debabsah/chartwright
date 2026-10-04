@@ -6,6 +6,7 @@ plus `name`, `extends`, `default` and `locked`:
 
     name: finance
     extends: org                      # optional; one parent
+    min_superset: "6.0"               # optional; below it this file's content is held back
     params: {min_axis_height: 7}
     audiences: {executive: {fold_units: 20}}
     severity: {layout.kpi-first: error}
@@ -22,6 +23,9 @@ three files (MAX_FILES), so with the spec's block it is never more than four lay
 Every file and every chain in the directory is
 checked when it loads, whether or not a spec uses it, so a broken file fails every run
 that reads the directory instead of the one dashboard that happens to name it.
+
+`waivers.yaml` at the directory's top is no standard: it lists the dashboards that may
+deviate from a lock (design/waivers.py), and is checked when the directory loads too.
 """
 
 from __future__ import annotations
@@ -38,8 +42,8 @@ from pathlib import Path
 from .model import RULES, SEVERITY_RANK, canonical_rule_id
 from .presets import AUDIENCES, PARAM_NAMES, _check_param_block
 
-FILE_KEYS = ("name", "extends", "default", "params", "audiences", "severity", "disable",
-             "content", "classifications", "locked")
+FILE_KEYS = ("name", "extends", "default", "min_superset", "params", "audiences",
+             "severity", "disable", "content", "classifications", "locked")
 LOCK_KEYS = ("rules", "params", "content")
 # A standard that locks content locks the rules that report a locked item the spec lacks
 # and CSS that could hide one, so nothing below it (a lower file, design.ignore, --ignore,
@@ -82,6 +86,9 @@ class StandardFile:
     content: dict = field(default_factory=dict)       # design/content.py parse_content
     classifications: list | None = None
     locked_content: list = field(default_factory=list)  # content slots
+    # The first Superset release this file's content is for ("6.0.0"), or None: below
+    # it, the content this file contributes is held back (design/content.py held_items).
+    min_superset: str | None = None
 
 
 @dataclass
@@ -103,8 +110,17 @@ class Standard:
     content_locks: dict = field(default_factory=dict)  # slot -> layers locking it, root first
     classifications: list | None = None                # the allowed values, if declared
     classifications_layer: str | None = None
+    floors: dict = field(default_factory=dict)         # layer -> its min_superset
     # How a spec came to follow it: "design.standard" or "default". Set per spec.
     via: str | None = None
+    # Per spec and run (StandardsSource.standard_for): the waivers naming this spec
+    # (design/waivers.py), the day expiry is read against, whether an expired waiver
+    # fails (standards check, advise) or still applies with a warning (everything
+    # else), and the Superset release content is held to (None: hold nothing).
+    waivers: list = field(default_factory=list)
+    as_of: object = None
+    enforce_expiry: bool = False
+    release: str | None = None
 
 
 @dataclass
@@ -115,6 +131,8 @@ class Standards:
     files: dict[str, StandardFile]
     default: str | None
     resolved: dict[str, Standard]
+    waivers: list = field(default_factory=list)       # design/waivers.py Waiver
+    waivers_file: Path | None = None
 
     def get(self, name: str) -> Standard:
         if name not in self.resolved:
@@ -199,6 +217,17 @@ def parse_file(path: Path) -> StandardFile:
     if not isinstance(default, bool):
         raise StandardsError("standards_file", f"{where}: default must be true or false")
     sf.default = default
+    if data.get("min_superset") is not None:
+        from ..versions import stated_release
+
+        floor = stated_release(data["min_superset"]) if isinstance(
+            data["min_superset"], (str, int, float)) else None
+        if floor is None:
+            raise StandardsError(
+                "standards_file",
+                f"{where}: min_superset must be a Superset release, e.g. \"6.0\" or "
+                f"\"6.1.0\", got {data['min_superset']!r}")
+        sf.min_superset = floor
     what = f"standards file {where}"
     try:
         sf.params = dict(_check_param_block(data.get("params") or {}, "params", what))
@@ -369,6 +398,8 @@ def resolve(name: str, files: dict[str, StandardFile], directory: Path) -> Stand
         _merge(sf, std)
         _check_locked_values(sf, std)
         _merge_content(sf, std)
+        if sf.min_superset:
+            std.floors[sf.name] = sf.min_superset
     from . import content as _content
 
     try:
@@ -421,9 +452,15 @@ def _check_locked_values(sf: StandardFile, std: Standard) -> None:
 
 
 def _standard_files(directory: Path) -> list[Path]:
+    """The standards files: every YAML file in the folder and its subfolders, hidden
+    ones aside, and the waivers file at the folder's top (design/waivers.py), which is
+    no standard."""
+    from .waivers import WAIVERS_FILES
+
     return sorted(p for p in directory.rglob("*")
                   if p.suffix in (".yaml", ".yml") and p.is_file()
-                  and not any(part.startswith(".") for part in p.relative_to(directory).parts))
+                  and not any(part.startswith(".") for part in p.relative_to(directory).parts)
+                  and not (p.parent == directory and p.name in WAIVERS_FILES))
 
 
 def load_standards(directory: Path) -> Standards:
@@ -450,7 +487,12 @@ def load_standards(directory: Path) -> Standards:
             f"more than one standard says default: true ({defaults}); a repository has "
             f"one default")
     resolved = {n: resolve(n, files, directory) for n in sorted(files)}
-    return Standards(directory, files, defaults[0] if defaults else None, resolved)
+    from .waivers import parse_waivers, waivers_path
+
+    wpath = waivers_path(directory)
+    waivers = parse_waivers(wpath, files, display(wpath)) if wpath else []
+    return Standards(directory, files, defaults[0] if defaults else None, resolved,
+                     waivers=waivers, waivers_file=wpath)
 
 
 # -- discovery ----------------------------------------------------------------
@@ -508,6 +550,16 @@ class StandardsSource:
     hint: str = ("pass --standards DIR, or keep a standards/ folder at or above the spec "
                  "inside its git repository")
     _loaded: Standards | None = None
+    # Run settings: the day waiver expiry is read against (--as-of; today when None),
+    # and the Superset release content is held to (--superset-version, or the
+    # instance's; None holds nothing back).
+    as_of: object = None
+    release: str | None = None
+
+    def today(self):
+        import datetime as dt
+
+        return self.as_of or dt.date.today()
 
     @classmethod
     def for_cli(cls, explicit: str | None, spec_path: str | Path | None) -> "StandardsSource":
@@ -544,8 +596,31 @@ class StandardsSource:
             self._loaded = load_standards(self.directory)
         return self._loaded
 
-    def standard_for(self, spec) -> Standard | None:
-        """The resolved standard this spec follows, or None. Raises StandardsError."""
+    def standard_for(self, spec, *, spec_path: str | Path | None = None,
+                     enforce_expiry: bool = False) -> Standard | None:
+        """The resolved standard this spec follows, or None, carrying this run's waivers
+        for the spec (by slug, or by `spec_path` when the spec came from a file), the day
+        expiry is read against, whether an expired waiver fails (`enforce_expiry`:
+        standards check and advise) or still applies with a warning, and the release
+        content is held to. Raises StandardsError."""
+        std = self._standard(spec)
+        if std is None:
+            return None
+        from .waivers import EXPIRED_RULE, matching
+
+        standards = self._loaded
+        waivers = matching(standards.waivers, spec,
+                           Path(spec_path) if spec_path is not None else None,
+                           standards.directory.parent)
+        locked = dict(std.locked_rules)
+        if waivers:
+            # An expired waiver's finding can't be silenced below the waivers file either.
+            locked.setdefault(EXPIRED_RULE, "waivers")
+        return dataclasses.replace(std, waivers=waivers, as_of=self.today(),
+                                   enforce_expiry=enforce_expiry, release=self.release,
+                                   locked_rules=locked)
+
+    def _standard(self, spec) -> Standard | None:
         named = spec.design.standard if spec.design else None
         standards = self.load()
         if standards is None:
@@ -599,7 +674,9 @@ def show_payload(standards: Standards, std: Standard) -> dict:
         "stage": "standards", "ok": True, "standards_dir": display(standards.directory),
         "standard": std.name, "default": std.name == standards.default,
         **({"via": std.via} if std.via else {}),
-        "chain": [{"name": n, "file": display(files[n].path)} for n in std.chain],
+        "chain": [{"name": n, "file": display(files[n].path),
+                   **({"min_superset": files[n].min_superset} if files[n].min_superset else {})}
+                  for n in std.chain],
         "params": entries(std.params, "params"),
         "audiences": {a: entries(b, f"audiences.{a}") for a, b in sorted(std.audiences.items())},
         "severity": {r: {"value": lvl, "layer": std.origins[f"severity.{r}"],
@@ -658,7 +735,10 @@ def render_show(payload: dict) -> str:
         head += f"  (via {payload['via']})"
     elif payload["default"]:
         head += "  (the default)"
-    lines = [head, *[f"  {c['name']:<12} {c['file']}" for c in payload["chain"]], ""]
+    lines = [head, *[f"  {c['name']:<12} {c['file']}"
+                     + (f"  (content for Superset {c['min_superset']} or later)"
+                        if c.get("min_superset") else "")
+                     for c in payload["chain"]], ""]
     rows: list[tuple[str, str, str, bool]] = []
     for k, e in payload["params"].items():
         rows.append((f"params.{k}", json.dumps(e["value"]), e["layer"], e["locked"]))
@@ -794,7 +874,8 @@ def load_spec_file(path: Path):
 # -- check and report ---------------------------------------------------------
 
 
-def check_spec(spec, source: StandardsSource, *, strict: bool = False) -> dict:
+def check_spec(spec, source: StandardsSource, *, strict: bool = False,
+               spec_path: str | Path | None = None) -> dict:
     """One spec's `standards check` entry: the advice with its standard applied, immune to
     the per-machine design.yaml. `ok` is false on an error finding, or on a warn under
     `strict`. Raises nothing: a standard that can't be resolved is an error entry."""
@@ -802,7 +883,8 @@ def check_spec(spec, source: StandardsSource, *, strict: bool = False) -> dict:
     from .presets import Overlay
 
     try:
-        std = source.standard_for(spec)
+        # The author-side gate: an expired waiver fails here (the decision record's #5).
+        std = source.standard_for(spec, spec_path=spec_path, enforce_expiry=True)
     except StandardsError as e:
         named = spec.design.standard if spec.design else None
         return {"ok": False, "standard": named, "errors": [e.as_dict()]}
@@ -825,6 +907,14 @@ def check_spec(spec, source: StandardsSource, *, strict: bool = False) -> dict:
         out["unmatched_ignores"] = payload["unmatched_ignores"]
     if payload.get("polished"):
         out["polished"] = payload["polished"]
+    if payload.get("waived"):
+        out["waived"] = payload["waived"]
+    if std is not None and std.release is not None:
+        from . import content as C
+
+        out["superset_version"] = std.release
+        out["held"] = sorted(({"item": i.id, "layer": i.layer, "reason": r}
+                              for i, r in C.held_items(std, spec)), key=lambda h: h["item"])
     if not out["ok"]:
         from . import locked_note
 
@@ -863,6 +953,10 @@ def fleet_report(entries: list[dict], *, strict: bool, standards_dir: str,
         row = {"spec": e["spec"], "standard": e.get("standard"), "ok": e["ok"],
                "counts": e.get("counts", {"error": 0, "warn": 0, "info": 0}),
                "by_rule": dict(sorted(by_rule.items())), "locks_hit": hit}
+        if e.get("waived"):
+            row["waived"] = [w["finding"] for w in e["waived"]]
+        if e.get("held"):
+            row["held"] = [h["item"] for h in e["held"]]
         if any(err["code"] != "design_gate" for err in e.get("errors", [])):
             row["errors"] = [err for err in e["errors"] if err["code"] != "design_gate"]
         specs.append(row)
@@ -932,6 +1026,74 @@ def assign(paths: list[Path], name: str, standards: Standards) -> dict:
 # -- apply: content into specs ------------------------------------------------
 
 
+@dataclass
+class InstanceSpec:
+    """A spec as one instance gets it (for_instance): the standard's content that
+    instance's release can't take held back."""
+
+    spec: object
+    held: list = field(default_factory=list)    # {"item", "layer", "reason"}
+    release: str | None = None                  # the release held to, when asked
+    warning: str | None = None                  # why nothing could be held, if so
+
+
+def holds_anything(std: Standard | None) -> bool:
+    """Whether some release could hold part of this standard back: a layer with content
+    declares min_superset, or the content writes a version-gated field."""
+    from . import content as C
+
+    if std is None or not C.has_content(std):
+        return False
+    return any(layer in std.floors for layer, c in std.content_layers if c) or any(
+        slot in c for _, c in std.content_layers for slot in C.GATED_SLOTS)
+
+
+def for_instance(spec, source: StandardsSource | None, release_of, *,
+                 spec_path: str | Path | None = None) -> InstanceSpec:
+    """The spec check, apply and plan send to one instance (the decision record's #9): each
+    item of the spec's standard that the instance's release can't take (a layer's
+    min_superset, or a version-gated field such as dashboard.theme) is held back, when
+    the spec holds it as the standard has it. The author's own values are never held: a
+    field the author wrote stays and meets the version check like any other. The spec on
+    disk is untouched. `release_of` gives the instance's release, asked only when the
+    standard could hold something. Without a standards folder nothing changes."""
+    from . import content as C
+
+    if source is None:
+        return InstanceSpec(spec)
+    try:
+        std = source.standard_for(spec, spec_path=spec_path)
+    except StandardsError as e:
+        return InstanceSpec(spec, warning=f"standard content not held back for this "
+                                          f"instance: {e}")
+    if not holds_anything(std):
+        return InstanceSpec(spec)
+    release = release_of()
+    if release is None:
+        return InstanceSpec(spec, warning="the instance did not report its Superset release, "
+                                          "so no standard content was held back; pass "
+                                          "--superset-version")
+    held = {i.id: r for i, r in C.held_items(dataclasses.replace(std, release=release), spec)}
+    if not held:
+        return InstanceSpec(spec, release=release)
+    analysis = C.analyze(dataclasses.replace(std, release=None), spec)
+    removals = [C.Decision(d.id, d.slot, d.layer, "remove", None, found=d.found,
+                           record="drop", at=d.at)
+                for d in analysis.decisions
+                if d.item is not None and d.id in held and d.conforms and d.found is not None
+                and not d.unmarked]
+    if not removals:
+        return InstanceSpec(spec, release=release)
+    from ..spec import load_spec
+
+    data = spec.model_dump(mode="json", exclude_unset=True)
+    new, _ = C.execute(data, spec, C.Analysis(decisions=removals, segments=analysis.segments))
+    by_id = {d.id: d for d in removals}
+    return InstanceSpec(load_spec(new), release=release,
+                        held=[{"item": i, "layer": by_id[i].layer, "reason": held[i]}
+                              for i in sorted(by_id)])
+
+
 def apply_spec(data: dict, spec, std: Standard, *, locked: bool = False,
                claim: bool = False) -> tuple[dict, dict]:
     """(new spec data, the spec's entry) for one spec that follows `std`: the content
@@ -970,6 +1132,18 @@ def apply_spec(data: dict, spec, std: Standard, *, locked: bool = False,
     entry["stale"] = C.stale(analysis)
     entry["locked_stale"] = C.locked_stale(analysis)
     entry["locked"] = [d.id for d in analysis.decisions if d.violation and d.id not in acted]
+    waived = [d for d in analysis.decisions if d.waiver is not None]
+    if waived:
+        # Present only under a waiver, so a run without one reads exactly as before.
+        entry["waived"] = [{"item": d.id, "waiver": d.waiver.index,
+                            **d.waiver.as_dict(std.as_of)} for d in waived]
+        late = [d for d in waived if d.waiver.expired(std.as_of)]
+        if late:
+            entry["warnings"] = [
+                f"waivers[{d.waiver.index}] ({d.waiver.target}, {d.waiver.rule}) expired on "
+                f"{d.waiver.expires.isoformat()}; standards apply still leaves {d.id} as it "
+                f"is, and standards check fails for this dashboard until the waiver is "
+                f"renewed or removed" for d in late]
     # For the summary, each decision with the change made on it; dropped from the payload.
     by_decision = {id(c.decision): c.as_dict() for c in changes}
     entry["decisions"] = [(d, by_decision.get(id(d))) for d in analysis.decisions]
@@ -982,6 +1156,8 @@ def _bucket(d, c: dict | None) -> tuple[str, object]:
     """Where one spec's decision on one item lands in the grouped summary."""
     if c is not None and c["action"] in ("add", "refresh", "remove", "claim", "rewrite"):
         return "change", (c["action"], c.get("to"))
+    if d.waiver is not None:
+        return "waived", None
     if d.violation:
         return "locked", None
     if d.state == "unrecorded":
@@ -1007,13 +1183,14 @@ def apply_summary(entries: list[dict]) -> list[dict]:
         for d, change in e["decisions"]:
             item = group["items"].setdefault(d.id, {
                 "item": d.id, "layer": d.layer, "locked_by": d.locked_by,
-                "changes": {}, "current": 0, "released": [], "locked": [], "unrecorded": []})
+                "changes": {}, "current": 0, "released": [], "locked": [], "unrecorded": [],
+                "waived": []})
             where, key = _bucket(d, change)
             if where == "change":
                 item["changes"].setdefault(key, []).append(e["spec"])
             elif where == "current":
                 item["current"] += 1
-            elif where in ("released", "locked", "unrecorded"):
+            elif where in ("released", "locked", "unrecorded", "waived"):
                 item[where].append(e["spec"])
     out = []
     for name in sorted(by_std):
@@ -1026,6 +1203,8 @@ def apply_summary(entries: list[dict]) -> list[dict]:
                                  it["changes"].items(), key=lambda kv: (kv[0][0], str(kv[0][1])))]
             if not it["locked_by"]:
                 it.pop("locked_by")
+            if not it["waived"]:
+                it.pop("waived")   # only where a waiver applies, so older payloads stay as they were
             items.append(it)
         out.append({"standard": name, "chain": g["chain"], "specs": g["specs"], "items": items})
     return out
@@ -1067,6 +1246,9 @@ def render_apply(payload: dict) -> str:
             if it["locked"]:
                 parts.append(f"{len(it['locked'])} changed by their authors but locked, left "
                              f"as they are (--locked rewrites them): {_names(it['locked'])}")
+            if it.get("waived"):
+                parts.append(f"{len(it['waived'])} differ under a waiver in "
+                             f"standards/waivers.yaml, left as they are: {_names(it['waived'])}")
             if it["unrecorded"]:
                 parts.append(f"{len(it['unrecorded'])} hold it already, unrecorded (--claim "
                              f"records them): {_names(it['unrecorded'])}")
@@ -1107,7 +1289,7 @@ def apply_files(paths: list[Path], source: StandardsSource, *, check: bool = Fal
             entries.append({"spec": p.as_posix(), "ok": False, "standard": None, "errors": [err]})
             continue
         try:
-            std = source.standard_for(spec)
+            std = source.standard_for(spec, spec_path=p)
         except StandardsError as e:
             entries.append({"spec": p.as_posix(), "ok": False,
                             "standard": spec.design.standard if spec.design else None,
