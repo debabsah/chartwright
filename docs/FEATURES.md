@@ -112,7 +112,8 @@ into one. Everything below works from that one file.
 | `chartwright schema` | Print the spec's JSON Schema, the contract for people and AIs |
 | `chartwright validate` | Check a spec against the schema, offline |
 | `chartwright brief` | Print the design guidance to read before writing a spec |
-| `chartwright advise` | Review a spec against the design rulebook; `--fix` applies the safe geometry repairs |
+| `chartwright advise` | Review a spec against the design rulebook; `--fix` applies the safe repairs and fills design defaults into the spec; `--chart` looks at one chart |
+| `chartwright explain` | Show, per chart, where each design-default field's value comes from (the spec, a fill, or Superset) and how to change it; `--json` for agents |
 | `chartwright compile` | Build the import bundle, no server needed |
 | `chartwright check` | Verify every dataset, column, and metric against a live instance, read-only |
 | `chartwright apply` | Build, import, and verify the dashboard end to end |

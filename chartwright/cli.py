@@ -7,6 +7,7 @@
     chartwright apply spec.json --profile P     check -> compile -> import -> smoke
     chartwright brief                           the design brief to read BEFORE authoring a spec
     chartwright advise spec.json                design review (add --profile for data-aware rules)
+    chartwright explain spec.json               where each design-default field comes from, and why
     chartwright redesign <slug> --profile P     decompile + audit + safe fixes -> redesigned spec
     chartwright calibrate                       learn recommended heights from absorb history
 """
@@ -159,6 +160,15 @@ def _main(argv: list[str] | None = None) -> None:
     adv.add_argument("--strict", action="store_true", help="exit 1 on warnings, not just errors")
     adv.add_argument("--ignore", default=None, help="comma-separated rule ids to suppress")
     adv.add_argument("--no-probe", action="store_true", help="skip cardinality queries (metadata only)")
+    adv.add_argument("--chart", default=None, metavar="NAME",
+                     help="only this chart's findings, and with --fix only its fixes")
+
+    ex = sub.add_parser("explain",
+                        help="where each chart's design-default fields come from, and why (offline)")
+    ex.add_argument("spec")
+    ex.add_argument("--chart", default=None, metavar="NAME", help="explain this chart only")
+    ex.add_argument("--audience", choices=AUDIENCE_NAMES, default=None)
+    ex.add_argument("--json", action="store_true", help="the same rows as JSON, for agents")
 
     br = sub.add_parser("brief", help="the design brief to read BEFORE authoring a spec")
     br.add_argument("--audience", choices=AUDIENCE_NAMES, default="analytical")
@@ -275,6 +285,25 @@ def _main(argv: list[str] | None = None) -> None:
         print(json.dumps(out, indent=2))
         sys.exit(0 if report.ok else 1)
 
+    if args.cmd in ("advise", "explain") and args.chart is not None:
+        names = [c.name for c in _load(args.spec).charts]
+        if args.chart not in names:
+            _die({"stage": "design", "errors": [{
+                "code": "unknown_chart",
+                "detail": f"no chart named {args.chart!r} in the spec; charts: {names}"}]})
+
+    if args.cmd == "explain":
+        spec = _load(args.spec)
+        from .design.explain import explain, render_text
+
+        try:
+            payload = explain(spec, audience=args.audience, chart=args.chart)
+        except ValueError as e:
+            _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
+        print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json
+              else render_text(payload), end="\n" if args.json else "")
+        return
+
     if args.cmd == "advise":
         spec = _load(args.spec)
         resolution = prober = None
@@ -296,7 +325,7 @@ def _main(argv: list[str] | None = None) -> None:
                 spec_data = json.loads(Path(args.spec).read_text(encoding="utf-8"))
                 new_data, report = advise_and_fix(
                     spec_data, audience=args.audience, ignore=ignore,
-                    resolution=resolution, prober=prober)
+                    resolution=resolution, prober=prober, chart=args.chart)
                 if report.fixed:
                     # --fix rewrites the whole file (normalized JSON formatting,
                     # same as absorb); the payload discloses the path.
@@ -305,7 +334,7 @@ def _main(argv: list[str] | None = None) -> None:
                     written = str(args.spec)
             else:
                 report = advise(spec, audience=args.audience, ignore=ignore,
-                                resolution=resolution, prober=prober)
+                                resolution=resolution, prober=prober, chart=args.chart)
         except ValueError as e:
             _die({"stage": "design", "errors": [{"code": "overlay", "detail": str(e)}]})
         payload = report.payload()
