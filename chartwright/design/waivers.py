@@ -89,13 +89,18 @@ class Waiver:
         return item is not None and self.rule == item
 
 
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def parse_date(value) -> dt.date | None:
-    """A YAML date (2026-12-31) or the same as text; None for anything else."""
+    """A YAML date (2026-12-31) or the same as text, YYYY-MM-DD exactly; None for anything
+    else. Python's fromisoformat also reads 20261231 and week dates (2026-W53-4), which no
+    one writes as an expiry or an --as-of on purpose."""
     if isinstance(value, dt.datetime):
         return None
     if isinstance(value, dt.date):
         return value
-    if isinstance(value, str):
+    if isinstance(value, str) and DATE_RE.match(value.strip()):
         try:
             return dt.date.fromisoformat(value.strip())
         except ValueError:

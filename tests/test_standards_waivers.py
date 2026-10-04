@@ -490,3 +490,30 @@ def test_mcp_matches_a_pinned_waiver_by_slug_and_says_so(tmp_path, capsys, monke
     monkeypatch.setenv("CHARTWRIGHT_STANDARDS_DIR", str(repo / "standards"))
     out = mcp_call("standards_check", spec_json=path.read_text(), as_of="2026-10-04")
     assert out["ok"] and any("no spec path here to confirm" in w for w in out["warnings"])
+
+
+def test_mcp_fix_spec_enforces_expiry_as_advise_fix_does(tmp_path, capsys, monkeypatch):
+    repo = make(tmp_path, waiver(expires=EARLIER))
+    path = applied(capsys, repo)
+    code, out = run(capsys, "advise", str(path), "--as-of", "2026-10-04")
+    assert "standard.waiver-expired" in {f["rule"] for f in out["findings"]}
+    monkeypatch.setenv("CHARTWRIGHT_STANDARDS_DIR", str(repo / "standards"))
+    out = mcp_call("fix_spec", spec_json=path.read_text(), as_of="2026-10-04")
+    assert "standard.waiver-expired" in {f["rule"] for f in out["advice"]["findings"]}
+    out = mcp_call("fix_spec", spec_json=path.read_text(), as_of="2026-09-01")
+    assert "standard.waiver-expired" not in {f["rule"] for f in out["advice"]["findings"]}
+    assert mcp_call("fix_spec", spec_json=path.read_text(),
+                    as_of="20261004")["errors"][0]["code"] == "bad_as_of"
+
+
+@pytest.mark.parametrize("text", ["20261231", "2026-W53-4", "2026-366", "2026-1-5", "soon"])
+def test_dates_are_yyyy_mm_dd_exactly(tmp_path, capsys, text):
+    repo = make(tmp_path, waiver())
+    path = spec_file(repo)
+    with pytest.raises(SystemExit) as e:
+        cli.main(["standards", "check", str(path), "--as-of", text])
+    assert e.value.code == 2                           # argparse refuses it
+    capsys.readouterr()
+    repo2 = make(tmp_path / "b", waiver(expires=text))
+    with pytest.raises(StandardsError, match="must be a date"):
+        load_standards(repo2 / "standards")

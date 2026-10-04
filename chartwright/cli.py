@@ -58,12 +58,12 @@ _VERSION_HELP = ("the Superset release to hold the spec to, e.g. 5.0.0; fields t
 
 def _date(text: str):
     """argparse type for --as-of: a date, YYYY-MM-DD."""
-    import datetime as dt
+    from .design.waivers import parse_date
 
-    try:
-        return dt.date.fromisoformat(text)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"{text!r} is not a date, YYYY-MM-DD") from None
+    day = parse_date(text)
+    if day is None:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a date, YYYY-MM-DD")
+    return day
 
 
 _AS_OF_HELP = ("read waiver expiry (standards/waivers.yaml) as of this day, YYYY-MM-DD, so a "

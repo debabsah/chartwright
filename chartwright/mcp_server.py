@@ -112,13 +112,13 @@ def _as_of(text: str):
     """(date or None, error JSON or None) for a tool's as_of argument."""
     if not text:
         return None, None
-    import datetime as dt
+    from .design.waivers import parse_date
 
-    try:
-        return dt.date.fromisoformat(text), None
-    except ValueError:
+    day = parse_date(text)
+    if day is None:
         return None, json.dumps({"ok": False, "stage": "standards", "errors": [{
             "code": "bad_as_of", "detail": f"as_of {text!r} is not a date, YYYY-MM-DD"}]})
+    return day, None
 
 
 def _standard(spec, as_of=None, enforce_expiry: bool = False):
@@ -386,7 +386,7 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: st
 
 
 @mcp.tool()
-def fix_spec(spec_json: str, audience: str = "", strict: bool = False) -> str:
+def fix_spec(spec_json: str, audience: str = "", strict: bool = False, as_of: str = "") -> str:
     """Apply the design brain's safe, presentation-only fixes to a spec: repairs
     (heights, bar orientation), then design defaults it fills into fields left
     unset (time-axis label format, count number format, table paging, ...),
@@ -394,14 +394,19 @@ def fix_spec(spec_json: str, audience: str = "", strict: bool = False) -> str:
     the advice report; each .fixed entry has kind "fill" or "repair" and a why.
     Run it before build_dashboard; keep the returned spec and edit THAT, never a
     regenerated one. Offline. `strict` fixes as advise --fix --strict does: the
-    per-machine design.yaml is set aside, parameters included."""
+    per-machine design.yaml is set aside, parameters included. As in advise, an expired
+    waiver counts (standard.waiver-expired); as_of (YYYY-MM-DD) reads expiry as of
+    that day."""
     bad = _bad_audience(audience)
     if bad:
         return bad
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
-    standard, err = _standard(spec)
+    day, err = _as_of(as_of)
+    if err:
+        return err
+    standard, err = _standard(spec, day, enforce_expiry=True)
     if err:
         return err
     from .design import advise_and_fix
