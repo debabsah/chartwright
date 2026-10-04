@@ -114,7 +114,8 @@ which exercises all 15 chart types, per-chart WHERE filters, a native
 filter bar with two value pickers and a time range, plus markdown and tabs.
 (A numeric range filter scoped to specific charts is exercised live by the
 second-writer and fault-injection runs.) Then a per-chart data check: each
-chart's query must return HTTP 200 and rows; an empty chart is a named
+chart's query, over the chart's own time range, must return HTTP 200 and
+rows; an empty chart is a named
 warning, never a silent pass. Finally a second apply of the same spec,
 asserting that every chart keeps its id. Id stability matters because
 dashboard metadata references charts by id: changing ids is what turns a
@@ -194,7 +195,7 @@ second-writer scenarios, and fault injection.
 
 ## Defect ledger: what each layer caught
 
-Twenty-one real defects found by these layers, none of which the original
+Twenty-two real defects found by these layers, none of which the original
 unit suite could see. The layer that caught each one is the reason that
 layer exists.
 
@@ -221,6 +222,7 @@ layer exists.
 | 19 | `plan` crashed on any sketch-layout spec; every prior fixture and soak used rows or tabs | running `plan` against the demo dashboard |
 | 20 | A labeled `COUNT(*)` metric lost its label on decompile, so `plan` reported drift forever on clean dashboards | the same `plan` run, after #19 was fixed |
 | 21 | The client treated a rate-limited response (HTTP 429) as fatal instead of backing off, and PUT requests skipped the typed-error wrapper entirely | live CI: Superset rate-limited a burst of decompile lookups |
+| 22 | Charts drawn on a time axis (line, bar, area, scatter, trendline KPI, mixed over time) ignored both their own `time_range` and the dashboard time filter, on every release: they had no time-range filter on their axis | live calibration: a line chart limited to March 2004 to March 2005 still drew 2003 to 2005 |
 
 ## Reproduce everything
 
