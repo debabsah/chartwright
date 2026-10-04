@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1035 tests, 56 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1036 tests, 56 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
@@ -129,9 +129,9 @@ collects, the same "generated, not hand-maintained" rule the rule table in
 - **Strict gates and the per-machine overlay** (`test_overlay_gates.py`): a
   `design.yaml` that disables a rule, lowers a severity or moves a threshold
   leaves `advise --strict`, `--design strict` and the MCP strict modes
-  failing exactly as with no overlay, and says what it set aside; a raised
-  severity still applies; without a strict gate the overlay applies and the
-  payload names each finding it changed.
+  failing exactly as with no overlay, a raised severity is set aside too,
+  and the payload lists everything set aside; without a strict gate the
+  overlay applies and the payload names each finding it changed.
 
 ## 2. Chart options, checked against plugin source
 

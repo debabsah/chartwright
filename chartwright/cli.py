@@ -65,7 +65,7 @@ def _design_blocks(advice: dict) -> str | None:
 
 def _advice_payload(spec, resolution=None, strict: bool = False) -> dict:
     """The advice block check/apply carry (design.advice_payload). `strict` is
-    `--design strict`: the per-machine design.yaml may then only raise severities."""
+    `--design strict`: the per-machine design.yaml then counts for nothing."""
     from .design import advice_payload
 
     return advice_payload(spec, resolution, strict=strict)
@@ -137,7 +137,7 @@ def _main(argv: list[str] | None = None) -> None:
     adv.add_argument("--fix", action="store_true", help="apply safe presentation-only fixes to the spec file")
     adv.add_argument("--strict", action="store_true",
                      help="exit 1 on warnings, not just errors; the per-machine design.yaml "
-                          "may then only raise severities")
+                          "is then set aside")
     adv.add_argument("--ignore", default=None, help="comma-separated rule ids to suppress")
     adv.add_argument("--no-probe", action="store_true", help="skip cardinality queries (metadata only)")
     adv.add_argument("--chart", default=None, metavar="NAME",

@@ -146,8 +146,8 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
   - `warn`: advice rides along in the payload under `"advice"`, never blocks.
   - `strict`: `error`/`warn` findings block (a `design_gate` entry lands in
     `errors` and the exit code is 1); apply blocks BEFORE anything on the
-    instance is touched. Like `advise --strict`, it takes only raised
-    severities from the per-machine `design.yaml` (§6).
+    instance is touched. Like `advise --strict`, it takes nothing from the
+    per-machine `design.yaml` (§6).
   - `off`: byte-identical to the pre-brain behavior, advice machinery never
     runs.
 - `calibrate`: the learning loop (§13 phase 3). Mines absorb history into
@@ -239,16 +239,15 @@ layers; the brief prints the merged values and height autofixes target them.
 The file lives on one machine, so it must not decide a gate (§14.14). Under
 a strict gate (`advise --strict`, `advise --fix --strict`, `check`/`apply
 --design strict`, and the MCP tools' `strict` and `design: "strict"`) the
-overlay may only **raise** a finding's severity. Its `disable` list, any
-`severity` entry that would lower a finding, and its parameters are set aside,
-so the gate passes or fails the same on every machine. Parameters are set
-aside whole because a parameter has no direction: a larger `fold_units` is
-looser, a larger `min_axis_height` stricter. Without a strict gate the overlay
-applies as before. Either way, every advice payload carries an `overlay` block
-naming the file and what it did (§10), so a run the overlay changed never
-reads as the rulebook's verdict. The repo-level, reviewable place for rule
-settings is the coming `standards/` directory; until then the spec's
-`design.ignore` is the visible way to except a rule from a strict gate.
+overlay counts for **nothing**: its `disable` list, every `severity` entry
+(raises included) and its parameters are set aside, so the gate passes or
+fails the same on every machine. Without a strict gate the overlay applies as
+before. Either way, every advice payload carries an `overlay` block naming the
+file (§10): what it changed in a run it applied to, and what was set aside in
+a gate, so a user sees why their local file had no effect there. Team-wide
+strictness, reviewable in a pull request, belongs in the coming `standards/`
+directory; until then the spec's `design.ignore` is the visible way to except
+a rule from a strict gate.
 
 ## 7. The rulebook
 
@@ -413,10 +412,10 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   "unmatched_ignores": ["size.pie-geometri"],
   "polished": ["size.axis-min-height@Weekly Orders"],
   "overlay": {
-    "path": "/home/me/.config/chartwright/design.yaml", "strict": true,
+    "path": "/home/me/.config/chartwright/design.yaml", "strict": false,
+    "params": ["fold_units"], "disable": [],
     "severity": {"filters.time-default": "warn"},
-    "changed": [{"finding": "filters.time-default@filters", "severity": ["info", "warn"]}],
-    "set_aside": {"disable": ["narrative.title-style"], "params": ["fold_units"]}
+    "changed": [{"finding": "filters.time-default@filters", "severity": ["info", "warn"]}]
   }
 }
 ```
@@ -436,14 +435,14 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   `ignored` is the user's *explicit* intent; `polished` is the brain's own
   *inference*, and an inference that silences a rule invisibly reads exactly
   like the rule having passed. Present only when non-empty.
-- `overlay` is present whenever a `design.yaml` is in play (§6): its `path`,
-  whether the run was a `strict` gate, the `severity` entries it applied,
-  and `changed`, each finding it changed in this run (`severity: [from, to]`,
-  or `disabled: true`). Outside a strict gate it also lists the `params` it
-  set and its `disable` list; under one, `set_aside` names the `params`, the
-  `disable` entries and the lowering `severity` entries the gate did not take.
-  An overlay typo in `disable` is an `unmatched_ignores` entry only where the
-  list applies, outside a strict gate.
+- `overlay` is present whenever a `design.yaml` is in play (§6): its `path`
+  and whether the run was a `strict` gate. Outside a strict gate it lists the
+  `params` it set, its `disable` list, its `severity` entries and `changed`,
+  each finding it changed in this run (`severity: [from, to]`, or
+  `disabled: true`). Under a strict gate it holds only `set_aside`: every
+  `params`, `disable` and `severity` entry the gate ignored (omitted when the
+  file sets none). An overlay typo in `disable` is an `unmatched_ignores`
+  entry only where the list applies, outside a strict gate.
 - Under `apply --design warn`, this object is embedded in the apply report
   as `"advice"` and never affects `apply`'s own `ok`. Under
   `--design strict` the gate fails CLOSED: if advice could not be evaluated
@@ -580,20 +579,21 @@ reversible and none is load-bearing enough to block on:
     newer brain changes a spec only when someone runs `--fix`, and then
     only fields left unset or still holding the value `design.filled` records. The catalogue, the
     ownership rule and the conditions each fill honours are §16.
-14. **Strict gates take nothing from the per-machine overlay but raised
-    severities** (2026-10-03, the first groundwork item of the project's
-    fleet-standards decision, kept with its research notes outside the
-    repository). `design.yaml` lives in a home directory or
+14. **Strict gates take nothing from the per-machine overlay** (2026-10-03,
+    the first groundwork item of the project's fleet-standards decision,
+    kept with its research notes outside the repository, which makes a strict
+    gate immune to it). `design.yaml` lives in a home directory or
     `$CHARTWRIGHT_DESIGN_DIR`, so its `disable` list and a lowered `severity`
     could pass `advise --strict` or `--design strict` on one machine while
     CI failed, with nothing in the payload to say why; a verifier reproduced
-    both. Under a strict gate the overlay may now only raise a severity: a
-    stricter local gate is harmless, a looser one is the hole. Its
-    parameters are set aside too, since a parameter has no direction to
-    check. Outside a strict gate nothing changes, and every advice payload
-    names the overlay and what it changed (§6, §10). Repo-level rule
-    settings, reviewable in a pull request, are the fleet-standards
-    decision's next phase.
+    both. A gate's result must not depend on the machine it runs on, in
+    either direction, so under a strict gate the whole overlay is set aside:
+    disable list, severities (a raise too: it would fail a gate locally that
+    passes in CI) and parameters. Outside a strict gate nothing changes, and
+    every advice payload names the overlay and what it changed or what was
+    set aside (§6, §10). Team-wide strictness comes from repo standards
+    files, reviewable in a pull request, the fleet-standards decision's next
+    phase.
 
 ## 15. Implementation deviations (recorded, not silent)
 
@@ -627,7 +627,8 @@ Recorded during the v2 roadmap burn-down:
    suggestion was declined for consistency.
 8. **`filters.time-default` ships as info for every audience**; deployments
    that want it blocking for executives raise it via the overlay's
-   `severity` map rather than a boolean param.
+   `severity` map rather than a boolean param (outside strict gates, which
+   take nothing from the overlay since §14.14).
 9. **Sketch WYSIWYG resolved as disclosure, not withholding**: height fixes
    still apply to sketch-drawn charts (explicit heights legitimately override
    the drawing, absorb's precedent), and the finding says the drawing goes
@@ -692,7 +693,8 @@ Recorded during the post-merge review burn-down:
     silent when a time_range filter exists without a default;
     `filters.time-default` already names that one-line fix, and double-
     reporting one remedy at two severities is noise. Deployments that want
-    that case to bite raise it via the overlay `severity` map (§15.8).
+    that case to bite raise it via the overlay `severity` map (§15.8; not
+    in a strict gate, §14.14).
 19. **`decompile` says when its dataset index is truncated.** The lookup
     stops at a page cap; past it, a real dataset became "uuid not resolvable"
     and its chart was dropped: a wrong answer wearing the costume of an

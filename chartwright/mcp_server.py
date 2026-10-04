@@ -154,7 +154,7 @@ def check_spec(spec_json: str, profile: str, superset_version: str = "",
     design-brain advice block. superset_version (optional, e.g. "5.0.0") names the
     instance's Superset release; omitted, the instance is asked. design is the CLI's
     --design: warn (advice rides along), strict (error and warn findings fail the check;
-    the per-machine design.yaml may only raise severities), off (no advice)."""
+    the per-machine design.yaml is set aside), off (no advice)."""
     bad = _bad_design(design)
     if bad:
         return bad
@@ -191,8 +191,8 @@ def build_dashboard(spec_json: str, profile: str, superset_version: str = "",
     stops the build at resolve, before anything is written. superset_version (optional, e.g. "5.0.0") names the
     instance's Superset release; omitted, the instance is asked. design is the CLI's
     apply --design: warn (offline advice rides along), strict (error and warn findings
-    stop the build before anything is written; the per-machine design.yaml may only
-    raise severities), off."""
+    stop the build before anything is written; the per-machine design.yaml is set
+    aside), off."""
     bad = _bad_design(design)
     if bad:
         return bad
@@ -258,8 +258,8 @@ def advise_spec(spec_json: str, audience: str = "", profile: str = "", chart: st
     pass a profile for data-aware rules: column types and cardinality).
     Audiences: executive | analytical | operational. `chart` keeps one chart's
     findings (the CLI's advise --chart). `strict` is advise --strict: warn findings
-    fail too (a design_gate error), and the per-machine design.yaml may only raise
-    severities; the `overlay` block says what it set aside."""
+    fail too (a design_gate error), and the per-machine design.yaml is set aside;
+    the `overlay` block says what was set aside."""
     bad = _bad_audience(audience)
     if bad:
         return bad
@@ -304,7 +304,7 @@ def fix_spec(spec_json: str, audience: str = "", strict: bool = False) -> str:
     the advice report; each .fixed entry has kind "fill" or "repair" and a why.
     Run it before build_dashboard; keep the returned spec and edit THAT, never a
     regenerated one. Offline. `strict` fixes as advise --fix --strict does: the
-    per-machine design.yaml may only raise severities, and its parameters are set aside."""
+    per-machine design.yaml is set aside, parameters included."""
     bad = _bad_audience(audience)
     if bad:
         return bad

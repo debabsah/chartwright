@@ -73,8 +73,8 @@ into one. Everything below works from that one file.
     - The bundle depends on the spec alone: compile, `plan` and decompile never add a value of their own.
 - **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
 - **House Style**: A `design.yaml` overlay on your machine tunes thresholds, disables rules, and appends your guidance to the brief, without forking the rulebook.
-    - Strict gates (`advise --strict`, `--design strict`) take only the severities it raises, so a gate passes or fails the same on every machine.
-    - Every review names the overlay and each finding it changed.
+    - Strict gates (`advise --strict`, `--design strict`) set it aside, so a gate passes or fails the same on every machine.
+    - Every review names the overlay: each finding it changed, or, in a strict gate, what was set aside.
 - **Heights Calibrated From Your Own Dashboards**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.
 - **Design Audits of Legacy Dashboards**: `decompile` + `advise` grades any UI-built dashboard against the rulebook.
 - **One-Shot Redesign**: `chartwright redesign <dashboard>` decompiles a live dashboard, audits it, applies the safe geometry fixes, and writes the redesigned spec. A tool-built dashboard is redesigned in place; anything else comes back under a new slug and applies side by side, leaving the original untouched.

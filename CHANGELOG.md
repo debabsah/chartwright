@@ -171,8 +171,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - A `design.yaml` on one machine (`~/.config/chartwright/` or `$CHARTWRIGHT_DESIGN_DIR`)
   could loosen `advise --strict` and `check`/`apply --design strict` with no trace in the
   output: its `disable` list hid findings, its `severity` map could lower them, and its
-  parameters could move thresholds. A strict gate now takes only the severities it
-  raises and sets the rest aside, so the gate passes or fails the same on every machine.
+  parameters could move thresholds. A strict gate now takes nothing from it, raised
+  severities included, so the gate passes or fails the same on every machine.
   - Every advice block names the overlay in a new `overlay` entry: its path, what it
     set, each finding it changed in this run and, under a strict gate, what it set
     aside.

@@ -4,9 +4,10 @@
 disable rules, lower severities and move thresholds. Under `advise --strict` and
 `check`/`apply --design strict` that used to loosen the gate on one machine with no
 trace in the payload, so a local run could pass where CI fails. A strict gate now
-takes only severity raises from the overlay; everything else is set aside and
-reported. Outside a strict gate the overlay works as before, and every advice payload
-names the overlay and what it changed.
+takes nothing from the overlay, raised severities included: a gate's result must not
+depend on the machine it runs on. What it set aside is reported. Outside a strict gate
+the overlay works as before, and every advice payload names the overlay and what it
+changed.
 """
 
 import json
@@ -69,8 +70,7 @@ def test_advise_strict_ignores_an_overlay_that_loosens_it(kind, design_dir, tmp_
     assert [f["rule"] for f in payload["findings"] if f["severity"] == "warn"] == [RULE]
     assert payload["errors"][0]["code"] == "design_gate"
     overlay = payload["overlay"]
-    assert overlay["path"] == str(path) and overlay["strict"] is True
-    assert overlay["changed"] == []
+    assert overlay == {"path": str(path), "strict": True, "set_aside": overlay["set_aside"]}
     expected = {"disable": [RULE]} if kind == "disable" else (
         {"severity": {RULE: "info"}} if kind == "severity" else {"params": ["min_axis_height"]})
     assert overlay["set_aside"] == expected
@@ -98,15 +98,36 @@ def test_advise_without_strict_keeps_the_overlay_and_says_what_it_changed(
         assert overlay["changed"] == []
 
 
-def test_a_strict_gate_takes_a_raised_severity(design_dir, tmp_path, capsys):
+def test_a_strict_gate_takes_no_raised_severity_either(design_dir, tmp_path, capsys):
+    """A raise would make the gate stricter on one machine than on the next: still
+    a result that depends on where it runs. It is set aside like the rest."""
+    data = json.loads(json.dumps(DATA))
+    data["charts"][0]["height"] = 8          # no warn left: only the info fill
+    (tmp_path / "spec.json").write_text(json.dumps(data), encoding="utf-8")
     write_overlay(design_dir, "severity: {default.count-format: warn}\n")
-    code, payload = run_advise(tmp_path, capsys, "--strict")
-    assert code == 1
-    assert {f["rule"]: f["severity"] for f in payload["findings"]}["default.count-format"] == "warn"
-    assert payload["overlay"]["severity"] == {"default.count-format": "warn"}
-    assert payload["overlay"]["changed"] == [
+    with pytest.raises(SystemExit) as exc:
+        main(["advise", str(tmp_path / "spec.json"), "--strict"])
+    payload = json.loads(capsys.readouterr().out)
+    assert exc.value.code == 0
+    assert {f["rule"]: f["severity"] for f in payload["findings"]}["default.count-format"] == "info"
+    assert payload["overlay"]["set_aside"] == {"severity": {"default.count-format": "warn"}}
+    # Without a strict gate the raise applies, and says so.
+    loose = advise(load_spec(data))
+    assert loose.overlay["changed"] == [
         {"finding": "default.count-format@L", "severity": ["info", "warn"]}]
-    assert "set_aside" not in payload["overlay"]
+
+
+def test_a_strict_gate_lists_everything_the_overlay_set(design_dir):
+    write_overlay(design_dir, "params: {fold_units: 99}\naudiences: {executive: {kpi_height: 3}}\n"
+                              "disable: [narrative.title-style]\n"
+                              "severity: {filters.time-default: warn, size.axis-min-height: info}\n"
+                              "recommended_heights: {table: 11}\n")
+    rep = advise(SPEC, strict=True, audience="executive")
+    assert rep.overlay["set_aside"] == {
+        "params": ["fold_units", "kpi_height", "recommended_heights"],
+        "disable": ["narrative.title-style"],
+        "severity": {"filters.time-default": "warn", "size.axis-min-height": "info"}}
+    assert advise(SPEC, overlay=Overlay(), strict=True).overlay is None
 
 
 @pytest.mark.parametrize("kind", sorted(LOOSENERS))

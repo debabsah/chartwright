@@ -50,10 +50,10 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     ValueError.
 
     `strict` is for a gate (advise --strict, check/apply --design strict): the
-    per-machine overlay may then only RAISE a severity. Its disable list, any
-    severity it would lower and its parameters are set aside, so the gate passes or
-    fails the same on every machine; the report's `overlay` block names what was
-    set aside, and, without `strict`, everything the overlay changed."""
+    per-machine overlay then counts for nothing. Its disable list, its severities
+    and its parameters are all set aside, so the gate passes or fails the same on
+    every machine; the report's `overlay` block names what was set aside, and,
+    without `strict`, everything the overlay changed."""
     if chart is not None and chart not in {c.name for c in spec.charts}:
         raise ValueError(f"no chart named {chart!r}; charts: {sorted(c.name for c in spec.charts)}")
     overlay = overlay if overlay is not None else load_overlay()
@@ -70,7 +70,8 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     disabled = set() if strict else _suppression_keys(set(overlay.disable), unmatched)
     unmatched = sorted(set(unmatched))
     changed: list[dict] = []          # what the overlay did to this run's findings
-    refused: dict[str, str] = {}      # severity overrides a strict gate would not lower
+    # A strict gate takes no severity from the overlay, raises included.
+    severity = {} if strict else overlay.severity
 
     ctx = RuleContext(spec, params, resolution, prober)
     findings: list[Finding] = []
@@ -80,17 +81,13 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
         if r.data_aware and resolution is None:
             continue
         for f in r.fn(ctx):
-            # Per-deployment severity override (single choke point). A strict gate
-            # takes it only where it raises the finding's level.
-            level = overlay.severity.get(f.rule)
+            # Per-deployment severity override (single choke point).
+            level = severity.get(f.rule)
             moved = None  # reported in `changed` only if the finding is reported
             if level and level != f.severity:
-                if strict and SEVERITY_RANK[level] > SEVERITY_RANK[f.severity]:
-                    refused[f.rule] = level
-                else:
-                    moved = {"finding": f.key if f.chart else f.scope_key,
-                             "severity": [f.severity, level]}
-                    f.severity = level
+                moved = {"finding": f.key if f.chart else f.scope_key,
+                         "severity": [f.severity, level]}
+                f.severity = level
             # Explicit intent first: an ignore entry is ALWAYS visible in
             # `ignored`, even when the polish skip below would also apply.
             if _suppressed_by(suppressed, f):
@@ -131,25 +128,24 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
         ok=not any(f.severity == "error" for f in findings),
         audience=aud, findings=findings, ignored=sorted(set(ignored)),
         unmatched_ignores=unmatched, polished=sorted(set(polished)),
-        overlay=_overlay_report(overlay, aud, strict, changed, refused),
+        overlay=_overlay_report(overlay, aud, strict, changed),
     )
 
 
 def _overlay_report(overlay: Overlay, audience: str, strict: bool,
-                    changed: list[dict], refused: dict[str, str]) -> dict | None:
+                    changed: list[dict]) -> dict | None:
     """The `overlay` block of an AdviceReport: which per-machine design.yaml this run
     read, what it set, what it changed in this run's findings, and, under a strict
-    gate, what was set aside. None when no overlay is in play."""
+    gate, everything that was set aside (so a user sees why the file had no effect).
+    None when no overlay is in play."""
     if not overlay.active:
         return None
     params = overlay.param_names(audience)
     severity = dict(sorted(overlay.severity.items()))
     out: dict = {"path": str(overlay.source) if overlay.source else None, "strict": strict}
     if strict:
-        out["severity"] = {k: v for k, v in severity.items() if k not in refused}
-        out["changed"] = sorted(changed, key=lambda c: c["finding"])
         set_aside = {"params": params, "disable": sorted(overlay.disable),
-                     "severity": dict(sorted(refused.items()))}
+                     "severity": severity}
         set_aside = {k: v for k, v in set_aside.items() if v}
         if set_aside:
             out["set_aside"] = set_aside
