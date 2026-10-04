@@ -364,3 +364,27 @@ def test_no_doc_says_plan_never_reads_the_standards():
         assert not re.search(r"compile, `?plan`?,? decompile and `?restore`? never", text), rel
     compile_vs_apply = " ".join((root / "docs/CONTRACTS.md").read_text().split())
     assert "Compile checks the spec as written" in compile_vs_apply
+
+
+# -- edges the mutation pass found unpinned -------------------------------------------
+
+
+def test_an_instance_exactly_at_the_floor_holds_nothing(repo, capsys):
+    """min_superset "6.0" and theme's 6.0.0 are inclusive: a 6.0.0 instance takes both."""
+    spec = load_spec(read(written(capsys, repo, "brand")))
+    inst = for_instance(spec, source(repo), lambda: "6.0.0")
+    assert inst.held == [] and inst.spec is spec
+    assert [h["item"] for h in for_instance(spec, source(repo), lambda: "5.9.9").held] == [
+        "dashboard.css[brand]", "dashboard.theme", "layout.header[brand][0]"]
+
+
+def test_unmarked_standard_css_is_neither_held_nor_claimed_as_held(repo, capsys):
+    """The brand CSS sitting unmarked in the author's CSS (a decompiled dashboard) can't be
+    cut out safely, so it is not held, and the payload doesn't say it was."""
+    data = json.loads(json.dumps(SPEC))
+    data["design"] = {"standard": "brand"}
+    data["dashboard"]["css"] = ".dashboard-header { border-top: 4px solid #003366; }"
+    spec = load_spec(data)
+    inst = for_instance(spec, source(repo), lambda: "5.0.0")
+    assert "dashboard.css[brand]" not in [h["item"] for h in inst.held]
+    assert inst.spec.dashboard.css == data["dashboard"]["css"]

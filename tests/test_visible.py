@@ -420,3 +420,18 @@ def test_ci_fails_on_a_verify_visible_regression_once_the_browser_installs():
     assert install.get("continue-on-error") is True and install.get("id")
     assert "continue-on-error" not in check
     assert f"steps.{install['id']}.outcome == 'success'" in check["if"]
+
+
+def test_a_waived_locked_row_is_skipped_and_says_why(live_repo, capsys):
+    path = applied(capsys, live_repo)
+    data = read(path)
+    data["layout"]["footer"] = data["layout"]["footer"][:1] + data["layout"]["footer"][2:]
+    (live_repo / "standards" / "waivers.yaml").write_text(json.dumps({"waivers": [{
+        "slug": "cw-live-standards", "rule": "layout.footer[org][0]", "owner": "@acme/legal",
+        "reason": "wallboard", "expires": "2099-12-31"}]}), encoding="utf-8")
+    spec = load_spec(data)
+    found, skipped = V.targets(std_for(live_repo, path), spec)
+    why = {s.item: s.why for s in skipped}
+    assert "a waiver lets this dashboard differ" in why["layout.footer[org][0]"]
+    assert "@acme/legal" in why["layout.footer[org][0]"]
+    assert [t.item for t in found] == ["layout.footer[org][classification=confidential][0]"]

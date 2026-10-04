@@ -3,7 +3,8 @@ that hides it, in a way standard.css-hides doesn't know, is caught.
 
 Flow, for tests/fixtures/standards_live: standards apply (in memory) -> apply the spec
 -> verify-visible passes; the same spec with author CSS that turns the locked footer
-rows near-white, applied under another slug -> verify-visible names both rows hidden.
+rows near-white, and again with CSS that indents them off the page, each applied under
+its own slug -> verify-visible names both rows hidden.
 
 Needs the visual extra: pip install -e ".[visual]" && playwright install chromium.
 
@@ -32,6 +33,9 @@ from chartwright.spec import load_spec  # noqa: E402
 
 FIXTURE = REPO / "tests" / "fixtures" / "standards_live"
 HIDING_CSS = '\n[id^="MARKDOWN-sdc-footer"] p { color: #fdfdfd; }'
+# Pushes the glyphs out of an element that stays in place: caught only by measuring the
+# text's own box, which the offline suite can't exercise without a browser.
+INDENT_CSS = '\n[id^="MARKDOWN-sdc-footer"] p { text-indent: -9999px; overflow: hidden; }'
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,7 +61,8 @@ def main(argv: list[str] | None = None) -> int:
             failures.append(what)
 
     for slug, css, want_visible in ((f"{args.prefix}-visible", "", True),
-                                    (f"{args.prefix}-hidden", HIDING_CSS, False)):
+                                    (f"{args.prefix}-hidden", HIDING_CSS, False),
+                                    (f"{args.prefix}-indented", INDENT_CSS, False)):
         variant = json.loads(json.dumps(data))
         variant["dashboard"]["slug"] = slug
         variant["dashboard"]["css"] += css
@@ -77,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
                              f"({[(i['item'], i.get('reasons')) for i in out['items'] if not i['visible']]})")
         else:
             check(not out["ok"] and len(out["hidden"]) == 2,
-                  f"{slug}: near-white CSS on the locked footer is caught ({out.get('hidden')})")
+                  f"{slug}: hiding CSS on the locked footer is caught ({out.get('hidden')})")
     if failures:
         print(f"LIVE VISIBLE CHECK FAILED: {failures}")
         return 1

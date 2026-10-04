@@ -553,3 +553,67 @@ def test_a_waivers_file_in_a_subfolder_says_where_it_belongs(tmp_path, capsys):
     assert e.value.code == "waivers_file"
     assert "belongs at the top of the standards folder" in str(e.value)
     assert "standards/waivers.yaml" in str(e.value) and "unknown keys" not in str(e.value)
+
+
+# -- edges the mutation pass found unpinned -------------------------------------------
+
+
+def test_a_rule_waiver_covers_only_its_own_rule(tmp_path, capsys):
+    repo = make(tmp_path, waiver(rule="standard.css-hides"))    # locked too, but another rule
+    path = applied(capsys, repo)
+    code, out = check(capsys, str(path), "--as-of", "2026-10-04")
+    assert code == 1 and "standard.content-locked" in rules(out["specs"][0])
+    assert "waived" not in out["specs"][0]
+
+
+def test_an_active_waiver_wins_over_an_expired_one_for_the_same_finding(tmp_path, capsys):
+    repo = make(tmp_path)
+    path = applied(capsys, repo)                                # the footer then dropped
+    (repo / "standards" / "waivers.yaml").write_text(waivers_yaml(
+        waiver(rule="standard.content-locked", expires=EARLIER),
+        waiver(expires=LATER)), encoding="utf-8")               # the item, still active
+    code, out = check(capsys, str(path), "--as-of", "2026-10-04")
+    [w] = out["specs"][0]["waived"]
+    assert w["waiver"] == 1 and w["status"] == "active"
+    assert "standard.content-locked" not in rules(out["specs"][0])
+
+
+def test_a_spec_waiver_matches_the_path_not_the_file_name(tmp_path, capsys):
+    repo = make(tmp_path, waiver(slug=None, spec="specs/ops/s.json"))
+    elsewhere = applied(capsys, repo, "s.json")                 # specs/s.json: same name
+    code, out = check(capsys, str(elsewhere), "--as-of", "2026-10-04")
+    assert code == 1 and "waived" not in out["specs"][0]
+
+
+def test_a_waiver_naming_spec_and_slug_needs_both(tmp_path, capsys):
+    repo = make(tmp_path, waiver(spec="specs/s.json"))          # slug t as well
+    data = json.loads(json.dumps(DATA))
+    data["dashboard"]["slug"] = "renamed"
+    path = applied(capsys, repo, data=data)                     # the file, another slug
+    code, out = check(capsys, str(path), "--as-of", "2026-10-04")
+    assert code == 1 and "waived" not in out["specs"][0]
+
+
+def test_an_expired_classification_waiver_stops_keying_rows_under_enforcement(tmp_path, capsys):
+    """Once a classification waiver expires, standards check keys the rows off the
+    standard's classification again, so the confidential row is still expected."""
+    from test_standards_classification import BASE, LOCKED
+
+    repo = make_repo(tmp_path / "repo", {"org.yaml": BASE + LOCKED, "waivers.yaml": waivers_yaml(
+        waiver(rule="dashboard.classification", expires=EARLIER))}).parent
+    path = spec_file(repo)
+    apply(capsys, str(path), "--as-of", "2026-09-01")
+    edit(path, lambda d: d["dashboard"].__setitem__("classification", "public"))
+    code, out = check(capsys, str(path), "--as-of", "2026-10-04")
+    entry = out["specs"][0]
+    assert code == 1 and "standard.content-stale" not in rules(entry)
+    assert [f["where"] for f in entry["findings"] if f["rule"] == "standard.content-locked"] == [
+        "dashboard.classification"]
+
+
+def test_the_row_after_the_last_one_names_nothing(tmp_path, capsys):
+    repo = make(tmp_path, waiver(rule="layout.footer[org][1]"))   # org has row 0 only
+    path = applied(capsys, repo, drop_footer=False)
+    code, out = check(capsys, str(path), "--report", "--as-of", "2026-10-04")
+    [u] = out["waivers"]["unmatched"]
+    assert "has no footer row 1 (it has 1)" in u["reason"]
