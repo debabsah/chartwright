@@ -891,10 +891,11 @@ Recorded during the content standards (§18, "Content"):
     adds, drops or reorders rows (a record keyed by place alone would hand
     the release to the row that moved into that place). A row's record
     moves with its hash, or stays at its place when the standard edited that
-    row. For a setting, a label colour, a number format or a CSS block (whose
-    markers keep its identity), an edit drops the record as §16 does, so a
-    later deletion of the author's value lets the standard write it again,
-    as a fill would.
+    row. Every other item (a setting, a label colour, a number format, a CSS
+    block) keeps a released record the same way, so a later deletion of the
+    author's value stands, as the approved "an author's edit or deletion
+    wins" says. §16's fills drop their record on an edit instead, so there a
+    deleted edit is filled again; phase 4 revisits fills.
 30. **§15.25's repairs and fills, accounted for.** A height repair that read
     a standard's parameter is geometry, which standards never write, and
     stays recordless and the author's: a later standard asking for more
@@ -1594,11 +1595,24 @@ that item and nothing else:
 | The spec holds | Unlocked | Locked |
 |---|---|---|
 | the value recorded | the standard's: refreshed when the standard changes | the same |
-| another value (an edited setting, label, format or block; for a row, the row of the same shape where it stood) | released: the author's, and apply leaves it alone. A setting, label, format or block drops its record, as a fill does (a block keeps its markers, so it stays the author's); a row's record keeps the hash written, marked `"released": true` | a violation: an error in `standards check`, reported and left by `standards apply`, rewritten by `standards apply --locked` with `was` |
-| nothing, where the record has a value | deleted: never written again until the author deletes that entry; a null record, or for a row the released record above | a violation, as above |
+| another value (an edited setting, label, format or block; for a row, the row of the same shape where it stood) | released: the author's, and apply leaves it alone. The record keeps what was written, marked `"released": true`, so a later deletion of the author's value stands too | a violation: an error in `standards check`, reported and left by `standards apply`, rewritten by `standards apply --locked` with `was` |
+| nothing, where the record has a value | deleted: the record is marked released, and the item is never written again until the author deletes that entry | a violation, as above |
 | nothing, and no record | the standard's value is written | the same |
-| the standard's value, with no record (a decompiled or adopted dashboard) | left as it is, never written twice; `--claim` records it | the same; it already conforms |
+| the standard's value, with no record (a decompiled or adopted dashboard) | left as it is, never written twice; `--claim` records it | the same, except CSS: locked CSS found unmarked conforms only once `--claim` marks it, and is otherwise written as a block |
+| a CSS block with no record whose marker hash still matches its text (the standard's own earlier version, as after a decompile) | left as it is; `--claim` takes it over and brings it up to date | a violation; `--claim` brings it up to date |
 | a value of the author's, with no record | the author's | a violation |
+
+This is where content parts from §16's fills: an edited fill drops its record, so
+deleting the edited value lets `--fix` fill it again, while a released standard item
+keeps its record, so the author's deletion is never undone. The decision record's
+rule, "an author's edit or deletion wins", governs both; fills keep their shipped
+behaviour until phase 4 revisits them.
+
+Unmarked CSS counts only as whole top-level rules, in order, outside comments:
+`.sidebar .dashboard-markdown {...}` doesn't hold the standard's
+`.dashboard-markdown {...}`, and text inside a comment is no match. A block's
+marker carries the hash of the text apply wrote, kept true on every write: a
+marker whose hash no longer matches its text was edited by hand.
 
 Header and footer rows are found by the hash recorded for them, taken over
 the row with its defaults written out (a markdown block's width and height),

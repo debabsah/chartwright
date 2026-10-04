@@ -415,7 +415,7 @@ def test_an_author_editing_inside_an_unlocked_block_releases_it(repo, capsys):
     apply(capsys, str(path))
     data = read(path)
     assert "#123456" in data["dashboard"]["css"]          # the author's edit stands
-    assert "dashboard.css[finance]" not in data["design"]["standard_written"]
+    assert data["design"]["standard_written"]["dashboard.css[finance]"]["released"] is True
     # The standard changes its finance block: the released block is left as the author's.
     (repo / "standards" / "teams" / "finance.yaml").write_text(
         FINANCE.replace("#003366", "#000000"), encoding="utf-8")
@@ -452,10 +452,15 @@ def test_a_deleted_css_block_is_a_tombstone(repo, capsys):
     apply(capsys, str(path))
     data = read(path)
     assert "cw:std finance" not in data["dashboard"]["css"]
-    assert data["design"]["standard_written"]["dashboard.css[finance]"] is None
+    assert data["design"]["standard_written"]["dashboard.css[finance]"]["released"] is True
+    apply(capsys, str(path))
+    assert "cw:std finance" not in read(path)["dashboard"]["css"], "never re-added"
 
 
-def test_a_scalar_follows_the_fill_rules(repo, capsys):
+def test_a_scalar_the_author_edits_or_deletes_stays_theirs(repo, capsys):
+    """The approved rule: an author's edit or deletion wins. A released record keeps what
+    the standard wrote, so deleting a value after editing it is never undone (unlike a
+    design.filled fill, whose record goes on an edit)."""
     path = spec_file(repo, standard="finance")
     apply(capsys, str(path))
     edit(path, lambda d: d["dashboard"].update(color_scheme="bnbColors"))
@@ -464,26 +469,35 @@ def test_a_scalar_follows_the_fill_rules(repo, capsys):
                for c in out["specs"][0]["changes"])
     data = read(path)
     assert data["dashboard"]["color_scheme"] == "bnbColors"
-    assert "dashboard.color_scheme" not in data["design"]["standard_written"]
-    # The author deletes their own value: unset with no record, so the standard writes
-    # it again, as a fill would (DESIGN-BRAIN sec.16).
+    released = {"layer": "finance", "value": "supersetColors", "released": True}
+    assert data["design"]["standard_written"]["dashboard.color_scheme"] == released
+    # The author deletes their own value: the deletion stands.
     edit(path, lambda d: d["dashboard"].pop("color_scheme"))
     apply(capsys, str(path))
-    assert read(path)["dashboard"]["color_scheme"] == "supersetColors"
-    # Deleting the standard's own value: a null record, never written again.
+    assert "color_scheme" not in read(path)["dashboard"]
+    assert read(path)["design"]["standard_written"]["dashboard.color_scheme"] == released
+    # Writing a value again: the author's, the record unchanged.
+    edit(path, lambda d: d["dashboard"].update(color_scheme="googleCategory10c"))
+    _, out = apply(capsys, str(path))
+    assert out["specs"][0]["changes"] == []
+    assert read(path)["dashboard"]["color_scheme"] == "googleCategory10c"
+
+
+def test_a_scalar_deleted_while_the_standards_is_a_tombstone(repo, capsys):
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
     edit(path, lambda d: d["dashboard"].pop("color_scheme"))
     _, out = apply(capsys, str(path))
     assert {"item": "dashboard.color_scheme", "action": "tombstone", "layer": "finance",
             "was": "supersetColors"} in out["specs"][0]["changes"]
     apply(capsys, str(path))
     assert "color_scheme" not in read(path)["dashboard"]
-    assert read(path)["design"]["standard_written"]["dashboard.color_scheme"] is None
-    # Writing a value after deleting: the author's, and the null goes.
-    edit(path, lambda d: d["dashboard"].update(color_scheme="googleCategory10c"))
+    assert read(path)["design"]["standard_written"]["dashboard.color_scheme"] == {
+        "layer": "finance", "value": "supersetColors", "released": True}
+    # Deleting the entry takes the standard's value again.
+    edit(path, lambda d: d["design"]["standard_written"].pop("dashboard.color_scheme"))
     apply(capsys, str(path))
-    data = read(path)
-    assert data["dashboard"]["color_scheme"] == "googleCategory10c"
-    assert "dashboard.color_scheme" not in data["design"]["standard_written"]
+    assert read(path)["dashboard"]["color_scheme"] == "supersetColors"
 
 
 def test_label_colours_are_owned_per_key(repo, capsys):
@@ -494,7 +508,7 @@ def test_label_colours_are_owned_per_key(repo, capsys):
     apply(capsys, str(path))
     data = read(path)
     assert data["dashboard"]["label_colors"] == {"Revenue": "#1FA8C9", "Mine": "#00FF00"}
-    assert data["design"]["standard_written"]["dashboard.label_colors[Cost]"] is None
+    assert data["design"]["standard_written"]["dashboard.label_colors[Cost]"]["released"]
     # A team move: the old team's keys the standard still owns go; the org's stay.
     edit(path, lambda d: d["design"].update(standard="org"))
     apply(capsys, str(path))
@@ -544,6 +558,81 @@ def test_claim_marks_each_layers_css_once(tmp_path, capsys, css):
     assert [s.layer for s in segs if isinstance(s, C.Block)] == ["a", "b"]
     assert got.count(".x { color: red; }") == 1 and got.count(".y { color: blue; }") == 1
     assert "*//*" not in got
+    assert apply(capsys, str(path))[1]["specs"][0]["changes"] == []
+
+
+def test_locked_css_in_a_comment_is_missing_not_present(repo, capsys):
+    css = "/* .dashboard-markdown { font-family: Inter; } */\n.mine { color: red; }"
+    path = spec_file(repo, standard="finance",
+                     data={**DATA, "dashboard": {**DATA["dashboard"], "css": css}})
+    assert apply(capsys, str(path), "--check")[1]["specs"][0]["locked_stale"] == [
+        "layout.footer[org][0]", "dashboard.css[org]"]
+    apply(capsys, str(path))
+    assert read(path)["dashboard"]["css"].startswith("/* cw:std org ")
+
+
+def test_claim_never_marks_part_of_an_authors_rule(tmp_path, capsys):
+    """`.sidebar .dashboard-markdown {...}` holds the standard's text, not its rule."""
+    a = "name: a\ndefault: true\ncontent: {css: '.dashboard-markdown { font-family: Inter; }'}\n"
+    repo = make_repo(tmp_path / "r", {"a.yaml": a}).parent
+    css = ".sidebar .dashboard-markdown { font-family: Inter; }\n.mine { color: red; }"
+    path = spec_file(repo, data={**DATA, "dashboard": {**DATA["dashboard"], "css": css}})
+    _, out = apply(capsys, str(path), "--claim")
+    assert [c["action"] for c in out["specs"][0]["changes"]] == ["add"]
+    got = read(path)["dashboard"]["css"]
+    assert got.endswith("/* cw:end a */\n" + css), "the author's rule is left whole"
+    assert C.find_unmarked(css, ".dashboard-markdown { font-family: Inter; }") is None
+    assert C.find_unmarked("a{}\n/* x */ .b { c: d; }\n", ".b { c: d; }") == (12, 24)
+
+
+def test_locked_unmarked_css_conforms_only_once_claimed(repo, capsys):
+    css = ".dashboard-markdown { font-family: Inter; }\n.mine { color: red; }"
+    path = spec_file(repo, standard="finance",
+                     data={**DATA, "dashboard": {**DATA["dashboard"], "css": css}})
+    locked = findings(capsys, path, "standard.content-locked")
+    assert "dashboard.css[org]" in [f["where"] for f in locked]
+    apply(capsys, str(path), "--claim")
+    got = read(path)["dashboard"]["css"]
+    assert got.count("font-family: Inter") == 1 and got.startswith("/* cw:std org ")
+    assert "dashboard.css[org]" not in [
+        f["where"] for f in findings(capsys, path, "standard.content-locked")]
+
+
+def test_claim_brings_an_unedited_earlier_block_up_to_date(repo, capsys):
+    """The marker's hash says whether a block is the standard's own, unedited: after a
+    decompile (no record) --claim refreshes such a block to the standard's current text."""
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    edit(path, lambda d: d["design"].pop("standard_written"))
+    fin = repo / "standards" / "teams" / "finance.yaml"
+    fin.write_text(FINANCE.replace("#003366", "#112233"), encoding="utf-8")
+    _, out = apply(capsys, str(path))
+    assert "dashboard.css[finance]" not in [c["item"] for c in out["specs"][0]["changes"]]
+    _, out = apply(capsys, str(path), "--claim")
+    change = next(c for c in out["specs"][0]["changes"] if c["item"] == "dashboard.css[finance]")
+    assert change["action"] == "refresh"
+    css = read(path)["dashboard"]["css"]
+    assert "#112233" in css and "#003366" not in css
+    marker = C.parse_css(css)[2]
+    assert marker.layer == "finance" and marker.stamp == C.css_hash(marker.body)
+
+
+def test_an_edited_block_isnt_taken_for_the_standards_earlier_one(repo, capsys):
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    edit(path, lambda d: (d["design"].pop("standard_written"), d["dashboard"].update(
+        css=d["dashboard"]["css"].replace("#003366", "#654321"))))
+    _, out = apply(capsys, str(path), "--claim")
+    assert "dashboard.css[finance]" not in [c["item"] for c in out["specs"][0]["changes"]]
+    assert "#654321" in read(path)["dashboard"]["css"]
+
+
+def test_new_blocks_follow_the_authors_line_endings(tmp_path, capsys):
+    path = two_layer_css(tmp_path, ".mine{}\r\n.other{}\r\n")
+    apply(capsys, str(path))
+    css = read(path)["dashboard"]["css"]
+    assert "\n" not in css.replace("\r\n", "")
+    assert css.endswith("/* cw:end b */\r\n.mine{}\r\n.other{}\r\n")
     assert apply(capsys, str(path))[1]["specs"][0]["changes"] == []
 
 
@@ -836,8 +925,9 @@ def test_claim_marks_the_standards_css_found_unmarked(repo, capsys):
     css = ".dashboard-markdown { font-family: Inter; }\n.mine { color: red; }"
     path = spec_file(repo, standard="org",
                      data={**DATA, "dashboard": {**DATA["dashboard"], "css": css}})
-    apply(capsys, str(path))
-    assert read(path)["dashboard"]["css"].count("font-family: Inter") == 1
+    # The org block is locked: unmarked text conforms only once --claim marks it.
+    assert "dashboard.css[org]" in apply(capsys, str(path), "--check")[1]["specs"][0][
+        "locked_stale"]
     apply(capsys, str(path), "--claim")
     css = read(path)["dashboard"]["css"]
     assert css.startswith("/* cw:std org ") and css.count("font-family: Inter") == 1
@@ -923,7 +1013,7 @@ def test_the_brain_never_fills_a_field_a_standard_released(repo, capsys):
     edit(path, lambda d: d["charts"][0].pop("number_format"))
     apply(capsys, str(path))
     data = read(path)
-    assert data["design"]["standard_written"]["charts[K].number_format"] is None
+    assert data["design"]["standard_written"]["charts[K].number_format"]["released"]
     again, _ = advise_and_fix(data)
     assert "number_format" not in again["charts"][0]
 

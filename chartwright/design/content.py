@@ -462,6 +462,7 @@ class Block:
     body: str
     raw: str | None = None   # the block as read, rendered back unchanged (line endings
     #                          included); None for a block apply writes
+    eol: str = "\n"           # the line ending a written block uses: the CSS's own
 
 
 def parse_css(css: str) -> list:
@@ -519,7 +520,8 @@ def render_segment(seg) -> str:
         return seg
     if seg.raw is not None:
         return seg.raw
-    return f"/* cw:std {seg.layer} {seg.stamp} */\n{seg.body}\n/* cw:end {seg.layer} */"
+    e = seg.eol
+    return f"/* cw:std {seg.layer} {seg.stamp} */{e}{seg.body}{e}/* cw:end {seg.layer} */"
 
 
 def join_css(segments: list) -> str:
@@ -542,7 +544,7 @@ class Decision:
     slot: str
     layer: str
     state: str           # current | add | refresh | remove | unrecorded | released |
-    #                      deleted | author | tombstone | forget | held
+    #                      deleted | author | tombstone | forget | held | earlier
     item: Item | None    # None: the standard no longer has this recorded item
     found: Any = None    # what the spec holds (a row, a CSS body, a string), or None
     record: Any = MISSING  # the new record: MISSING keeps it, None writes null, "drop"
@@ -643,7 +645,7 @@ def analyze(std, spec) -> Analysis:
         current = scalar_value(item_id)
         slot = _slot_of(item_id)
         layer = rec["layer"] if rec else ""
-        if rec is not None and current == rec["value"]:
+        if rec is not None and not _released(rec) and current == rec["value"]:
             out.decisions.append(Decision(item_id, slot, layer, "remove", None,
                                           found=current, record="drop"))
         else:
@@ -663,16 +665,16 @@ def _scalar(out: Analysis, item: Item, current, rec) -> None:
     if current is None:
         if rec is MISSING:
             d.state, d.record = "add", item.record
-        elif rec is None:
-            d.state = "tombstone"
+        elif _released(rec):
+            d.state = "tombstone"            # the author's deletion stands
         else:
-            d.state, d.record = "deleted", None
+            d.state, d.record = "deleted", {**rec, "released": True}
     elif rec is MISSING:
         d.state = "unrecorded" if current == item.value else "author"
-    elif rec is None:
-        # Written after deleting: the author's, and the null record goes (as in fills).
+    elif _released(rec):
+        # The author's: an edit, or a value written after a deletion. The released record
+        # stays, so deleting the value later is never undone by apply.
         d.state = "unrecorded" if current == item.value else "author"
-        d.record = "drop"
     elif current == rec["value"]:
         if current != item.value:
             d.state, d.record = "refresh", item.record
@@ -681,7 +683,7 @@ def _scalar(out: Analysis, item: Item, current, rec) -> None:
     elif current == item.value:
         d.record = item.record                 # the author caught up with the standard
     else:
-        d.state, d.record = "released", "drop"
+        d.state, d.record = "released", {**rec, "released": True}
     out.decisions.append(d)
 
 
@@ -691,7 +693,8 @@ def _group(item_id: str) -> str:
 
 
 def _released(rec) -> bool:
-    """A row record the author took over: null, or a hash marked released."""
+    """A record of an item the author took over: null, or what was written, marked
+    released."""
     return rec is None or bool(rec.get("released"))
 
 
@@ -868,37 +871,49 @@ def _css_slot(out: Analysis, view: dict, expected: list[Item], records: dict) ->
             d.found = blk.body
             body = css_hash(blk.body)
             if rec is MISSING:
-                d.state = "unrecorded" if body == item.stamp else "author"
-            elif rec is None:
-                d.state, d.record = "author", "drop"   # written after deleting
                 if body == item.stamp:
                     d.state = "unrecorded"
+                elif blk.stamp == body:
+                    # Unedited since apply wrote it (the marker's hash still matches its
+                    # text) and no record, as after decompile: the standard's own earlier
+                    # version. --claim takes it over and brings it up to date.
+                    d.state = "earlier"
+                else:
+                    d.state = "author"
+            elif _released(rec):
+                d.state = "unrecorded" if body == item.stamp else "author"
             elif body == rec["hash"]:
                 if body != item.stamp:
                     d.state, d.record = "refresh", item.record
             elif body == item.stamp:
                 d.record = item.record
             else:
-                d.state, d.record = "released", "drop"   # edited inside the block
+                d.state, d.record = "released", {**rec, "released": True}   # edited inside
         else:
-            spot = _unmarked(segments, item.value)
-            if spot is not None:
-                # Unmarked, word for word: a UI-built or decompiled dashboard that already
-                # carries it. --claim marks and records it; apply never adds a second copy.
+            spot = any(isinstance(s, str) and find_unmarked(s, item.value) for s in segments)
+            if spot and item.locked_by is None:
+                # Unmarked, as whole rules: a UI-built or decompiled dashboard that already
+                # carries it. Unlocked, it conforms and apply never adds a second copy;
+                # --claim marks and records it.
                 d.found, d.unmarked = item.value, True
-                d.state = "tombstone" if rec is None else "unrecorded"
+                d.state = "tombstone" if rec is not MISSING and _released(rec) else "unrecorded"
+            elif spot and (rec is MISSING or not _released(rec)):
+                # Locked: unmarked text conforms only once --claim marks it, so a lock
+                # can't be met by text nobody can tell from the author's; apply adds it.
+                d.unmarked, d.state, d.record = True, "add", item.record
             elif rec is MISSING:
                 d.state, d.record = "add", item.record
-            elif rec is None:
+            elif _released(rec):
                 d.state = "tombstone"
             else:
-                d.state, d.record = "deleted", None
+                d.state, d.record = "deleted", {**rec, "released": True}
         out.decisions.append(d)
     for item_id in sorted(set(recs) - {i.id for i in expected}):
         rec = recs[item_id]
         layer = standard_item_kind(item_id)[1].group(1)
         blk = blocks.get(layer)
-        if rec is not None and blk is not None and css_hash(blk.body) == rec["hash"]:
+        if (rec is not None and not _released(rec) and blk is not None
+                and css_hash(blk.body) == rec["hash"]):
             out.decisions.append(Decision(item_id, "css", layer, "remove", None,
                                           found=blk.body, record="drop"))
         else:
@@ -906,14 +921,66 @@ def _css_slot(out: Analysis, view: dict, expected: list[Item], records: dict) ->
                                           found=blk.body if blk else None, record="drop"))
 
 
-def _unmarked(segments: list, text: str) -> tuple[int, int] | None:
-    """The standard's CSS found word for word in plain (unmarked) CSS: a dashboard built
-    in the UI, or decompiled, that already carries it."""
-    for i, seg in enumerate(segments):
-        if isinstance(seg, str):
-            at = seg.find(text)
-            if at >= 0:
-                return i, at
+def css_rules(text: str) -> list[tuple[int, int]]:
+    """The top-level statements of a CSS text as (start, end) spans: each rule from its
+    first character through the `}` that closes it, each at-statement through its `;`.
+    Comments are skipped (no span starts in one, and braces inside them don't count), as
+    are the contents of strings."""
+    spans: list[tuple[int, int]] = []
+    i, n, depth, start = 0, len(text), 0, None
+    while i < n:
+        ch = text[i]
+        if text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+            continue
+        if ch in "\"'":
+            end = i + 1
+            while end < n and text[end] != ch:
+                end += 2 if text[end] == "\\" else 1
+            if start is None and depth == 0:
+                start = i
+            i = end + 1
+            continue
+        if depth == 0 and start is None and not ch.isspace():
+            start = i
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth = max(depth - 1, 0)
+            if depth == 0 and start is not None:
+                spans.append((start, i + 1))
+                start = None
+        elif ch == ";" and depth == 0 and start is not None:
+            spans.append((start, i + 1))
+            start = None
+        i += 1
+    if start is not None and text[start:].strip():
+        spans.append((start, n))
+    return spans
+
+
+def strip_comments(text: str) -> str:
+    """CSS without its comments, each replaced by a space."""
+    return re.sub(r"/\*.*?(\*/|$)", " ", text, flags=re.S)
+
+
+def find_unmarked(text: str, body: str) -> tuple[int, int] | None:
+    """Where the standard's CSS sits in plain CSS as whole top-level statements, in a row
+    and in order: (start, end), or None. Text inside a comment is no match, and neither
+    is a run that starts or ends inside another rule (`.sidebar .dashboard-markdown
+    {...}` does not hold `.dashboard-markdown {...}`). Line endings don't count."""
+    def norm(s: str) -> str:
+        return s.replace("\r\n", "\n")
+
+    want = [norm(body[a:b]) for a, b in css_rules(body)]
+    if not want:
+        return None
+    have = css_rules(text)
+    got = [norm(text[a:b]) for a, b in have]
+    for k in range(len(got) - len(want) + 1):
+        if got[k:k + len(want)] == want:
+            return have[k][0], have[k + len(want) - 1][1]
     return None
 
 
@@ -972,11 +1039,19 @@ def plan_changes(analysis: Analysis, *, locked: bool = False,
         item = d.item
         new = _shown(item.value, d.slot) if item else None
         found = _shown(d.found, d.slot)
+        if d.state == "earlier" and claim:
+            # The standard's own earlier block, unedited: --claim takes it over and
+            # brings it up to date.
+            _add(out, d, Change(d.id, "refresh", d.layer, d.locked_by, to=new, was=found))
+            continue
         if d.violation:
             if locked:
                 _add(out, d, Change(d.id, "rewrite", d.layer, d.locked_by, to=new, was=found))
             continue
-        if d.state in ("add", "refresh"):
+        if d.state == "add" and d.unmarked and claim:
+            # Locked text found unmarked: --claim marks it where it is.
+            _add(out, d, Change(d.id, "claim", d.layer, d.locked_by, to=new))
+        elif d.state in ("add", "refresh"):
             _add(out, d, Change(d.id, d.state, d.layer, d.locked_by, to=new,
                               was=found if d.state == "refresh" else None))
         elif d.state == "remove":
@@ -1077,6 +1152,11 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
             content_op(d) for d in analysis.decisions if d.slot == "css"):
         segs = list(analysis.segments)
         chain_order = [d.layer for d in analysis.decisions if d.slot == "css" and d.item]
+        eol = "\r\n" if "\r\n" in join_css(segs) else "\n"
+
+        def block(d: Decision) -> Block:
+            body = d.item.value.replace("\n", eol) if eol != "\n" else d.item.value
+            return Block(d.layer, css_hash(body), body, eol=eol)
 
         def index_of(layer):
             return next((i for i, s in enumerate(segs)
@@ -1093,13 +1173,12 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
                 if i is not None:
                     _drop_block(segs, i)
             elif op == "claim" and d.unmarked and i is None and _wrap_unmarked(
-                    segs, Block(d.layer, css_hash(d.item.value), d.item.value)):
+                    segs, block(d)):
                 pass
             elif i is not None:
-                segs[i] = Block(d.layer, css_hash(d.item.value), d.item.value)
+                segs[i] = block(d)
             else:
-                _insert_block(segs, Block(d.layer, css_hash(d.item.value), d.item.value),
-                              chain_order)
+                _insert_block(segs, block(d), chain_order)
         css = join_css(segs)
         if css.strip():
             out["dashboard"]["css"] = css
@@ -1171,12 +1250,16 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
 
 
 def _wrap_unmarked(segs: list, block: Block) -> bool:
-    """Mark the standard's text where it sits unmarked in the CSS (--claim). Searched in
-    the segments as they are now, since blocks written before this one moved them."""
+    """Mark the standard's text where it sits unmarked in the CSS as whole rules
+    (--claim). Searched in the segments as they are now, since blocks written before
+    this one moved them."""
     for i, seg in enumerate(segs):
-        if isinstance(seg, str) and block.body in seg:
-            at = seg.index(block.body)
-            parts = [seg[:at], block, seg[at + len(block.body):]]
+        if not isinstance(seg, str):
+            continue
+        spot = find_unmarked(seg, block.body)
+        if spot is not None:
+            a, b = spot
+            parts = [seg[:a], block, seg[b:]]
             segs[i:i + 1] = [p for p in parts if not (isinstance(p, str) and p == "")]
             return True
     return False
@@ -1184,15 +1267,16 @@ def _wrap_unmarked(segs: list, block: Block) -> bool:
 
 # @charset, @import and @namespace must come before every rule, or browsers drop them.
 _LEADING_AT_RULES = re.compile(
-    r"(?:\s*(?:/\*.*?\*/\s*)*@(?:charset|import|namespace)\b[^;]*;[ \t]*\n?)+", re.S)
+    r"(?:\s*(?:/\*.*?\*/\s*)*@(?:charset|import|namespace)\b[^;]*;[ \t]*(?:\r?\n)?)+", re.S)
 
 
 def _insert_block(segs: list, block: Block, chain_order: list[str]) -> None:
     """A new block goes after the blocks of the layers above it and before those below;
     with no block yet, first in the CSS (after any @charset, @import and @namespace the
     author's CSS starts with), with the author's CSS after it. A block brings the one
-    newline that follows it, which _drop_block takes away again, so adding and removing
-    blocks leaves the author's CSS byte for byte."""
+    line ending that follows it, in the CSS's own style, which _drop_block takes away
+    again, so adding and removing blocks leaves the author's CSS byte for byte."""
+    eol = block.eol
     rank = {l: i for i, l in enumerate(chain_order)}
     mine = rank.get(block.layer, len(rank))
     at = None
@@ -1209,32 +1293,37 @@ def _insert_block(segs: list, block: Block, chain_order: list[str]) -> None:
             segs[0:1] = [head, *([rest] if rest else [])]
             at = 1
     elif (at > 0 and isinstance(segs[at - 1], Block) and at < len(segs)
-          and isinstance(segs[at], str) and segs[at].startswith("\n")):
-        # After a block: after the newline that block brought.
-        segs[at:at + 1] = ["\n", *([segs[at][1:]] if segs[at][1:] else [])]
+          and isinstance(segs[at], str) and segs[at].startswith(eol)):
+        # After a block: after the line ending that block brought.
+        rest = segs[at][len(eol):]
+        segs[at:at + 1] = [eol, *([rest] if rest else [])]
         at += 1
     before = segs[at - 1] if at > 0 else None
     after = segs[at] if at < len(segs) else None
     new: list = []
     if before is not None and not render_segment(before).endswith("\n"):
-        new.append("\n")
+        new.append(eol)
     new.append(block)
     if after is not None:
-        new.append("\n")
+        new.append(eol)
     segs[at:at] = new
 
 
 def _drop_block(segs: list, i: int) -> None:
-    """Remove a block and the one newline that joined it to its neighbour."""
+    """Remove a block and the one line ending that joined it to its neighbour."""
     segs.pop(i)
-    if i < len(segs) and isinstance(segs[i], str) and segs[i].startswith("\n"):
-        segs[i] = segs[i][1:]
-        if not segs[i]:
-            segs.pop(i)
-    elif i > 0 and isinstance(segs[i - 1], str) and segs[i - 1].endswith("\n"):
-        segs[i - 1] = segs[i - 1][:-1]
-        if not segs[i - 1]:
-            segs.pop(i - 1)
+    for eol in ("\r\n", "\n"):
+        if i < len(segs) and isinstance(segs[i], str) and segs[i].startswith(eol):
+            segs[i] = segs[i][len(eol):]
+            if not segs[i]:
+                segs.pop(i)
+            return
+    for eol in ("\r\n", "\n"):
+        if i > 0 and isinstance(segs[i - 1], str) and segs[i - 1].endswith(eol):
+            segs[i - 1] = segs[i - 1][:-len(eol)]
+            if not segs[i - 1]:
+                segs.pop(i - 1)
+            return
 
 
 # -- the record's owned rows (for the repairs that must leave them alone) --------

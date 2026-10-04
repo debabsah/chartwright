@@ -33,7 +33,8 @@ def _row(ctx: RuleContext, chart, fill, pending: dict, ignored: set[str]) -> dic
         # design.standard_written has the field: a standard's, or the author's after a
         # release; the brain never fills it (one owner per field).
         rec = ctx.spec.design.standard_written[f"charts[{chart.name}].{field}"]
-        owned = rec is not None and present and getattr(chart, field) == rec["value"]
+        owned = (rec is not None and not rec.get("released") and present
+                 and getattr(chart, field) == rec["value"])
         row = {"field": field, "value": getattr(chart, field) if present else None,
                "source": "standard" if owned else "spec" if present else "superset default",
                "rule": fill.rule,

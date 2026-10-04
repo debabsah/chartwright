@@ -1604,10 +1604,11 @@ def _check_written_entry(key: str, record) -> None:
     if record is None:
         return  # the author's: deleted (or, for a row, changed); never written again
     by = "hash" if kind in ("row", "css") else "value"
-    # A row the author took over keeps the hash written, marked released, so its record
-    # can follow it when the standard adds, drops or reorders rows.
+    # An item the author took over keeps what was written, marked released: a row's
+    # record then follows it when the standard reorders its rows, and a later deletion
+    # of the author's value is never undone.
     keys = set(record) if isinstance(record, dict) else None
-    released = kind == "row" and keys == {"layer", "hash", "released"}
+    released = keys == {"layer", by, "released"}
     if keys != {"layer", by} and not released:
         raise ValueError(f"design.standard_written[{key!r}] must be null or "
                          f"{{\"layer\": ..., \"{by}\": ...}}, as standards apply writes it")
