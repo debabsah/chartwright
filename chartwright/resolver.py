@@ -41,11 +41,13 @@ class ResolvedDataset:
 class ResolutionError:
     code: str          # dataset_not_found | dataset_ambiguous | column_not_found | metric_not_found | bad_metric
     #                    | superset_version_too_old | superset_version_unknown (chartwright.versions)
+    #                    | owner_not_found | owner_ambiguous | owner_account_unknown (chartwright.owners)
     chart: str | None
     ref: str
     detail: str
-    # column_not_found only: the dataset's closest column names, best first, so
-    # an agent can correct the spec without parsing `detail` or asking Superset.
+    # column_not_found: the dataset's closest column names, best first, so an
+    # agent can correct the spec without parsing `detail` or asking Superset.
+    # owner_not_found / owner_ambiguous: the owner values to write instead.
     candidates: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -65,6 +67,10 @@ class Resolution:
     # the instance did not say. Fields that release ignores warn here.
     superset_version: str | None = None
     version_warnings: list[dict] = field(default_factory=list)
+    # dashboard.owners as the user ids apply PUTs after the import (the named
+    # accounts plus the signed-in one, chartwright.owners); None when the spec
+    # leaves owners alone.
+    owner_ids: list[int] | None = None
 
     @property
     def ok(self) -> bool:
@@ -117,6 +123,12 @@ def resolve(spec: DashboardSpec, client: SupersetClient,
             ))
         if f.type == "time_column" and f.default:
             _check_column(f.default, where, ds, res, "time_column default")
+    if spec.dashboard.owners is not None:
+        from .owners import resolve_owners
+
+        res.owner_ids, owner_errors = resolve_owners(spec.dashboard.owners, client)
+        res.errors += [ResolutionError(e.code, None, e.ref, e.detail, e.candidates)
+                       for e in owner_errors]
     return res
 
 

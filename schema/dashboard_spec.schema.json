@@ -1270,6 +1270,22 @@
           "default": null,
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
+        },
+        "owners": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The dashboard's owners: Superset usernames, or the email address of each account, e.g. [\"jdoe\", \"ana@example.com\"]. Use emails on 4.1.4 and 5.0.0, whose API returns no usernames unless FAB_ADD_SECURITY_API is on. apply sets them after the import, keeping the account that applies as an owner too (Superset adds it on every import, and a non-admin account needs it to import again), and plan reports a difference. Omitted, apply leaves the live owners alone and plan doesn't compare them. Accounts only: Superset's owners are users, not roles.",
+          "title": "Owners"
         }
       },
       "required": [
@@ -2338,7 +2354,7 @@
     },
     "Layout": {
       "additionalProperties": false,
-      "description": "Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a footer:\nrows below all of it, outside any tab, so a tabbed dashboard shows the\nfooter under every tab.",
+      "description": "Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a header\nand a footer: rows above and below all of it, outside any tab, so a tabbed\ndashboard shows them above and under every tab.",
       "properties": {
         "sketch": {
           "anyOf": [
@@ -2432,6 +2448,45 @@
           ],
           "default": null,
           "title": "Tabs"
+        },
+        "header": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "$ref": "#/$defs/MarkdownBlock"
+                        }
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "$ref": "#/$defs/StyledRow"
+                  },
+                  {
+                    "$ref": "#/$defs/HeaderBlock"
+                  },
+                  {
+                    "$ref": "#/$defs/DividerBlock"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rows above the rows / tabs / sketch, outside any tab (shown above every tab), e.g. a banner or a note on the data",
+          "title": "Header"
         },
         "footer": {
           "anyOf": [

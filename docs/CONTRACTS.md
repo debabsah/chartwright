@@ -125,6 +125,58 @@ running the tool against real instances of all three releases.
   compares meaning rather than raw text when verifying, and `plan`
   recomputes filter scopes instead of trusting stored ids.
 
+## Dashboard owners
+
+- **The bundle can't carry owners, and the import makes the importing
+  account an owner.** The import schema has no owners field
+  (`ImportV1DashboardSchema`, 4.1.4 `superset/dashboards/schemas.py:458`,
+  5.0.0 `:474`, 6.1.0 `:505`), and the importer appends the signed-in
+  account to the dashboard's owners on every import (4.1.4/5.0.0
+  `superset/commands/dashboard/importers/v1/utils.py:194-195`, 6.1.0
+  `:244-245`); the chart importer does the same for each chart it creates
+  (`superset/commands/chart/importers/v1/utils.py:83-84`, all three
+  releases). So an apply from CI made the CI account an owner, and nothing
+  else could. With `dashboard.owners` in the spec, `apply` sets them after
+  the import with the dashboard update API, which takes owners as user ids
+  (`DashboardPutSchema`, 4.1.4 `superset/dashboards/schemas.py:391`, 5.0.0
+  `:392`, 6.1.0 `:413`). Roles are a different field of the same schema
+  (`roles`, the line after), dashboard access under `DASHBOARD_RBAC`, so
+  the spec names accounts only. Chart owners are left as Superset sets
+  them: Superset never copies a dashboard's owners to its charts either.
+- **The account that applies has to stay an owner.** Importing over an
+  existing dashboard fails for a non-admin account that isn't one of its
+  owners ("A dashboard already exists and user doesn't have permissions to
+  overwrite it": 4.1.4/5.0.0 `.../importers/v1/utils.py:157-165`, 6.1.0
+  `:205-213`), and the update API won't let a non-admin drop itself from
+  the owners (`superset/commands/utils.py:60-62`, all three releases).
+  `apply` therefore always keeps the signed-in account in the list it
+  sends, and `plan` expects it there; run `plan` with the profile `apply`
+  uses. The account's id comes from its sign-in token, whose subject is
+  the user id on all three releases (checked live); `/api/v1/me/` accepts
+  that token only on 6.1.0 (`superset/views/users/api.py:59-63`, with
+  `@protect`; 4.1.4/5.0.0 `:39-41` without it, and they answer 401).
+- **The API returns no usernames before 6.1.0, by default.** A
+  dashboard's owners come back with id, first and last name only
+  (`UserSchema(exclude=["username"])`, 4.1.4/5.0.0
+  `superset/dashboards/schemas.py:229`, 6.1.0 `:238`). The owner picker's
+  list, `/api/v1/dashboard/related/owners` (`allowed_rel_fields`, 4.1.4
+  `superset/dashboards/api.py:299`, 5.0.0 `:300`, 6.1.0 `:417`), searches
+  username or full name by substring (`superset/views/filters.py:44-53`,
+  all three releases) and returns each account's id, full name and email
+  (`extra_fields_rel_fields`, 4.1.4 `superset/views/base_api.py:303`,
+  5.0.0/6.1.0 `:327`). Only the security API returns usernames:
+  `/api/v1/security/users/`, on when `FAB_ADD_SECURITY_API` is set, which
+  6.1.0 does by default (`superset/config.py:1631`) and 4.1.4 and 5.0.0 do
+  not. So the tool confirms a username where that API answers and an
+  email address everywhere; on 4.1.4 and 5.0.0 a username comes back as
+  an `owner_not_found` error at resolve, naming the matching accounts'
+  emails. Every owner is resolved before anything is written.
+- **Decompile reads owners from the API.** The export carries none, so
+  `decompile` asks for the live dashboard's owners and names each by
+  username where the security API answers and by email elsewhere. `plan`
+  compares owners as user ids, the spec's as resolved, so the two forms
+  never read as drift.
+
 ## Which release is on the other end
 
 - **6.1.0 reports its version at `/version`; 4.1.4 and 5.0.0 report it in

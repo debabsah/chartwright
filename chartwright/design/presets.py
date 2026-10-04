@@ -83,6 +83,26 @@ class Overlay:
     brief_extra: str = ""                                 # appended to the brief
     recommended_heights: dict = field(default_factory=dict)  # chart type -> units
     severity: dict = field(default_factory=dict)          # rule id -> error|warn|info
+    # Where it was read from (not a design.yaml key): reported in every advice
+    # payload, so a run that an overlay changed says which file changed it.
+    source: Path | None = None
+
+    @property
+    def active(self) -> bool:
+        """Loaded from a file, or carrying any setting: advice says so when it is."""
+        return self.source is not None or any(
+            getattr(self, f.name) for f in fields(self) if f.name != "source")
+
+    def param_names(self, audience: str) -> list[str]:
+        """The parameters this overlay sets for one audience, by name."""
+        names = set(self.params) | set(self.audiences.get(audience) or {})
+        if self.recommended_heights:
+            names.add("recommended_heights")
+        return sorted(names)
+
+
+# Overlay keys a design.yaml may hold (`source` is where it was read from).
+OVERLAY_KEYS = frozenset(f.name for f in fields(Overlay)) - {"source"}
 
 
 def design_dir() -> Path:
@@ -136,12 +156,11 @@ def load_overlay(path: Path | None = None) -> Overlay:
         raise ValueError(f"design overlay {p} is not valid YAML: {e}") from e
     if not isinstance(data, dict):
         raise ValueError(f"design overlay {p} must be a YAML mapping")
-    known = {f.name for f in fields(Overlay)}
-    unknown = sorted(set(data) - known)
+    unknown = sorted(set(data) - OVERLAY_KEYS)
     if unknown:
-        raise ValueError(f"design overlay {p}: unknown keys {unknown} (known: {sorted(known)})")
+        raise ValueError(f"design overlay {p}: unknown keys {unknown} (known: {sorted(OVERLAY_KEYS)})")
 
-    ov = Overlay(**{k: v for k, v in data.items() if k in known})
+    ov = Overlay(**{k: v for k, v in data.items() if k in OVERLAY_KEYS}, source=p)
     if not isinstance(ov.disable, list) or not all(isinstance(x, str) for x in ov.disable):
         raise ValueError(f"design overlay {p}: disable must be a list of rule-id strings")
     if not isinstance(ov.brief_extra, str):

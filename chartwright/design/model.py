@@ -109,6 +109,9 @@ class AdviceReport:
     # height. Reported, never silent: a rule that stands down on an INFERRED
     # signal has to say so, or the user reads the silence as approval.
     polished: list[str] = field(default_factory=list)
+    # The per-machine design.yaml this run read and what it changed (design/__init__.py
+    # _overlay_report); None when no overlay is in play.
+    overlay: dict | None = None
 
     def payload(self) -> dict:
         out = {
@@ -125,6 +128,8 @@ class AdviceReport:
             out["unmatched_ignores"] = self.unmatched_ignores
         if self.polished:
             out["polished"] = self.polished
+        if self.overlay is not None:
+            out["overlay"] = self.overlay
         return out
 
 
@@ -158,11 +163,14 @@ class Section:
     mode: str                # "rows" | "sketch"
     bands: list[Band]
     footer: bool = False     # layout.footer: below every tab, not a tab of its own
+    header: bool = False     # layout.header: above every tab, not a tab of its own
 
     @property
     def label(self) -> str:
         if self.footer:
             return "footer"
+        if self.header:
+            return "header"
         return f"tab {self.title!r}" if self.title else "layout"
 
 
@@ -211,8 +219,8 @@ class RuleContext:
 
     @property
     def body_sections(self) -> list[Section]:
-        """The rows / sketch / tabs, without the footer."""
-        return [s for s in self.sections if not s.footer]
+        """The rows / sketch / tabs, without the header and the footer."""
+        return [s for s in self.sections if not (s.footer or s.header)]
 
     def is_sketch(self, name: str) -> bool:
         return self.sections[self.geo[name].section].mode == "sketch"
@@ -332,6 +340,8 @@ def _normalize(spec: DashboardSpec) -> list[Section]:
                     sections.append(Section(title, "rows", _bands_from_rows(spec, leaf.rows)))
                 else:
                     sections.append(Section(title, "sketch", _bands_from_sketch(spec, leaf)))
+    if lay.header:
+        sections.insert(0, Section(None, "rows", _bands_from_rows(spec, lay.header), header=True))
     if lay.footer:
         sections.append(Section(None, "rows", _bands_from_rows(spec, lay.footer), footer=True))
     return sections

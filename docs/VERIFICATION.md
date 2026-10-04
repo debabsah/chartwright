@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (980 tests, 53 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1039 tests, 56 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
@@ -111,6 +111,27 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   ratchets `size.table-window` across heights 6-20, fills never write
   geometry or a field a repair writes, and a fixed spec compiles to the
   same bundle as the same fields with no `design` block.
+- **Layout header** (`test_layout_header.py`): header rows sit at grid
+  level above the tabs, rows or sketch; adding one changes no body or footer
+  node, chart placeholders included; it round-trips losslessly and
+  recompiles to the same bundle; rows above a UI-built dashboard's tabs read
+  back as its header; the critic advises header rows in place, spends the
+  header in every tab's fold budget, and fixes header markdown by its own
+  address.
+- **Dashboard owners** (`test_dashboard_owners.py`): owners never reach
+  the bundle; usernames resolve where the security API answers and emails
+  everywhere, an unknown or ambiguous owner is a resolve-stage error with
+  candidates and stops `apply` before any write, the signed-in account is
+  read from the token and always kept, `apply` PUTs the ids after the
+  import and fails at its own stage when refused, decompile names the live
+  owners (or leaves them out with a loss when one can't be named), and
+  `plan` compares ids, ignoring owners when the spec omits them.
+- **Strict gates and the per-machine overlay** (`test_overlay_gates.py`): a
+  `design.yaml` that disables a rule, lowers a severity or moves a threshold
+  leaves `advise --strict`, `--design strict` and the MCP strict modes
+  failing exactly as with no overlay, a raised severity is set aside too,
+  and the payload lists everything set aside; without a strict gate the
+  overlay applies and the payload names each finding it changed.
 
 ## 2. Chart options, checked against plugin source
 
@@ -140,7 +161,8 @@ second-writer and fault-injection runs.) The same check then runs on two
 more specs, `tests/fixtures/live_display_controls.json` (every chart display
 control: legends, axis titles and bounds, stacking, labels, table and pivot
 options) and `tests/fixtures/live_dashboard_controls.json` (dashboard
-settings, colour schemes, goal lines, layout headers, cascading and
+settings and owners, colour schemes, goal lines, a header and footer
+outside the tabs, header rows inside them, cascading and
 pre-filtered native filters, time grain and time column filters). They are
 the offline display and dashboard controls fixtures pointed at Superset's
 example data. Each apply is followed by a per-chart data check: each

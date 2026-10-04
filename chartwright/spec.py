@@ -1452,6 +1452,33 @@ class DashboardMeta(BaseModel):
                     "apply and plan refuse it there before anything is written.",
     )
     tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
+    owners: list[str] | None = Field(
+        default=None,
+        description="The dashboard's owners: Superset usernames, or the email address of "
+                    "each account, e.g. [\"jdoe\", \"ana@example.com\"]. Use emails on "
+                    "4.1.4 and 5.0.0, whose API returns no usernames unless "
+                    "FAB_ADD_SECURITY_API is on. apply sets them after the import, keeping "
+                    "the account that applies as an owner too (Superset adds it on every "
+                    "import, and a non-admin account needs it to import again), and plan "
+                    "reports a difference. Omitted, apply leaves "
+                    "the live owners alone and plan doesn't compare them. Accounts only: "
+                    "Superset's owners are users, not roles.",
+    )
+
+    @field_validator("owners")
+    @classmethod
+    def _owner_names(cls, owners: list[str] | None) -> list[str] | None:
+        if owners is None:
+            return None
+        seen: set[str] = set()
+        for name in owners:
+            if not name or name != name.strip():
+                raise ValueError(f"dashboard owners: {name!r} must be a username or an "
+                                 "email, without surrounding spaces")
+            if name.casefold() in seen:
+                raise ValueError(f"dashboard owners: {name!r} is listed twice")
+            seen.add(name.casefold())
+        return owners
 
     @field_validator("css")
     @classmethod
@@ -1516,14 +1543,18 @@ class DesignConfig(BaseModel):
 
 
 class Layout(_SketchHolder):
-    """Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a footer:
-    rows below all of it, outside any tab, so a tabbed dashboard shows the
-    footer under every tab."""
+    """Flat rows, tabs, or an ASCII sketch; exactly one. Optionally a header
+    and a footer: rows above and below all of it, outside any tab, so a tabbed
+    dashboard shows them above and under every tab."""
 
     model_config = ConfigDict(extra="forbid")
 
     rows: list[Row] | None = None
     tabs: list[Tab] | None = None
+    header: list[Row] | None = Field(
+        default=None,
+        description="Rows above the rows / tabs / sketch, outside any tab (shown above every "
+                    "tab), e.g. a banner or a note on the data")
     footer: list[Row] | None = Field(
         default=None,
         description="Rows below the rows / tabs / sketch, outside any tab (shown under every tab)")
@@ -1551,7 +1582,7 @@ class Layout(_SketchHolder):
     def all_rows(self) -> list[list[RowItem]]:
         """Every row of charts and markdown (headers and dividers skipped)."""
         body = self.rows or [row for tab in self.leaf_tabs() for row in (tab.rows or [])]
-        return item_rows([*body, *(self.footer or [])])
+        return item_rows([*(self.header or []), *body, *(self.footer or [])])
 
     def sketch_holders(self) -> list["_SketchHolder"]:
         if self.sketch:

@@ -146,14 +146,17 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
   - `warn`: advice rides along in the payload under `"advice"`, never blocks.
   - `strict`: `error`/`warn` findings block (a `design_gate` entry lands in
     `errors` and the exit code is 1); apply blocks BEFORE anything on the
-    instance is touched.
+    instance is touched. Like `advise --strict`, it takes nothing from the
+    per-machine `design.yaml` (§6).
   - `off`: byte-identical to the pre-brain behavior, advice machinery never
     runs.
 - `calibrate`: the learning loop (§13 phase 3). Mines absorb history into
   per-audience recommended heights; `--since` is the decay knob.
-- MCP server: `design_brief`, `advise_spec` (with `chart`), `fix_spec`,
-  `explain_spec` (the `explain --json` payload) and `redesign_dashboard`
-  mirror the CLI verbs; `check_spec` carries the advice block.
+- MCP server: `design_brief`, `advise_spec` (with `chart` and `strict`),
+  `fix_spec` (with `strict`), `explain_spec` (the `explain --json` payload)
+  and `redesign_dashboard` mirror the CLI verbs; `check_spec` and
+  `build_dashboard` carry the advice block and take `design`
+  (`off`/`warn`/`strict`, the CLI's `--design`).
 
 ## 5. Spec surface
 
@@ -232,6 +235,19 @@ brief_extra: |
 
 `recommended_heights` merges per key across preset -> overlay -> per-audience
 layers; the brief prints the merged values and height autofixes target them.
+
+The file lives on one machine, so it must not decide a gate (§14.14). Under
+a strict gate (`advise --strict`, `advise --fix --strict`, `check`/`apply
+--design strict`, and the MCP tools' `strict` and `design: "strict"`) the
+overlay counts for **nothing**: its `disable` list, every `severity` entry
+(raises included) and its parameters are set aside, so the gate passes or
+fails the same on every machine. Without a strict gate the overlay applies as
+before. Either way, every advice payload carries an `overlay` block naming the
+file (§10): what it changed in a run it applied to, and what was set aside in
+a gate, so a user sees why their local file had no effect there. Team-wide
+strictness, reviewable in a pull request, belongs in the coming `standards/`
+directory; until then the spec's `design.ignore` is the visible way to except
+a rule from a strict gate.
 
 ## 7. The rulebook
 
@@ -394,7 +410,13 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   ],
   "ignored": ["layout.fold-budget"],
   "unmatched_ignores": ["size.pie-geometri"],
-  "polished": ["size.axis-min-height@Weekly Orders"]
+  "polished": ["size.axis-min-height@Weekly Orders"],
+  "overlay": {
+    "path": "/home/me/.config/chartwright/design.yaml", "strict": false,
+    "params": ["fold_units"], "disable": [],
+    "severity": {"filters.time-default": "warn"},
+    "changed": [{"finding": "filters.time-default@filters", "severity": ["info", "warn"]}]
+  }
 }
 ```
 
@@ -413,6 +435,14 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   `ignored` is the user's *explicit* intent; `polished` is the brain's own
   *inference*, and an inference that silences a rule invisibly reads exactly
   like the rule having passed. Present only when non-empty.
+- `overlay` is present whenever a `design.yaml` is in play (§6): its `path`
+  and whether the run was a `strict` gate. Outside a strict gate it lists the
+  `params` it set, its `disable` list, its `severity` entries and `changed`,
+  each finding it changed in this run (`severity: [from, to]`, or
+  `disabled: true`). Under a strict gate it holds only `set_aside`: every
+  `params`, `disable` and `severity` entry the gate ignored (omitted when the
+  file sets none). An overlay typo in `disable` is an `unmatched_ignores`
+  entry only where the list applies, outside a strict gate.
 - Under `apply --design warn`, this object is embedded in the apply report
   as `"advice"` and never affects `apply`'s own `ok`. Under
   `--design strict` the gate fails CLOSED: if advice could not be evaluated
@@ -547,6 +577,21 @@ reversible and none is load-bearing enough to block on:
     newer brain changes a spec only when someone runs `--fix`, and then
     only fields left unset or still holding the value `design.filled` records. The catalogue, the
     ownership rule and the conditions each fill honours are §16.
+14. **Strict gates take nothing from the per-machine overlay** (2026-10-03,
+    the first groundwork item of the project's fleet-standards decision,
+    kept with its research notes outside the repository, which makes a strict
+    gate immune to it). `design.yaml` lives in a home directory or
+    `$CHARTWRIGHT_DESIGN_DIR`, so its `disable` list and a lowered `severity`
+    could pass `advise --strict` or `--design strict` on one machine while
+    CI failed, with nothing in the payload to say why; a verifier reproduced
+    both. A gate's result must not depend on the machine it runs on, in
+    either direction, so under a strict gate the whole overlay is set aside:
+    disable list, severities (a raise too: it would fail a gate locally that
+    passes in CI) and parameters. Outside a strict gate nothing changes, and
+    every advice payload names the overlay and what it changed or what was
+    set aside (§6, §10). Team-wide strictness comes from repo standards
+    files, reviewable in a pull request, the fleet-standards decision's next
+    phase.
 
 ## 15. Implementation deviations (recorded, not silent)
 
@@ -580,7 +625,8 @@ Recorded during the v2 roadmap burn-down:
    suggestion was declined for consistency.
 8. **`filters.time-default` ships as info for every audience**; deployments
    that want it blocking for executives raise it via the overlay's
-   `severity` map rather than a boolean param.
+   `severity` map rather than a boolean param (outside strict gates, which
+   take nothing from the overlay since §14.14).
 9. **Sketch WYSIWYG resolved as disclosure, not withholding**: height fixes
    still apply to sketch-drawn charts (explicit heights legitimately override
    the drawing, absorb's precedent), and the finding says the drawing goes
@@ -645,11 +691,34 @@ Recorded during the post-merge review burn-down:
     silent when a time_range filter exists without a default;
     `filters.time-default` already names that one-line fix, and double-
     reporting one remedy at two severities is noise. Deployments that want
-    that case to bite raise it via the overlay `severity` map (§15.8).
+    that case to bite raise it via the overlay `severity` map (§15.8; not
+    in a strict gate, §14.14).
 19. **`decompile` says when its dataset index is truncated.** The lookup
     stops at a page cap; past it, a real dataset became "uuid not resolvable"
     and its chart was dropped: a wrong answer wearing the costume of an
     honest loss, which is the one failure this decompiler must never produce.
+
+Recorded during the fleet-standards groundwork:
+
+20. **The MCP tools gained the CLI's gates.** §4 said the MCP tools mirror
+    the CLI, but `build_dashboard` ran no advice at all and no MCP tool had a
+    strict mode, so an agent could not run the gate CI runs. `check_spec`
+    and `build_dashboard` now take `design` (`off`, `warn` by default,
+    `strict`) exactly as `--design` does, `build_dashboard` carries the
+    advice block `apply` carries, and `advise_spec` and `fix_spec` take
+    `strict`. Both surfaces build the block through one function
+    (`design.advice_payload`), so they cannot report an overlay differently.
+21. **A header counts against every tab's fold budget; a footer does not.**
+    `layout.header` mirrors `layout.footer` everywhere else: its rows are a
+    section of their own (`header row N`) that the sizing and band rules
+    review like the body, and tab balance and the section-header check leave
+    it out. The fold budget is the exception, because the two sit on
+    opposite sides of the fold: every tab opens below the header, so its
+    height is spent before the tab's first row, while a footer comes after
+    the content the budget protects. `layout.fold-budget` therefore starts
+    each tab's count at the header's height and says so ("with the header's
+    N"); a header that alone exceeds the budget is reported once, on the
+    header row where it runs out, not again on every tab.
 
 ## 16. Design defaults (fills)
 

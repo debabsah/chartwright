@@ -41,6 +41,11 @@ into one. Everything below works from that one file.
     - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).
     - Chart: colour scheme, description (viewers open it from the chart menu), certification badge, cache timeout, and a shorter title shown on the dashboard.
     - Tags on Superset 6.0+ (with Superset's `TAGGING_SYSTEM` flag on), and chart timestamps on every card on Superset 6.1+.
+- **Named Owners**: List the dashboard's owners in the spec (`"owners": ["jdoe", "ana@example.com"]`), so a dashboard applied from CI belongs to the people responsible for it, and its drafts stay visible to them.
+    - Each owner is checked against the instance before anything is written; a misspelt one comes back with the closest accounts.
+    - Name owners by email on 4.1.4 and 5.0.0, whose API returns usernames only with `FAB_ADD_SECURITY_API` on; usernames work on 6.1.0.
+    - The account that applies stays an owner alongside them: Superset adds it on every import, and a non-admin account needs it to import the next version.
+    - `plan` reports owners changed in the UI, and `decompile` reads them back.
 - **Dashboard CSS**: `"css"` on the dashboard block holds what you would type into Superset's Edit CSS, so the styling is reviewed and versioned with the rest of the dashboard. CSS changed in the UI is drift that `plan` reports and `apply` replaces.
 - **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs.
 - **No Empty First Load**: New charts open on your full data range, so a narrow default time window never hides everything on the first paint. On a large dataset that full range is a lot to draw, so give the filter bar a time range with a default; `chartwright advise` tells you when a dashboard has nothing bounding its dates.
@@ -53,7 +58,8 @@ into one. Everything below works from that one file.
     - Every rule drawn and compiled: [the layout guide](LAYOUT-GUIDE.md).
 - **Precise Sizing**: Set exact widths and heights per chart (markdown blocks down to one 8 px grid row: `"height": 1.6` is 64 px), or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
 - **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs (with one level of sub-tabs, e.g. a sub-tab per row of a scorecard), section headers and dividers between rows (`{"header": "Revenue", "size": "large"}`, `{"divider": true}`), a white card behind a row, and markdown blocks for notes.
-- **Footer**: `layout.footer` rows sit below everything, outside any tab, so a tabbed dashboard shows them under every tab: a branding strip, a data note, a contact line.
+- **Header and Footer**: `layout.header` rows sit above everything and `layout.footer` rows below it, outside any tab, so a tabbed dashboard shows them above and under every tab: a banner, a data note, a branding strip, a contact line.
+    - Adding a header to a dashboard already in use moves nothing else in it.
 
 ## The Design Brain
 - **Codified BI/UX Practice**: An optional layer holding what Few, Tufte and IBCS teach about reading a dashboard, plus the Superset rendering quirks that break it, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).
@@ -66,7 +72,9 @@ into one. Everything below works from that one file.
     - A field you write is never touched. A filled value is kept up to date as the chart changes until you edit or delete it; then it is yours, and a deleted one stays deleted. To keep Superset's default from the start, add the rule to `design.ignore`.
     - The bundle depends on the spec alone: compile, `plan` and decompile never add a value of their own.
 - **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
-- **House Style**: A `design.yaml` overlay tunes thresholds, disables rules, and appends org guidance to the brief, so a deployment can set its own standards without forking the rulebook.
+- **House Style**: A `design.yaml` overlay on your machine tunes thresholds, disables rules, and appends your guidance to the brief, without forking the rulebook.
+    - Strict gates (`advise --strict`, `--design strict`) set it aside, so a gate passes or fails the same on every machine.
+    - Every review names the overlay: each finding it changed, or, in a strict gate, what was set aside.
 - **Heights Calibrated From Your Own Dashboards**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.
 - **Design Audits of Legacy Dashboards**: `decompile` + `advise` grades any UI-built dashboard against the rulebook.
 - **One-Shot Redesign**: `chartwright redesign <dashboard>` decompiles a live dashboard, audits it, applies the safe geometry fixes, and writes the redesigned spec. A tool-built dashboard is redesigned in place; anything else comes back under a new slug and applies side by side, leaving the original untouched.

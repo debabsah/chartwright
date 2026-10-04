@@ -169,6 +169,30 @@ Prefer explicit numbers? `layout.rows` with per-chart widths and heights does
 the same job without drawing, and dragging a chart taller in the UI followed
 by `chartwright absorb` writes the polished height back into the spec.
 
+## A header above every tab
+
+`layout.header` is the footer's mirror: rows, exactly like `layout.rows`,
+placed above the rows, tabs, or sketch, outside any tab. On a tabbed dashboard
+Superset draws them above whichever tab is open, so one banner serves every
+tab:
+
+```json
+"layout": {
+  "header": [[{"markdown": "**Draft**: figures reconcile with the finance close", "width": 12, "height": 1.6}]],
+  "tabs": [{"title": "Overview", "rows": [["Revenue"]]}, {"title": "Detail", "rows": [["Orders"]]}]
+}
+```
+
+Adding, editing or removing a header leaves the rest of the dashboard as it
+was: the body's rows, markdown and charts keep their positions in Superset's
+layout, so a header can be added to a dashboard people already use. A header
+works with flat rows, tabs and a sketch, and beside a footer. Decompile reads
+any rows above a dashboard's tabs as its header, including rows dragged there in
+Superset's UI; without tabs, only rows chartwright compiled as a header read
+back as one. The design critic reviews header rows like the body's, and counts
+the header's height against every tab's fold budget, since every tab opens
+below it.
+
 ## A footer under every tab
 
 `layout.footer` takes rows, exactly like `layout.rows`, and places them below
@@ -192,4 +216,4 @@ including rows dragged there in Superset's UI. Without tabs there is no
 visible boundary, so only rows chartwright compiled as a footer read back as
 one. The design critic reviews footer rows with the same sizing and layout
 rules as the body; only tab balance and the section-header check leave the
-footer out.
+footer (and the header) out.

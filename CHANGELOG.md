@@ -7,6 +7,33 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Added
 
+- `dashboard.owners`: the dashboard's owners, by Superset username or by the email
+  address of each account, e.g. `["jdoe", "ana@example.com"]`. Superset's import makes
+  the importing account an owner and its bundle has no owners field, so `apply` now
+  sets them after the import, through the dashboard API.
+  - Every owner is resolved to an account before anything is written. An unknown one
+    is an `owner_not_found` error at resolve, with the closest accounts as
+    `candidates`; one that names two accounts is `owner_ambiguous`.
+  - Usernames need an instance whose API returns them: 6.1.0 by default, 4.1.4 and
+    5.0.0 only with `FAB_ADD_SECURITY_API` on. Emails work on all three.
+  - The account that applies stays an owner: Superset adds it on every import, and a
+    non-admin account can't import over the dashboard again without it. Run `plan`
+    with the same profile.
+  - `decompile` reads the owners back from the live dashboard, and `plan` lists
+    `owners` in `dashboard_settings_changed` when they differ.
+  - Omitted, `apply` leaves the live owners alone and `plan` doesn't compare them;
+    the bundle is the same either way. Chart owners are left as Superset sets them.
+- `layout.header`: rows above the rows, tabs or sketch, outside any tab, so a tabbed
+  dashboard shows them above every tab; the mirror of `layout.footer`.
+  - Header rows compile under their own ids (`ROW-sdc-header-1`, ...), so adding,
+    editing or removing a header leaves every body and footer node as it was, chart
+    placeholders included.
+  - Decompile reads rows above a dashboard's tabs as its header, including rows put
+    there in Superset's UI, which used to flatten the tabs into rows with a loss.
+    Without tabs, only rows compiled as a header read back as one.
+  - `plan` compares it with the rest of the layout. The design review checks header
+    rows like body rows and counts the header's height in every tab's fold budget.
+  - A spec without a header builds the same bundle as before.
 - `dashboard.css`: the dashboard's CSS, the same thing as Superset's own "Edit CSS",
   written into the import bundle's `css` field (which 4.1.4, 5.0.0 and 6.1.0 all import).
   Decompiled (blank CSS reads back as omitted) and compared by `plan` (`css_changed`).
@@ -141,6 +168,18 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- A `design.yaml` on one machine (`~/.config/chartwright/` or `$CHARTWRIGHT_DESIGN_DIR`)
+  could loosen `advise --strict` and `check`/`apply --design strict` with no trace in the
+  output: its `disable` list hid findings, its `severity` map could lower them, and its
+  parameters could move thresholds. A strict gate now takes nothing from it, raised
+  severities included, so the gate passes or fails the same on every machine.
+  - Every advice block names the overlay in a new `overlay` entry: its path, what it
+    set, each finding it changed in this run and, under a strict gate, what it set
+    aside.
+  - Without a strict gate the overlay applies as before.
+  - MCP: `check_spec` and `build_dashboard` take `design` (`off`, `warn`, `strict`), the
+    CLI's `--design`, and `build_dashboard` now carries the advice block `apply`
+    carries; `advise_spec` and `fix_spec` take `strict`.
 - Tables and pivots that hid their last rows passed `size.table-window`,
   `size.pivot-window`, `size.grid-fit` and the apply-time smoke warning. Their shared
   grid model was a guess. It is now measured on rendered Superset 4.1.4, 5.0.0 and 6.1.0
