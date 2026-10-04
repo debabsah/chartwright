@@ -122,6 +122,9 @@ def test_a_sql_filter_compiles_to_a_custom_sql_where():
         {"clause": "WHERE", "expressionType": "SQL", "sqlExpression": "amount > 0 OR status = 'refunded'"},
         {"clause": "WHERE", "expressionType": "SIMPLE", "subject": "region", "operator": "==",
          "comparator": "West"},
+        # A line chart's time-range filter on its axis (test_chart_time_range.py).
+        {"clause": "WHERE", "expressionType": "SIMPLE", "subject": "ordered_at",
+         "operator": "TEMPORAL_RANGE", "comparator": "No filter"},
     ]
 
 

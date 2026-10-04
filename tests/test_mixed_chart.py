@@ -66,7 +66,9 @@ def test_compile_time_axis_mixed():
     assert (p["seriesType"], p["seriesTypeB"]) == ("bar", "line")
     assert (p["yAxisIndex"], p["yAxisIndexB"]) == (0, 1)
     assert p["y_axis_format"] == "SMART_NUMBER" and p["y_axis_format_secondary"] == ".3f"
-    assert p["adhoc_filters"] == p["adhoc_filters_b"] and len(p["adhoc_filters"]) == 1
+    # The chart's filter, then the time-range filter on the axis (test_chart_time_range.py).
+    assert p["adhoc_filters"] == p["adhoc_filters_b"] and len(p["adhoc_filters"]) == 2
+    assert p["adhoc_filters"][1]["operator"] == "TEMPORAL_RANGE"
     assert p["groupby"] == [] and p["groupby_b"] == []
 
 

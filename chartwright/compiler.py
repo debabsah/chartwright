@@ -511,18 +511,65 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         # (utils/mergeCustomEChartOptions.ts: arrays replace, so never a mixed chart's yAxis).
         p["echart_options"] = json.dumps(p["echart_options"])
 
-    # Bind charts without their own TIME column to the dataset's main temporal
-    # column. The dashboard time filter reaches a chart only through a time
-    # binding; without one the chart silently ignores it while the filter bar
-    # still counts it as filtered (verified live on 6.1.0: full-month total
-    # under a one-week default). The categorical bar's x_axis is not a time
-    # column, so it needs the binding too.
-    timeseries = ("timeseries_line", "timeseries_bar", "timeseries_area",
-                  "timeseries_scatter", "big_number_trend")
-    time_x = t == "mixed" and "time_grain_sqla" in p
-    if t not in timeseries and not time_x and ds.main_dttm_col:
-        p["granularity_sqla"] = ds.main_dttm_col
+    # A time range, the chart's own or a dashboard time filter's, reaches a query
+    # only through a time binding; without one the chart silently ignores it while
+    # the filter bar still counts it as filtered. time_binding() says which binding.
+    kind, column = time_binding(chart, ds) or (None, None)
+    if kind == "granularity":
+        p["granularity_sqla"] = column
+    elif kind == "axis":
+        temporal = _temporal_range_filter(column, p["time_range"])
+        p["adhoc_filters"] = p["adhoc_filters"] + [temporal]
+        if t == "mixed":
+            p["adhoc_filters_b"] = p["adhoc_filters_b"] + [temporal]
     return p
+
+
+# Chart types whose x axis is always their time column.
+TIME_AXIS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area",
+                   "timeseries_scatter", "big_number_trend")
+
+
+def time_binding(chart, ds) -> tuple[str, str] | None:
+    """How a time range reaches this chart's query: ("axis", column), ("granularity",
+    column), or None when the dataset has no time column to bind. The compiler and
+    smoke share it, so the smoke query is filtered the way the chart is.
+
+    The backend applies a query's time_range to the WHERE clause only through
+    `granularity` (get_sqla_query, superset/models/helpers.py:1673-1712 and 1962 at
+    4.1.4, 1684 and 1973 at 5.0.0, 2926-2974 and 3269 at 6.1.0). The frontend sends
+    granularity_sqla as granularity (extractExtras.ts:75-78, 77-80 at 6.1.0), so a chart
+    without a time axis binds the dataset's main time column there (verified live on
+    6.1.0: a full-month total under a one-week dashboard default before the binding).
+
+    A chart with a time axis can't take that binding: with granularity set,
+    _apply_granularity (superset/common/query_context_factory.py:115-187 at 4.1.4 and
+    5.0.0, 235-309 at 6.1.0) swaps the x-axis column for it. Superset's own charts
+    filter their axis with an adhoc TEMPORAL_RANGE filter instead, applied in
+    get_sqla_query whatever the granularity (helpers.py:1893-1912 at 4.1.4, 1904-1923
+    at 5.0.0, 3213-3232 at 6.1.0), and _apply_filters (query_context_factory.py:189-193,
+    311-315 at 6.1.0) sets its value to the query's time_range, the chart's own or the
+    dashboard's."""
+    if chart.type in TIME_AXIS_TYPES:
+        return ("axis", chart.time_column)
+    if chart.type == "mixed" and mixed_time_axis(chart, ds):
+        return ("axis", chart.x_column)
+    if ds.main_dttm_col:
+        return ("granularity", ds.main_dttm_col)
+    return None
+
+
+def _temporal_range_filter(column: str, time_range: str) -> dict:
+    # The shape Explore saves for the "Time range" filter pill (all three releases).
+    # Its comparator matches the chart's time_range: a truthy time_range, "No filter"
+    # included, overwrites it at query time (_apply_filters), so the two can't disagree.
+    return {
+        "clause": "WHERE",
+        "expressionType": "SIMPLE",
+        "subject": column,
+        "operator": "TEMPORAL_RANGE",
+        "comparator": time_range,
+    }
 
 
 # Superset's stored value per stack setting (StackControlsValue, EC/constants.ts at
