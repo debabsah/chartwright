@@ -33,12 +33,15 @@ from chartwright.spec import load_spec
 from chartwright.testing import stub_resolution
 
 CONTRACT = REPO / "tools" / "contracts" / "params-contract.json"
-# Two fixtures: kitchen-sink covers every chart type; the demo spec exercises
+# Three fixtures: kitchen-sink covers every chart type; the demo spec exercises
 # the conditional keys kitchen-sink leaves unset (big-number subtitle and
-# number_format), which once hid an off-contract key from this checker.
+# number_format), which once hid an off-contract key from this checker; the
+# dashboard-controls spec sets color_scheme and annotation_layers on every
+# chart type that takes them.
 FIXTURES = [
     REPO / "tests" / "fixtures" / "kitchen_sink.json",
     REPO / "examples" / "nyc_taxi_operations.json",
+    REPO / "tests" / "fixtures" / "dashboard_controls.json",
 ]
 
 # Stored-in-params keys that are NOT plugin controlPanel controls, so they are

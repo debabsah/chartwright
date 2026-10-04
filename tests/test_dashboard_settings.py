@@ -7,6 +7,7 @@ Omitted, every one compiles to exactly what the tool wrote before."""
 import io
 import json
 import zipfile
+from pathlib import Path
 
 import pytest
 import yaml
@@ -249,3 +250,10 @@ def test_an_unknown_scheme_name_warns_with_a_hint():
     assert "EXTRA_CATEGORICAL_COLOR_SCHEMES" in by_chart[None]
     assert "did you mean 'bnbColors'" in by_chart["Revenue by Region"]
 
+
+
+def test_the_controls_fixture_round_trips_losslessly():
+    """tests/fixtures/dashboard_controls.json sets every control on every chart
+    type that takes it (the params drift check compiles it too)."""
+    path = Path(__file__).parent / "fixtures" / "dashboard_controls.json"
+    assert_lossless(load_spec(json.loads(path.read_text(encoding="utf-8"))))
