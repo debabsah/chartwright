@@ -25,7 +25,8 @@ def _md_block(data: dict, addr, ri, ii):
             rows = lay["tabs"][addr[0]]["tabs"][addr[1]]["rows"]
         else:
             rows = lay["tabs"][addr]["rows"]
-        item = rows[ri][ii]
+        row = rows[ri]
+        item = (row["row"] if isinstance(row, dict) else row)[ii]
     except (KeyError, IndexError, TypeError):
         return None
     return item if isinstance(item, dict) and "markdown" in item else None

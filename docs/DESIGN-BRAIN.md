@@ -218,7 +218,8 @@ error-driven, so those rules can fail a run while advertising `warn`.
 several offline rules additionally sharpen or stand down when probes are
 available (noted in their text). `since` is the design-brain version that
 introduced the rule: "2" the post-review batch
-(docs/DESIGN-BRAIN-V2.md), "3" the review burn-down (§15.11 onward).
+(docs/DESIGN-BRAIN-V2.md), "3" the review burn-down (§15.11 onward), "4"
+the colour-scheme check.
 
 The table below is GENERATED from the registry by
 `tools/gen_rule_table.py --write`; do not hand-edit it. `tests/test_docs.py`
@@ -261,9 +262,10 @@ fails when it drifts.
 | `layout.orphan-chart` | info | - | - | 1 | a lone narrow chart in its own row looks unfinished |
 | `layout.row-density` | warn/error | - | - | 1 | too many axis charts side by side starves each of width |
 | `layout.row-fill` | warn/info | - | - | 1 | a row should fill the 12-column grid |
-| `layout.section-headers` | info | - | - | 1 | large flat dashboards need markdown signposts |
+| `layout.section-headers` | info | - | - | 1 | large flat dashboards need section headers (header rows or markdown) |
 | `layout.tab-balance` | info | - | - | 1 | tabs should carry comparable weight |
 | `narrative.big-number-format` | info | - | - | 1 | hero numbers deserve a number format |
+| `narrative.color-scheme` | warn | - | - | 4 | a colour scheme Superset doesn't ship draws the default palette unless your deployment registers it |
 | `narrative.filtered-title` | info | - | - | 1 | a filtered chart's title should say what it shows |
 | `narrative.format-consistency` | info | - | - | 2 | one measure, one number format |
 | `narrative.title-style` | info | - | - | 1 | chart titles should share one casing style |

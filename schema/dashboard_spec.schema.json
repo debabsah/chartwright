@@ -1,9 +1,117 @@
 {
   "$defs": {
+    "Annotation": {
+      "additionalProperties": false,
+      "description": "A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal\nline at y = 80. Superset draws it as a series named ``name`` (in the legend\nand tooltip); formula layers have no on-chart label in any release.",
+      "properties": {
+        "name": {
+          "description": "Series name in the legend and tooltip, e.g. \"Goal\"",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A flat line at this y value, e.g. 80",
+          "title": "Value"
+        },
+        "formula": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Instead of value: a formula in x, e.g. \"2*x + 10\" (x is the x-axis value; epoch milliseconds on a time axis)",
+          "title": "Formula"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "#RRGGBB; omit to take a colour from the chart's scheme",
+          "title": "Color"
+        },
+        "style": {
+          "default": "solid",
+          "enum": [
+            "solid",
+            "dashed",
+            "dotted"
+          ],
+          "title": "Style",
+          "type": "string"
+        },
+        "width": {
+          "default": 1,
+          "description": "Line width in px",
+          "exclusiveMinimum": 0,
+          "maximum": 20,
+          "title": "Width",
+          "type": "number"
+        },
+        "opacity": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "0.2 / 0.5 / 0.8; omit for opaque",
+          "title": "Opacity"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Annotation",
+      "type": "object"
+    },
     "BarChart": {
       "additionalProperties": false,
       "description": "Categorical bar: any column on the x axis.\n\n``orientation: \"horizontal\"`` draws ranked lists with long labels the\nreadable way (bars run left to right, labels get a full line each).",
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -50,6 +158,92 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
+        },
         "x_label_format": {
           "anyOf": [
             {
@@ -83,6 +277,14 @@
           "default": null,
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
+        },
+        "annotations": {
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotations",
+          "type": "array"
         },
         "type": {
           "const": "bar",
@@ -208,6 +410,92 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
+        },
         "type": {
           "const": "big_number_total",
           "title": "Type",
@@ -300,6 +588,92 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
         },
         "type": {
           "const": "big_number_trend",
@@ -460,6 +834,121 @@
           "default": null,
           "description": "CSS for the dashboard: the same thing as Superset's own \"Edit CSS\", e.g. \".dashboard-markdown h1 { color: #1A1A1A; }\". Omitted means none. Spec-owned, so CSS edited in the UI shows up as drift in `plan` and is replaced by `apply`.",
           "title": "Css"
+        },
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for every chart on the dashboard (Superset's dashboard \"Color scheme\"), e.g. \"supersetColors\"; it overrides each chart's own. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The dashboard's description in Superset",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the dashboard: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "published": {
+          "default": true,
+          "description": "false keeps the dashboard a draft (Superset's Draft badge; Superset lists a draft only for its owners and admins)",
+          "title": "Published",
+          "type": "boolean"
+        },
+        "refresh_frequency": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reload every chart every N seconds while the dashboard is open, e.g. 300; omit (or 0) for no automatic refresh",
+          "title": "Refresh Frequency"
+        },
+        "filter_bar_orientation": {
+          "anyOf": [
+            {
+              "enum": [
+                "vertical",
+                "horizontal"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where the filter bar sits: vertical (the left side panel, Superset's default) or horizontal (above the charts). On 4.1.4 and 5.0.0 horizontal needs the HORIZONTAL_FILTER_BAR feature flag; without it Superset shows the vertical bar.",
+          "title": "Filter Bar Orientation"
+        },
+        "show_chart_timestamps": {
+          "default": false,
+          "description": "Show each chart's last-queried time on its card. Superset 6.1.0+ only: 4.1.4 and 5.0.0 import it, then refuse to save the dashboard's settings (their metadata schema rejects the key), so leave it off there.",
+          "title": "Show Chart Timestamps",
+          "type": "boolean"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
         }
       },
       "required": [
@@ -536,6 +1025,22 @@
         }
       },
       "title": "DesignConfig",
+      "type": "object"
+    },
+    "DividerBlock": {
+      "additionalProperties": false,
+      "description": "A full-width horizontal rule between rows (Superset's Divider component):\n``{\"divider\": true}`` as a row of its own in ``rows``.",
+      "properties": {
+        "divider": {
+          "const": true,
+          "title": "Divider",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "divider"
+      ],
+      "title": "DividerBlock",
       "type": "object"
     },
     "FormatRule": {
@@ -649,6 +1154,20 @@
     "FunnelChart": {
       "additionalProperties": false,
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -695,6 +1214,92 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
+        },
         "type": {
           "const": "funnel",
           "title": "Type",
@@ -730,6 +1335,44 @@
         "groupby"
       ],
       "title": "FunnelChart",
+      "type": "object"
+    },
+    "HeaderBlock": {
+      "additionalProperties": false,
+      "description": "A full-width section title between rows (Superset's Header component).\nSuperset places headers beside rows, never inside one, so a header is a\nrow of its own in ``rows``: ``{\"header\": \"Revenue\", \"size\": \"large\"}``.",
+      "properties": {
+        "header": {
+          "description": "The header text",
+          "minLength": 1,
+          "title": "Header",
+          "type": "string"
+        },
+        "size": {
+          "default": "medium",
+          "description": "Text size; medium is what Superset's own new header uses",
+          "enum": [
+            "small",
+            "medium",
+            "large"
+          ],
+          "title": "Size",
+          "type": "string"
+        },
+        "background": {
+          "default": "transparent",
+          "description": "white (\"Solid\" on Superset 6.1) draws a card behind it",
+          "enum": [
+            "transparent",
+            "white"
+          ],
+          "title": "Background",
+          "type": "string"
+        }
+      },
+      "required": [
+        "header"
+      ],
+      "title": "HeaderBlock",
       "type": "object"
     },
     "HeatmapChart": {
@@ -781,6 +1424,92 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
+        },
         "type": {
           "const": "heatmap",
           "title": "Type",
@@ -826,6 +1555,20 @@
     "HistogramChart": {
       "additionalProperties": false,
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -871,6 +1614,92 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
         },
         "type": {
           "const": "histogram",
@@ -971,17 +1800,30 @@
           "anyOf": [
             {
               "items": {
-                "items": {
-                  "anyOf": [
-                    {
-                      "type": "string"
+                "anyOf": [
+                  {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "$ref": "#/$defs/MarkdownBlock"
+                        }
+                      ]
                     },
-                    {
-                      "$ref": "#/$defs/MarkdownBlock"
-                    }
-                  ]
-                },
-                "type": "array"
+                    "type": "array"
+                  },
+                  {
+                    "$ref": "#/$defs/StyledRow"
+                  },
+                  {
+                    "$ref": "#/$defs/HeaderBlock"
+                  },
+                  {
+                    "$ref": "#/$defs/DividerBlock"
+                  }
+                ]
               },
               "type": "array"
             },
@@ -1011,17 +1853,30 @@
           "anyOf": [
             {
               "items": {
-                "items": {
-                  "anyOf": [
-                    {
-                      "type": "string"
+                "anyOf": [
+                  {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "$ref": "#/$defs/MarkdownBlock"
+                        }
+                      ]
                     },
-                    {
-                      "$ref": "#/$defs/MarkdownBlock"
-                    }
-                  ]
-                },
-                "type": "array"
+                    "type": "array"
+                  },
+                  {
+                    "$ref": "#/$defs/StyledRow"
+                  },
+                  {
+                    "$ref": "#/$defs/HeaderBlock"
+                  },
+                  {
+                    "$ref": "#/$defs/DividerBlock"
+                  }
+                ]
               },
               "type": "array"
             },
@@ -1093,6 +1948,20 @@
       "additionalProperties": false,
       "description": "Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue\nas bars with revenue per order as a line. ``x_column`` is a time column (bucketed\nby ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and\n``b`` are the two queries; the chart's own ``filters`` apply to both.",
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -1139,6 +2008,92 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
+        },
         "x_label_format": {
           "anyOf": [
             {
@@ -1172,6 +2127,14 @@
           "default": null,
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
+        },
+        "annotations": {
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotations",
+          "type": "array"
         },
         "type": {
           "const": "mixed",
@@ -1324,6 +2287,20 @@
     "PieChart": {
       "additionalProperties": false,
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -1369,6 +2346,92 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
         },
         "type": {
           "const": "pie",
@@ -1460,6 +2523,92 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
         },
         "type": {
           "const": "pivot_table",
@@ -1739,6 +2888,39 @@
       "title": "SelectFilter",
       "type": "object"
     },
+    "StyledRow": {
+      "additionalProperties": false,
+      "description": "A row with a background: ``{\"row\": [\"A\", \"B\"], \"background\": \"white\"}``.\nA plain list is a row with Superset's default transparent background.",
+      "properties": {
+        "row": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/MarkdownBlock"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Row",
+          "type": "array"
+        },
+        "background": {
+          "const": "white",
+          "description": "white (\"Solid\" on Superset 6.1): the row's charts sit on one card",
+          "title": "Background",
+          "type": "string"
+        }
+      },
+      "required": [
+        "row",
+        "background"
+      ],
+      "title": "StyledRow",
+      "type": "object"
+    },
     "Tab": {
       "additionalProperties": false,
       "description": "A dashboard tab: rows, a sketch, or ``tabs`` (sub-tabs, one level deep, each\nwith rows or a sketch), e.g. a region tab with a sub-tab per row.",
@@ -1792,17 +2974,30 @@
           "anyOf": [
             {
               "items": {
-                "items": {
-                  "anyOf": [
-                    {
-                      "type": "string"
+                "anyOf": [
+                  {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "$ref": "#/$defs/MarkdownBlock"
+                        }
+                      ]
                     },
-                    {
-                      "$ref": "#/$defs/MarkdownBlock"
-                    }
-                  ]
-                },
-                "type": "array"
+                    "type": "array"
+                  },
+                  {
+                    "$ref": "#/$defs/StyledRow"
+                  },
+                  {
+                    "$ref": "#/$defs/HeaderBlock"
+                  },
+                  {
+                    "$ref": "#/$defs/DividerBlock"
+                  }
+                ]
               },
               "type": "array"
             },
@@ -1884,6 +3079,92 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
         },
         "type": {
           "const": "table",
@@ -2064,6 +3345,20 @@
     "TimeseriesAreaChart": {
       "additionalProperties": false,
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -2110,6 +3405,92 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
+        },
         "x_label_format": {
           "anyOf": [
             {
@@ -2143,6 +3524,14 @@
           "default": null,
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
+        },
+        "annotations": {
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotations",
+          "type": "array"
         },
         "metrics": {
           "items": {
@@ -2240,6 +3629,20 @@
     "TimeseriesBarChart": {
       "additionalProperties": false,
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -2286,6 +3689,92 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
+        },
         "x_label_format": {
           "anyOf": [
             {
@@ -2319,6 +3808,14 @@
           "default": null,
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
+        },
+        "annotations": {
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotations",
+          "type": "array"
         },
         "metrics": {
           "items": {
@@ -2416,6 +3913,20 @@
     "TimeseriesLineChart": {
       "additionalProperties": false,
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -2462,6 +3973,92 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
+        },
         "x_label_format": {
           "anyOf": [
             {
@@ -2495,6 +4092,14 @@
           "default": null,
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
+        },
+        "annotations": {
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotations",
+          "type": "array"
         },
         "metrics": {
           "items": {
@@ -2605,6 +4210,20 @@
     "TimeseriesScatterChart": {
       "additionalProperties": false,
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -2651,6 +4270,92 @@
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
+        },
         "x_label_format": {
           "anyOf": [
             {
@@ -2684,6 +4389,14 @@
           "default": null,
           "description": "Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
           "title": "X Label Rotation"
+        },
+        "annotations": {
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotations",
+          "type": "array"
         },
         "metrics": {
           "items": {
@@ -2781,6 +4494,20 @@
     "TreemapChart": {
       "additionalProperties": false,
       "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
           "minLength": 1,
@@ -2826,6 +4553,92 @@
           "default": null,
           "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
           "title": "Height"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails and apply restores the previous state), and 6.1.0 without the flag ignores them, so plan keeps reporting them. [] removes the tags the dashboard's last apply set.",
+          "title": "Tags"
         },
         "type": {
           "const": "treemap",

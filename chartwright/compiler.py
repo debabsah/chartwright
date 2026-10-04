@@ -12,6 +12,7 @@ import io
 import json
 import uuid
 import zipfile
+from decimal import Decimal
 
 import yaml
 
@@ -21,9 +22,12 @@ from .spec import (
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
     DashboardSpec,
+    DividerBlock,
+    HeaderBlock,
     MarkdownBlock,
     _AxisChart,
     parse_metric,
+    row_items,
 )
 
 BUNDLE_ROOT = "sdc_bundle"
@@ -343,8 +347,13 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["groupby"] = chart.groupby
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
 
+    # Emitted only when set, so pre-feature bundles stay byte-identical.
+    if getattr(chart, "color_scheme", None):
+        p["color_scheme"] = chart.color_scheme
     if isinstance(chart, _AxisChart):
         _x_label_params(chart, p)
+        if chart.annotations:
+            p["annotation_layers"] = [_annotation_payload(a) for a in chart.annotations]
     if getattr(chart, "y_axis_max", None) is not None:
         p.setdefault("echart_options", {})["yAxis"] = {"max": chart.y_axis_max}
     if "echart_options" in p:
@@ -365,6 +374,44 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
     if t not in timeseries and not time_x and ds.main_dttm_col:
         p["granularity_sqla"] = ds.main_dttm_col
     return p
+
+
+# Spec opacity -> AnnotationOpacity (superset-ui-core query/types/AnnotationLayer.ts).
+_ANNOTATION_OPACITY = {"low": "opacityLow", "medium": "opacityMedium", "high": "opacityHigh"}
+
+
+def _num_text(v: float) -> str:
+    """A number as plain decimal text: the formula evaluator (math-expression-
+    evaluator) has no exponent notation, so 1e-07 is written 0.0000001."""
+    if float(v).is_integer():
+        return str(int(v))
+    return format(Decimal(repr(float(v))), "f")
+
+
+def _annotation_payload(a) -> dict:
+    """One FORMULA layer, shaped as the explore panel's AnnotationLayer editor
+    saves it (applyAnnotation, AnnotationLayer.jsx at 4.1.4/5.0.0, .tsx at
+    6.1.0). The ECharts timeseries and mixed plugins draw it with
+    transformFormulaAnnotation (color, opacity, style as the line type, width)."""
+    return {
+        "name": a.name,
+        "annotationType": "FORMULA",
+        "sourceType": "",
+        "value": _num_text(a.value) if a.value is not None else a.formula,
+        "color": a.color,
+        "opacity": _ANNOTATION_OPACITY.get(a.opacity, ""),
+        "style": a.style,
+        "width": int(a.width) if float(a.width).is_integer() else a.width,
+        "showMarkers": False,
+        "hideLine": False,
+        "overrides": {},
+        "show": True,
+        "showLabel": False,
+        "titleColumn": "",
+        "descriptionColumns": [],
+        "timeColumn": "",
+        "intervalEndColumn": "",
+    }
 
 
 def mixed_time_axis(chart, ds) -> bool:
@@ -413,26 +460,64 @@ def _has_bars(chart) -> bool:
 
 def _chart_yaml(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
     ds = resolution.for_chart(chart.dataset)
-    return {
+    out = {
         "slice_name": chart.name,
-        "description": None,
-        "certified_by": None,
-        "certification_details": None,
+        "description": chart.description,
+        "certified_by": chart.certified_by,
+        "certification_details": chart.certification_details,
         "viz_type": VIZ_TYPE[chart.type],
         "params": _chart_params(chart, spec, resolution),
         "query_context": None,
-        "cache_timeout": None,
+        "cache_timeout": chart.cache_timeout,
         "uuid": str(ids.chart_uuid(spec.dashboard.slug, chart.name)),
         "version": "1.0.0",
         "dataset_uuid": ds.uuid,
     }
+    if chart.tags is not None:
+        # ImportV1ChartSchema has `tags` from 6.1.0 only (docs/CONTRACTS.md).
+        out["tags"] = list(chart.tags)
+    return out
+
+
+HEADER_SIZE = {"small": "SMALL_HEADER", "medium": "MEDIUM_HEADER", "large": "LARGE_HEADER"}
+BACKGROUND = {"transparent": "BACKGROUND_TRANSPARENT", "white": "BACKGROUND_WHITE"}
+
+
+def _chart_meta(spec: DashboardSpec, name: str, cuuid, width: int, height: float, counter: list[int]) -> dict:
+    meta = {
+        "uuid": str(cuuid),
+        "sliceName": name,
+        "width": width,
+        "height": int(round(height * ROW_UNITS_PER_SPEC_UNIT)),
+        # Placeholder the importer requires and remaps via uuid.
+        "chartId": 100000 + counter[0],
+    }
+    override = next(c.display_name for c in spec.charts if c.name == name)
+    if override:
+        # The dashboard card's title (ChartHolder.tsx reads sliceNameOverride, all releases).
+        meta["sliceNameOverride"] = override
+    return meta
 
 
 def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix: str, counter: list[int]) -> list[str]:
-    """Emit ROW/CHART/MARKDOWN nodes for a list of rows; returns row ids."""
+    """Emit ROW/CHART/MARKDOWN nodes (and HEADER/DIVIDER beside them) for a list
+    of rows; returns the ids of the grid- or tab-level nodes, in order."""
     slug = spec.dashboard.slug
     row_ids: list[str] = []
-    for i, row in enumerate(rows):
+    for i, entry in enumerate(rows):
+        if isinstance(entry, (HeaderBlock, DividerBlock)):
+            # Superset nests headers and dividers in GRID, TAB or COLUMN, never in a
+            # ROW (dashboard/util/isValidChild.ts, all three releases).
+            kind = "HEADER" if isinstance(entry, HeaderBlock) else "DIVIDER"
+            node_id = f"{kind}-{prefix}{i + 1}"
+            meta = ({"text": entry.header, "headerSize": HEADER_SIZE[entry.size],
+                     "background": BACKGROUND[entry.background]}
+                    if kind == "HEADER" else {})
+            pos[node_id] = {"type": kind, "id": node_id, "children": [], "parents": parents, "meta": meta}
+            row_ids.append(node_id)
+            continue
+        row = row_items(entry)
+        background = BACKGROUND[getattr(entry, "background", "transparent")]
         row_id = f"ROW-{prefix}{i + 1}"
         child_ids: list[str] = []
         for j, item in enumerate(row):
@@ -460,21 +545,15 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
                 "id": chart_id,
                 "children": [],
                 "parents": [*parents, row_id],
-                "meta": {
-                    "uuid": str(cuuid),
-                    "sliceName": item,
-                    "width": spec.resolved_item_width(item),
-                    "height": int(round(spec.resolved_height(item) * ROW_UNITS_PER_SPEC_UNIT)),
-                    # Placeholder the importer requires and remaps via uuid.
-                    "chartId": 100000 + counter[0],
-                },
+                "meta": _chart_meta(spec, item, cuuid, spec.resolved_item_width(item),
+                                    spec.resolved_height(item), counter),
             }
         pos[row_id] = {
             "type": "ROW",
             "id": row_id,
             "children": child_ids,
             "parents": parents,
-            "meta": {"background": "BACKGROUND_TRANSPARENT"},
+            "meta": {"background": background},
         }
         row_ids.append(row_id)
     return row_ids
@@ -491,13 +570,7 @@ def _sketch_chart_node(pos, spec, sc, width, parents, counter) -> str:
         "id": chart_id,
         "children": [],
         "parents": parents,
-        "meta": {
-            "uuid": str(cuuid),
-            "sliceName": sc.name,
-            "width": width,
-            "height": int(round((explicit or sc.height) * ROW_UNITS_PER_SPEC_UNIT)),
-            "chartId": 100000 + counter[0],
-        },
+        "meta": _chart_meta(spec, sc.name, cuuid, width, explicit or sc.height, counter),
     }
     return chart_id
 
@@ -737,31 +810,43 @@ def _range_default_mask(f) -> dict | None:
 
 
 def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
+    d = spec.dashboard
     metadata: dict = {
-        "color_scheme": "",
-        "cross_filters_enabled": spec.dashboard.cross_filters,
+        "color_scheme": d.color_scheme or "",
+        "cross_filters_enabled": d.cross_filters,
         "expanded_slices": {},
         # custom label colours (6.1.0 applyColors merges them last, over the scheme)
-        "label_colors": dict(spec.dashboard.label_colors),
-        "refresh_frequency": 0,
+        "label_colors": dict(d.label_colors),
+        "refresh_frequency": d.refresh_frequency or 0,
         "timed_refresh_immune_slices": [],
     }
+    # Emitted only when set, so pre-feature bundles stay byte-identical.
+    if d.filter_bar_orientation:
+        # FilterBarOrientation values (dashboard/types.ts, all three releases)
+        metadata["filter_bar_orientation"] = d.filter_bar_orientation.upper()
+    if d.show_chart_timestamps:
+        # DashboardJSONMetadataSchema declares it from 6.1.0 only (docs/CONTRACTS.md).
+        metadata["show_chart_timestamps"] = True
     if spec.filters:
         metadata["native_filter_configuration"] = _native_filters(spec, resolution)
-    return {
-        "dashboard_title": spec.dashboard.title,
-        "description": None,
+    out = {
+        "dashboard_title": d.title,
+        "description": d.description,
         # Superset's "Edit CSS"; "" (none) when the spec omits it.
-        "css": spec.dashboard.css or "",
-        "slug": spec.dashboard.slug,
-        "certified_by": None,
-        "certification_details": None,
-        "published": True,
-        "uuid": str(ids.dashboard_uuid(spec.dashboard.slug)),
+        "css": d.css or "",
+        "slug": d.slug,
+        "certified_by": d.certified_by,
+        "certification_details": d.certification_details,
+        "published": d.published,
+        "uuid": str(ids.dashboard_uuid(d.slug)),
         "position": _position(spec),
         "metadata": metadata,
         "version": "1.0.0",
     }
+    if d.tags is not None:
+        # ImportV1DashboardSchema has `tags` from 6.1.0 only (docs/CONTRACTS.md).
+        out["tags"] = list(d.tags)
+    return out
 
 
 def compile_bundle(

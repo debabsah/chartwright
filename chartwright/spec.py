@@ -4,11 +4,13 @@ Anything not expressible here does not exist. Validation errors are the only
 feedback channel an LLM caller gets; keep messages precise and actionable.
 
 Surface: 15 chart types, per-chart WHERE filters, a dashboard-level native
-filter bar (select, time_range, numeric range), markdown blocks, and tabs.
+filter bar (select, time_range, numeric range), markdown blocks, headers,
+dividers, and tabs.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Annotated, Literal, Union
 
@@ -45,6 +47,18 @@ def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS) ->
 
 ADHOC_AGGREGATES = ("SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX")
 _ADHOC_RE = re.compile(r"^(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((.+?)\)(?:\s+AS\s+(.+))?$")
+
+# The categorical colour schemes every supported release ships (superset-ui-core
+# color/colorSchemes/categorical/*.ts; the same 18 ids at 4.1.4, 5.0.0 and 6.1.0).
+# A deployment can register more (EXTRA_CATEGORICAL_COLOR_SCHEMES), so other names
+# are accepted and the design brain warns about them (narrative.color-scheme).
+SUPERSET_COLOR_SCHEMES = (
+    "supersetColors", "supersetAndPresetColors", "presetColors", "bnbColors",
+    "d3Category10", "d3Category20", "d3Category20b", "d3Category20c",
+    "echarts4Colors", "echarts5Colors", "googleCategory10c", "googleCategory20c",
+    "lyftColors", "modernSunset", "colorsOfRainbow", "blueToGreen", "redToYellow",
+    "wavesOfBlue",
+)
 
 # The RAG hexes Superset's own conditional-formatting picker offers (cell backgrounds).
 FORMAT_COLOR_HEX = {"green": "#ACE1C4", "amber": "#FDE380", "red": "#EFA1AA"}
@@ -114,6 +128,26 @@ class ChartFilter(BaseModel):
         return self
 
 
+def _tag_list(tags: list[str], where: str) -> list[str]:
+    clean = [t.strip() for t in tags]
+    if any(not t for t in clean):
+        raise ValueError(f"{where} tags must be non-empty strings")
+    if any(":" in t for t in clean):
+        # Superset reserves "type:value" names (owner:1, type:chart) for its own tags.
+        raise ValueError(f"{where} tags cannot contain ':' (Superset reserves those for its own tags)")
+    if len(set(clean)) != len(clean):
+        raise ValueError(f"{where} tags must be unique")
+    return clean
+
+
+TAGS_DESCRIPTION = (
+    "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM "
+    "feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails "
+    "and apply restores the previous state), and 6.1.0 without the flag ignores them, so "
+    "plan keeps reporting them. [] removes the tags the dashboard's last apply set."
+)
+
+
 class _ChartBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -126,9 +160,98 @@ class _ChartBase(BaseModel):
         description="Height in 40px units. Fractional values (0.2 steps = Superset's "
                     "8px grid) are tool-written by `chartwright absorb`; humans write integers.",
     )
+    display_name: str | None = Field(
+        default=None, min_length=1,
+        description="A shorter title shown on this dashboard's chart card (Superset's "
+                    "sliceNameOverride); `name` stays the chart's name everywhere else",
+    )
+    description: str | None = Field(
+        default=None, min_length=1,
+        description="What the chart shows, e.g. a metric definition; dashboard viewers "
+                    "open it with \"Show chart description\" in the chart menu",
+    )
+    certified_by: str | None = Field(
+        default=None, min_length=1, description="Who certified the chart: Superset shows a certified badge")
+    certification_details: str | None = Field(
+        default=None, min_length=1, description="The certified badge's tooltip text; needs certified_by")
+    cache_timeout: int | None = Field(
+        default=None, ge=1, description="Seconds Superset caches this chart's query results; omit for the default")
+    tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
+
+    @model_validator(mode="after")
+    def _chart_metadata(self) -> "_ChartBase":
+        if self.display_name == self.name:
+            self.display_name = None  # the card shows `name` anyway; decompile reads it as omitted
+        if self.certification_details and not self.certified_by:
+            raise ValueError(f"chart {self.name!r}: certification_details needs certified_by")
+        if self.tags is not None:
+            self.tags = _tag_list(self.tags, f"chart {self.name!r}")
+        return self
 
     def default_height(self) -> int:
         return DEFAULT_HEIGHT.get(self.type, DEFAULT_HEIGHT["default"])  # type: ignore[attr-defined]
+
+
+class _ColorSchemeMixin(BaseModel):
+    """Charts whose control panel declares color_scheme (every supported release)."""
+
+    color_scheme: str | None = Field(
+        default=None, min_length=1,
+        description="Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a "
+                    "dashboard color_scheme overrides it on the dashboard. Superset ships "
+                    + ", ".join(SUPERSET_COLOR_SCHEMES)
+                    + "; other names must be registered by your deployment "
+                      "(EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+    )
+
+
+ANNOTATION_STYLES = ("solid", "dashed", "dotted")
+
+
+class Annotation(BaseModel):
+    """A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal
+    line at y = 80. Superset draws it as a series named ``name`` (in the legend
+    and tooltip); formula layers have no on-chart label in any release."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, description="Series name in the legend and tooltip, e.g. \"Goal\"")
+    value: float | None = Field(default=None, description="A flat line at this y value, e.g. 80")
+    formula: str | None = Field(
+        default=None, min_length=1,
+        description="Instead of value: a formula in x, e.g. \"2*x + 10\" (x is the "
+                    "x-axis value; epoch milliseconds on a time axis)",
+    )
+    color: str | None = Field(
+        default=None, pattern=r"^#[0-9A-Fa-f]{6}$",
+        description="#RRGGBB; omit to take a colour from the chart's scheme",
+    )
+    style: Literal["solid", "dashed", "dotted"] = "solid"
+    width: float = Field(default=1, gt=0, le=20, description="Line width in px")
+    opacity: Literal["low", "medium", "high"] | None = Field(
+        default=None, description="0.2 / 0.5 / 0.8; omit for opaque")
+
+    @model_validator(mode="after")
+    def _value_or_formula(self) -> "Annotation":
+        if self.formula is not None:
+            text = self.formula.strip()
+            try:
+                # A formula that is a plain number IS a value: decompile reads it
+                # back as one, so keeping it a formula would show as drift in plan.
+                number = float(text.split("=", 1)[1] if text.startswith("y") and "=" in text else text)
+            except ValueError:
+                number = None
+            if number is not None and self.value is None:
+                self.value, self.formula = number, None
+            else:
+                self.formula = text
+        if (self.value is None) == (self.formula is None):
+            raise ValueError(f"annotation {self.name!r}: give exactly one of value or formula")
+        if self.value is not None and not math.isfinite(self.value):
+            raise ValueError(f"annotation {self.name!r}: value must be a finite number")
+        if self.color is not None:
+            self.color = self.color.upper()
+        return self
 
 
 class BigNumberChart(_ChartBase):
@@ -166,9 +289,22 @@ class _AxisChart(_ChartBase):
         default=None, ge=-90, le=90,
         description="Rotate the x-axis labels, in degrees, e.g. 45 for long category names",
     )
+    annotations: list[Annotation] = Field(
+        default_factory=list,
+        description="Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, "
+                    "\"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+    )
+
+    @model_validator(mode="after")
+    def _annotation_names(self) -> "_AxisChart":
+        names = [a.name for a in self.annotations]
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        if dupes:
+            raise ValueError(f"chart {self.name!r}: duplicate annotation names {dupes} (each is a series id)")
+        return self
 
 
-class _TimeseriesBase(_AxisChart):
+class _TimeseriesBase(_AxisChart, _ColorSchemeMixin):
     metrics: list[str] = Field(min_length=1)
     time_column: str
     time_grain: str | None = Field(default=None, description="ISO 8601 duration, e.g. P1D, P1W, P1M")
@@ -198,7 +334,7 @@ class TimeseriesScatterChart(_TimeseriesBase):
     type: Literal["timeseries_scatter"]
 
 
-class BarChart(_AxisChart):
+class BarChart(_AxisChart, _ColorSchemeMixin):
     """Categorical bar: any column on the x axis.
 
     ``orientation: "horizontal"`` draws ranked lists with long labels the
@@ -214,7 +350,7 @@ class BarChart(_AxisChart):
     number_format: str | None = Field(default=None, description="d3 format for the value axis, e.g. ',.0f'")
 
 
-class PieChart(_ChartBase):
+class PieChart(_ChartBase, _ColorSchemeMixin):
     type: Literal["pie"]
     metric: str
     groupby: str
@@ -380,7 +516,7 @@ class HeatmapChart(_ChartBase):
     row_limit: int | None = Field(default=None, ge=1)
 
 
-class HistogramChart(_ChartBase):
+class HistogramChart(_ChartBase, _ColorSchemeMixin):
     type: Literal["histogram"]
     column: str
     bins: int = Field(default=10, ge=1, le=200)
@@ -388,14 +524,14 @@ class HistogramChart(_ChartBase):
     row_limit: int | None = Field(default=None, ge=1)
 
 
-class FunnelChart(_ChartBase):
+class FunnelChart(_ChartBase, _ColorSchemeMixin):
     type: Literal["funnel"]
     metric: str
     groupby: str
     row_limit: int | None = Field(default=None, ge=1)
 
 
-class TreemapChart(_ChartBase):
+class TreemapChart(_ChartBase, _ColorSchemeMixin):
     type: Literal["treemap"]
     metric: str
     groupby: list[str] = Field(min_length=1)
@@ -418,7 +554,7 @@ class MixedSeries(BaseModel):
     )
 
 
-class MixedChart(_AxisChart):
+class MixedChart(_AxisChart, _ColorSchemeMixin):
     """Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue
     as bars with revenue per order as a line. ``x_column`` is a time column (bucketed
     by ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and
@@ -569,6 +705,62 @@ class MarkdownBlock(BaseModel):
 RowItem = Union[str, MarkdownBlock]
 
 
+class HeaderBlock(BaseModel):
+    """A full-width section title between rows (Superset's Header component).
+    Superset places headers beside rows, never inside one, so a header is a
+    row of its own in ``rows``: ``{"header": "Revenue", "size": "large"}``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    header: str = Field(min_length=1, description="The header text")
+    size: Literal["small", "medium", "large"] = Field(
+        default="medium", description="Text size; medium is what Superset's own new header uses")
+    background: Literal["transparent", "white"] = Field(
+        default="transparent", description="white (\"Solid\" on Superset 6.1) draws a card behind it")
+
+
+class DividerBlock(BaseModel):
+    """A full-width horizontal rule between rows (Superset's Divider component):
+    ``{"divider": true}`` as a row of its own in ``rows``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    divider: Literal[True]
+
+
+class StyledRow(BaseModel):
+    """A row with a background: ``{"row": ["A", "B"], "background": "white"}``.
+    A plain list is a row with Superset's default transparent background."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    row: list[RowItem] = Field(min_length=1)
+    background: Literal["white"] = Field(
+        description="white (\"Solid\" on Superset 6.1): the row's charts sit on one card")
+
+
+# One entry of `rows` / `footer`: a row of charts and markdown (a list, or a
+# StyledRow), or a full-width header or divider between rows.
+Row = Union[list[RowItem], StyledRow, HeaderBlock, DividerBlock]
+
+
+def row_items(row) -> list | None:
+    """The charts and markdown blocks of a layout row (model or raw JSON), or
+    None for a header or divider."""
+    if isinstance(row, list):
+        return row
+    if isinstance(row, StyledRow):
+        return row.row
+    if isinstance(row, dict) and isinstance(row.get("row"), list):
+        return row["row"]
+    return None
+
+
+def item_rows(rows) -> list[list]:
+    """The rows that hold charts or markdown, headers and dividers skipped."""
+    return [items for items in (row_items(r) for r in rows or []) if items is not None]
+
+
 class _SketchHolder(BaseModel):
     """Shared surface for ASCII layout sketches (see chartwright/sketch.py).
 
@@ -605,7 +797,7 @@ class Tab(_SketchHolder):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1)
-    rows: list[list[RowItem]] | None = None
+    rows: list[Row] | None = None
     tabs: list["Tab"] | None = Field(
         default=None, description="Sub-tabs (one level), instead of rows / sketch")
 
@@ -658,6 +850,57 @@ class DashboardMeta(BaseModel):
         ),
     )
 
+    color_scheme: str | None = Field(
+        default=None, min_length=1,
+        description="Categorical colour scheme for every chart on the dashboard (Superset's "
+                    "dashboard \"Color scheme\"), e.g. \"supersetColors\"; it overrides each "
+                    "chart's own. Superset ships " + ", ".join(SUPERSET_COLOR_SCHEMES)
+                    + "; other names must be registered by your deployment "
+                      "(EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+    )
+    description: str | None = Field(
+        default=None, min_length=1, description="The dashboard's description in Superset")
+    certified_by: str | None = Field(
+        default=None, min_length=1, description="Who certified the dashboard: Superset shows a certified badge")
+    certification_details: str | None = Field(
+        default=None, min_length=1, description="The certified badge's tooltip text; needs certified_by")
+    published: bool = Field(
+        default=True,
+        description="false keeps the dashboard a draft (Superset's Draft badge; Superset "
+                    "lists a draft only for its owners and admins)",
+    )
+    refresh_frequency: int | None = Field(
+        default=None, ge=0,
+        description="Reload every chart every N seconds while the dashboard is open, e.g. "
+                    "300; omit (or 0) for no automatic refresh",
+    )
+    filter_bar_orientation: Literal["vertical", "horizontal"] | None = Field(
+        default=None,
+        description="Where the filter bar sits: vertical (the left side panel, Superset's "
+                    "default) or horizontal (above the charts). On 4.1.4 and 5.0.0 horizontal "
+                    "needs the HORIZONTAL_FILTER_BAR feature flag; without it Superset shows "
+                    "the vertical bar.",
+    )
+    show_chart_timestamps: bool = Field(
+        default=False,
+        description="Show each chart's last-queried time on its card. Superset 6.1.0+ only: "
+                    "4.1.4 and 5.0.0 import it, then refuse to save the dashboard's settings "
+                    "(their metadata schema rejects the key), so leave it off there.",
+    )
+    tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
+
+    @field_validator("refresh_frequency")
+    @classmethod
+    def _no_refresh_is_none(cls, v: int | None) -> int | None:
+        # 0 is Superset's "don't refresh", which decompile reads back as omitted.
+        return v or None
+
+    @field_validator("filter_bar_orientation")
+    @classmethod
+    def _vertical_is_default(cls, v: str | None) -> str | None:
+        # Vertical is Superset's default, which decompile reads back as omitted.
+        return None if v == "vertical" else v
+
     @field_validator("css")
     @classmethod
     def _blank_css_is_none(cls, v: str | None) -> str | None:
@@ -670,6 +913,10 @@ class DashboardMeta(BaseModel):
         bad = {k: v for k, v in self.label_colors.items() if not re.fullmatch(r"#[0-9A-Fa-f]{6}", v)}
         if bad:
             raise ValueError(f"label_colors must be #RRGGBB: {bad}")
+        if self.certification_details and not self.certified_by:
+            raise ValueError("dashboard certification_details needs certified_by")
+        if self.tags is not None:
+            self.tags = _tag_list(self.tags, "dashboard")
         return self
 
 
@@ -696,9 +943,9 @@ class Layout(_SketchHolder):
 
     model_config = ConfigDict(extra="forbid")
 
-    rows: list[list[RowItem]] | None = None
+    rows: list[Row] | None = None
     tabs: list[Tab] | None = None
-    footer: list[list[RowItem]] | None = Field(
+    footer: list[Row] | None = Field(
         default=None,
         description="Rows below the rows / tabs / sketch, outside any tab (shown under every tab)")
 
@@ -723,8 +970,9 @@ class Layout(_SketchHolder):
         return [leaf for tab in (self.tabs or []) for leaf in (tab.tabs or [tab])]
 
     def all_rows(self) -> list[list[RowItem]]:
+        """Every row of charts and markdown (headers and dividers skipped)."""
         body = self.rows or [row for tab in self.leaf_tabs() for row in (tab.rows or [])]
-        return [*body, *(self.footer or [])]
+        return item_rows([*body, *(self.footer or [])])
 
     def sketch_holders(self) -> list["_SketchHolder"]:
         if self.sketch:

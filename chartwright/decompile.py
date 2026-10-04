@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import re
 import zipfile
 from dataclasses import asdict, dataclass, field
@@ -16,9 +17,12 @@ from typing import Callable, get_args
 
 import yaml
 
-from .compiler import FOOTER_PREFIX, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, VIZ_TYPE
+from .compiler import (
+    BACKGROUND, FOOTER_PREFIX, HEADER_SIZE, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, VIZ_TYPE,
+)
 from .spec import (
     ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, HEX_COLOUR_RE, FilterOp, metric_label,
+    row_items,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
@@ -54,6 +58,12 @@ _IGNORABLE = {
     "show_tooltip_labels", "tooltip_label_type", SDC_BAR_MARKER,
 }
 
+# Spec chart types with a color_scheme field (spec._ColorSchemeMixin).
+_COLOR_SCHEME_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter",
+                       "bar", "pie", "histogram", "funnel", "treemap", "mixed")
+_REVERSE_HEADER_SIZE = {v: k for k, v in HEADER_SIZE.items()}
+_REVERSE_OPACITY = {"opacityLow": "low", "opacityMedium": "medium", "opacityHigh": "high"}
+
 # Charts with an x axis (spec._AxisChart) and the params their x-label fields map to.
 _AXIS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter",
                "bar", "mixed")
@@ -82,6 +92,63 @@ def _x_labels_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
         every = str(p.get("xAxisLabelInterval")) == "0"
     if every:
         out["x_label_every"] = True
+
+
+def _annotations_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
+    """FORMULA annotation layers -> spec annotations; any other layer (events,
+    intervals, other charts' series) is named as a loss."""
+    found = []
+    for layer in p.get("annotation_layers") or []:
+        if not isinstance(layer, dict):
+            continue
+        label = layer.get("name") or "?"
+        if layer.get("annotationType") != "FORMULA":
+            losses.append(Loss(name, f"annotation layer {label!r} ({layer.get('annotationType')}) "
+                                     "not preserved: only FORMULA layers are in the spec"))
+            continue
+        if layer.get("show") is False:
+            losses.append(Loss(name, f"hidden annotation layer {label!r} not preserved"))
+            continue
+        raw = str(layer.get("value") if layer.get("value") is not None else "").strip()
+        a: dict = {"name": label}
+        try:
+            number = float(raw)
+            if not math.isfinite(number):
+                losses.append(Loss(name, f"annotation layer {label!r} value {raw!r} not preserved"))
+                continue
+            a["value"] = _number(number)
+        except ValueError:
+            if not raw:
+                losses.append(Loss(name, f"annotation layer {label!r} has no formula; dropped"))
+                continue
+            a["formula"] = raw
+        color = layer.get("color")
+        if isinstance(color, str) and HEX_COLOUR_RE.fullmatch(color):
+            a["color"] = color.upper()
+        style = layer.get("style") or "solid"
+        if style in ("dashed", "dotted"):
+            a["style"] = style
+        elif style != "solid":
+            losses.append(Loss(name, f"annotation {label!r} line style {style!r} not preserved (solid)"))
+        width = layer.get("width")
+        if isinstance(width, (int, float)) and 0 < width <= 20 and width != 1:
+            a["width"] = _number(width)
+        if layer.get("opacity") in _REVERSE_OPACITY:
+            a["opacity"] = _REVERSE_OPACITY[layer["opacity"]]
+        found.append(a)
+    unique, seen = [], set()
+    for a in found:
+        if a["name"] in seen:
+            losses.append(Loss(name, f"second annotation named {a['name']!r} not preserved"))
+            continue
+        seen.add(a["name"])
+        unique.append(a)
+    if unique:
+        out["annotations"] = unique
+
+
+def _number(v: float) -> int | float:
+    return int(v) if float(v).is_integer() else float(v)
 
 
 def _echart_options_to_spec(p: dict, out: dict, losses: list, name: str, spec_type: str) -> None:
@@ -274,6 +341,23 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
     flt = _filters_to_spec(p, losses, name)
     if flt:
         out["filters"] = flt
+    for key in ("description", "certified_by", "certification_details"):
+        text = chart_yaml.get(key)
+        if isinstance(text, str) and text.strip():
+            out[key] = text
+    if chart_yaml.get("certification_details") and not chart_yaml.get("certified_by"):
+        out.pop("certification_details", None)
+        losses.append(Loss(name, "certification_details without certified_by not preserved"))
+    timeout = chart_yaml.get("cache_timeout")
+    if isinstance(timeout, int) and timeout >= 1:
+        out["cache_timeout"] = timeout
+    elif timeout not in (None, 0):
+        losses.append(Loss(name, f"cache_timeout {timeout!r} not preserved (Superset's default on re-apply)"))
+    tags = _tags_to_spec(chart_yaml.get("tags"), losses, name)
+    if tags:
+        out["tags"] = tags
+    if spec_type in _COLOR_SCHEME_TYPES and isinstance(p.get("color_scheme"), str) and p["color_scheme"]:
+        out["color_scheme"] = p["color_scheme"]
 
     def metric_one(value) -> str | None:
         return _metric_to_spec(value, losses, name)
@@ -534,6 +618,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
         _echart_options_to_spec(p, out, losses, name, spec_type)
+        _annotations_to_spec(p, out, losses, name)
         mapped_here = mapped_here | _X_LABEL_KEYS | {"echart_options"}
     unmapped = sorted(k for k in p if k not in _IGNORABLE and k not in mapped_here)
     if unmapped:
@@ -541,14 +626,32 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
     return out
 
 
+def _tags_to_spec(tags, losses: list, where: str) -> list[str]:
+    """Superset 6.1 exports a custom-tag name list (TAGGING_SYSTEM on)."""
+    if not isinstance(tags, list):
+        return []
+    keep = []
+    for t in tags:
+        if isinstance(t, str) and t.strip() and ":" not in t and t.strip() not in keep:
+            keep.append(t.strip())
+        else:
+            losses.append(Loss(where, f"tag {t!r} not preserved"))
+    return keep
+
+
 def _native_filters_to_spec(
     metadata: dict, lookup: DatasetLookup, losses: list[Loss],
     filter_uuids: dict[str, str] | None = None,
 ) -> list[dict]:
     out = []
-    for nf in metadata.get("native_filter_configuration") or []:
+    configs = [nf for nf in metadata.get("native_filter_configuration") or [] if isinstance(nf, dict)]
+    names_by_id = {nf.get("id"): nf.get("name") or nf.get("id") or "filter" for nf in configs}
+    parent_ids: dict[str, list] = {}
+    for nf in configs:
         name = nf.get("name") or nf.get("id") or "filter"
         ftype = nf.get("filterType")
+        if nf.get("cascadeParentIds"):
+            parent_ids[name] = list(nf["cascadeParentIds"])
         if ftype == "filter_select":
             targets = nf.get("targets") or []
             col = ((targets[0].get("column") or {}).get("name")) if targets else None
@@ -635,10 +738,20 @@ def _native_filters_to_spec(
     return out
 
 
+def _geo(meta: dict) -> dict:
+    geo = {"width": meta.get("width"), "height": meta.get("height")}
+    override = meta.get("sliceNameOverride")
+    if isinstance(override, str) and override.strip() and override != meta.get("sliceName"):
+        geo["display_name"] = override
+    return geo
+
+
 def _walk_rows(position: dict, children: list[str], kept_names: set[str],
-               losses: list[Loss], geometry: dict[str, dict]) -> list[list]:
-    """Convert ROW children into spec rows (chart names + markdown blocks)."""
-    rows: list[list] = []
+               losses: list[Loss], geometry: dict[str, dict]) -> list:
+    """Convert grid- or tab-level nodes into spec rows: ROWs (chart names +
+    markdown blocks; a white background makes a {"row", "background"} entry),
+    HEADERs and DIVIDERs."""
+    rows: list = []
 
     def handle(children_ids: list[str], depth: int = 0) -> None:
         if depth > 10:
@@ -657,7 +770,7 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                         nm = meta.get("sliceName")
                         if nm and nm in kept_names:
                             row.append(nm)
-                            geometry[nm] = {"width": meta.get("width"), "height": meta.get("height")}
+                            geometry[nm] = _geo(meta)
                         elif nm:
                             losses.append(Loss("layout", f"chart {nm!r} in layout but not decompilable; removed from row"))
                     elif ch.get("type") == "MARKDOWN":
@@ -677,13 +790,32 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                     else:
                         losses.append(Loss("layout", f"{ch.get('type')} element dropped from a row"))
                 if row:
-                    rows.append(row)
+                    if (node.get("meta") or {}).get("background") == BACKGROUND["white"]:
+                        rows.append({"row": row, "background": "white"})
+                    else:
+                        rows.append(row)
             elif t == "CHART":
                 meta = node.get("meta") or {}
                 nm = meta.get("sliceName")
                 if nm and nm in kept_names:
                     rows.append([nm])
-                    geometry[nm] = {"width": meta.get("width"), "height": meta.get("height")}
+                    geometry[nm] = _geo(meta)
+            elif t == "HEADER" and depth == 0:
+                meta = node.get("meta") or {}
+                text = meta.get("text")
+                if not isinstance(text, str) or not text.strip():
+                    losses.append(Loss("layout", "empty HEADER dropped"))
+                    continue
+                header: dict = {"header": text}
+                # Superset draws a header with no stored size as small (Header.tsx).
+                size = _REVERSE_HEADER_SIZE.get(meta.get("headerSize") or "SMALL_HEADER", "small")
+                if size != "medium":
+                    header["size"] = size
+                if meta.get("background") == BACKGROUND["white"]:
+                    header["background"] = "white"
+                rows.append(header)
+            elif t == "DIVIDER" and depth == 0:
+                rows.append({"divider": True})
             elif t in ("TABS", "TAB"):
                 # mixed/nested tabs at this level are handled by the caller;
                 # reaching here means nested tabs inside a tab -> flatten
@@ -694,6 +826,37 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
 
     handle(children)
     return rows
+
+
+def _dashboard_settings_to_spec(dash: dict, losses: list[Loss]) -> dict:
+    """The dashboard's own settings, each emitted only when it differs from
+    what an omitted spec field compiles to, so neither side drifts in plan."""
+    meta = dash.get("metadata") or {}
+    out: dict = {}
+    scheme = meta.get("color_scheme")
+    if isinstance(scheme, str) and scheme.strip():
+        out["color_scheme"] = scheme
+    for key in ("description", "certified_by", "certification_details"):
+        text = dash.get(key)
+        if isinstance(text, str) and text.strip():
+            out[key] = text
+    if out.get("certification_details") and not out.get("certified_by"):
+        out.pop("certification_details")
+        losses.append(Loss("dashboard", "certification_details without certified_by not preserved"))
+    if dash.get("published") is False:
+        out["published"] = False
+    refresh = meta.get("refresh_frequency")
+    if isinstance(refresh, int) and refresh > 0:
+        out["refresh_frequency"] = refresh
+    orientation = meta.get("filter_bar_orientation")
+    if isinstance(orientation, str) and orientation.upper() == "HORIZONTAL":
+        out["filter_bar_orientation"] = "horizontal"  # vertical is the default
+    if meta.get("show_chart_timestamps") is True:
+        out["show_chart_timestamps"] = True
+    tags = _tags_to_spec(dash.get("tags"), losses, "dashboard")
+    if tags:
+        out["tags"] = tags
+    return out
 
 
 def _leaf_tabs(layout: dict) -> list[dict]:
@@ -742,7 +905,8 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
         cut = len(types) - types[::-1].index("TABS")
     else:
         cut = len(grid_children)
-        while cut and grid_children[cut - 1].startswith(f"ROW-{FOOTER_PREFIX}"):
+        while cut and grid_children[cut - 1].startswith(
+                tuple(f"{kind}-{FOOTER_PREFIX}" for kind in ("ROW", "HEADER", "DIVIDER"))):
             cut -= 1
     grid_children, footer_ids = grid_children[:cut], grid_children[cut:]
     footer_rows = _walk_rows(position, footer_ids, kept, losses, geometry) if footer_ids else []
@@ -787,8 +951,10 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
         layout["footer"] = footer_rows
 
     def body_and_footer() -> list:
+        """The rows of charts and markdown (headers and dividers skipped)."""
         body = layout.get("rows") if "rows" in layout else [r for leaf in _leaf_tabs(layout) for r in leaf["rows"]]
-        return [*(body or []), *layout.get("footer", [])]
+        rows = [*(body or []), *layout.get("footer", [])]
+        return [items for items in (row_items(r) for r in rows) if items is not None]
 
     all_rows = body_and_footer()
     placed = {x for row in (all_rows or []) for x in row if isinstance(x, str)}
@@ -812,6 +978,8 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             c["height"] = h
             if int(geo["height"]) != h * ROW_UNITS_PER_SPEC_UNIT:
                 losses.append(Loss(name, f"height {geo['height']} rounded to {h * ROW_UNITS_PER_SPEC_UNIT} row units"))
+        if geo.get("display_name"):
+            c["display_name"] = geo["display_name"]
 
     # Row overflow guard: source rows can exceed 12 units after flattening.
     def width_of(item) -> int:
@@ -850,6 +1018,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             **({"label_colors": dict(label_colors)} if label_colors else {}),
             # "Edit CSS"; blank or absent (Superset stores null) reads as omitted.
             **({"css": css} if css.strip() else {}),
+            **_dashboard_settings_to_spec(dash, losses),
         },
         "charts": ordered,
         "layout": layout,

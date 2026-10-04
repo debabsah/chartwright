@@ -20,8 +20,11 @@ from datetime import date
 from ..spec import (
     DEFAULT_TIME_GRAIN,
     GRID_HEADER_UNITS,
+    SUPERSET_COLOR_SCHEMES,
+    HeaderBlock,
     grid_rows_visible,
     grid_units_for_rows,
+    row_items,
 )
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 
@@ -414,17 +417,18 @@ def orphan_chart(ctx: RuleContext):
                 )
 
 
-@rule("layout.section-headers", "info", "large flat dashboards need markdown signposts")
+@rule("layout.section-headers", "info", "large flat dashboards need section headers (header rows or markdown)")
 def section_headers(ctx: RuleContext):
     body = ctx.body_sections
     if len(body) != 1 or body[0].mode != "rows" or body[0].title:
         return
     n = len(ctx.spec.charts)
     has_md = any(i.is_markdown for b in body[0].bands for i in b.items)  # a footer note is no signpost
+    has_md = has_md or any(isinstance(r, HeaderBlock) for r in ctx.spec.layout.rows or [])
     if n > 8 and not has_md:
         yield Finding(
             "layout.section-headers", "info", None, "layout",
-            f"{n} charts with no markdown section headers; readers need signposts "
+            f"{n} charts with no section headers (header rows or markdown); readers need signposts "
             f"(or split into tabs)",
         )
 
@@ -1065,6 +1069,24 @@ def format_consistency(ctx: RuleContext):
             )
 
 
+@rule("narrative.color-scheme", "warn",
+      "a colour scheme Superset doesn't ship draws the default palette unless your deployment registers it",
+      since="4")
+def color_scheme(ctx: RuleContext):
+    known = set(SUPERSET_COLOR_SCHEMES)
+    named = [(None, "dashboard", ctx.spec.dashboard.color_scheme)]
+    named += [(c.name, ctx.where(c.name), getattr(c, "color_scheme", None)) for c in ctx.spec.charts]
+    for chart, where, scheme in named:
+        if scheme and scheme not in known:
+            near = [k for k in SUPERSET_COLOR_SCHEMES if k.lower() == scheme.lower()]
+            hint = f"; did you mean {near[0]!r}?" if near else (
+                "; fine if your deployment registers it (EXTRA_CATEGORICAL_COLOR_SCHEMES)")
+            yield Finding(
+                "narrative.color-scheme", "warn", chart, where,
+                f"color_scheme {scheme!r} is not one Superset ships{hint}",
+            )
+
+
 @rule("layout.markdown-height", "info", "a one-line markdown header doesn't need a chart-sized block", fixable=True, since="2")
 def markdown_height(ctx: RuleContext):
     # Operates on the raw layout indices so the fix can address the block
@@ -1085,7 +1107,8 @@ def markdown_height(ctx: RuleContext):
         sources.append(("footer", "footer", lay.footer))
     for addr, label, rows in sources:
         for ri, row in enumerate(rows):
-            for ii, item in enumerate(row):
+            # ri indexes the raw rows (headers and dividers included): the fix reads the same list.
+            for ii, item in enumerate(row_items(row) or []):
                 if isinstance(item, str):
                     continue
                 lines = [l for l in item.markdown.splitlines() if l.strip()]
