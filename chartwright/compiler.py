@@ -703,17 +703,32 @@ def _position(spec: DashboardSpec) -> dict:
     return pos
 
 
+def filter_id(slug: str, name: str) -> str:
+    """The native filter's deterministic id (apply's scope stage matches on it)."""
+    return "NATIVE_FILTER-sdc-" + uuid.uuid5(ids.NAMESPACE, f"{slug}/filter/{name}").hex[:12]
+
+
+def _pre_filter(f, base: dict) -> None:
+    """The filter form's "Pre-filter available values" (FiltersConfigModal/utils.ts
+    createHandleSave writes adhoc_filters, time_range and granularity_sqla at the
+    filter's top level; nativeFilters/utils.ts getFormData sends them with the
+    filter's query; all three releases). Emitted only when set."""
+    if f.pre_filter:
+        base["adhoc_filters"] = _adhoc_filter_list(f.pre_filter)
+    if f.time_range:
+        base["time_range"] = f.time_range
+        base["granularity_sqla"] = f.time_column
+
+
 def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
     out = []
+    slug = spec.dashboard.slug
     for f in spec.filters:
-        fid = "NATIVE_FILTER-sdc-" + uuid.uuid5(
-            ids.NAMESPACE, f"{spec.dashboard.slug}/filter/{f.name}"
-        ).hex[:12]
         base = {
-            "id": fid,
+            "id": filter_id(slug, f.name),
             "name": f.name,
-            "description": "",
-            "cascadeParentIds": [],
+            "description": f.description or "",
+            "cascadeParentIds": [filter_id(slug, p) for p in getattr(f, "dependencies", None) or []],
             "defaultDataMask": {"extraFormData": {}, "filterState": {}, "ownState": {}},
             "scope": {"rootPath": ["ROOT_ID"], "excluded": []},
             "type": "NATIVE_FILTER",
@@ -726,9 +741,17 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
                 "multiSelect": f.multi,
                 "defaultToFirstItem": f.default_to_first,
                 "enableEmptyFilter": f.required,
-                "inverseSelection": False,
-                "searchAllOptions": False,
+                "inverseSelection": f.inverse_selection,
+                "searchAllOptions": f.search_all_options,
             }
+            if f.sort_metric:
+                # 4.1.4/5.0.0 save the sort metric at the filter's top level, 6.1.0 in
+                # controlValues (FiltersConfigForm.tsx); getFormData spreads both into
+                # the query (nativeFilters/utils.ts), so write both and every release
+                # sorts by it and shows it in its form.
+                base["sortMetric"] = f.sort_metric
+                base["controlValues"]["sortMetric"] = f.sort_metric
+            _pre_filter(f, base)
             if f.default_to_first:
                 # Superset's filter form saves requiredFirst with "select first value"
                 # (Select/controlPanel.ts marks the control requiredFirst;
@@ -749,8 +772,6 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
                     "filterState": {"value": list(f.default), "label": ", ".join(str(v) for v in f.default)},
                     "ownState": {},
                 }
-            if f.charts:
-                base["sdc_scope_charts"] = list(f.charts)  # name-based; apply's scope stage maps ids
         elif f.type == "range":
             ds = resolution.datasets[f.dataset.key()]
             base["filterType"] = "filter_range"
@@ -759,12 +780,23 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
             mask = _range_default_mask(f)
             if mask:
                 base["defaultDataMask"] = mask
-            if f.charts:
-                # Tool-owned, name-based scope marker (filter entries are opaque
-                # dicts to Superset). The bundle ships ROOT scope; slice ids
-                # don't exist at compile time; apply's scope stage rewrites live
-                # ids, so without this the scope is unrecoverable on decompile.
-                base["sdc_scope_charts"] = list(f.charts)
+            _pre_filter(f, base)
+        elif f.type in ("time_grain", "time_column"):
+            # The TimeGrain / TimeColumn filter plugins (src/filters/components/, all
+            # three releases): a dataset target without a column; the value is a
+            # one-item list, and the query side is time_grain_sqla / granularity_sqla.
+            ds = resolution.datasets[f.dataset.key()]
+            grain = f.type == "time_grain"
+            base["filterType"] = "filter_timegrain" if grain else "filter_timecolumn"
+            base["targets"] = [{"datasetUuid": ds.uuid}]
+            base["controlValues"] = {"enableEmptyFilter": f.required}
+            if f.default:
+                key = "time_grain_sqla" if grain else "granularity_sqla"
+                base["defaultDataMask"] = {
+                    "extraFormData": {key: f.default},
+                    "filterState": {"value": [f.default]},
+                    "ownState": {},
+                }
         else:  # time_range
             base["filterType"] = "filter_time"
             base["targets"] = [{}]
@@ -778,6 +810,12 @@ def _native_filters(spec: DashboardSpec, resolution: Resolution) -> list[dict]:
                     "filterState": {"value": f.default},
                     "ownState": {},
                 }
+        if getattr(f, "charts", None):
+            # Tool-owned, name-based scope marker (filter entries are opaque
+            # dicts to Superset). The bundle ships ROOT scope; slice ids
+            # don't exist at compile time; apply's scope stage rewrites live
+            # ids, so without this the scope is unrecoverable on decompile.
+            base["sdc_scope_charts"] = list(f.charts)
         out.append(base)
     return out
 

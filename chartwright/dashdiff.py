@@ -13,7 +13,7 @@ from . import ids
 from .client import SupersetClient
 from .decompile import decompile_live
 from .spec import (
-    DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
+    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
 )
 
 # Dashboard settings `plan` compares one by one (dashboard_settings_changed).
@@ -206,7 +206,7 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     t_filters = {f["name"]: dict(f) for f in t.get("filters", [])}
     l_filters = {f["name"]: dict(f) for f in l.get("filters", [])}
     for f in target.filters:
-        if f.type in ("select", "range"):
+        if f.type in DATASET_FILTER_TYPES:
             t_filters[f.name]["dataset"] = resolution.datasets[f.dataset.key()].uuid
     for name in l_filters:
         u = live_result.dataset_uuids.get(f"filter:{name}")

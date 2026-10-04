@@ -2741,14 +2741,64 @@
       "additionalProperties": false,
       "description": "Native filter bar: numeric range on one dataset column (filter_range).\n\n``le``/``ge`` set the DEFAULT bound(s) users see on load. One bound gives a\nsingle-handle slider (Superset's single-value mode); both give a range;\nequal bounds give exact-match mode. ``charts`` scopes the filter to the\nnamed charts only (default: every chart), resolved to slice ids after\nimport, since ids don't exist at compile time.",
       "properties": {
-        "type": {
-          "const": "range",
-          "title": "Type",
-          "type": "string"
+        "pre_filter": {
+          "description": "WHERE conditions on the filter's dataset that limit the values it offers, e.g. [{\"column\": \"active\", \"value\": true}]",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Pre Filter",
+          "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pre-filter by time: only rows in this Superset time range, e.g. \"Last year\"; needs time_column",
+          "title": "Time Range"
+        },
+        "time_column": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The temporal column time_range applies to",
+          "title": "Time Column"
         },
         "name": {
           "minLength": 1,
           "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Shown as the filter's tooltip in the filter bar",
+          "title": "Description"
+        },
+        "type": {
+          "const": "range",
+          "title": "Type",
           "type": "string"
         },
         "dataset": {
@@ -2784,6 +2834,22 @@
           "description": "Default lower bound (x \u2265 N)",
           "title": "Ge"
         },
+        "dependencies": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Names of other select, range or time_range filters whose values narrow this filter's list (Superset's \"Values are dependent on other filters\"), e.g. [\"Region\"] for a city filter",
+          "title": "Dependencies"
+        },
         "charts": {
           "anyOf": [
             {
@@ -2802,8 +2868,8 @@
         }
       },
       "required": [
-        "type",
         "name",
+        "type",
         "dataset",
         "column"
       ],
@@ -2814,14 +2880,64 @@
       "additionalProperties": false,
       "description": "Native filter bar: value picker over one dataset column.\n\n``default`` pre-selects values on load (viewers can still change them); a\nrelative value such as \"This year\" keeps a default right as time passes, where\na literal year would go stale. ``charts`` scopes the filter to the named charts\nonly (default: every chart), resolved to slice ids after import, as on range.",
       "properties": {
-        "type": {
-          "const": "select",
-          "title": "Type",
-          "type": "string"
+        "pre_filter": {
+          "description": "WHERE conditions on the filter's dataset that limit the values it offers, e.g. [{\"column\": \"active\", \"value\": true}]",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Pre Filter",
+          "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pre-filter by time: only rows in this Superset time range, e.g. \"Last year\"; needs time_column",
+          "title": "Time Range"
+        },
+        "time_column": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The temporal column time_range applies to",
+          "title": "Time Column"
         },
         "name": {
           "minLength": 1,
           "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Shown as the filter's tooltip in the filter bar",
+          "title": "Description"
+        },
+        "type": {
+          "const": "select",
+          "title": "Type",
           "type": "string"
         },
         "dataset": {
@@ -2874,11 +2990,53 @@
           "title": "Sort Descending",
           "type": "boolean"
         },
+        "sort_metric": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Order the values by this saved metric of the filter's dataset instead of by the values themselves (sort_descending still sets the direction)",
+          "title": "Sort Metric"
+        },
         "required": {
           "default": false,
           "description": "A value must stay selected (no empty filter)",
           "title": "Required",
           "type": "boolean"
+        },
+        "search_all_options": {
+          "default": false,
+          "description": "Search every value in the database as the viewer types, not only the first values loaded (for high-cardinality columns)",
+          "title": "Search All Options",
+          "type": "boolean"
+        },
+        "inverse_selection": {
+          "default": false,
+          "description": "Exclude the selected values instead of keeping only them",
+          "title": "Inverse Selection",
+          "type": "boolean"
+        },
+        "dependencies": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Names of other select, range or time_range filters whose values narrow this filter's list (Superset's \"Values are dependent on other filters\"), e.g. [\"Region\"] for a city filter",
+          "title": "Dependencies"
         },
         "charts": {
           "anyOf": [
@@ -2898,8 +3056,8 @@
         }
       },
       "required": [
-        "type",
         "name",
+        "type",
         "dataset",
         "column"
       ],
@@ -3326,18 +3484,184 @@
       "title": "TableChart",
       "type": "object"
     },
-    "TimeRangeFilter": {
+    "TimeColumnFilter": {
       "additionalProperties": false,
-      "description": "Native filter bar: dashboard-wide time range picker.\n\n``default`` is a Superset time-range expression (``\"Last month\"``,\n``\"2026-05-01 : 2026-06-01\"``) that pre-fills the picker on load; viewers\ncan still change it. Omitted, the picker starts empty (Superset shows\n\"No filter\").",
+      "description": "Native filter bar: lets viewers pick which of the dataset's temporal columns\nthe dashboard's time range applies to (e.g. order date or ship date).",
       "properties": {
-        "type": {
-          "const": "time_range",
-          "title": "Type",
-          "type": "string"
-        },
         "name": {
           "minLength": 1,
           "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Shown as the filter's tooltip in the filter bar",
+          "title": "Description"
+        },
+        "type": {
+          "const": "time_column",
+          "title": "Type",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Temporal column selected on load",
+          "title": "Default"
+        },
+        "required": {
+          "default": false,
+          "description": "A column must stay selected",
+          "title": "Required",
+          "type": "boolean"
+        },
+        "charts": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Chart names this filter governs; omit for all charts",
+          "title": "Charts"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "dataset"
+      ],
+      "title": "TimeColumnFilter",
+      "type": "object"
+    },
+    "TimeGrainFilter": {
+      "additionalProperties": false,
+      "description": "Native filter bar: a time grain picker (day, week, month...) that re-buckets\nthe time axis of the charts in scope. The grains offered are the dataset's\ndatabase's own.",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Shown as the filter's tooltip in the filter bar",
+          "title": "Description"
+        },
+        "type": {
+          "const": "time_grain",
+          "title": "Type",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Grain selected on load, an ISO 8601 duration, e.g. P1M",
+          "title": "Default"
+        },
+        "required": {
+          "default": false,
+          "description": "A grain must stay selected",
+          "title": "Required",
+          "type": "boolean"
+        },
+        "charts": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Chart names this filter governs; omit for all charts",
+          "title": "Charts"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "dataset"
+      ],
+      "title": "TimeGrainFilter",
+      "type": "object"
+    },
+    "TimeRangeFilter": {
+      "additionalProperties": false,
+      "description": "Native filter bar: time range picker.\n\n``default`` is a Superset time-range expression (``\"Last month\"``,\n``\"2026-05-01 : 2026-06-01\"``) that pre-fills the picker on load; viewers\ncan still change it. Omitted, the picker starts empty (Superset shows\n\"No filter\"). ``charts`` scopes it to the named charts (default: every chart).",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Shown as the filter's tooltip in the filter bar",
+          "title": "Description"
+        },
+        "type": {
+          "const": "time_range",
+          "title": "Type",
           "type": "string"
         },
         "default": {
@@ -3351,11 +3675,27 @@
           ],
           "default": null,
           "title": "Default"
+        },
+        "charts": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Chart names this filter governs; omit for all charts",
+          "title": "Charts"
         }
       },
       "required": [
-        "type",
-        "name"
+        "name",
+        "type"
       ],
       "title": "TimeRangeFilter",
       "type": "object"
@@ -4791,6 +5131,8 @@
           "mapping": {
             "range": "#/$defs/RangeFilter",
             "select": "#/$defs/SelectFilter",
+            "time_column": "#/$defs/TimeColumnFilter",
+            "time_grain": "#/$defs/TimeGrainFilter",
             "time_range": "#/$defs/TimeRangeFilter"
           },
           "propertyName": "type"
@@ -4804,6 +5146,12 @@
           },
           {
             "$ref": "#/$defs/RangeFilter"
+          },
+          {
+            "$ref": "#/$defs/TimeGrainFilter"
+          },
+          {
+            "$ref": "#/$defs/TimeColumnFilter"
           }
         ]
       },

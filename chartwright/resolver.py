@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 from .client import SupersetClient
-from .spec import DashboardSpec, DatasetRef, parse_metric
+from .spec import DATASET_FILTER_TYPES, DashboardSpec, DatasetRef, parse_metric
 
 
 @dataclass
@@ -88,10 +88,25 @@ def resolve(spec: DashboardSpec, client: SupersetClient) -> Resolution:
         _check_where(chart.filters, chart.name, ds, res, "filter column")
 
     for f in spec.filters:
+        if f.type not in DATASET_FILTER_TYPES:
+            continue
+        ds = dataset_for(f.dataset)
+        if ds is None:
+            continue
+        where = f"filter:{f.name}"
         if f.type in ("select", "range"):
-            ds = dataset_for(f.dataset)
-            if ds is not None:
-                _check_column(f.column, f"filter:{f.name}", ds, res, "native filter column")
+            _check_column(f.column, where, ds, res, "native filter column")
+            _check_where(f.pre_filter, where, ds, res, "pre_filter column")
+            if f.time_column:
+                _check_column(f.time_column, where, ds, res, "pre-filter time_column")
+        if f.type == "select" and f.sort_metric and f.sort_metric not in ds.metrics:
+            # The filter form offers saved metrics only (FiltersConfigForm.tsx sortMetric).
+            res.errors.append(ResolutionError(
+                "metric_not_found", where, f.sort_metric,
+                f"sort_metric must be a saved metric on {ds.table!r} (has: {ds.metrics})",
+            ))
+        if f.type == "time_column" and f.default:
+            _check_column(f.default, where, ds, res, "time_column default")
     return res
 
 

@@ -4,8 +4,8 @@ Anything not expressible here does not exist. Validation errors are the only
 feedback channel an LLM caller gets; keep messages precise and actionable.
 
 Surface: 15 chart types, per-chart WHERE filters, a dashboard-level native
-filter bar (select, time_range, numeric range), markdown blocks, headers,
-dividers, and tabs.
+filter bar (select, time range, numeric range, time grain, time column),
+markdown blocks, headers, dividers, and tabs.
 """
 
 from __future__ import annotations
@@ -619,7 +619,55 @@ CHART_TYPES = (
 )
 
 
-class SelectFilter(BaseModel):
+class _FilterBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    description: str | None = Field(
+        default=None, min_length=1, description="Shown as the filter's tooltip in the filter bar")
+
+    def _check_scope(self, kind: str) -> None:
+        charts = getattr(self, "charts", None)
+        if charts is not None and not charts:
+            raise ValueError(f"{kind} filter {self.name!r}: charts must be omitted or non-empty")
+
+
+def _charts_scope():
+    return Field(default=None, description="Chart names this filter governs; omit for all charts")
+
+
+def _dependencies():
+    return Field(
+        default=None,
+        description="Names of other select, range or time_range filters whose values narrow this "
+                    "filter's list (Superset's \"Values are dependent on other filters\"), e.g. "
+                    "[\"Region\"] for a city filter",
+    )
+
+
+class _PreFilterMixin(BaseModel):
+    """Superset's "Pre-filter available values": conditions on the filter's own
+    dataset that limit the values it lists (select) or its bounds (range)."""
+
+    pre_filter: list[ChartFilter] = Field(
+        default_factory=list,
+        description="WHERE conditions on the filter's dataset that limit the values it offers, "
+                    "e.g. [{\"column\": \"active\", \"value\": true}]",
+    )
+    time_range: str | None = Field(
+        default=None, min_length=1,
+        description="Pre-filter by time: only rows in this Superset time range, e.g. \"Last year\"; "
+                    "needs time_column",
+    )
+    time_column: str | None = Field(
+        default=None, min_length=1, description="The temporal column time_range applies to")
+
+    def _check_pre_filter(self, kind: str, name: str) -> None:
+        if (self.time_range is None) != (self.time_column is None):
+            raise ValueError(f"{kind} filter {name!r}: time_range and time_column go together")
+
+
+class SelectFilter(_FilterBase, _PreFilterMixin):
     """Native filter bar: value picker over one dataset column.
 
     ``default`` pre-selects values on load (viewers can still change them); a
@@ -627,10 +675,7 @@ class SelectFilter(BaseModel):
     a literal year would go stale. ``charts`` scopes the filter to the named charts
     only (default: every chart), resolved to slice ids after import, as on range."""
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["select"]
-    name: str = Field(min_length=1)
     dataset: DatasetRef
     column: str
     multi: bool = True
@@ -643,11 +688,21 @@ class SelectFilter(BaseModel):
                     "that is the latest of sortable values like '2026 (this year)', so it never goes stale)",
     )
     sort_descending: bool = Field(default=False, description="List (and pick the first of) the values Z-A")
-    required: bool = Field(default=False, description="A value must stay selected (no empty filter)")
-    charts: list[str] | None = Field(
-        default=None,
-        description="Chart names this filter governs; omit for all charts",
+    sort_metric: str | None = Field(
+        default=None, min_length=1,
+        description="Order the values by this saved metric of the filter's dataset instead of "
+                    "by the values themselves (sort_descending still sets the direction)",
     )
+    required: bool = Field(default=False, description="A value must stay selected (no empty filter)")
+    search_all_options: bool = Field(
+        default=False,
+        description="Search every value in the database as the viewer types, not only the "
+                    "first values loaded (for high-cardinality columns)",
+    )
+    inverse_selection: bool = Field(
+        default=False, description="Exclude the selected values instead of keeping only them")
+    dependencies: list[str] | None = _dependencies()
+    charts: list[str] | None = _charts_scope()
 
     @model_validator(mode="after")
     def _default_and_scope(self) -> "SelectFilter":
@@ -657,28 +712,31 @@ class SelectFilter(BaseModel):
             raise ValueError(f"select filter {self.name!r}: default and default_to_first are exclusive (Superset allows one)")
         if self.default and not self.multi and len(self.default) > 1:
             raise ValueError(f"select filter {self.name!r}: a single-select default takes one value")
-        if self.charts is not None and not self.charts:
-            raise ValueError(f"select filter {self.name!r}: charts must be omitted or non-empty")
+        self._check_scope("select")
+        self._check_pre_filter("select", self.name)
         return self
 
 
-class TimeRangeFilter(BaseModel):
-    """Native filter bar: dashboard-wide time range picker.
+class TimeRangeFilter(_FilterBase):
+    """Native filter bar: time range picker.
 
     ``default`` is a Superset time-range expression (``"Last month"``,
     ``"2026-05-01 : 2026-06-01"``) that pre-fills the picker on load; viewers
     can still change it. Omitted, the picker starts empty (Superset shows
-    "No filter").
+    "No filter"). ``charts`` scopes it to the named charts (default: every chart).
     """
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["time_range"]
-    name: str = Field(min_length=1)
     default: str | None = None
+    charts: list[str] | None = _charts_scope()
+
+    @model_validator(mode="after")
+    def _scope(self) -> "TimeRangeFilter":
+        self._check_scope("time_range")
+        return self
 
 
-class RangeFilter(BaseModel):
+class RangeFilter(_FilterBase, _PreFilterMixin):
     """Native filter bar: numeric range on one dataset column (filter_range).
 
     ``le``/``ge`` set the DEFAULT bound(s) users see on load. One bound gives a
@@ -687,31 +745,66 @@ class RangeFilter(BaseModel):
     named charts only (default: every chart), resolved to slice ids after
     import, since ids don't exist at compile time."""
 
-    model_config = ConfigDict(extra="forbid")
-
     type: Literal["range"]
-    name: str = Field(min_length=1)
     dataset: DatasetRef
     column: str
     le: float | None = Field(default=None, description="Default upper bound (x ≤ N)")
     ge: float | None = Field(default=None, description="Default lower bound (x ≥ N)")
-    charts: list[str] | None = Field(
-        default=None,
-        description="Chart names this filter governs; omit for all charts",
-    )
+    dependencies: list[str] | None = _dependencies()
+    charts: list[str] | None = _charts_scope()
 
     @model_validator(mode="after")
     def _bounds(self) -> "RangeFilter":
         if self.le is not None and self.ge is not None and self.ge > self.le:
             raise ValueError(f"range filter {self.name!r}: ge ({self.ge}) > le ({self.le})")
-        if self.charts is not None and not self.charts:
-            raise ValueError(f"range filter {self.name!r}: charts must be omitted or non-empty")
+        self._check_scope("range")
+        self._check_pre_filter("range", self.name)
+        return self
+
+
+class TimeGrainFilter(_FilterBase):
+    """Native filter bar: a time grain picker (day, week, month...) that re-buckets
+    the time axis of the charts in scope. The grains offered are the dataset's
+    database's own."""
+
+    type: Literal["time_grain"]
+    dataset: DatasetRef
+    default: str | None = Field(
+        default=None, min_length=1, description="Grain selected on load, an ISO 8601 duration, e.g. P1M")
+    required: bool = Field(default=False, description="A grain must stay selected")
+    charts: list[str] | None = _charts_scope()
+
+    @model_validator(mode="after")
+    def _scope(self) -> "TimeGrainFilter":
+        self._check_scope("time_grain")
+        return self
+
+
+class TimeColumnFilter(_FilterBase):
+    """Native filter bar: lets viewers pick which of the dataset's temporal columns
+    the dashboard's time range applies to (e.g. order date or ship date)."""
+
+    type: Literal["time_column"]
+    dataset: DatasetRef
+    default: str | None = Field(default=None, min_length=1, description="Temporal column selected on load")
+    required: bool = Field(default=False, description="A column must stay selected")
+    charts: list[str] | None = _charts_scope()
+
+    @model_validator(mode="after")
+    def _scope(self) -> "TimeColumnFilter":
+        self._check_scope("time_column")
         return self
 
 
 DashboardFilter = Annotated[
-    Union[SelectFilter, TimeRangeFilter, RangeFilter], Field(discriminator="type")
+    Union[SelectFilter, TimeRangeFilter, RangeFilter, TimeGrainFilter, TimeColumnFilter],
+    Field(discriminator="type"),
 ]
+# Filter types another filter may depend on (Superset's ALLOW_DEPENDENCIES,
+# FiltersConfigModal at 4.1.4/5.0.0, FiltersConfigModal/hooks/useFilterOperations.ts at 6.1.0).
+DEPENDENCY_PARENT_TYPES = ("select", "range", "time_range")
+# Filter types whose native filter targets a dataset.
+DATASET_FILTER_TYPES = ("select", "range", "time_grain", "time_column")
 
 
 class MarkdownBlock(BaseModel):
@@ -1054,6 +1147,46 @@ class DashboardSpec(BaseModel):
                         f"filter {f.name!r} scopes unknown chart {target!r} "
                         f"(spec charts: {sorted(names)})"
                     )
+        return self
+
+    @model_validator(mode="after")
+    def _filter_dependencies_resolve(self) -> "DashboardSpec":
+        by_name = {f.name: f for f in self.filters}
+        parents: dict[str, list[str]] = {}
+        for f in self.filters:
+            deps = getattr(f, "dependencies", None)
+            if deps is None:
+                continue
+            if not deps:
+                raise ValueError(f"filter {f.name!r}: dependencies must be omitted or non-empty")
+            if len(set(deps)) != len(deps):
+                raise ValueError(f"filter {f.name!r}: duplicate dependencies {deps}")
+            for parent in deps:
+                if parent == f.name:
+                    raise ValueError(f"filter {f.name!r} cannot depend on itself")
+                if parent not in by_name:
+                    raise ValueError(
+                        f"filter {f.name!r} depends on unknown filter {parent!r} "
+                        f"(spec filters: {sorted(by_name)})")
+                if by_name[parent].type not in DEPENDENCY_PARENT_TYPES:
+                    raise ValueError(
+                        f"filter {f.name!r} depends on {parent!r}, a {by_name[parent].type} filter; "
+                        f"Superset lets a filter depend on {', '.join(DEPENDENCY_PARENT_TYPES)} filters only")
+            parents[f.name] = list(deps)
+
+        def cycle(name: str, trail: tuple[str, ...]) -> tuple[str, ...] | None:
+            if name in trail:
+                return (*trail, name)
+            for p in parents.get(name, []):
+                found = cycle(p, (*trail, name))
+                if found:
+                    return found
+            return None
+
+        for name in parents:
+            found = cycle(name, ())
+            if found:
+                raise ValueError(f"filter dependencies form a cycle: {' -> '.join(found)}")
         return self
 
     @model_validator(mode="after")

@@ -21,8 +21,8 @@ from .compiler import (
     BACKGROUND, FOOTER_PREFIX, HEADER_SIZE, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, VIZ_TYPE,
 )
 from .spec import (
-    ADHOC_AGGREGATES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, HEX_COLOUR_RE, FilterOp, metric_label,
-    row_items,
+    ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, HEX_COLOUR_RE,
+    FilterOp, metric_label, row_items,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
@@ -649,6 +649,20 @@ def _tags_to_spec(tags, losses: list, where: str) -> list[str]:
     return keep
 
 
+def _pre_filter_to_spec(nf: dict, f: dict, losses: list, where: str) -> None:
+    pre = _filters_to_spec({"adhoc_filters": nf.get("adhoc_filters")}, losses, where)
+    if pre:
+        f["pre_filter"] = pre
+    time_range = nf.get("time_range")
+    if isinstance(time_range, str) and time_range and time_range != "No filter":
+        if nf.get("granularity_sqla"):
+            f["time_range"] = time_range
+            f["time_column"] = nf["granularity_sqla"]
+        else:
+            losses.append(Loss(where, f"pre-filter time range {time_range!r} without a time column "
+                                      "not preserved"))
+
+
 def _native_filters_to_spec(
     metadata: dict, lookup: DatasetLookup, losses: list[Loss],
     filter_uuids: dict[str, str] | None = None,
@@ -683,6 +697,15 @@ def _native_filters_to_spec(
                 f["sort_descending"] = True
             if cv.get("enableEmptyFilter"):
                 f["required"] = True
+            if cv.get("searchAllOptions"):
+                f["search_all_options"] = True
+            if cv.get("inverseSelection"):
+                f["inverse_selection"] = True
+            # 6.1.0 keeps it in controlValues, 4.1.4/5.0.0 at the top level.
+            sort_metric = cv.get("sortMetric") or nf.get("sortMetric")
+            if isinstance(sort_metric, str) and sort_metric:
+                f["sort_metric"] = sort_metric
+            _pre_filter_to_spec(nf, f, losses, f"filter:{name}")
             value = ((nf.get("defaultDataMask") or {}).get("filterState") or {}).get("value")
             # With "select first value" the stored value is just the first item
             # when the filter was saved; Superset picks it again on load, and
@@ -712,6 +735,7 @@ def _native_filters_to_spec(
             if filter_uuids is not None:
                 filter_uuids[f"filter:{name}"] = str(ds_uuid)
             f = {"type": "range", "name": name, "dataset": ds, "column": col}
+            _pre_filter_to_spec(nf, f, losses, f"filter:{name}")
             value = ((nf.get("defaultDataMask") or {}).get("filterState") or {}).get("value")
             if isinstance(value, list) and len(value) == 2:
                 if value[0] is not None:
@@ -733,9 +757,30 @@ def _native_filters_to_spec(
             continue  # range preserves its default; skip the default-loss check
         elif ftype == "filter_time":
             f = {"type": "time_range", "name": name}
+            _scope_to_spec(nf, f, losses, name)
             value = ((nf.get("defaultDataMask") or {}).get("filterState") or {}).get("value")
             if isinstance(value, str) and value:
                 f["default"] = value
+                out.append(f)
+                continue  # default preserved; skip the default-loss check
+            out.append(f)
+        elif ftype in ("filter_timegrain", "filter_timecolumn"):
+            kind = "time_grain" if ftype == "filter_timegrain" else "time_column"
+            targets = nf.get("targets") or []
+            ds_uuid = targets[0].get("datasetUuid") if targets and isinstance(targets[0], dict) else None
+            ds = lookup(str(ds_uuid)) if ds_uuid else None
+            if ds is None:
+                losses.append(Loss(f"filter:{name}", f"{kind} filter dataset not resolvable; dropped"))
+                continue
+            if filter_uuids is not None:
+                filter_uuids[f"filter:{name}"] = str(ds_uuid)
+            f = {"type": kind, "name": name, "dataset": ds}
+            if (nf.get("controlValues") or {}).get("enableEmptyFilter"):
+                f["required"] = True
+            _scope_to_spec(nf, f, losses, name)
+            value = ((nf.get("defaultDataMask") or {}).get("filterState") or {}).get("value")
+            if isinstance(value, list) and value and isinstance(value[0], str):
+                f["default"] = value[0]
                 out.append(f)
                 continue  # default preserved; skip the default-loss check
             out.append(f)
@@ -745,7 +790,40 @@ def _native_filters_to_spec(
         dm = nf.get("defaultDataMask") or {}
         if dm.get("filterState") or dm.get("extraFormData"):
             losses.append(Loss(f"filter:{name}", "default value not preserved"))
+    kept = {f["name"]: f["type"] for f in out}
+    for f in out:
+        nf = next((c for c in configs if (c.get("name") or c.get("id") or "filter") == f["name"]), {})
+        text = nf.get("description")
+        if isinstance(text, str) and text.strip():
+            f["description"] = text
+        deps = []
+        for pid in parent_ids.get(f["name"], []):
+            parent = names_by_id.get(pid)
+            if (parent in kept and parent != f["name"] and f["type"] in ("select", "range")
+                    and kept[parent] in DEPENDENCY_PARENT_TYPES):
+                deps.append(parent)
+            else:
+                losses.append(Loss(f"filter:{f['name']}",
+                                   f"dependency on {parent or pid!r} not preserved"))
+        if deps:
+            f["dependencies"] = deps
+    # A dependency on a parent of a type that cannot be one, or a cycle, would
+    # make the spec invalid; the spec validator names it, so leave it visible.
     return out
+
+
+def _scope_to_spec(nf: dict, f: dict, losses: list, name: str) -> None:
+    scoped = nf.get("sdc_scope_charts")
+    if scoped:
+        # Tool-born filters carry their name-based scope; the numeric
+        # live scope is derived from it by apply's scope stage.
+        f["charts"] = list(scoped)
+    elif (nf.get("scope") or {}).get("excluded"):
+        losses.append(Loss(
+            f"filter:{name}",
+            "chart scope not preserved (live scopes are numeric slice ids; "
+            "re-declare `charts` by name in the spec)",
+        ))
 
 
 def _geo(meta: dict) -> dict:
