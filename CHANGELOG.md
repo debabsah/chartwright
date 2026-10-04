@@ -3,6 +3,17 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
+## 0.2.1 (2026-10-04)
+
+### Fixed
+
+- Charts over time (line, bar, area and scatter charts, trendline KPIs, and mixed charts
+  with a time x axis) ignored both their own `time_range`, when set, and the dashboard's
+  time filter. They showed every date while the filter bar counted them as filtered.
+  - The next `apply` rewrites those charts, so both ranges work.
+  - `plan` does not flag dashboards built with 0.2.0, so run `apply` on them even when
+    `plan` is clean.
+
 ## 0.2.0 (2026-10-03)
 
 The design brain, plus the fixes found reviewing it.
