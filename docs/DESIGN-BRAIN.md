@@ -875,15 +875,26 @@ Recorded during the content standards (§18, "Content"):
     reaches the bundle.
 29. **A row has no identity beyond its content.** A row a standard wrote is
     found by the hash recorded for it, so authors can insert rows anywhere
-    without moving it. When no row holds that hash, the one unclaimed row
-    between its neighbours with the same shape (kind, background, widths
-    and heights; only the text differs) is the row, edited: released, and
-    the row `apply --locked` rewrites in place. With none or several, it
-    counts as removed. Either way the record becomes null: an edited row no
-    longer carries the standard's identity, so without the record apply
-    would add the standard's row beside the author's. For a dashboard
-    setting, a label colour or a chart's number format, an edit drops the
-    record as §16 does.
+    without moving it. The hash is taken over the row with its defaults
+    written out, since decompile writes a markdown block's width and height
+    back explicitly. When no row holds that hash, the row that is it, edited,
+    is the one unclaimed row of the same shape (kind, background, widths and
+    heights; only the text differs) where it stood: anywhere between two
+    present neighbours, and on the author's side of the managed rows only
+    the one row next to them, so an author's own row is never taken for it.
+    That row is released, and it is the row `apply --locked` rewrites in
+    place. With none or several, the row counts as removed. Either way the
+    record keeps the hash written, marked `"released": true`, rather than
+    becoming null: an edited row no longer carries the standard's identity,
+    so without a record apply would add the standard's row beside the
+    author's, and with the hash the record follows its row when the standard
+    adds, drops or reorders rows (a record keyed by place alone would hand
+    the release to the row that moved into that place). A row's record
+    moves with its hash, or stays at its place when the standard edited that
+    row. For a setting, a label colour, a number format or a CSS block (whose
+    markers keep its identity), an edit drops the record as §16 does, so a
+    later deletion of the author's value lets the standard write it again,
+    as a fill would.
 30. **§15.25's repairs and fills, accounted for.** A height repair that read
     a standard's parameter is geometry, which standards never write, and
     stays recordless and the author's: a later standard asking for more
@@ -1568,9 +1579,9 @@ everything else by value. The spec of an `ops` dashboard classified
     "dashboard.css[acme]": {"layer": "acme", "hash": "071e8af9c13a"},
     "dashboard.css[ops]": {"layer": "ops", "hash": "d54caf00ff9b"},
     "dashboard.label_colors[Revenue]": {"layer": "acme", "value": "#1FA8C9"},
-    "layout.footer[acme][0]": {"layer": "acme", "hash": "6589d7ebad6c"},
-    "layout.footer[acme][classification=confidential][0]": {"layer": "acme", "hash": "2085201c9be6"},
-    "layout.header[ops][0]": {"layer": "ops", "hash": "1004ad91c96a"}
+    "layout.footer[acme][0]": {"layer": "acme", "hash": "c2f56576d108"},
+    "layout.footer[acme][classification=confidential][0]": {"layer": "acme", "hash": "a1ec23028ea5"},
+    "layout.header[ops][0]": {"layer": "ops", "hash": "d3544e7e1c8c"}
   }
 }
 ```
@@ -1583,15 +1594,20 @@ that item and nothing else:
 | The spec holds | Unlocked | Locked |
 |---|---|---|
 | the value recorded | the standard's: refreshed when the standard changes | the same |
-| another value (an edited setting, label, format or block; a row of the same shape between the same neighbours) | released: the author's, and apply leaves it alone. A setting, label or format drops its record; a row or block whose author changed it gets a null record | a violation: an error in `standards check`, reported and left by `standards apply`, rewritten by `standards apply --locked` with `was` |
-| nothing, where the record has a value | deleted: a null record, never written again until the author deletes that entry | a violation, as above |
+| another value (an edited setting, label, format or block; for a row, the row of the same shape where it stood) | released: the author's, and apply leaves it alone. A setting, label, format or block drops its record, as a fill does (a block keeps its markers, so it stays the author's); a row's record keeps the hash written, marked `"released": true` | a violation: an error in `standards check`, reported and left by `standards apply`, rewritten by `standards apply --locked` with `was` |
+| nothing, where the record has a value | deleted: never written again until the author deletes that entry; a null record, or for a row the released record above | a violation, as above |
 | nothing, and no record | the standard's value is written | the same |
 | the standard's value, with no record (a decompiled or adopted dashboard) | left as it is, never written twice; `--claim` records it | the same; it already conforms |
 | a value of the author's, with no record | the author's | a violation |
 
-Header and footer rows are found by the hash recorded for them, so an author
-can insert rows anywhere. A row that no longer matches is, when it can be
-told, the one row of the same shape between its neighbours (§15.29).
+Header and footer rows are found by the hash recorded for them, taken over
+the row with its defaults written out (a markdown block's width and height),
+so an author can insert rows anywhere and a decompiled row still matches. A
+record follows its hash when the standard adds, drops or reorders rows, and a
+row that no longer matches is, when it can be told, the row of the same shape
+where it stood (§15.29). A new CSS block goes after any `@charset`, `@import`
+or `@namespace` the author's CSS starts with, which browsers honour only
+before every rule.
 `design.standard_written` and `design.filled` never record the same field
 (§15.30), and the record never reaches the bundle.
 
@@ -1614,9 +1630,9 @@ ops (acme -> ops), 3 specs
   dashboard.css[acme] (locked by acme): same change × 3 (add 071e8af9c13a)
   dashboard.css[ops]: same change × 3 (add d54caf00ff9b)
   dashboard.label_colors[Revenue]: same change × 3 (add #1FA8C9)
-  layout.footer[acme][0] (locked by acme): same change × 3 (add 6589d7ebad6c)
-  layout.footer[acme][classification=confidential][0] (locked by acme): add 2085201c9be6: specs/ops/delays.json
-  layout.header[ops][0]: same change × 3 (add 1004ad91c96a)
+  layout.footer[acme][0] (locked by acme): same change × 3 (add c2f56576d108)
+  layout.footer[acme][classification=confidential][0] (locked by acme): add a1ec23028ea5: specs/ops/delays.json
+  layout.header[ops][0]: same change × 3 (add d3544e7e1c8c)
 ```
 
 Later the `ops` file changes its header row; one author picked another colour
@@ -1635,7 +1651,7 @@ ops (acme -> ops), 3 specs
   dashboard.label_colors[Revenue]: 3 already current
   layout.footer[acme][0] (locked by acme): 1 changed by their authors but locked, left as they are (--locked rewrites them): specs/ops/routes.json; 2 already current
   layout.footer[acme][classification=confidential][0] (locked by acme): 1 already current
-  layout.header[ops][0]: same change × 3 (refresh 1514ac78374f)
+  layout.header[ops][0]: same change × 3 (refresh 3ea8388005ab)
 ```
 
 - `--check` writes nothing and exits 1 when a spec lacks locked content as

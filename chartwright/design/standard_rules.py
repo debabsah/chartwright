@@ -112,9 +112,15 @@ def content_released(ctx: RuleContext):
     for d in a.decisions:
         if d.locked_by or d.item is None or d.conforms:
             continue
-        if d.state not in ("released", "deleted", "author", "tombstone"):
+        if d.state not in ("released", "deleted", "author", "tombstone", "held"):
             continue
         what = _what(d.slot)
+        if d.state == "held":
+            yield Finding("standard.content-released", "info", None, d.id,
+                          f"{d.id}: the {d.layer} standard's certification details wait for "
+                          f"dashboard.certified_by, which you removed; standards apply adds "
+                          f"them once it is back")
+            continue
         if d.found is None and d.slot in C.ROW_SLOTS:
             # A row has no identity beyond its content: changed and removed look alike.
             detail = (f"{d.id}: no row holds the {d.layer} standard's {what} as it was "
@@ -128,7 +134,7 @@ def content_released(ctx: RuleContext):
                       f"standard's {_show(d.item.value, d.slot)}; standards apply leaves it "
                       f"alone")
         if d.state == "tombstone":
-            detail += (f" (delete its null entry in design.standard_written to take the "
+            detail += (f" (delete its entry in design.standard_written to take the "
                        f"standard's again)")
         yield Finding("standard.content-released", "info", None, d.id, detail)
 

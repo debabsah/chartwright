@@ -1604,9 +1604,15 @@ def _check_written_entry(key: str, record) -> None:
     if record is None:
         return  # the author's: deleted (or, for a row, changed); never written again
     by = "hash" if kind in ("row", "css") else "value"
-    if not isinstance(record, dict) or set(record) != {"layer", by}:
+    # A row the author took over keeps the hash written, marked released, so its record
+    # can follow it when the standard adds, drops or reorders rows.
+    keys = set(record) if isinstance(record, dict) else None
+    released = kind == "row" and keys == {"layer", "hash", "released"}
+    if keys != {"layer", by} and not released:
         raise ValueError(f"design.standard_written[{key!r}] must be null or "
                          f"{{\"layer\": ..., \"{by}\": ...}}, as standards apply writes it")
+    if released and record["released"] is not True:
+        raise ValueError(f"design.standard_written[{key!r}]: released must be true")
     layer = record["layer"]
     if not isinstance(layer, str) or not re.fullmatch(STANDARD_NAME, layer):
         raise ValueError(f"design.standard_written[{key!r}]: layer {layer!r} is not a "
@@ -1653,7 +1659,7 @@ class DesignConfig(BaseModel):
                     "and it is yours; delete it and --fix records null here and fills it no "
                     "more, until you delete that entry. Compile ignores this block.",
     )
-    standard_written: dict[str, dict[str, str] | None] = Field(
+    standard_written: dict[str, dict[str, Any] | None] = Field(
         default_factory=dict,
         description="Written by `chartwright standards apply`, not by hand: each item of "
                     "spec content a standard wrote (a header or footer row, a CSS block, a "

@@ -91,11 +91,46 @@ def _row_adapter():
 
 def canonical_row(row) -> Any:
     """A row (a model, or raw JSON) as the spec stores it: validated, then dumped with
-    only the keys written. Standard rows are written in this form, and spec rows are
-    hashed in it, so a row the standard wrote always hashes the same."""
+    only the keys written. Standard rows are written in this form."""
     adapter = _row_adapter()
     model = row if not isinstance(row, (dict, list)) else adapter.validate_python(row)
     return adapter.dump_python(model, mode="json", exclude_unset=True)
+
+
+def _num(v):
+    return int(v) if isinstance(v, float) and v.is_integer() else v
+
+
+def normal_row(row) -> Any:
+    """A row as it draws: every default written out (a markdown block's width as compile
+    resolves it, its height 4 when unset, a header's size and background). Decompile
+    writes these back explicitly, so a row is identified by this form: the standard's
+    row and the same row read back from Superset hash alike."""
+    adapter = _row_adapter()
+    model = row if not isinstance(row, (dict, list)) else adapter.validate_python(row)
+    items = row_items(model)
+    if items is None or any(isinstance(i, str) for i in items):
+        return adapter.dump_python(model, mode="json")
+    explicit = sum(i.width or 0 for i in items)
+    implicit = sum(1 for i in items if i.width is None)
+    base, rem = divmod(GRID_WIDTH - explicit, implicit) if implicit else (0, 0)
+    out, k = [], 0
+    for i in items:
+        width = i.width
+        if width is None:   # largest remainder, as compile resolves it
+            width, k = max(1, base + (1 if k < rem else 0)), k + 1
+        out.append({"markdown": i.markdown, "width": width,
+                    "height": _num(i.height if i.height is not None else 4)})
+    return {"row": out, "background": getattr(model, "background", "transparent")}
+
+
+def row_hash(row) -> str:
+    return content_hash(normal_row(row))
+
+
+def css_hash(body: str) -> str:
+    """A CSS block's hash; line endings don't count."""
+    return content_hash(body.replace("\r\n", "\n"))
 
 
 # -- parsing a standards file's content ------------------------------------------
@@ -308,11 +343,21 @@ class Item:
 
     @property
     def stamp(self) -> str:
-        return content_hash(self.value) if self.by == "hash" else self.value
+        return stamp_of(self.slot, self.value)
 
     @property
     def record(self) -> dict:
         return {"layer": self.layer, self.by: self.stamp}
+
+
+def stamp_of(slot: str, value):
+    """What the record holds for a value of this slot: a row's or a CSS block's hash,
+    or the value itself."""
+    if slot in ROW_SLOTS:
+        return row_hash(value)
+    if slot == "css":
+        return css_hash(value)
+    return value
 
 
 def _locked_by(std, slot: str, index: int) -> str | None:
@@ -415,6 +460,8 @@ class Block:
     layer: str
     stamp: str   # the hash in the opening marker
     body: str
+    raw: str | None = None   # the block as read, rendered back unchanged (line endings
+    #                          included); None for a block apply writes
 
 
 def parse_css(css: str) -> list:
@@ -444,11 +491,15 @@ def parse_css(css: str) -> list:
             if open_at is None or open_at[1] != layer:
                 raise MarkerError(f"/* cw:end {layer} */ closes no {layer} block")
             body = css[open_at[0].end():m.start()]
-            if body.startswith("\n"):
-                body = body[1:]
-            if body.endswith("\n"):
-                body = body[:-1]
-            out.append(Block(layer, open_at[2], body))
+            for eol in ("\r\n", "\n"):
+                if body.startswith(eol):
+                    body = body[len(eol):]
+                    break
+            for eol in ("\r\n", "\n"):
+                if body.endswith(eol):
+                    body = body[:-len(eol)]
+                    break
+            out.append(Block(layer, open_at[2], body, css[open_at[0].start():m.end()]))
             seen.add(layer)
             pos = m.end()
             open_at = None
@@ -460,12 +511,14 @@ def parse_css(css: str) -> list:
 
 
 def render_block(layer: str, body: str) -> str:
-    return f"/* cw:std {layer} {content_hash(body)} */\n{body}\n/* cw:end {layer} */"
+    return f"/* cw:std {layer} {css_hash(body)} */\n{body}\n/* cw:end {layer} */"
 
 
 def render_segment(seg) -> str:
     if isinstance(seg, str):
         return seg
+    if seg.raw is not None:
+        return seg.raw
     return f"/* cw:std {seg.layer} {seg.stamp} */\n{seg.body}\n/* cw:end {seg.layer} */"
 
 
@@ -489,15 +542,16 @@ class Decision:
     slot: str
     layer: str
     state: str           # current | add | refresh | remove | unrecorded | released |
-    #                      deleted | author | tombstone | forget
+    #                      deleted | author | tombstone | forget | held
     item: Item | None    # None: the standard no longer has this recorded item
     found: Any = None    # what the spec holds (a row, a CSS body, a string), or None
     record: Any = MISSING  # the new record: MISSING keeps it, None writes null, "drop"
     #                        drops it, a dict writes it
     at: int | None = None  # rows: the spec row this item is (or the edited copy, for a
     #                        released row); None when absent
-    unmarked: tuple[int, int] | None = None  # css: the standard's text, found unmarked
-    #                                          (segment, offset)
+    unmarked: bool = False  # css: the standard's text, found unmarked in the CSS
+    moved_from: str | None = None  # rows: the key the record had before the standard's
+    #                                list changed (_realign)
 
     @property
     def locked_by(self) -> str | None:
@@ -521,7 +575,7 @@ class Decision:
 
 def _same(item: Item, value) -> bool:
     if item.by == "hash":
-        return content_hash(value) == item.stamp
+        return stamp_of(item.slot, value) == item.stamp
     return value == item.value
 
 
@@ -574,6 +628,13 @@ def analyze(std, spec) -> Analysis:
     scalar_items = [i for i in expected if i.by == "value"]
     for item in scalar_items:
         _scalar(out, item, scalar_value(item.id), records.get(item.id, MISSING))
+    by_id = {d.id: d for d in out.decisions}
+    details, cert = by_id.get("dashboard.certification_details"), by_id.get("dashboard.certified_by")
+    if (details is not None and details.state == "add" and dash.get("certified_by") is None
+            and (cert is None or cert.state != "add")):
+        # Superset shows details only on a certified dashboard, and the spec refuses
+        # them alone: they wait until certified_by is back.
+        details.state, details.record = "held", MISSING
     seen = {i.id for i in expected}
     for item_id, rec in sorted(records.items()):
         kind, _ = standard_item_kind(item_id)
@@ -624,12 +685,60 @@ def _scalar(out: Analysis, item: Item, current, rec) -> None:
     out.decisions.append(d)
 
 
+def _group(item_id: str) -> str:
+    """A row item's group: its slot, layer and condition, without its place in the list."""
+    return item_id[:item_id.rindex("[")]
+
+
+def _released(rec) -> bool:
+    """A row record the author took over: null, or a hash marked released."""
+    return rec is None or bool(rec.get("released"))
+
+
+def _realign(expected: list[Item], recs: dict) -> tuple[dict, dict, dict]:
+    """Records keyed by the expected item they now belong to, the records of items the
+    standard no longer has, and {new key: old key} for each record that moved.
+
+    A row item is keyed by its place in its layer's list, so a standard that adds,
+    drops or reorders rows would hand one row's record to another. A record follows the
+    hash it was written with instead: kept where the row at its place still has that
+    hash, moved to the row that has it now, and otherwise left at its place, which is a
+    row the standard edited (refreshed if the standard's, still the author's if
+    released)."""
+    stamps = {i.id: i.stamp for i in expected}
+    taken: dict[str, str] = {}      # new id -> old id
+    left = sorted(recs, key=lambda k: (_group(k), int(k[k.rindex("[") + 1:-1])))
+    for old in list(left):          # 1. same place, same hash
+        rec = recs[old]
+        if rec and stamps.get(old) == rec["hash"]:
+            taken[old] = old
+            left.remove(old)
+    for old in list(left):          # 2. the hash moved within its group
+        rec = recs[old]
+        if not rec:
+            continue
+        new = next((i.id for i in expected if i.id not in taken and _group(i.id) == _group(old)
+                    and i.stamp == rec["hash"]), None)
+        if new is not None:
+            taken[new] = old
+            left.remove(old)
+    for old in list(left):          # 3. same place, the standard edited the row
+        if old in stamps and old not in taken:
+            taken[old] = old
+            left.remove(old)
+    aligned = {new: recs[old] for new, old in taken.items()}
+    orphans = {old: recs[old] for old in left}
+    moved = {new: old for new, old in taken.items() if new != old}
+    return aligned, orphans, moved
+
+
 def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
                records: dict) -> None:
     rows = (view.get("layout") or {}).get(slot) or []
-    hashes = [content_hash(r) for r in rows]
+    hashes = [row_hash(r) for r in rows]
     prefix = f"layout.{slot}["
-    recs = {k: v for k, v in records.items() if k.startswith(prefix)}
+    recs, orphans, moved = _realign(
+        expected, {k: v for k, v in records.items() if k.startswith(prefix)})
     claimed: dict[int, str] = {}
     located: dict[str, int] = {}
 
@@ -640,10 +749,9 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
                 return i
         return None
 
-    ids = [i.id for i in expected] + sorted(k for k in recs if k not in {i.id for i in expected})
-    for item_id in ids:
-        rec = recs.get(item_id)
-        if rec:
+    for item_id, rec in [*((i.id, recs.get(i.id)) for i in expected),
+                         *sorted(orphans.items())]:
+        if rec and not _released(rec):
             at = take(item_id, rec["hash"])
             if at is not None:
                 located[item_id] = at
@@ -655,15 +763,21 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
                 matched[item.id] = at
     present = {**located, **matched}
 
-    def gap_copy(k: int) -> int | None:
-        """The row that is this item, edited: between the item's present neighbours, not
-        any other item's, and of the same shape as the standard's row (the same kind,
-        background, and item widths and heights; only text differs). Exactly one such row,
-        or none: a row has no identity beyond its content, so anything less certain is
-        read as removed."""
+    def edited_copy(k: int) -> int | None:
+        """The row that is this item, edited: not any other item's, of the same shape as
+        the standard's row (kind, background, item widths and heights; only text
+        differs), and where the item stood. Between two present neighbours that is any
+        row in the gap; on the author's side of the managed rows (below the header's,
+        above the footer's) only the one row next to them, so an author's own row is
+        never taken for it. Exactly one such row, or none: anything less certain is read
+        as removed."""
         before = [present[e.id] for e in expected[:k] if e.id in present]
         after = [present[e.id] for e in expected[k + 1:] if e.id in present]
         lo, hi = (max(before) + 1 if before else 0), (min(after) if after else len(rows))
+        if slot == "header" and not after:
+            hi = min(lo + 1, len(rows))
+        elif slot == "footer" and not before:
+            lo = max(hi - 1, 0)
         want = row_shape(expected[k].value)
         free = [i for i in range(lo, hi) if i not in claimed and row_shape(rows[i]) == want]
         if len(free) != 1:
@@ -673,7 +787,9 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
 
     for k, item in enumerate(expected):
         rec = recs.get(item.id, MISSING)
-        d = Decision(item.id, slot, item.layer, "current", item)
+        d = Decision(item.id, slot, item.layer, "current", item, moved_from=moved.get(item.id))
+        if d.moved_from:
+            d.record = rec                        # the record follows its row
         if item.id in located:
             d.at = located[item.id]
             d.found = rows[d.at]
@@ -684,26 +800,29 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
             d.found = rows[d.at]
             if rec is MISSING:
                 d.state = "unrecorded"
-            elif rec is None:
+            elif _released(rec):
                 d.state = "tombstone"
             else:
                 d.record = item.record            # caught up with the standard
         elif rec is MISSING:
             d.state, d.record = "add", item.record
-        elif rec is None:
+        elif _released(rec):
             d.state = "tombstone"
+            d.at = edited_copy(k)                 # what --locked would put back over
+            d.found = rows[d.at] if d.at is not None else None
         else:
-            # Recorded, and no row holds what was written: the author changed it (one
-            # unclaimed row where it stood) or removed it. Either way a null record: a
-            # changed row no longer carries the standard's identity, so without the
-            # record apply would add the standard's row beside the author's.
-            d.at = gap_copy(k)
+            # Recorded, and no row holds what was written: the author changed it (the
+            # row of its shape where it stood) or removed it. Either way released, the
+            # record keeping the hash written: a changed row no longer carries the
+            # standard's identity, so without the record apply would add the standard's
+            # row beside the author's, and with the hash the record follows the row if
+            # the standard reorders its list.
+            d.at = edited_copy(k)
             d.found = rows[d.at] if d.at is not None else None
             d.state = "released" if d.at is not None else "deleted"
-            d.record = None
+            d.record = {"layer": rec["layer"], "hash": rec["hash"], "released": True}
         out.decisions.append(d)
-    for item_id in sorted(set(recs) - {i.id for i in expected}):
-        rec = recs[item_id]
+    for item_id, rec in sorted(orphans.items()):
         layer = standard_item_kind(item_id)[1].group(2)
         if item_id in located:
             at = located[item_id]
@@ -716,12 +835,13 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
 
 def row_shape(row) -> tuple:
     """A row without its text: what an author's edit of a standard's row keeps."""
-    if isinstance(row, dict) and "header" in row:
-        return ("header", row.get("size"), row.get("background"))
-    if isinstance(row, dict) and "divider" in row:
+    n = normal_row(row)
+    if isinstance(n, dict) and "header" in n:
+        return ("header", n.get("size"), n.get("background"))
+    if isinstance(n, dict) and "divider" in n:
         return ("divider",)
-    items = row_items(row) or []
-    return ("row", row.get("background") if isinstance(row, dict) else None,
+    items = row_items(n) or []
+    return ("row", n.get("background") if isinstance(n, dict) else None,
             tuple((i.get("width"), i.get("height")) if isinstance(i, dict) else ("chart", i)
                   for i in items))
 
@@ -746,7 +866,7 @@ def _css_slot(out: Analysis, view: dict, expected: list[Item], records: dict) ->
         d = Decision(item.id, "css", item.layer, "current", item)
         if blk is not None:
             d.found = blk.body
-            body = content_hash(blk.body)
+            body = css_hash(blk.body)
             if rec is MISSING:
                 d.state = "unrecorded" if body == item.stamp else "author"
             elif rec is None:
@@ -765,7 +885,7 @@ def _css_slot(out: Analysis, view: dict, expected: list[Item], records: dict) ->
             if spot is not None:
                 # Unmarked, word for word: a UI-built or decompiled dashboard that already
                 # carries it. --claim marks and records it; apply never adds a second copy.
-                d.found, d.unmarked = item.value, spot
+                d.found, d.unmarked = item.value, True
                 d.state = "tombstone" if rec is None else "unrecorded"
             elif rec is MISSING:
                 d.state, d.record = "add", item.record
@@ -778,7 +898,7 @@ def _css_slot(out: Analysis, view: dict, expected: list[Item], records: dict) ->
         rec = recs[item_id]
         layer = standard_item_kind(item_id)[1].group(1)
         blk = blocks.get(layer)
-        if rec is not None and blk is not None and content_hash(blk.body) == rec["hash"]:
+        if rec is not None and blk is not None and css_hash(blk.body) == rec["hash"]:
             out.decisions.append(Decision(item_id, "css", layer, "remove", None,
                                           found=blk.body, record="drop"))
         else:
@@ -812,6 +932,10 @@ class Change:
     to: Any = None       # the new value or hash
     was: Any = None      # the value or hash it replaces
 
+    # The decision this change acts on: a removed item and a new one can share a key
+    # when the standard's rows move, so execute pairs a change with its decision.
+    decision: Any = field(default=None, repr=False, compare=False)
+
     def as_dict(self) -> dict:
         out = {"item": self.item, "action": self.action, "layer": self.layer}
         if self.locked_by:
@@ -826,11 +950,16 @@ class Change:
 CONTENT_ACTIONS = ("add", "refresh", "remove", "claim", "rewrite")
 
 
-def _shown(value, by: str):
+def _shown(value, slot: str):
     """A value as a change shows it: rows and CSS by hash, the rest as they are."""
     if value is None:
         return None
-    return content_hash(value) if by == "hash" else value
+    return stamp_of(slot, value)
+
+
+def _add(out: list, d, change: "Change") -> None:
+    change.decision = d
+    out.append(change)
 
 
 def plan_changes(analysis: Analysis, *, locked: bool = False,
@@ -840,29 +969,28 @@ def plan_changes(analysis: Analysis, *, locked: bool = False,
     keep the record in step (`release`, `tombstone`, `forget`, `record`)."""
     out = []
     for d in analysis.decisions:
-        by = "hash" if d.slot in ROW_SLOTS + ("css",) else "value"
         item = d.item
-        new = _shown(item.value, by) if item else None
-        found = _shown(d.found, by)
+        new = _shown(item.value, d.slot) if item else None
+        found = _shown(d.found, d.slot)
         if d.violation:
             if locked:
-                out.append(Change(d.id, "rewrite", d.layer, d.locked_by, to=new, was=found))
+                _add(out, d, Change(d.id, "rewrite", d.layer, d.locked_by, to=new, was=found))
             continue
         if d.state in ("add", "refresh"):
-            out.append(Change(d.id, d.state, d.layer, d.locked_by, to=new,
+            _add(out, d, Change(d.id, d.state, d.layer, d.locked_by, to=new,
                               was=found if d.state == "refresh" else None))
         elif d.state == "remove":
-            out.append(Change(d.id, "remove", d.layer, was=found))
+            _add(out, d, Change(d.id, "remove", d.layer, was=found))
         elif d.state == "unrecorded" and claim:
-            out.append(Change(d.id, "claim", d.layer, d.locked_by, to=new))
+            _add(out, d, Change(d.id, "claim", d.layer, d.locked_by, to=new))
         elif d.state == "released":
-            out.append(Change(d.id, "release", d.layer, d.locked_by, was=new, to=found))
+            _add(out, d, Change(d.id, "release", d.layer, d.locked_by, was=new, to=found))
         elif d.state == "deleted":
-            out.append(Change(d.id, "tombstone", d.layer, d.locked_by, was=new))
+            _add(out, d, Change(d.id, "tombstone", d.layer, d.locked_by, was=new))
         elif d.state == "forget":
-            out.append(Change(d.id, "forget", d.layer))
+            _add(out, d, Change(d.id, "forget", d.layer))
         elif d.record is not MISSING:
-            out.append(Change(d.id, "record", d.layer, d.locked_by,
+            _add(out, d, Change(d.id, "record", d.layer, d.locked_by,
                               to=new if isinstance(d.record, dict) else None))
     return out
 
@@ -891,14 +1019,13 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
     spec a standard no longer touches carries no trace."""
     out = copy.deepcopy(data)
     changes = plan_changes(analysis, locked=locked, claim=claim)
-    by_id = {d.id: d for d in analysis.decisions}
-    acting = {c.item: c for c in changes}
+    acting = {id(c.decision): c for c in changes}
     design = out.get("design") or {}
     written = dict(design.get("standard_written") or {})
     filled = {k: dict(v) for k, v in (design.get("filled") or {}).items()}
 
     def content_op(d: Decision) -> str | None:
-        c = acting.get(d.id)
+        c = acting.get(id(d))
         return c.action if c is not None and c.action in CONTENT_ACTIONS else None
 
     # Rows: one rebuilt list per slot.
@@ -911,7 +1038,8 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
         for e in entries:
             e.append(None)
         for d in ds:
-            if d.at is not None and d.item is not None and d.state != "released":
+            if d.at is not None and d.item is not None and d.state not in (
+                    "released", "tombstone"):
                 entries[d.at][2] = d.id
         for d in ds:
             op = content_op(d)
@@ -962,18 +1090,15 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
                 continue
             i = index_of(d.layer)
             if op == "remove":
-                _drop_block(segs, i)
-            elif op == "claim" and d.unmarked is not None:
-                si, off = d.unmarked
-                text = segs[si]
-                body = d.item.value
-                parts = [text[:off], Block(d.layer, content_hash(body), body),
-                         text[off + len(body):]]
-                segs[si:si + 1] = [p for p in parts if not (isinstance(p, str) and p == "")]
+                if i is not None:
+                    _drop_block(segs, i)
+            elif op == "claim" and d.unmarked and i is None and _wrap_unmarked(
+                    segs, Block(d.layer, css_hash(d.item.value), d.item.value)):
+                pass
             elif i is not None:
-                segs[i] = Block(d.layer, content_hash(d.item.value), d.item.value)
+                segs[i] = Block(d.layer, css_hash(d.item.value), d.item.value)
             else:
-                _insert_block(segs, Block(d.layer, content_hash(d.item.value), d.item.value),
+                _insert_block(segs, Block(d.layer, css_hash(d.item.value), d.item.value),
                               chain_order)
         css = join_css(segs)
         if css.strip():
@@ -1010,9 +1135,17 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
 
     # The record: a content change records what it wrote (a removal drops the entry);
     # every other change does what the decision says to the record.
+    # Keys freed first (a record that moved, an item the standard dropped), then written,
+    # since a freed key can be the very key a moved record lands on.
     for d in analysis.decisions:
-        c = acting.get(d.id)
-        if c is None:
+        if id(d) in acting:
+            if d.moved_from:
+                written.pop(d.moved_from, None)
+            if d.item is None and d.record == "drop":
+                written.pop(d.id, None)
+    for d in analysis.decisions:
+        c = acting.get(id(d))
+        if c is None or d.item is None:
             continue
         if c.action in ("add", "refresh", "claim", "rewrite"):
             written[d.id] = d.item.record
@@ -1037,9 +1170,29 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
     return out, changes
 
 
+def _wrap_unmarked(segs: list, block: Block) -> bool:
+    """Mark the standard's text where it sits unmarked in the CSS (--claim). Searched in
+    the segments as they are now, since blocks written before this one moved them."""
+    for i, seg in enumerate(segs):
+        if isinstance(seg, str) and block.body in seg:
+            at = seg.index(block.body)
+            parts = [seg[:at], block, seg[at + len(block.body):]]
+            segs[i:i + 1] = [p for p in parts if not (isinstance(p, str) and p == "")]
+            return True
+    return False
+
+
+# @charset, @import and @namespace must come before every rule, or browsers drop them.
+_LEADING_AT_RULES = re.compile(
+    r"(?:\s*(?:/\*.*?\*/\s*)*@(?:charset|import|namespace)\b[^;]*;[ \t]*\n?)+", re.S)
+
+
 def _insert_block(segs: list, block: Block, chain_order: list[str]) -> None:
     """A new block goes after the blocks of the layers above it and before those below;
-    with no block yet, first in the CSS, with the author's CSS after it."""
+    with no block yet, first in the CSS (after any @charset, @import and @namespace the
+    author's CSS starts with), with the author's CSS after it. A block brings the one
+    newline that follows it, which _drop_block takes away again, so adding and removing
+    blocks leaves the author's CSS byte for byte."""
     rank = {l: i for i, l in enumerate(chain_order)}
     mine = rank.get(block.layer, len(rank))
     at = None
@@ -1049,13 +1202,24 @@ def _insert_block(segs: list, block: Block, chain_order: list[str]) -> None:
     if at is None:
         at = next((i for i, s in enumerate(segs)
                    if isinstance(s, Block) and rank.get(s.layer, len(rank)) > mine), 0)
+    if at == 0 and segs and isinstance(segs[0], str):
+        m = _LEADING_AT_RULES.match(segs[0])
+        if m and m.end():
+            head, rest = segs[0][:m.end()], segs[0][m.end():]
+            segs[0:1] = [head, *([rest] if rest else [])]
+            at = 1
+    elif (at > 0 and isinstance(segs[at - 1], Block) and at < len(segs)
+          and isinstance(segs[at], str) and segs[at].startswith("\n")):
+        # After a block: after the newline that block brought.
+        segs[at:at + 1] = ["\n", *([segs[at][1:]] if segs[at][1:] else [])]
+        at += 1
     before = segs[at - 1] if at > 0 else None
     after = segs[at] if at < len(segs) else None
     new: list = []
     if before is not None and not render_segment(before).endswith("\n"):
         new.append("\n")
     new.append(block)
-    if after is not None and not render_segment(after).startswith("\n"):
+    if after is not None:
         new.append("\n")
     segs[at:at] = new
 
@@ -1087,10 +1251,10 @@ def owned_rows(spec) -> set[tuple[str, int]]:
     out = set()
     for slot in ROW_SLOTS:
         rows = (view.get("layout") or {}).get(slot) or []
-        hashes = [content_hash(r) for r in rows]
+        hashes = [row_hash(r) for r in rows]
         claimed: set[int] = set()
         for key, rec in sorted(records.items()):
-            if rec and key.startswith(f"layout.{slot}["):
+            if rec and not rec.get("released") and key.startswith(f"layout.{slot}["):
                 at = next((i for i, h in enumerate(hashes)
                            if h == rec["hash"] and i not in claimed), None)
                 if at is not None:
@@ -1128,6 +1292,9 @@ def explain_rows(std, spec) -> list[dict]:
                        if d.state == "refresh" else None)
         elif d.state == "add":
             source, pending = "missing", "standards apply adds it"
+        elif d.state == "held":
+            source = "missing"
+            pending = "waits for dashboard.certified_by, which the author removed"
         elif d.state == "unrecorded":
             source = "author"
             pending = "it matches the standard: standards apply --claim records it as the standard's"
@@ -1149,8 +1316,9 @@ def explain_rows(std, spec) -> list[dict]:
             override = "after standards apply adds it, delete it to keep it off this dashboard"
         else:
             override = "it is yours: edit it freely"
-            if records.get(d.id, MISSING) is None:
-                override += ("; delete its null entry in design.standard_written to take the "
+            rec = records.get(d.id, MISSING)
+            if rec is None or (isinstance(rec, dict) and rec.get("released")):
+                override += ("; delete its entry in design.standard_written to take the "
                              "standard's again")
         row = {"item": d.id, "slot": d.slot, "layer": d.layer, "locked": d.locked_by is not None}
         if d.locked_by:
@@ -1236,7 +1404,7 @@ def describe(value, slot: str, width: int = 40) -> str:
             text = json.dumps(" ".join(text.split()), ensure_ascii=False)
     elif slot == "css":
         lines = [l for l in value.splitlines() if l.strip()]
-        text = f"{content_hash(value)} ({len(lines)} line{'s' if len(lines) != 1 else ''})"
+        text = f"{css_hash(value)} ({len(lines)} line{'s' if len(lines) != 1 else ''})"
     else:
         text = json.dumps(value, ensure_ascii=False)
     return text if len(text) <= width else text[:width - 3] + "..."

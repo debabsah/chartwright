@@ -422,6 +422,7 @@ def standards_show(name: str = "", spec_json: str = "") -> str:
 
 
 @mcp.tool()
+@_typed_errors
 def standards_apply(spec_json: str, check: bool = False, locked: bool = False,
                     claim: bool = False) -> str:
     """The CLI's `standards apply` for one spec, offline: writes the content of the spec's

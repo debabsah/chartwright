@@ -965,15 +965,16 @@ def apply_spec(data: dict, spec, std: Standard, *, locked: bool = False,
     entry["stale"] = C.stale(analysis)
     entry["locked_stale"] = C.locked_stale(analysis)
     entry["locked"] = [d.id for d in analysis.decisions if d.violation and d.id not in acted]
-    entry["decisions"] = analysis.decisions   # for the summary; dropped from the payload
+    # For the summary, each decision with the change made on it; dropped from the payload.
+    by_decision = {id(c.decision): c.as_dict() for c in changes}
+    entry["decisions"] = [(d, by_decision.get(id(d))) for d in analysis.decisions]
     entry["errors"] = errors
     entry["ok"] = not errors and not entry["locked"]
     return new, entry
 
 
-def _bucket(d, changes: dict) -> tuple[str, object]:
+def _bucket(d, c: dict | None) -> tuple[str, object]:
     """Where one spec's decision on one item lands in the grouped summary."""
-    c = changes.get(d.id)
     if c is not None and c["action"] in ("add", "refresh", "remove", "claim", "rewrite"):
         return "change", (c["action"], c.get("to"))
     if d.violation:
@@ -982,7 +983,7 @@ def _bucket(d, changes: dict) -> tuple[str, object]:
         return "unrecorded", None
     if d.conforms or d.state == "current":
         return "current", None
-    if d.state in ("released", "deleted", "author", "tombstone"):
+    if d.state in ("released", "deleted", "author", "tombstone", "held"):
         return "released", None
     return "other", None
 
@@ -998,12 +999,11 @@ def apply_summary(entries: list[dict]) -> list[dict]:
         group = by_std.setdefault(e["standard"], {"chain": e["chain"], "specs": 0,
                                                   "items": {}})
         group["specs"] += 1
-        changes = {c["item"]: c for c in e["changes"]}
-        for d in e["decisions"]:
+        for d, change in e["decisions"]:
             item = group["items"].setdefault(d.id, {
                 "item": d.id, "layer": d.layer, "locked_by": d.locked_by,
                 "changes": {}, "current": 0, "released": [], "locked": [], "unrecorded": []})
-            where, key = _bucket(d, changes)
+            where, key = _bucket(d, change)
             if where == "change":
                 item["changes"].setdefault(key, []).append(e["spec"])
             elif where == "current":

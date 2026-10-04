@@ -193,9 +193,9 @@ def test_apply_writes_every_slot_and_records_each_item(repo, capsys):
     # The author's footer row stays first; the org's legal row sits at the very bottom.
     assert data["layout"]["footer"] == [[{"markdown": "my note", "width": 12}], ORG_FOOTER]
     assert data["dashboard"]["css"] == (
-        "/* cw:std org " + C.content_hash(".dashboard-markdown { font-family: Inter; }")
+        "/* cw:std org " + C.css_hash(".dashboard-markdown { font-family: Inter; }")
         + " */\n.dashboard-markdown { font-family: Inter; }\n/* cw:end org */\n"
-        "/* cw:std finance " + C.content_hash(".dashboard-markdown h2 { color: #003366; }")
+        "/* cw:std finance " + C.css_hash(".dashboard-markdown h2 { color: #003366; }")
         + " */\n.dashboard-markdown h2 { color: #003366; }\n/* cw:end finance */\n"
         ".mine { color: red; }")
     assert data["dashboard"]["color_scheme"] == "supersetColors"
@@ -207,7 +207,7 @@ def test_apply_writes_every_slot_and_records_each_item(repo, capsys):
     written = data["design"]["standard_written"]
     assert list(written) == sorted(written)
     assert written["layout.footer[org][0]"] == {"layer": "org",
-                                                "hash": C.content_hash(ORG_FOOTER)}
+                                                "hash": C.row_hash(ORG_FOOTER)}
     assert written["dashboard.color_scheme"] == {"layer": "finance", "value": "supersetColors"}
     assert written["charts[K].number_format"] == {"layer": "finance", "value": ",.0f"}
     assert set(written) == {
@@ -276,11 +276,12 @@ def test_an_unlocked_row_the_author_edits_is_released_and_never_added_again(repo
     data = read(path)
     assert data["layout"]["header"] == [[{"markdown": "Finance (ours)", "width": 12,
                                           "height": 1}]]
-    assert data["design"]["standard_written"]["layout.header[finance][0]"] is None
+    assert data["design"]["standard_written"]["layout.header[finance][0]"] == {
+        "layer": "finance", "hash": C.row_hash(FIN_HEADER), "released": True}
     # Released, not deleted: the edited row (same shape, other text) stands where it was.
     ours = [{"markdown": "Finance (ours)", "width": 12, "height": 1}]
     assert {"item": "layout.header[finance][0]", "action": "release", "layer": "finance",
-            "was": C.content_hash(FIN_HEADER), "to": C.content_hash(ours)} in out["specs"][0][
+            "was": C.row_hash(FIN_HEADER), "to": C.row_hash(ours)} in out["specs"][0][
         "changes"]
     released = findings(capsys, path, "standard.content-released")
     assert [f["where"] for f in released] == ["layout.header[finance][0]"]
@@ -298,8 +299,8 @@ def test_an_unlocked_row_the_author_deletes_is_a_tombstone(repo, capsys):
     apply(capsys, str(path))
     data = read(path)
     assert "header" not in data["layout"]
-    assert data["design"]["standard_written"]["layout.header[finance][0]"] is None
-    # Deleting the null entry takes the standard's row again.
+    assert data["design"]["standard_written"]["layout.header[finance][0]"]["released"] is True
+    # Deleting the entry takes the standard's row again.
     edit(path, lambda d: d["design"]["standard_written"].pop("layout.header[finance][0]"))
     apply(capsys, str(path))
     assert read(path)["layout"]["header"] == [FIN_HEADER]
@@ -324,7 +325,7 @@ def test_a_locked_row_the_author_edits_is_a_violation_only_locked_rewrites(repo,
     assert code == 0
     change = next(c for c in out["specs"][0]["changes"] if c["item"] == "layout.footer[org][0]")
     assert change["action"] == "rewrite" and change["locked_by"] == "org"
-    assert change["was"] == C.content_hash([{"markdown": "Share freely", "width": 12,
+    assert change["was"] == C.row_hash([{"markdown": "Share freely", "width": 12,
                                              "height": 1}])
     assert read(path)["layout"]["footer"] == [[{"markdown": "my note", "width": 12}], ORG_FOOTER]
     assert findings(capsys, path, "standard.content-locked") == []
@@ -518,6 +519,178 @@ def test_a_standard_dropping_an_item_removes_only_its_own_copy(repo, capsys):
                    for k in read(other)["design"]["standard_written"])
 
 
+# -- edge cases a review found --------------------------------------------------
+
+
+def two_layer_css(tmp_path, css: str):
+    a = "name: a\ndefault: true\ncontent: {css: '.x { color: red; }'}\n"
+    b = "name: b\nextends: a\ncontent: {css: '.y { color: blue; }'}\n"
+    repo = make_repo(tmp_path / "r", {"a.yaml": a, "b.yaml": b}).parent
+    return spec_file(repo, standard="b", data={**DATA, "dashboard": {**DATA["dashboard"],
+                                                                     "css": css}})
+
+
+@pytest.mark.parametrize("css", [
+    ".x { color: red; }\n.y { color: blue; }",              # both unmarked (decompiled)
+    "/* mine */\n.x { color: red; }\n.y { color: blue; }",  # with the author's CSS first
+    ".y { color: blue; }",                                  # one unmarked, one to add
+])
+def test_claim_marks_each_layers_css_once(tmp_path, capsys, css):
+    path = two_layer_css(tmp_path, css)
+    code, out = apply(capsys, str(path), "--claim")
+    assert code == 0, out
+    got = read(path)["dashboard"]["css"]
+    segs = C.parse_css(got)
+    assert [s.layer for s in segs if isinstance(s, C.Block)] == ["a", "b"]
+    assert got.count(".x { color: red; }") == 1 and got.count(".y { color: blue; }") == 1
+    assert "*//*" not in got
+    assert apply(capsys, str(path))[1]["specs"][0]["changes"] == []
+
+
+def test_blocks_go_after_the_authors_imports(tmp_path, capsys):
+    css = "@import url('https://fonts.example.com/inter.css');\n.mine { color: red; }"
+    path = two_layer_css(tmp_path, css)
+    apply(capsys, str(path))
+    got = read(path)["dashboard"]["css"]
+    assert got.startswith("@import url('https://fonts.example.com/inter.css');\n/* cw:std a ")
+    assert got.endswith("/* cw:end b */\n.mine { color: red; }")
+
+
+@pytest.mark.parametrize("css", ["\n\n.mine{}", "\n.mine{}\n", ".mine{}", "a{}\r\nb{}"])
+def test_adding_and_removing_blocks_leaves_the_authors_css_byte_for_byte(tmp_path, capsys, css):
+    path = two_layer_css(tmp_path, css)
+    std_dir = path.parent.parent / "standards"
+    for _ in range(2):
+        apply(capsys, str(path))
+        (std_dir / "a.yaml").write_text("name: a\ndefault: true\n", encoding="utf-8")
+        (std_dir / "b.yaml").write_text("name: b\nextends: a\n", encoding="utf-8")
+        apply(capsys, str(path))
+        assert read(path)["dashboard"]["css"] == css
+        (std_dir / "a.yaml").write_text(
+            "name: a\ndefault: true\ncontent: {css: '.x { color: red; }'}\n", encoding="utf-8")
+        (std_dir / "b.yaml").write_text(
+            "name: b\nextends: a\ncontent: {css: '.y { color: blue; }'}\n", encoding="utf-8")
+
+
+def test_line_endings_inside_a_block_are_no_edit(tmp_path, capsys):
+    path = two_layer_css(tmp_path, "")
+    apply(capsys, str(path))
+    edit(path, lambda d: d["dashboard"].update(css=d["dashboard"]["css"].replace("\n", "\r\n")))
+    _, out = apply(capsys, str(path), "--check")
+    assert out["specs"][0]["changes"] == []
+
+
+def rows_repo(tmp_path, header: list[str]):
+    rows = ", ".join(f"[{{markdown: '{t}', width: 12, height: 1}}]" for t in header)
+    repo = make_repo(tmp_path / "r", {"a.yaml": f"name: a\ndefault: true\ncontent: "
+                                                f"{{header: [{rows}]}}\n"}).parent
+    return repo
+
+
+def md(text):
+    return [{"markdown": text, "width": 12, "height": 1}]
+
+
+def test_a_released_row_stays_released_when_the_standard_adds_a_row_above_it(
+        tmp_path, capsys):
+    repo = rows_repo(tmp_path, ["Title", "Contact"])
+    path = spec_file(repo)
+    apply(capsys, str(path))
+    edit(path, lambda d: d["layout"]["header"].__setitem__(0, md("My own title")))
+    apply(capsys, str(path))
+    (repo / "standards" / "a.yaml").write_text(
+        "name: a\ndefault: true\ncontent: {header: [[{markdown: 'NEW banner', width: 12, "
+        "height: 1}], [{markdown: Title, width: 12, height: 1}], [{markdown: Contact, "
+        "width: 12, height: 1}]]}\n", encoding="utf-8")
+    apply(capsys, str(path))
+    header = [r[0]["markdown"] for r in read(path)["layout"]["header"]]
+    assert sorted(header) == ["Contact", "My own title", "NEW banner"]
+    written = read(path)["design"]["standard_written"]
+    assert written["layout.header[a][1]"]["released"] is True
+    assert written["layout.header[a][1]"]["hash"] == C.row_hash(md("Title"))
+    assert apply(capsys, str(path))[1]["specs"][0]["changes"] == []
+
+
+def test_a_released_row_stays_released_when_the_standard_drops_a_row_above_it(
+        tmp_path, capsys):
+    repo = rows_repo(tmp_path, ["R0", "R1", "R2"])
+    path = spec_file(repo)
+    apply(capsys, str(path))
+    edit(path, lambda d: d["layout"]["header"].__setitem__(1, md("R1 mine")))
+    apply(capsys, str(path))
+    (repo / "standards" / "a.yaml").write_text(
+        "name: a\ndefault: true\ncontent: {header: [[{markdown: R1, width: 12, height: 1}], "
+        "[{markdown: R2, width: 12, height: 1}]]}\n", encoding="utf-8")
+    apply(capsys, str(path))
+    assert [r[0]["markdown"] for r in read(path)["layout"]["header"]] == ["R1 mine", "R2"]
+    # The released record moved with its row (R1 is now the standard's row 0), and the
+    # dropped R0's key went to it, not lost under the removal.
+    assert read(path)["design"]["standard_written"] == {
+        "layout.header[a][0]": {"layer": "a", "hash": C.row_hash(md("R1")), "released": True},
+        "layout.header[a][1]": {"layer": "a", "hash": C.row_hash(md("R2"))}}
+    assert apply(capsys, str(path))[1]["specs"][0]["changes"] == []
+
+
+def test_a_row_reads_alike_with_or_without_its_defaults_written(tmp_path, capsys):
+    """Decompile writes a markdown block's width and height back explicitly."""
+    org = ("name: org\ndefault: true\ncontent: {footer: [[{markdown: 'Legal'}]]}\n"
+           "locked: {content: [footer]}\n")
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo)
+    apply(capsys, str(path))
+    edit(path, lambda d: (d["layout"]["footer"].__setitem__(
+        -1, [{"markdown": "Legal", "width": 12, "height": 4}]), d.pop("design")))
+    assert apply(capsys, str(path), "--check")[0] == 0
+    code, out = apply(capsys, str(path), "--claim")
+    assert {c["action"] for c in out["specs"][0]["changes"]} == {"claim"}
+    assert [r[0]["markdown"] for r in read(path)["layout"]["footer"]].count("Legal") == 1
+
+
+def test_locked_never_takes_an_authors_own_row_for_the_standards(tmp_path, capsys):
+    org = ("name: org\ndefault: true\ncontent: {footer: [[{markdown: Legal, width: 12, "
+           "height: 1}]]}\nlocked: {content: [footer]}\n")
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo)
+    apply(capsys, str(path))
+    edit(path, lambda d: (d["layout"]["footer"].pop(),
+                          d["layout"]["footer"].insert(0, md("My disclaimer, keep me"))))
+    apply(capsys, str(path), "--locked")
+    footer = [r[0]["markdown"] for r in read(path)["layout"]["footer"]]
+    assert footer == ["My disclaimer, keep me", "my note", "Legal"]
+
+
+def test_certification_details_wait_for_a_certified_by_the_author_removed(tmp_path, capsys):
+    org = "name: org\ndefault: true\ncontent: {certified_by: Platform, footer: [[{markdown: A}]]}\n"
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo)
+    apply(capsys, str(path))
+    edit(path, lambda d: d["dashboard"].pop("certified_by"))
+    apply(capsys, str(path))
+    (repo / "standards" / "org.yaml").write_text(
+        "name: org\ndefault: true\ncontent: {certified_by: Platform, certification_details: "
+        "Reviewed, footer: [[{markdown: B}]]}\n", encoding="utf-8")
+    code, out = apply(capsys, str(path))
+    assert code == 0, out
+    data = read(path)
+    assert "certification_details" not in data["dashboard"]
+    assert data["layout"]["footer"][-1] == [{"markdown": "B"}]
+    [f] = [f for f in findings(capsys, path, "standard.content-released")
+           if f["where"] == "dashboard.certification_details"]
+    assert "wait for dashboard.certified_by" in f["detail"]
+
+
+def test_mcp_standards_apply_returns_a_typed_error_not_a_raise(repo, monkeypatch):
+    monkeypatch.setenv("CHARTWRIGHT_STANDARDS_DIR", str(repo / "standards"))
+    import chartwright.design.standards as st
+
+    def boom(*a, **k):
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(st, "apply_spec", boom)
+    out = mcp_call("standards_apply", spec_json=json.dumps(DATA))
+    assert out["ok"] is False and out["errors"][0]["code"] == "unexpected"
+
+
 # -- lifecycle and classification ----------------------------------------------
 
 
@@ -702,7 +875,7 @@ def test_the_text_summary_says_same_change_times_n(repo, capsys):
     assert code == 0 and text.startswith("standards apply: 3 specs following a standard; "
                                          "wrote 3, 0 unchanged")
     assert (f"layout.footer[org][0] (locked by org): same change × 3 (add "
-            f"{C.content_hash(ORG_FOOTER)})") in text
+            f"{C.row_hash(ORG_FOOTER)})") in text
 
 
 def test_one_pull_request_per_team(repo, capsys):
@@ -837,7 +1010,7 @@ def test_explain_has_a_dashboard_section(repo, capsys):
     footer = rows["layout.footer[org][0]"]
     assert (footer["layer"], footer["locked"], footer["locked_by"], footer["source"]) == (
         "org", True, "org", "standard")
-    assert footer["value"] == ORG_FOOTER and footer["recorded"]["hash"] == C.content_hash(ORG_FOOTER)
+    assert footer["value"] == ORG_FOOTER and footer["recorded"]["hash"] == C.row_hash(ORG_FOOTER)
     assert "org's standards file" in footer["override"]
     scheme = rows["dashboard.color_scheme"]
     assert (scheme["source"], scheme["value"], scheme["standard"]) == (

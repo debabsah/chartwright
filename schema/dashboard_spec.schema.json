@@ -1413,9 +1413,7 @@
           "additionalProperties": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "type": "string"
-                },
+                "additionalProperties": true,
                 "type": "object"
               },
               {
