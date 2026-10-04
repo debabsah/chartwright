@@ -355,18 +355,64 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         # (utils/mergeCustomEChartOptions.ts: arrays replace, so never a mixed chart's yAxis).
         p["echart_options"] = json.dumps(p["echart_options"])
 
-    # Bind charts without their own TIME column to the dataset's main temporal
-    # column. The dashboard time filter reaches a chart only through a time
-    # binding; without one the chart silently ignores it while the filter bar
-    # still counts it as filtered (verified live on 6.1.0: full-month total
-    # under a one-week default). The categorical bar's x_axis is not a time
-    # column, so it needs the binding too.
-    timeseries = ("timeseries_line", "timeseries_bar", "timeseries_area",
-                  "timeseries_scatter", "big_number_trend")
-    time_x = t == "mixed" and "time_grain_sqla" in p
-    if t not in timeseries and not time_x and ds.main_dttm_col:
+    # A time range, the chart's own or a dashboard time filter's, reaches a query
+    # only through a time binding; without one the chart silently ignores it while
+    # the filter bar still counts it as filtered.
+    #
+    # The backend applies a query's time_range to the WHERE clause only through
+    # `granularity` (get_sqla_query, superset/models/helpers.py at 4.1.4, 5.0.0 and
+    # 6.1.0), which the frontend sends from granularity_sqla. A chart without a time
+    # axis binds the dataset's main time column there (verified live on 6.1.0: a
+    # full-month total under a one-week dashboard default before the binding). The
+    # categorical bar's x_axis is not a time column, so it needs the binding too.
+    #
+    # A chart drawn on a time axis can't take that binding: with granularity set,
+    # _apply_granularity (superset/common/query_context_factory.py) swaps the x-axis
+    # column for it. Superset's own charts filter the axis with an adhoc
+    # TEMPORAL_RANGE filter instead, applied whatever the granularity, and
+    # _apply_filters sets its value to the query's time_range: the chart's own, or
+    # the dashboard filter's. Without it, these charts returned every row on all
+    # three releases (seen live: a line chart limited to 2004-03-01 : 2005-03-02
+    # still drew 2003 to 2005).
+    axis = time_axis_column(chart, ds)
+    if axis:
+        temporal = _temporal_range_filter(axis, p["time_range"])
+        p["adhoc_filters"] = p["adhoc_filters"] + [temporal]
+        if t == "mixed":
+            p["adhoc_filters_b"] = p["adhoc_filters_b"] + [temporal]
+    elif ds.main_dttm_col:
         p["granularity_sqla"] = ds.main_dttm_col
     return p
+
+
+# Chart types whose x axis is always their time column.
+TIME_AXIS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area",
+                   "timeseries_scatter", "big_number_trend")
+
+
+def time_axis_column(chart, ds) -> str | None:
+    """The time column a chart draws its x axis on, or None for a chart without a
+    time axis. The compiler and smoke share it, so the smoke query is filtered the
+    way the chart is."""
+    if chart.type in TIME_AXIS_TYPES:
+        return chart.time_column
+    if chart.type == "mixed" and mixed_time_axis(chart, ds):
+        return chart.x_column
+    return None
+
+
+def _temporal_range_filter(column: str, time_range: str) -> dict:
+    # The shape Explore saves for the "Time range" filter pill (all three releases).
+    # Its comparator matches the chart's time_range: a non-empty time_range, "No
+    # filter" included, overwrites it at query time (_apply_filters), so the two
+    # can't disagree.
+    return {
+        "clause": "WHERE",
+        "expressionType": "SIMPLE",
+        "subject": column,
+        "operator": "TEMPORAL_RANGE",
+        "comparator": time_range,
+    }
 
 
 def mixed_time_axis(chart, ds) -> bool:

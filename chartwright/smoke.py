@@ -17,7 +17,7 @@ import math
 from dataclasses import dataclass
 
 from .client import SupersetClient
-from .compiler import _metric_payload, mixed_time_axis
+from .compiler import _metric_payload, mixed_time_axis, time_axis_column
 from .resolver import Resolution
 from .spec import GRID_HEADER_UNITS, DashboardSpec, grid_units_for_rows
 
@@ -67,6 +67,24 @@ class SmokeResult:
 
 def _filters_payload(chart) -> list[dict]:
     return [{"col": f.column, "op": f.op, "val": f.value} for f in chart.filters]
+
+
+def _with_time_range(q: dict, chart, ds) -> dict:
+    """The chart's own time_range, bound the way the compiled chart binds it: a
+    TEMPORAL_RANGE filter on a time axis (compiler.time_axis_column), else the
+    dataset's main time column as granularity. A chart without a time_range, or
+    without a binding, keeps the unfiltered query."""
+    time_range = getattr(chart, "time_range", None)
+    if not time_range:
+        return q
+    axis = time_axis_column(chart, ds)
+    if axis:
+        q["time_range"] = time_range
+        q["filters"] = q["filters"] + [{"col": axis, "op": "TEMPORAL_RANGE", "val": time_range}]
+    elif ds.main_dttm_col:
+        q["time_range"] = time_range
+        q["granularity"] = ds.main_dttm_col
+    return q
 
 
 def _time_axis(column: str, grain: str | None) -> dict:
@@ -144,7 +162,7 @@ def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
         out.append({
             "filters": _filters_payload(chart),
             "extras": {"time_grain_sqla": chart.time_grain or "P1D"},
-            "time_range": chart.time_range or "No filter",
+            "time_range": "No filter",
             "row_limit": chart.row_limit or 1000,
             "columns": [x] + ([series.groupby] if series.groupby else []),
             "metrics": [_metric_payload(m, spec.dashboard.slug, chart.name) for m in series.metrics],
@@ -157,7 +175,8 @@ def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: Supe
     ds = resolution.for_chart(chart.dataset)
     ctx = {
         "datasource": {"id": ds.id, "type": "table"},
-        "queries": _mixed_queries(chart, spec, ds) if chart.type == "mixed" else [_query_for(chart, spec)],
+        "queries": [_with_time_range(q, chart, ds) for q in (
+            _mixed_queries(chart, spec, ds) if chart.type == "mixed" else [_query_for(chart, spec)])],
         "result_format": "json",
         "result_type": "full",
     }

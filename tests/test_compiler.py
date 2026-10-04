@@ -30,7 +30,11 @@ def test_compile_is_byte_stable():
 def test_golden_bytes():
     """The whole guarantee in one assert. Regenerate deliberately with:
     .venv/bin/python -c "from tests.test_compiler import regen; regen()"
-    and review the diff."""
+    and review the diff.
+
+    Last regenerated for 0.2.1: "Sales Over Time" gained the TEMPORAL_RANGE adhoc
+    filter on its time axis, so its own and the dashboard's time range apply
+    (tests/test_chart_time_range.py). Every other member is byte-identical."""
     assert GOLDEN.exists(), "golden missing; run regen() and commit the result"
     assert _bundle() == GOLDEN.read_bytes()
 
