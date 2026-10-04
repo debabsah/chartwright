@@ -35,9 +35,9 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (672 tests, 50 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (680 tests, 50 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
-| Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
+| Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
 | Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every PR and push to main, all 3 versions |
 | Fault injection | A typed failure at every stage boundary; complete restore | every PR and push to main, all 3 versions |
@@ -125,7 +125,14 @@ apply of the complete example spec (`tests/fixtures/kitchen_sink.json`),
 which exercises all 15 chart types, per-chart WHERE filters, a native
 filter bar with two value pickers and a time range, plus markdown and tabs.
 (A numeric range filter scoped to specific charts is exercised live by the
-second-writer and fault-injection runs.) Then a per-chart data check: each
+second-writer and fault-injection runs.) The same check then runs on two
+more specs, `tests/fixtures/live_display_controls.json` (every chart display
+control: legends, axis titles and bounds, stacking, labels, table and pivot
+options) and `tests/fixtures/live_dashboard_controls.json` (dashboard
+settings, colour schemes, goal lines, layout headers, cascading and
+pre-filtered native filters, time grain and time column filters). They are
+the offline display and dashboard controls fixtures pointed at Superset's
+example data. Each apply is followed by a per-chart data check: each
 chart's query must return HTTP 200 and rows; an empty chart is a named
 warning, never a silent pass. Finally a second apply of the same spec,
 asserting that every chart keeps its id. Id stability matters because
@@ -243,7 +250,9 @@ python tools/params_drift.py --all         # chart options vs plugin source, 3 v
 
 # live (any sandbox; sandbox/up.sh --tag <v> boots one)
 export SDC_CI_PASSWORD=admin
-python tools/ci_live_check.py --base-url http://localhost:8098
+python tools/ci_live_check.py --base-url http://localhost:8098   # kitchen sink
+python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_display_controls.json
+python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
 python tools/soak.py       --base-url http://localhost:8098 --cycles 500 --seed 1
 python tools/adversary.py  --base-url http://localhost:8098
 python tools/faultline.py  --base-url http://localhost:8098

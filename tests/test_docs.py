@@ -118,3 +118,46 @@ def test_package_version_matches_pyproject():
 
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert chartwright.__version__ == project["version"]
+
+
+FIXTURES = REPO / "tests" / "fixtures"
+SPEC_FIXTURES = sorted(p for p in FIXTURES.glob("*.json"))
+LIVE_FIXTURES = sorted(FIXTURES.glob("live_*.json"))
+
+
+@pytest.mark.parametrize("path", SPEC_FIXTURES, ids=lambda p: p.name)
+def test_every_spec_fixture_compiles_offline(path):
+    """The live fixtures are applied by CI against a real Superset, but they
+    must also validate and compile here with stub ids, like every other spec."""
+    from chartwright.compiler import compile_bundle
+    from chartwright.spec import load_spec
+    from chartwright.testing import stub_resolution
+
+    spec = load_spec(json.loads(path.read_text(encoding="utf-8")))
+    assert compile_bundle(spec, stub_resolution(spec))
+
+
+def test_fixture_slugs_are_distinct_and_carry_a_tool_prefix():
+    """CI applies several fixtures to one instance, and people apply them to
+    instances that hold real dashboards: a slug like `airline-operations`
+    collided with one in use. Every fixture slug is unique and prefixed."""
+    slugs = {p.name: json.loads(p.read_text(encoding="utf-8"))["dashboard"]["slug"]
+             for p in SPEC_FIXTURES}
+    assert len(set(slugs.values())) == len(slugs), slugs
+    assert all(s.startswith(("sdc-", "cw-")) for s in slugs.values()), slugs
+
+
+def test_the_live_job_applies_kitchen_sink_and_every_live_fixture():
+    """Each Superset version in the live matrix applies the kitchen sink and
+    every tests/fixtures/live_*.json spec through tools/ci_live_check.py."""
+    import yaml
+
+    assert len(LIVE_FIXTURES) >= 2, "expected the live display and dashboard controls fixtures"
+    ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    live = ci["jobs"]["live"]
+    assert set(live["strategy"]["matrix"]["superset"]) == {"4.1.4", "5.0.0", "6.1.0"}
+    runs = [s["run"] for s in live["steps"] if "ci_live_check.py" in s.get("run", "")]
+    wanted = ["tests/fixtures/kitchen_sink.json"] + [
+        f"tests/fixtures/{p.name}" for p in LIVE_FIXTURES]
+    for fixture in wanted:
+        assert any(f"--spec {fixture}" in r for r in runs), (fixture, runs)

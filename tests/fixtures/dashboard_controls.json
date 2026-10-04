@@ -2,7 +2,7 @@
   "spec_version": "1",
   "dashboard": {
     "title": "Airline Operations",
-    "slug": "airline-operations",
+    "slug": "sdc-dashboard-controls",
     "color_scheme": "supersetColors",
     "description": "On-time performance and delay causes, refreshed hourly.",
     "certified_by": "Data Platform",
