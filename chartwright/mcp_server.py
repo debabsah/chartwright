@@ -99,8 +99,9 @@ def validate_spec(spec_json: str) -> str:
 
 
 def _standards():
-    """The server's standards: the directory $CHARTWRIGHT_STANDARDS_DIR names, since a
-    tool sees a spec and never its path (design/standards.py)."""
+    """The server's standards: the directory $CHARTWRIGHT_STANDARDS_DIR names, or the one
+    discovered from the server's working directory, since a tool sees a spec and never
+    its path (design/standards.py)."""
     from .design.standards import StandardsSource
 
     return StandardsSource.from_env()
@@ -380,7 +381,8 @@ def standards_check(spec_json: str, strict: bool = False) -> str:
     setting the per-machine design.yaml aside. ok is false on an error finding, or on a
     warn when strict. Returns the standard chain, the findings (each with the layer that
     set its severity and whether a standard locks its rule) and the locks applied. The
-    standards directory is the server's $CHARTWRIGHT_STANDARDS_DIR."""
+    standards directory is the server's $CHARTWRIGHT_STANDARDS_DIR, or the one found
+    from its working directory."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
@@ -404,7 +406,8 @@ def standards_show(name: str = "", spec_json: str = "") -> str:
     """The CLI's `standards show --json`: a standard after its extends chain, each key
     with its value, the layer that set it and whether it is locked. Name the standard,
     or pass spec_json for the standard that spec follows; neither shows the default
-    standard. The standards directory is the server's $CHARTWRIGHT_STANDARDS_DIR."""
+    standard. The standards directory is the server's $CHARTWRIGHT_STANDARDS_DIR, or the
+    one found from its working directory."""
     from .design.standards import StandardsError, show
 
     spec = None

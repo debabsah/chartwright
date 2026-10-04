@@ -818,13 +818,34 @@ def test_mcp_advice_tools_apply_the_servers_standard(repo, monkeypatch, capsys):
         "standards_dir": shown["standards_dir"]}
 
 
-def test_mcp_without_a_configured_directory_says_how_to_set_one(repo):
+def test_mcp_without_a_configured_directory_says_how_to_set_one(repo, tmp_path, monkeypatch):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)  # no repository here: nothing to discover
     spec = write_spec(repo / "specs" / "fin.json", standard="finance")
     out = mcp_call("advise_spec", spec_json=spec.read_text())
     assert out["ok"] is False and out["errors"][0]["code"] == "no_standards_dir"
-    assert "CHARTWRIGHT_STANDARDS_DIR" in out["errors"][0]["detail"]
+    detail = out["errors"][0]["detail"]
+    assert "CHARTWRIGHT_STANDARDS_DIR" in detail and "working directory" in detail
+    assert "\n" not in detail
     out = mcp_call("standards_check", spec_json=json.dumps(DATA))
     assert out["errors"][0]["code"] == "no_standards_dir"
+    # A spec that names no standard gets no note at all, as on the CLI.
+    plain = mcp_call("advise_spec", spec_json=json.dumps(DATA))
+    assert "standard" not in plain and "errors" not in plain
+
+
+def test_mcp_discovers_from_its_working_directory_without_the_variable(repo, monkeypatch,
+                                                                         capsys):
+    """Started inside the repository, the server applies what the CLI applies: here the
+    default standard to a spec that names none."""
+    spec = write_spec(repo / "specs" / "s.json")
+    _, cli = run(capsys, "advise", str(spec))
+    assert cli["standard"]["name"] == "org"
+    monkeypatch.chdir(repo / "specs")
+    assert mcp_call("advise_spec", spec_json=spec.read_text()) == cli
+    checked = mcp_call("standards_check", spec_json=spec.read_text())
+    assert checked["standard"] == "org" and checked["via"] == "default"
 
 
 # -- the team without standards, and the bundle -------------------------------

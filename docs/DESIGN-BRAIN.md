@@ -165,7 +165,8 @@ chartwright standards assign <specs...> --standard NAME [--standards DIR]
   `standards_check`, `standards_show` and `redesign_dashboard` mirror the CLI
   verbs; `check_spec` and `build_dashboard` carry the advice block and take
   `design` (`off`/`warn`/`strict`, the CLI's `--design`). The tools apply the
-  standards in `$CHARTWRIGHT_STANDARDS_DIR` (§18).
+  standards in `$CHARTWRIGHT_STANDARDS_DIR`, or those discovered from the
+  server's working directory (§18).
 
 ## 5. Spec surface
 
@@ -1246,7 +1247,9 @@ the repository root, the first folder holding `.git`:
 
 A spec that names a standard when no folder is found is an error, never a
 silent pass. The MCP server sees specs, not paths, so it reads the folder
-`$CHARTWRIGHT_STANDARDS_DIR` names; the CLI never reads that variable, so a
+`$CHARTWRIGHT_STANDARDS_DIR` names, or, without the variable, discovers one
+from its own working directory the same way; started inside the repository,
+it applies what the CLI applies. The CLI never reads that variable, so a
 setting on one machine can't change a CLI run.
 
 ### Where a standard applies

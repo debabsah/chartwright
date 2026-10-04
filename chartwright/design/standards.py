@@ -462,10 +462,17 @@ class StandardsSource:
     @classmethod
     def from_env(cls) -> "StandardsSource":
         """The MCP server's standards: it sees specs, never paths, so the directory is
-        configured for the server."""
-        hint = f"set {ENV} for the MCP server to the repository's standards directory"
+        $CHARTWRIGHT_STANDARDS_DIR, or else the one discovered from the server's working
+        directory, as the CLI discovers from a spec's folder."""
+        hint = (f"set {ENV} for the MCP server to the repository's standards directory, "
+                f"or start the server with a working directory inside the repository")
         d = os.environ.get(ENV)
-        return cls(Path(d), hint=hint) if d else cls(hint=hint)
+        if d:
+            return cls(Path(d), hint=hint)
+        try:
+            return cls(discover(Path.cwd()), hint=hint)
+        except StandardsError as e:
+            return cls(error=e, hint=hint)
 
     def load(self) -> Standards | None:
         if self.error is not None:

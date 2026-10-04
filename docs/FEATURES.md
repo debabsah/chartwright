@@ -94,7 +94,7 @@ into one. Everything below works from that one file.
     - A finding of a locked rule is fixed in the spec; to change the lock itself, edit the file that sets it in a pull request.
 - **One Check for the Whole Folder**: `chartwright standards check specs/` reviews every spec under its standard and exits 1 on any error finding, or on warnings too with `--strict`, ready as a CI gate. It sets `design.yaml` aside, so it gives the same result on every machine.
     - `--report` sums up the folder as JSON: per dashboard its standard, pass or fail, findings by rule and severity, and the locks it hit; then totals per rule and per standard.
-- Through MCP, set `CHARTWRIGHT_STANDARDS_DIR` for the server: the advice tools then apply each spec's standard, and `standards_check` and `standards_show` answer as the CLI does.
+- Through MCP, start the server inside the repository, or point `CHARTWRIGHT_STANDARDS_DIR` at the folder: the advice tools then apply each spec's standard, and `standards_check` and `standards_show` answer as the CLI does.
 - Standards shape the design review only: a spec compiles to the same bundle with or without one, and `plan` compares the same fields. Without a `standards/` folder, none of this applies.
 
 ## Dashboards as Code
