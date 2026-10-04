@@ -873,6 +873,53 @@ def test_show_lists_content_with_layer_and_lock(repo, capsys):
     assert "content.footer[org][0]" in text and "locked" in text
 
 
+# -- the page that documents it -----------------------------------------------
+
+
+def test_the_content_example_in_the_design_brain_page_is_what_the_tool_does(
+        tmp_path, monkeypatch, capsys):
+    """DESIGN-BRAIN.md sec.18 "Content": its two files, exactly as printed, give the
+    record, the two summaries and the explain lines printed there, for three ops
+    dashboards (delays is confidential)."""
+    text = (REPO / "docs" / "DESIGN-BRAIN.md").read_text(encoding="utf-8")
+    section = text[text.index("### Content"):]
+    files = {}
+    for block in [b.split("```", 1)[0] for b in section.split("```yaml\n")[1:3]]:
+        first = block.splitlines()[0]
+        files[first[len("# standards/"):].strip()] = block
+    root = tmp_path / "r"
+    make_repo(root, files)
+    monkeypatch.chdir(root)
+    for title, cls in (("Delays", "confidential"), ("Fleet", "internal"), ("Routes", "internal")):
+        write_spec(Path("specs/ops") / f"{title.lower()}.json", {
+            "spec_version": "1",
+            "dashboard": {"title": title, "slug": f"ops-{title.lower()}", "classification": cls},
+            "charts": [{"type": "big_number_total", "name": "Flights",
+                        "dataset": {"database": "examples", "table": "flights"},
+                        "metric": "COUNT(*) AS Flights"}],
+            "layout": {"rows": [["Flights"]],
+                       "footer": [[{"markdown": "Source: DOT on-time data", "width": 12}]]},
+        }, standard="ops")
+
+    def printed(after: str) -> str:
+        return section.split(f"```\n{after}", 1)[1].split("```", 1)[0]
+
+    code, out = run(capsys, "standards", "apply", "specs/ops")
+    assert code == 0 and out == "standards apply:" + printed("standards apply:")
+    record = json.loads("{" + section.split("```json\n\"design\": {", 1)[1].split("```")[0])
+    assert read(Path("specs/ops/delays.json"))["design"] == record
+    edit(Path("specs/ops/fleet.json"), lambda d: d["dashboard"].update(color_scheme="bnbColors"))
+    edit(Path("specs/ops/routes.json"),
+         lambda d: d["layout"]["footer"][1][0].update(markdown="Acme Corp."))
+    ops = root / "standards" / "teams" / "ops.yaml"
+    ops.write_text(ops.read_text().replace("#ops-data", "#ops-analytics"), encoding="utf-8")
+    code, out = run(capsys, "standards", "apply", "specs/ops", "--check")
+    assert code == 1 and out == "standards apply --check:" + printed("standards apply --check:")
+    explained = run_ok(capsys, "explain", "specs/ops/routes.json")
+    for line in printed("Dashboard content").splitlines()[1:]:
+        assert line.strip() in explained, line
+
+
 # -- MCP parity ---------------------------------------------------------------
 
 

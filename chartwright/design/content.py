@@ -1136,6 +1136,8 @@ def explain_rows(std, spec) -> list[dict]:
         else:
             source, pending = "released", None
         if d.violation:
+            # A locked item is never released: the spec holds the author's change to it.
+            source = "author"
             pending = "standards apply --locked puts the standard's back"
         if d.locked_by:
             override = (f"{d.locked_by} locks it: change it in {d.locked_by}'s standards "

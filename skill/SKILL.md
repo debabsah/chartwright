@@ -66,7 +66,16 @@ approximate it with a different mechanism.
    what it sets, and an unknown name is an error naming the standards that
    exist. Never create or edit a file in `standards/`
    unless the user asks you to: those are the team's shared rules, reviewed
-   by their owners. Leave the design-default fields unset unless the user
+   by their owners. A standard can carry content (header and footer rows,
+   CSS blocks marked `/* cw:std ... */`, colours, certification, number
+   formats): run `CW standards apply <abs-spec-path>` after writing the spec
+   and after every edit (MCP: `standards_apply`, keep the spec it returns).
+   Never write, edit or delete that content yourself, and never edit
+   `design.standard_written`: an unlocked item you change becomes the
+   author's for good and stops following the standard, and a locked one you
+   change is an error. Set `dashboard.lifecycle` or `dashboard.classification`
+   only when the user states them; apply then brings in the rows the
+   standard keys off them. Leave the design-default fields unset unless the user
    asked for a value (the brief lists them: time-axis label format, compare
    suffix, count number formats, table cell bars, page size and search box,
    a single series' legend, values on few bars); step 6 fills them.
@@ -97,6 +106,11 @@ approximate it with a different mechanism.
    finding with `"locked": true` belongs to a rule the spec's standard locks:
    `design.ignore` can't silence it (the advice lists it under
    `refused_ignores`), so fix the spec or tell the user the lock blocks it.
+   A `standard.content-locked` error is fixed, never ignored: run
+   `CW standards apply <abs-spec-path>` (it adds or refreshes the standard's
+   content); when the error says the content was changed by hand, show the
+   user the finding and ask before running `--locked`, which puts the
+   standard's version back over theirs.
    At most 2 design iterations, then surface the remaining findings verbatim.
 7. `CW apply <abs-spec-path> --profile <profile>`: on success give the user
    the dashboard_url and any smoke warnings verbatim. Apply backs up the
@@ -140,6 +154,8 @@ learns from them over time (`CW calibrate`).
 | Retry apply a 4th time with random changes | Stop; surface all errors verbatim |
 | Advice finding seems wrong; hand-tune to dodge it | Record it in the spec's `design.ignore` and tell the user, or report a rule bug |
 | A locked finding blocks; edit `standards/` to loosen the lock, or add the rule to `design.ignore` | Never touch `standards/` unasked; fix the spec, or show the user the finding and the layer that locks it |
+| A standard's footer, header, CSS block or colour is in the way; edit or delete it, or regenerate the spec without it | Leave the content `design.standard_written` records alone; tell the user which standard file sets it. Regenerated specs lose it: edit the file `standards apply` wrote, and run it again after each change |
+| A `standard.content-locked` error; add it to `design.ignore` or hand-copy text until it passes | Run `CW standards apply`; if the content was changed by hand, ask the user before `--locked` |
 | A design default you'd rather not have; rewrite the spec without it | Delete the field from the file `--fix` wrote (a deleted fill stays deleted), or add `"default.rule@Chart Name"` to `design.ignore`; tell the user |
 | "Quick" dashboard via POST /api/v1/dashboard/ | Never; the guarantee only exists through chartwright |
 | Auth fails; hunt for password variables or files | Show the ProfileError; the user names their env var or password_cmd |

@@ -1,7 +1,7 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 5** (4 added `narrative.color-scheme`; 5 the
-> design defaults of §16). This page is both the design and the
+> **Status: SHIPPED, design brain 6** (4 added `narrative.color-scheme`; 5 the
+> design defaults of §16; 6 the `standard.*` rules of §18's content). This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -104,7 +104,9 @@ chartwright/design/
   defaults.py      the default.* fills (§16): one decision per field, one shared driver
   explain.py       `chartwright explain`: each design-default field's value and source
   presets.py       audience parameter tables + design.yaml overlay
-  standards.py     repository standards (§18): load, extends, locks, check, report
+  standards.py     repository standards (§18): load, extends, locks, check, report, apply
+  content.py       standard content (§18): slots, the per-item record, CSS blocks, apply
+  standard_rules.py  the standard.* rules: content checked against the spec
   fix.py           apply_fixes(spec_data, findings) -> (new_data, applied)
   brief.py         render_brief(audience) -> markdown
   probe.py         bounded cardinality probes (data-aware rules)
@@ -126,6 +128,8 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
 chartwright standards check <specs...> [--strict] [--report] [--standards DIR]
 chartwright standards show [NAME | --for SPEC] [--json] [--standards DIR]
 chartwright standards assign <specs...> --standard NAME [--standards DIR]
+chartwright standards apply <specs...> [--check] [--locked] [--claim] [--standard NAME]
+                                       [--json] [--standards DIR]
 ```
 
 - `advise` (offline by default): evaluates the spec, prints an
@@ -157,12 +161,14 @@ chartwright standards assign <specs...> --standard NAME [--standards DIR]
     runs.
 - `calibrate`: the learning loop (§13 phase 3). Mines absorb history into
   per-audience recommended heights; `--since` is the decay knob.
-- `standards check | show | assign`: the repository's standards (§18).
+- `standards check | show | assign | apply`: the repository's standards (§18);
+  `apply` writes a standard's content into its specs.
   `advise`, `explain`, `check` and `apply` apply the spec's standard when a
   standards folder is found; `--standards DIR` names the folder.
 - MCP server: `design_brief`, `advise_spec` (with `chart` and `strict`),
   `fix_spec` (with `strict`), `explain_spec` (the `explain --json` payload),
-  `standards_check`, `standards_show` and `redesign_dashboard` mirror the CLI
+  `standards_check`, `standards_show`, `standards_apply` (with `check`,
+  `locked` and `claim`) and `redesign_dashboard` mirror the CLI
   verbs; `check_spec` and `build_dashboard` carry the advice block and take
   `design` (`off`/`warn`/`strict`, the CLI's `--design`). The tools apply the
   standards in `$CHARTWRIGHT_STANDARDS_DIR`, or those discovered from the
@@ -177,7 +183,8 @@ One additive optional block (models stay `extra="forbid"`):
   "audience": "executive",
   "ignore": ["size.pie-geometry", "layout.fold-budget@Ops Detail"],
   "standard": "finance",
-  "filled": {"Orders": {"page_length": 8, "search_box": true}}
+  "filled": {"Orders": {"page_length": 8, "search_box": true}},
+  "standard_written": {"layout.footer[org][0]": {"layer": "org", "hash": "0b7cd41bcb55"}}
 }
 ```
 
@@ -198,6 +205,10 @@ One additive optional block (models stay `extra="forbid"`):
   fill the author deleted (§16). Validated against the charts (a renamed
   chart carries its entry along) and each value against its field's type.
   Compile, plan and decompile ignore it.
+- `standard_written`: written by `standards apply`, not by hand: each item of
+  content a standard wrote and its value or hash (§18, "Content"). A field
+  recorded here is never in `filled` too. Compile, plan and decompile ignore
+  it.
 
 Precedence everywhere: CLI flag > spec `design` block > built-in default,
 except that nothing silences a rule the spec's standard locks (§18).
@@ -407,7 +418,7 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
 {
   "stage": "design",
   "ok": true,
-  "design_brain": "5",
+  "design_brain": "6",
   "audience": "analytical",
   "counts": {"error": 0, "warn": 2, "info": 1},
   "findings": [
@@ -651,6 +662,39 @@ reversible and none is load-bearing enough to block on:
     - **The name "standards"** avoids the words already taken: connection
       profiles, audiences, Superset themes, and "house style", which names
       `design.yaml`.
+16. **Standard content is written into specs, with an ownership record per
+    item** (2026-10-04, the third phase of the same decision record, which
+    settles its decisions 3, 6, 7 and 8 for content). §18, "Content":
+    - **Written, never merged at compile.** `standards apply` writes a
+      standard's content into each spec that follows it; compile, `plan`,
+      decompile and MCP's build and plan still read the spec alone, and a
+      spec without standard content builds the same bytes as before.
+    - **A closed list of slots:** header and footer rows, a CSS block per
+      layer, the colour scheme, label colours, certification, and a chart's
+      number format. Rows, CSS blocks and label keys add up across layers;
+      the colour scheme and certification are the innermost layer's.
+    - **Ownership per item, not per field.** A team that edits one footer
+      row or one CSS block takes that item over and keeps receiving every
+      other one; a per-field record would cut the dashboard off from all
+      later changes to the field at the first edit, with nothing reported.
+      The record reuses §16's "value written" rule.
+    - **A lock is a check, and apply rewrites only when told.** A locked item
+      an author changed is an error in `standards check` naming the layer;
+      `standards apply` leaves it and reports it, and `apply --locked`
+      rewrites it as a change that shows what was there. An unlocked item an
+      author changed stays theirs.
+    - **`apply --check` fails on locked content only** (decision #7: "stale
+      on locked content"), so an unlocked change can reach each team in its
+      own pull request (decision #8) while CI stays green;
+      `standards check --strict` fails on stale unlocked content, a warn,
+      for a team that wants it current.
+    - **CSS is the weakest lock** (decision #6): a lower layer's CSS can hide
+      a locked row, so `standard.css-hides` warns on hiding declarations
+      outside the locking layers' blocks; whether a locked row is visible on
+      the rendered dashboard is for a check after deploy, which this phase
+      doesn't build.
+    - **Lifecycle and classification are spec-only fields** that standards
+      key content off; Superset has nothing they could map to safely (§18).
 
 ## 15. Implementation deviations (recorded, not silent)
 
@@ -812,6 +856,61 @@ Recorded during the rules-only standards (§18):
     goes in a sibling field of the `design` block, not in `design.standard`,
     which stays the standard's name as a string, so specs written now stay
     valid and an assignment remains a one-line diff.
+
+Recorded during the content standards (§18, "Content"):
+
+27. **The record is `design.standard_written`.** §15.26 put per-item
+    provenance in a sibling of `design.standard`; the name parallels
+    `design.filled` (what the brain filled) and avoids "owned" (Superset's
+    owners, `dashboard.owners`) and "applied" (`chartwright apply`). The
+    decision record's phase list calls it "the `design.standard` record per
+    item"; §15.26 already set that aside, so the sibling field stands.
+28. **CSS block markers reach Superset.** A block is a CSS comment pair,
+    `/* cw:std org <hash> */ ... /* cw:end org */`, inside `dashboard.css`.
+    Compile emits the CSS verbatim, as always, so the markers are part of
+    the dashboard's CSS: Superset stored them and decompile read them back
+    unchanged on 4.1.4, 5.0.0 and 6.1.0 (`plan` clean after apply, slugs
+    `cw-std3-*`). Stripping them at compile would make `plan` report the
+    CSS as drift on every governed dashboard. The ownership record never
+    reaches the bundle.
+29. **A row has no identity beyond its content.** A row a standard wrote is
+    found by the hash recorded for it, so authors can insert rows anywhere
+    without moving it. When no row holds that hash, the one unclaimed row
+    between its neighbours with the same shape (kind, background, widths
+    and heights; only the text differs) is the row, edited: released, and
+    the row `apply --locked` rewrites in place. With none or several, it
+    counts as removed. Either way the record becomes null: an edited row no
+    longer carries the standard's identity, so without the record apply
+    would add the standard's row beside the author's. For a dashboard
+    setting, a label colour or a chart's number format, an edit drops the
+    record as §16 does.
+30. **§15.25's repairs and fills, accounted for.** A height repair that read
+    a standard's parameter is geometry, which standards never write, and
+    stays recordless and the author's: a later standard asking for more
+    height fires the rule again, and a lower minimum leaves a taller chart
+    alone. Fills keep their own record in `design.filled` and refresh
+    themselves when a threshold moves. The one field both can write,
+    `number_format`, has one owner: validation refuses it in both records,
+    `standards apply` takes a brain fill and drops its record, and the brain
+    never fills a field the standard's record names, released included.
+    The markdown-height repair leaves a standard's rows alone.
+31. **A chart's number format is keyed by metric label.** A standard
+    covers dashboards whose charts it can't know, so it names formats per
+    metric label (`Revenue: "$,.0f"`), and a chart takes one when every
+    metric it shows maps to the same format. A chart that plots shares (a
+    contribution chart, a 100 % stack) or a pivot whose aggregation changes
+    the unit (`Count`, a fraction of a total) takes none.
+32. **A spec that follows no standard is left alone by `standards apply`,**
+    even when it carries a record from an earlier standard: removing a
+    standard's `default: true` must not strip every dashboard that
+    followed it.
+33. **The version floor and the exceptions file plug in later** (the
+    decision's phase 4): a floor filters the content a spec expects per
+    instance release (`expected_items` in `design/content.py`), and an
+    exception would be consulted where a locked mismatch is decided. No
+    content slot is version-gated today: header and footer rows, CSS,
+    colours, certification and number formats import on all three
+    releases.
 
 ## 16. Design defaults (fills)
 
@@ -1127,11 +1226,13 @@ A standard is the rule settings a team shares: the parameters, severities and
 disabled rules `design.yaml` holds for one machine, kept in the repository
 instead, where a pull request reviews them and every machine reads the same
 files. A standard can lock rules and parameters so that no team, spec or
-personal file below it loosens them. Standards change advice only: compile,
-`plan` and decompile never read them, and a spec builds the same bundle with
-or without one (§14.15). A standard sets nothing in the spec itself; it
-changes what `advise --fix` writes, since height repairs and fills read its
-parameters (§15.25).
+personal file below it loosens them. A standard can also carry content (header
+and footer rows, CSS, colours, certification, number formats) that
+`standards apply` writes into its specs ("Content", below). Compile, `plan`
+and decompile never read a standards file, and a spec builds the same bundle
+with or without one (§14.15); content reaches a dashboard only as fields
+written in its spec. Rule settings also change what `advise --fix` writes,
+since height repairs and fills read its parameters (§15.25).
 
 ### The files
 
@@ -1172,7 +1273,9 @@ disable: [narrative.title-style]
 | `audiences` | Parameters for one audience, as in `design.yaml`. |
 | `severity` | Rule id → `error`, `warn` or `info`. |
 | `disable` | Rule ids the standard turns off. |
-| `locked` | `rules`: rule ids, and `params`: parameter names, that no layer below may loosen. |
+| `content` | Spec content `standards apply` writes ("Content", below). |
+| `classifications` | The values `dashboard.classification` may take ("Content", below). |
+| `locked` | `rules`: rule ids, and `params`: parameter names, that no layer below may loosen; `content`: content slots ("Content", below). |
 
 Rule ids go through the alias table, so a renamed rule keeps working. An
 unknown rule id, parameter or audience is an error that names the file, with
@@ -1361,3 +1464,258 @@ Standard finance: org -> finance
   disable.narrative.title-style             finance
   rule size.min-width                       org          locked
 ```
+
+A standard with content lists it too: each item with its value, layer and
+lock, the rows of every lifecycle state and classification, and a number
+format per metric label (`content.footer[org][0]`, `content.number_format[Orders]`).
+`--json` adds `content`, `locked.content` and `classifications`.
+
+### Content
+
+A standard can carry spec content for a closed list of slots, and
+`chartwright standards apply` writes it into every spec that follows the
+standard. The content becomes ordinary fields of the spec, reviewed in the
+diff like any edit; compile, `plan` and decompile never read the standards
+files (§14.16).
+
+```yaml
+# standards/acme.yaml
+name: acme
+default: true
+classifications: [public, internal, confidential]
+content:
+  footer:
+    - [{markdown: "Acme Corp. Internal data: do not share outside the company.", width: 12, height: 1}]
+  footer_by_classification:
+    confidential:
+      - [{markdown: "**Confidential**: named recipients only.", width: 12, height: 1}]
+  header_by_lifecycle:
+    deprecated:
+      - [{markdown: "**Deprecated.** Use the dashboard named as its successor.", width: 12, height: 1}]
+  css: |
+    .dashboard-markdown { font-family: Inter, sans-serif; }
+  label_colors: {Revenue: "#1FA8C9"}
+locked:
+  content: [footer, footer_by_classification, css]
+```
+
+```yaml
+# standards/teams/ops.yaml
+name: ops
+extends: acme
+content:
+  header:
+    - [{markdown: "**Operations** | questions: #ops-data", width: 12, height: 1}]
+  css: |
+    .dashboard-markdown h2 { color: #003366; }
+  color_scheme: supersetColors
+  certified_by: Ops analytics
+  number_format: {Flights: ",.0f"}
+```
+
+| Slot | Writes | Down a chain |
+|---|---|---|
+| `header` | rows into `layout.header` | adds up: each layer's rows, the root's first, above the author's rows |
+| `footer` | rows into `layout.footer` | adds up: each layer's rows, the innermost's first, below the author's rows, so the org's row sits at the very bottom |
+| `header_by_lifecycle` | rows per `dashboard.lifecycle` state (`active` when the spec has none), as a banner at the top of the layer's header rows | adds up, as `header` |
+| `footer_by_classification` | rows per `dashboard.classification`, after the layer's footer rows | adds up, as `footer` |
+| `css` | one marked block per layer at the start of `dashboard.css`, root first, the author's CSS after them | adds up: one block per layer |
+| `color_scheme`, `certified_by`, `certification_details` | the dashboard setting | the innermost layer's value |
+| `label_colors` | each label's colour | per label: keys add up, the innermost layer's colour wins a key |
+| `number_format` | a chart's `number_format`, per metric label | per label, as `label_colors` |
+
+Rows hold markdown blocks, headers and dividers, never a chart: a standard
+can't know a dashboard's charts. For the same reason a number format is
+keyed by metric label, and a chart takes one only when every metric it shows
+maps to the same format; a chart that plots shares (`contribution`, a 100 %
+stack) or a pivot whose aggregation changes the unit takes none. A CSS block
+reads:
+
+```css
+/* cw:std acme 071e8af9c13a */
+.dashboard-markdown { font-family: Inter, sans-serif; }
+/* cw:end acme */
+```
+
+The hash is taken over the block's text. The markers are CSS comments, so they reach
+Superset with the rest of the CSS, and Superset and decompile keep them as
+written (§15.28). Standards write no geometry and no field a repair writes;
+the markdown-height repair leaves a standard's rows alone (§15.30).
+
+`locked.content` lists slots. A lock covers the items the locking layer and
+the layers above it put in that slot, and like a parameter lock it needs a
+value: a lock on a slot no layer at or above it fills is an error. Below the
+lock a layer may still add its own rows, blocks and keys, but can't change a
+locked colour scheme, certification, label or format: that is an error naming
+both layers. A layer may narrow the `classifications` list it inherits, never
+widen it. A standard that locks content also locks `standard.content-locked`,
+so nothing below it silences that rule. Certification details need
+`certified_by` somewhere in the chain.
+
+#### The record: design.standard_written
+
+`standards apply` records each item it wrote, rows and CSS blocks by hash,
+everything else by value. The spec of an `ops` dashboard classified
+`confidential`, after `standards apply specs/ops`:
+
+```json
+"design": {
+  "standard": "ops",
+  "standard_written": {
+    "charts[Flights].number_format": {"layer": "ops", "value": ",.0f"},
+    "dashboard.certified_by": {"layer": "ops", "value": "Ops analytics"},
+    "dashboard.color_scheme": {"layer": "ops", "value": "supersetColors"},
+    "dashboard.css[acme]": {"layer": "acme", "hash": "071e8af9c13a"},
+    "dashboard.css[ops]": {"layer": "ops", "hash": "d54caf00ff9b"},
+    "dashboard.label_colors[Revenue]": {"layer": "acme", "value": "#1FA8C9"},
+    "layout.footer[acme][0]": {"layer": "acme", "hash": "6589d7ebad6c"},
+    "layout.footer[acme][classification=confidential][0]": {"layer": "acme", "hash": "2085201c9be6"},
+    "layout.header[ops][0]": {"layer": "ops", "hash": "1004ad91c96a"}
+  }
+}
+```
+
+Each key names one item: a layer's row by its place in that layer's list, a
+layer's CSS block, a setting, a label, a chart's format. The record is §16's
+"value written" rule, item by item, so an edit to one row or block hands over
+that item and nothing else:
+
+| The spec holds | Unlocked | Locked |
+|---|---|---|
+| the value recorded | the standard's: refreshed when the standard changes | the same |
+| another value (an edited setting, label, format or block; a row of the same shape between the same neighbours) | released: the author's, and apply leaves it alone. A setting, label or format drops its record; a row or block whose author changed it gets a null record | a violation: an error in `standards check`, reported and left by `standards apply`, rewritten by `standards apply --locked` with `was` |
+| nothing, where the record has a value | deleted: a null record, never written again until the author deletes that entry | a violation, as above |
+| nothing, and no record | the standard's value is written | the same |
+| the standard's value, with no record (a decompiled or adopted dashboard) | left as it is, never written twice; `--claim` records it | the same; it already conforms |
+| a value of the author's, with no record | the author's | a violation |
+
+Header and footer rows are found by the hash recorded for them, so an author
+can insert rows anywhere. A row that no longer matches is, when it can be
+told, the one row of the same shape between its neighbours (§15.29).
+`design.standard_written` and `design.filled` never record the same field
+(§15.30), and the record never reaches the bundle.
+
+#### standards apply
+
+`chartwright standards apply <files|folders|globs> [--check] [--locked]
+[--claim] [--standard NAME] [--json]` writes each spec's standard into it,
+deterministically, and rewrites only the files whose data changed. A spec that
+follows no standard is left as it is (§15.32); a spec apply can't read in
+full (CSS markers it can't parse) is left as it is and reported. It prints a
+summary grouped by standard and item, ready for a pull request's description:
+
+```
+standards apply: 3 specs following a standard; wrote 3, 0 unchanged
+
+ops (acme -> ops), 3 specs
+  charts[Flights].number_format: same change × 3 (add ,.0f)
+  dashboard.certified_by: same change × 3 (add Ops analytics)
+  dashboard.color_scheme: same change × 3 (add supersetColors)
+  dashboard.css[acme] (locked by acme): same change × 3 (add 071e8af9c13a)
+  dashboard.css[ops]: same change × 3 (add d54caf00ff9b)
+  dashboard.label_colors[Revenue]: same change × 3 (add #1FA8C9)
+  layout.footer[acme][0] (locked by acme): same change × 3 (add 6589d7ebad6c)
+  layout.footer[acme][classification=confidential][0] (locked by acme): add 2085201c9be6: specs/ops/delays.json
+  layout.header[ops][0]: same change × 3 (add 1004ad91c96a)
+```
+
+Later the `ops` file changes its header row; one author picked another colour
+scheme and another rewrote the locked footer row. `--check` writes nothing:
+
+```
+standards apply --check: 3 specs following a standard; would write 3, 0 unchanged
+1 spec lacks locked content as the standard has it now
+
+ops (acme -> ops), 3 specs
+  charts[Flights].number_format: 3 already current
+  dashboard.certified_by: 3 already current
+  dashboard.color_scheme: 1 released by authors, skipped: specs/ops/fleet.json; 2 already current
+  dashboard.css[acme] (locked by acme): 3 already current
+  dashboard.css[ops]: 3 already current
+  dashboard.label_colors[Revenue]: 3 already current
+  layout.footer[acme][0] (locked by acme): 1 changed by their authors but locked, left as they are (--locked rewrites them): specs/ops/routes.json; 2 already current
+  layout.footer[acme][classification=confidential][0] (locked by acme): 1 already current
+  layout.header[ops][0]: same change × 3 (refresh 1514ac78374f)
+```
+
+- `--check` writes nothing and exits 1 when a spec lacks locked content as
+  the standard has it now: never written, written in an older version, or
+  changed by its author. Unlocked changes are listed and pass, so they reach
+  each team in that team's own pull request; `standards check --strict`
+  fails on them (§14.16).
+- `--locked` also rewrites locked items their authors changed; each such
+  change says `rewrite` and carries `was`. Without it they are reported, and
+  apply exits 1.
+- `--claim` records items whose value already equals the standard's, for a
+  decompiled or adopted dashboard, and marks the standard's CSS where it
+  sits unmarked in the dashboard's CSS.
+- `--standard NAME` limits the run to the specs that follow that standard:
+  one pull request per team.
+- `--json` prints every spec's `changes` (`item`, `action`, `layer`,
+  `locked_by`, `to`, `was`), `stale` (apply would change content),
+  `locked_stale` (what `--check` fails on), `locked` (locked items left as
+  their authors changed them), and the `summary` the text shows.
+
+MCP `standards_apply` (`check`, `locked`, `claim`) does the same for one
+spec and returns the patched spec.
+
+#### What check reports
+
+In every advice run that applies a standard with content (`advise`,
+`standards check`, and the advice `check` and `apply` carry):
+
+| Rule | Severity | Reports |
+|---|---|---|
+| `standard.content-locked` | error | a locked item the spec doesn't hold as the standard has it, naming the layer that locks it and what puts it back |
+| `standard.content-stale` | warn | an unlocked item `standards apply` would add, refresh or remove |
+| `standard.content-released` | info | an item the author took over, so a fleet report shows every override |
+| `standard.classification` | error | a classification the standard's list lacks |
+| `standard.css-hides` | warn | a declaration that hides elements (`display: none`, `visibility: hidden`, ...) outside the blocks of the layers that lock header or footer rows; a selector's target is a matter of the rendered dashboard, so the warning names the rule to look at |
+
+#### explain
+
+`explain` gains a dashboard section when the spec's standard has content:
+each item with its value, layer, lock, source (`standard`: as the standard
+wrote it; `missing`: not written yet; `released`: the author took it over;
+`author`: the author's own value), what `standards apply` would do, and how
+to override it. A chart field the standard wrote shows source `standard` in
+its chart's rows. MCP `explain_spec` returns the same JSON under
+`dashboard`.
+
+```
+Dashboard content (standard acme -> ops, via design.standard)
+  layout.footer[acme][0]           "Acme Corp."                             acme       locked  author
+      standard: "Acme Corp. Internal data: do not sha...
+      standards apply --locked puts the standard's back
+      override: acme locks it: change it in acme's standards file, not in the spec
+  dashboard.css[ops]               d54caf00ff9b (1 line)                    ops        open    standard
+      override: edit or delete it in the spec and it is yours; standards apply leaves it alone from then on
+```
+
+#### Lifecycle and classification
+
+`dashboard.lifecycle` (`state`: `active`, `deprecated` or `sunset`, with an
+optional `successor` slug and `sunset_date`) and `dashboard.classification`
+(a word or a few, or one of the values the standard's `classifications`
+lists) are spec-only. Compile, `plan` and decompile ignore them, so a
+decompiled spec has neither and a spec builds the same bytes with them. They
+reach a dashboard through a standard's `header_by_lifecycle` and
+`footer_by_classification` rows. Changing either swaps those rows on the next
+`standards apply`.
+
+Superset has no field to carry them, checked at 4.1.4, 5.0.0 and 6.1.0:
+
+- the dashboard model has no such column (`class Dashboard` in
+  `superset/models/dashboard.py`, 4.1.4 and 5.0.0 lines 134-164, 6.1.0 lines
+  135-177);
+- `published: false` is not a deprecation: it hides the dashboard from
+  every list but its owners' and admins' (`DashboardAccessFilter`,
+  `superset/dashboards/filters.py:132,155` at all three tags), and with
+  `DASHBOARD_RBAC` a dashboard with roles is closed to everyone else
+  (`superset/security/manager.py` 4.1.4:2373, 5.0.0:2377, 6.1.0:2704). A
+  deprecated dashboard must stay reachable so its readers see the banner
+  naming the successor. `published` stays the author's field;
+- a key `json_metadata` doesn't declare fails every later save of the
+  dashboard's settings on 4.1.4 and 5.0.0 (`validate_json_metadata`,
+  `superset/dashboards/schemas.py:107`), as `show_chart_timestamps` does
+  (docs/CONTRACTS.md), and dashboard tags need 6.0.

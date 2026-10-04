@@ -1042,8 +1042,8 @@ def render_apply(payload: dict) -> str:
         head += f"; {len(payload['no_standard'])} follow no standard and stay as they are"
     if payload["check"]:
         n = t["locked_stale"]
-        head += (f"\n{n} spec{'s' if n != 1 else ''} lack locked content as the standard has "
-                 f"it now" if n else "\nevery spec holds its standard's locked content")
+        head += (f"\n{n} spec{'s lack' if n != 1 else ' lacks'} locked content as the "
+                 f"standard has it now" if n else "\nevery spec holds its standard's locked content")
     lines = [head]
     for g in payload["summary"]:
         lines += ["", f"{g['standard']} ({' -> '.join(g['chain'])}), {g['specs']} spec"

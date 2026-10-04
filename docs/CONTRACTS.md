@@ -395,11 +395,28 @@ pipeline depends on them the same way.
   `plan` doesn't compare them. Repository standards
   (`docs/DESIGN-BRAIN.md` §18) are read by the review alone, never by compile,
   `plan` or decompile. A test compiles every example and fixture with and
-  without `design.standard` and compares the bytes.
+  without `design.standard` and compares the bytes. `design.standard_written`,
+  the record `standards apply` keeps of the content it wrote, is the same: a
+  test compiles every example and fixture with and without it.
+- **A standard's content reaches Superset only as spec fields.** `standards
+  apply` writes header and footer rows, CSS, colours, certification and
+  number formats into the spec; compile builds them like any author's. A CSS
+  block's markers (`/* cw:std org <hash> */ ... /* cw:end org */`) are CSS
+  comments inside `dashboard.css`, so Superset stores them and decompile
+  reads them back as written: verified on 4.1.4, 5.0.0 and 6.1.0 by applying
+  a spec with an org footer, a team header and two CSS blocks, with `plan`
+  clean afterwards and on a second apply.
+- **`dashboard.lifecycle` and `dashboard.classification` are spec-only.**
+  Compile, `plan` and decompile ignore them; Superset's dashboard model has
+  no column for either (`superset/models/dashboard.py`, `class Dashboard`, at
+  all three tags), so a decompiled spec has neither. A test compiles every
+  example and fixture with and without them.
 - **A spec with a field an older chartwright doesn't know fails there.** Every
   spec model rejects unknown fields, so a spec that uses a field newer than
   the release reading it fails validation with `extra_forbidden` at that
-  field. `design.standard` is one: 0.2.1 and earlier reject it. Run CI and
+  field. `design.standard`, `design.standard_written`, `dashboard.lifecycle`
+  and `dashboard.classification` are such fields: 0.2.1 and earlier reject
+  them. Run CI and
   every pipeline on a release that knows each field your specs use.
 
 ## Checking these facts

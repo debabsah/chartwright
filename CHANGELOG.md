@@ -51,7 +51,38 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - `chartwright standards assign <specs> --standard NAME`: writes `design.standard` into
   each spec, leaving files that already name it untouched.
 - MCP: `standards_check` and `standards_show`; `advise_spec`, `fix_spec`, `explain_spec`,
-  `check_spec` and `build_dashboard` apply the spec's standard. Thirteen tools.
+  `check_spec` and `build_dashboard` apply the spec's standard.
+- Standard content (docs/DESIGN-BRAIN.md §18, "Content"): a standard's `content` holds
+  header and footer rows, CSS, a colour scheme, label colours, certification and number
+  formats per metric label, plus banner rows per lifecycle state and footer rows per
+  classification. `locked.content` locks slots.
+  - `chartwright standards apply <specs>` writes it into each spec that follows the
+    standard: rows and label colours add up across layers, the colour scheme and
+    certification are the innermost layer's, and `dashboard.css` gets one marked block
+    per layer (`/* cw:std org <hash> */ ... /* cw:end org */`) with the author's CSS
+    after them. It writes only files whose data changed and prints a summary grouped by
+    standard and item; `--json` gives the full result.
+  - `design.standard_written` records each item written, rows and CSS blocks by hash,
+    the rest by value. Per item: the value written is refreshed when the standard
+    changes; an unlocked item the author edits or deletes is theirs from then on; a
+    locked one that differs is an error in `standards check` and is left as it is until
+    `standards apply --locked` rewrites it, showing what was there.
+  - `--check` writes nothing and exits 1 when a spec lacks locked content as the
+    standard has it now; unlocked changes are listed and pass. `--claim` records content
+    a decompiled or adopted spec already holds; apply never adds it twice.
+    `--standard NAME` limits a run to one team's specs.
+  - New rules, design brain 6: `standard.content-locked` (error),
+    `standard.content-stale` (warn), `standard.content-released` (info),
+    `standard.classification` (error) and `standard.css-hides` (warn).
+  - A field has one owner: `design.filled` and `design.standard_written` never record
+    the same field; apply takes a brain fill over, and the brain never fills a field a
+    standard holds.
+  - `explain` gains a dashboard content section; `standards show` lists content.
+  - MCP `standards_apply` (`check`, `locked`, `claim`). Fourteen tools.
+- `dashboard.lifecycle` (`state`: active, deprecated or sunset; optional `successor`
+  slug and `sunset_date`) and `dashboard.classification`: spec-only, never in the
+  bundle, and what a standard's banner and footer rows key off. **0.2.1 and earlier
+  reject a spec that sets them, or `design.standard_written`.**
 - `dashboard.owners`: the dashboard's owners, by Superset username or by the email
   address of each account, e.g. `["jdoe", "ana@example.com"]`. Superset's import makes
   the importing account an owner and its bundle has no owners field, so `apply` now
