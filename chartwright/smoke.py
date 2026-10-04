@@ -45,6 +45,10 @@ def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
         leaf = len(data)  # already capped by the query's row_limit
         header_units = GRID_HEADER_UNITS
         what = f"table renders ~{leaf} rows"
+        if chart.page_length and leaf > chart.page_length:
+            # A paged table renders one page and its pager (size.table-window's model).
+            leaf = chart.page_length + 1
+            what = f"table renders a {chart.page_length}-row page and its pager"
     height = spec.resolved_height(chart.name)
     # Shared grid model (chartwright/spec.py): the design critic's
     # size.grid-fit and size.table-window read the same numbers, so pre-apply

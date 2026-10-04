@@ -136,10 +136,21 @@ def heatmap_geometry(ctx: RuleContext):
             )
 
 
+_PAGER_ROWS = 1  # a paged table's pager takes about one grid row under the rows
+
+
+def _table_page(c) -> int | None:
+    """Rows on one page of a paged table (page_length > 0), never more than row_limit;
+    None when every row is on one page."""
+    if not getattr(c, "page_length", None):
+        return None
+    return min(c.page_length, c.row_limit) if c.row_limit else c.page_length
+
+
 @rule("size.table-window", "warn", "a table's height should show a meaningful share of its row_limit")
 def table_window(ctx: RuleContext):
     for c in ctx.spec.charts:
-        if c.type != "table" or c.row_limit is None:
+        if c.type != "table" or (c.row_limit is None and not c.page_length):
             continue
         h = ctx.height(c.name)
         # Same grid model as size.grid-fit and apply-time smoke: offline this
@@ -147,13 +158,21 @@ def table_window(ctx: RuleContext):
         # the real count -- but both now measure a row the same way, so they
         # can no longer give one chart contradictory verdicts.
         visible = grid_rows_visible(h)
-        want = ctx.params.table_visible_ratio * c.row_limit
+        page = _table_page(c)
+        if page is not None:
+            # A paged table shows one page at a time, plus its pager: the whole page
+            # should fit, but rows beyond it are a click away, not a scroll.
+            want, shown = page + _PAGER_ROWS, f"~{visible:.0f} rows of its {page}-row page"
+        else:
+            want = ctx.params.table_visible_ratio * c.row_limit
+            shown = f"~{visible:.0f} of {c.row_limit} rows"
         if visible < want:
             yield Finding(
                 "size.table-window", "warn", c.name, ctx.where(c.name),
-                f"table shows ~{visible:.0f} of {c.row_limit} rows at {h:g} units "
+                f"table shows {shown} at {h:g} units "
                 f"(a scroll dungeon); raise height to "
-                f"~{math.ceil(grid_units_for_rows(want))} or lower row_limit",
+                f"~{math.ceil(grid_units_for_rows(want))} or "
+                + ("lower page_length" if page is not None else "lower row_limit"),
                 fix=ctx.fix_height(c, math.ceil(grid_units_for_rows(want)))
                 if grid_units_for_rows(want) <= 20 else None,
                 height_driven=True,
@@ -223,6 +242,9 @@ def grid_fit(ctx: RuleContext):
         if n is None:
             continue
         n = min(n, cap)
+        page = _table_page(c) if c.type == "table" else None
+        if page is not None:
+            n = min(n, page) + _PAGER_ROWS  # one page and its pager, not every row
         # Shared grid model (chartwright/spec.py), same numbers smoke uses.
         needed = math.ceil(grid_units_for_rows(n, GRID_HEADER_UNITS + extra_header))
         h = ctx.height(c.name)
@@ -438,20 +460,35 @@ def vbar_categories(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type != "bar" or c.orientation != "vertical":
             continue
+        if c.category_sort and c.x_label_every:
+            # An ordered axis (hours, ranks) reads as a sequence left to right, and every
+            # label is drawn: flipping it to a ranked horizontal list would lose the order.
+            continue
         rl = c.row_limit
         if rl is not None and rl <= p.vbar_max_categories:
             continue
         if ctx.prober is not None and (ds := ctx.dataset_for(c)):
             if ctx.prober.more_than(ds, c.x_column, p.vbar_max_categories) is False:
                 continue  # the data itself stays under the label limit
+        lead = (f"vertical bar with row_limit {rl}" if rl is not None
+                else "vertical bar with no row_limit (defaults to 10,000)")
+        if c.category_sort:
+            # Sorted by category, the bars are a sequence, not a ranking: keep them
+            # vertical and draw every label instead.
+            yield Finding(
+                "chart.vbar-categories", "warn", c.name, ctx.where(c.name),
+                f"{lead}: Superset drops category labels past ~{p.vbar_max_categories}; "
+                "these bars are sorted by category, so set x_label_every to draw every "
+                "label (Superset 6.1+), or cap the row_limit",
+                fix={"chart": c.name, "set": {"x_label_every": True}},
+            )
+            continue
         fix = ({"chart": c.name, "set": {"orientation": "horizontal"}}
                if rl is not None and rl <= 15 else None)
         yield Finding(
             "chart.vbar-categories", "warn", c.name, ctx.where(c.name),
-            (f"vertical bar with row_limit {rl}" if rl is not None
-             else "vertical bar with no row_limit (defaults to 10,000)")
-            + f": Superset drops category labels past ~{p.vbar_max_categories}; "
-              "flip to horizontal and cap around 10",
+            lead + f": Superset drops category labels past ~{p.vbar_max_categories}; "
+                   "flip to horizontal and cap around 10",
             fix=fix,
         )
 
@@ -486,6 +523,8 @@ def series_limit(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type not in TIMESERIES_TYPES or not c.groupby:
             continue
+        if c.series_limit is not None and c.series_limit <= ctx.params.series_max:
+            continue  # series_limit already keeps the top few
         ds = ctx.dataset_for(c)
         if ds is None:
             continue
@@ -493,7 +532,8 @@ def series_limit(ctx: RuleContext):
             yield Finding(
                 "chart.series-limit", "warn", c.name, ctx.where(c.name),
                 f"groupby {c.groupby!r} has more than {ctx.params.series_max} values: "
-                f"a line per value is spaghetti; filter to the top few or use a coarser dimension",
+                f"a line per value is spaghetti; set series_limit to keep the top "
+                f"{ctx.params.series_max}, filter, or use a coarser dimension",
             )
 
 
@@ -688,7 +728,16 @@ def ordinal_order(ctx: RuleContext):
 
     for c in ctx.spec.charts:
         hits = [d for d in dims(c) if d and _ORDINAL_RE.search(d)]
-        if hits:
+        if hits and c.type == "bar" and not c.category_sort:
+            # A bar sorts by its first metric unless category_sort is set, so an
+            # order-encoded label alone changes nothing.
+            yield Finding(
+                "chart.ordinal-order", "info", c.name, ctx.where(c.name),
+                f"{hits} look ordinal but these bars sort by their first metric; set "
+                f"category_sort \"asc\", over an order-encoded label column (e.g. '1-Mon') "
+                f"if the dataset has one, since Superset sorts labels alphabetically",
+            )
+        elif hits:
             yield Finding(
                 "chart.ordinal-order", "info", c.name, ctx.where(c.name),
                 f"{hits} look ordinal but Superset sorts categories alphabetically "
@@ -850,12 +899,13 @@ def trend_grain(ctx: RuleContext):
     if not _unwindowed(ctx):
         return
     for c in ctx.spec.charts:
-        if c.type == "big_number_trend" and c.time_grain in _FINE_GRAINS:
+        # A trend with its own time_range is bounded whatever the dashboard does.
+        if c.type == "big_number_trend" and c.time_grain in _FINE_GRAINS and not c.time_range:
             yield Finding(
                 "chart.trend-grain", "info", c.name, ctx.where(c.name),
                 f"sparkline at grain {c.time_grain or 'P1D (default)'} with no defaulted "
-                f"dashboard time window draws full history daily; coarsen to P1W/P1M or "
-                f"give the time_range filter a default",
+                f"dashboard time window draws full history daily; coarsen to P1W/P1M, "
+                f"give the chart a time_range, or give the time_range filter a default",
             )
 
 

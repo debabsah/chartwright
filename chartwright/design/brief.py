@@ -41,8 +41,10 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         f"- Axis charts (timeseries/bar/heatmap/histogram): >= {p.min_axis_height} units tall, 8 is the comfortable default.",
         f"- At most {p.max_row_charts} axis charts per row; below 3/12 width a chart is unreadable.",
         "- Pie/donut: >= 5/12 wide, >= 8 tall. Heatmap: >= 5/12 wide (7/12 when many columns), >= 6 tall.",
-        f"- Vertical bars: <= {p.vbar_max_categories} categories, then flip horizontal. Pies: <= {p.pie_max_slices} slices.",
-        f"- Timeseries: <= {p.series_max} grouped series. Tables: height should show >= {p.table_visible_ratio:.0%} of row_limit (~0.8 units/row).",
+        f"- Vertical bars: <= {p.vbar_max_categories} categories, then flip horizontal; an ordered axis "
+        f"(hours, ranks) stays vertical with category_sort and x_label_every. Pies: <= {p.pie_max_slices} slices.",
+        f"- Timeseries: <= {p.series_max} grouped series (series_limit keeps the top N). Tables: height should "
+        f"show >= {p.table_visible_ratio:.0%} of row_limit (~0.8 units/row), or one page with page_length.",
         "- Charts sharing a row share a height; Superset sizes the row to its tallest child.",
     ]
     if p.recommended_heights:
