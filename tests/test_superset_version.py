@@ -83,10 +83,10 @@ def test_the_registry_gates_the_unsafe_fields_and_warns_for_the_ignored_ones():
     assert {f: (g.since, g.severity) for f, g in by_field.items()} == {
         "tags": ("6.0.0", "error"),
         "show_chart_timestamps": ("6.1.0", "error"),
-        "x_label_every": ("6.1.0", "warn"),
-        "subtitle": ("6.1.0", "warn"),
-        "column_headers": ("6.1.0", "warn"),
-        "only_total": ("6.1.0", "warn"),
+        "x_label_every": ("6.1.0", "warn"),  # a time axis needs force_max_interval (6.1.0)
+        "subtitle": ("6.0.0", "warn"),
+        "column_headers": ("6.0.0", "warn"),
+        "only_total": ("6.0.0", "warn"),
     }
     schema = json.dumps(json_schema())
     for g in GATED_FIELDS:
@@ -148,8 +148,13 @@ def test_fields_older_releases_ignore_warn_and_never_block():
     assert sorted((w["field"], w["chart"]) for w in out.warnings) == [
         ("column_headers", "Table"), ("only_total", "Mixed"), ("subtitle", "Trend"),
         ("x_label_every", "Line")]
-    assert all(w["code"] == "field_ignored_before_version" and w["since"] == "6.1.0"
-               for w in out.warnings)
+    assert all(w["code"] == "field_ignored_before_version" for w in out.warnings)
+    assert {w["field"]: w["since"] for w in out.warnings} == {
+        "column_headers": "6.0.0", "only_total": "6.0.0", "subtitle": "6.0.0",
+        "x_label_every": "6.1.0"}
+    # 6.0.0 takes all but x_label_every on a time axis, which needs 6.1.0's force_max_interval.
+    assert [w["field"] for w in check_spec_version(_ignored_fields_spec(), "6.0.0").warnings] == [
+        "x_label_every"]
     assert check_spec_version(_ignored_fields_spec(), "6.1.0").warnings == []
     unknown = check_spec_version(_ignored_fields_spec(), None)
     assert unknown.ok and len(unknown.warnings) == 4

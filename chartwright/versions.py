@@ -75,34 +75,42 @@ GATED_FIELDS: tuple[GatedField, ...] = (
         "imports it, then refuses every later save of the dashboard's settings (its "
         "metadata schema rejects the key), apply's filter-scope step included",
         "DashboardJSONMetadataSchema declares show_chart_timestamps at 6.1.0 "
-        "dashboards/schemas.py:167 only; validate_json_metadata :107-116 at 4.1.4",
+        "dashboards/schemas.py:167, not at 4.1.4, 5.0.0 or 6.0.0; validate_json_metadata "
+        ":107-116 at 4.1.4",
         lambda spec: [None] if spec.dashboard.show_chart_timestamps else [],
     ),
     GatedField(
+        # A time axis (every timeseries chart, a mixed chart over a time column) needs
+        # force_max_interval, new in 6.1.0; a mixed chart's category axis needs only
+        # xAxisLabelInterval, which 6.0.0 reads. The gate takes the later release.
         "x_label_every", "6.1.0", "warn",
-        "ignores it: the x axis keeps Superset's automatic label spacing",
-        "force_max_interval and xAxisLabelInterval are 6.1.0 controls "
-        "(Timeseries and MixedTimeseries controlPanel.tsx)",
+        "ignores it on a time axis: the axis keeps Superset's automatic label spacing "
+        "(a mixed chart's category axis takes it from 6.0.0)",
+        "force_max_interval is a 6.1.0 control (controls.tsx:389, Timeseries and "
+        "MixedTimeseries controlPanel.tsx); xAxisLabelInterval is at 6.0.0 controls.tsx:305; "
+        "neither at 4.1.4 or 5.0.0",
         _charts(lambda c: getattr(c, "x_label_every", False)),
     ),
     GatedField(
-        "subtitle", "6.1.0", "warn",
+        "subtitle", "6.0.0", "warn",
         "ignores a trendline KPI's subtitle: nothing shows under the number",
-        "BigNumberWithTrendline controlPanel.tsx subtitleControl at 6.1.0",
+        "BigNumberWithTrendline controlPanel.tsx subtitleControl at 6.0.0 :33,144 "
+        "(read at transformProps.ts:96); absent at 4.1.4 and 5.0.0",
         _charts(lambda c: c.type == "big_number_trend" and c.subtitle),
     ),
     GatedField(
-        "column_headers", "6.1.0", "warn",
+        "column_headers", "6.0.0", "warn",
         "ignores it: the table's headers show the labels",
-        "customColumnName read at 6.1.0 plugin-chart-table/src/TableChart.tsx:859",
+        "customColumnName read at 6.0.0 plugin-chart-table/src/TableChart.tsx:806 "
+        "(6.1.0 :859); absent at 4.1.4 and 5.0.0",
         _charts(lambda c: c.type == "table" and c.column_headers),
     ),
     GatedField(
-        "only_total", "6.1.0", "warn",
+        "only_total", "6.0.0", "warn",
         "labels every segment of a stacked mixed-chart query with show_value; "
-        "only_total (each stack's total only, the default) needs 6.1.0",
-        "onlyTotal / onlyTotalB read at 6.1.0 MixedTimeseries/transformProps.ts:186-187; "
-        "absent at 4.1.4 and 5.0.0",
+        "only_total (each stack's total only, the default) needs 6.0.0",
+        "onlyTotal / onlyTotalB read at 6.0.0 MixedTimeseries/transformProps.ts:178-179 "
+        "(6.1.0 :186-187); absent at 4.1.4 and 5.0.0",
         _charts(lambda c: c.type == "mixed" and any(
             s.show_value and s.stack and s.only_total for s in (c.a, c.b))),
     ),
