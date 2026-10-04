@@ -444,7 +444,10 @@ def classification_for(std, spec) -> str | None:
     if own is not None:
         return own
     rec = _records(spec).get("dashboard.classification", MISSING)
-    return None if rec is not MISSING and _released(rec) else value
+    # Written once (any record) and gone from the spec now: the author deleted it, in this
+    # run or an earlier one, so no classification's rows apply. Never written: apply is
+    # about to write the standard's, and its rows with it, in the same run.
+    return value if rec is MISSING else None
 
 
 def held_reason(std, item: Item) -> str | None:

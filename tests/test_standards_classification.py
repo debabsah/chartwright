@@ -171,3 +171,15 @@ def test_explain_and_show_name_the_classification(tmp_path, capsys):
     row = next(r for r in explained["dashboard"]
                if r["item"] == "dashboard.classification")
     assert row["source"] == "standard" and row["locked"] is True
+
+
+def test_a_deleted_unlocked_classification_stays_deleted_and_takes_its_rows(tmp_path, capsys):
+    repo = repo_with(tmp_path, ASSIGNED)
+    path = spec_file(repo)
+    apply(capsys, str(path))
+    edit(path, lambda d: d["dashboard"].pop("classification"))
+    apply(capsys, str(path))
+    data = read(path)
+    assert "classification" not in data["dashboard"]
+    assert CONFIDENTIAL_ROW not in data["layout"].get("footer", [])
+    assert data["design"]["standard_written"]["dashboard.classification"]["released"] is True
