@@ -13,11 +13,17 @@ wrote. That value is what tells the brain's work from the author's:
   groupby) and updates field and record together, or removes both when the rule
   no longer applies.
 - recorded, and the chart holds another value: the author edited it. --fix
-  releases it (drops the record, keeps the value); from then on it is the author's.
+  releases it (records null, keeps the value); from then on it is the author's.
 - recorded, and the chart no longer holds it: the author deleted it. --fix records
-  null, and a null record means "never fill this field" until the author deletes
-  the record. A deliberate deletion sticks.
+  null.
+- recorded as null: the author's field, whether they edited or deleted the fill.
+  Never filled again until the author deletes the record, so an edit that is later
+  deleted stays deleted (the same released record content standards keep).
 - not recorded and not written: unset; filled when the rule applies.
+
+An entry for a chart the spec no longer has, or a field that chart no longer has
+(renamed, removed, or another chart type), validates; default.stale-record says
+so and --fix drops it.
 
 Every rule is info severity, fixable, presentation-only (the query is unchanged),
 and never writes Superset's own default: that draws nothing new, and an empty
@@ -56,16 +62,12 @@ def _show(v) -> str:
     return "true" if v is True else "false" if v is False else repr(v)
 
 
-def _release(ctx: RuleContext, fill: Fill, c, detail: str, why: str, *, tombstone: bool) -> Finding:
-    """A fix that hands a field to the author and leaves the chart's value alone:
-    the record is dropped, or (tombstone) kept as null so the field is never filled
-    again until the author deletes it."""
-    fix: dict = {"chart": c.name, "set": {}}
-    if tombstone:
-        fix["record"] = {fill.field: None}
-    else:
-        fix["unrecord"] = [fill.field]
-    return Finding(fill.rule, "info", c.name, ctx.where(c.name), detail, fix=fix,
+def _release(ctx: RuleContext, fill: Fill, c, detail: str, why: str) -> Finding:
+    """A fix that hands a field to the author and leaves the chart's value alone: the
+    record becomes null, so the field is never filled again until the author deletes
+    the record."""
+    return Finding(fill.rule, "info", c.name, ctx.where(c.name), detail,
+                   fix={"chart": c.name, "set": {}, "record": {fill.field: None}},
                    why=why, release=True)
 
 
@@ -84,28 +86,23 @@ def _findings(ctx: RuleContext, fill: Fill):
         if not recorded:
             if present:
                 continue  # the author's value
-        elif rec[field] is None:  # the author deleted this fill earlier
-            if present:  # ...and has since written a value of their own
-                yield _release(
-                    ctx, fill, c,
-                    f"{field} {_show(current)} is yours (you deleted the fill earlier); "
-                    f"--fix drops {where}",
-                    "the author wrote the field after deleting its fill", tombstone=False)
-            continue  # a null record: never filled again while it stands
+        elif rec[field] is None:
+            continue  # released: the author edited or deleted the fill; never filled again
         elif not present:
             yield _release(
                 ctx, fill, c,
                 f"{field} was filled and you deleted it; --fix records {where} as null "
                 f"and fills it no more (delete that entry to let it)",
-                "the author deleted the filled value", tombstone=True)
+                "the author deleted the filled value")
             continue
         elif current != rec[field]:
             yield _release(
                 ctx, fill, c,
                 f"{field} {_show(current)} is not the {_show(rec[field])} the brain filled, "
-                f"so it is yours; --fix drops {where} and keeps your value",
-                f"the author changed the filled {_show(rec[field])} to {_show(current)}",
-                tombstone=False)
+                f"so it is yours; --fix records {where} as null, keeps your value and "
+                f"fills the field no more, even if you delete it later (delete that entry "
+                f"to let it)",
+                f"the author changed the filled {_show(rec[field])} to {_show(current)}")
             continue
         # Unset, or still exactly the brain's fill: decide from the chart as it is now.
         value, reason = fill.decide(ctx, c)
@@ -149,6 +146,35 @@ def _fill(rule_id: str, field: str, types, doc: str, *, superset, superset_text:
         rule(rule_id, "info", doc, fixable=True, since="5")(fn)
         return decide
     return deco
+
+
+@rule("default.stale-record", "info",
+      "design.filled names only charts and fields the spec has", fixable=True, since="7")
+def stale_record(ctx: RuleContext):
+    """A record left by a chart that was renamed, removed or given another type. It
+    validates, so the spec still builds; --fix drops it. A renamed chart's fills are the
+    author's from then on, unless its entry is renamed with it first."""
+    design = ctx.spec.design
+    charts = {c.name: c for c in ctx.spec.charts}
+    for name, rec in (design.filled if design else {}).items():
+        chart = charts.get(name)
+        if chart is None:
+            yield Finding(
+                "default.stale-record", "info", name, f"design.filled[{name!r}]",
+                f"design.filled names chart {name!r}, which the spec no longer has "
+                f"(renamed or removed); --fix drops the entry. If you renamed the chart, "
+                f"rename the entry with it instead, so the brain keeps its fills current",
+                fix={"forget": name, "unrecord": sorted(rec)},
+                why="the chart was renamed or removed", release=True)
+            continue
+        foreign = sorted(f for f in rec if f not in type(chart).model_fields)
+        if foreign:
+            yield Finding(
+                "default.stale-record", "info", name, f"design.filled[{name!r}]",
+                f"a {chart.type} chart has no {', '.join(foreign)}; --fix drops "
+                f"{'them' if len(foreign) > 1 else 'it'} from design.filled[{name!r}]",
+                fix={"chart": name, "set": {}, "unrecord": foreign},
+                why=f"the chart is now a {chart.type}", release=True)
 
 
 # -- the time axis --------------------------------------------------------------

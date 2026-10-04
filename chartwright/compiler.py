@@ -392,10 +392,6 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
                 # 5.0.0 and 6.1.0 alike (tools/contracts/params-contract.json).
                 p["timeseries_limit_metric"] = metric(chart.sort_by)
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
-        # Superset's stored default, read only with server pagination, which the tool never
-        # turns on; the page a viewer sees is page_length (transformProps.ts, all three
-        # releases: pageSize = serverPagination ? server_page_length : page_length).
-        p["server_page_length"] = 10
         if chart.page_length is not None:
             p["page_length"] = chart.page_length
         if chart.show_totals:

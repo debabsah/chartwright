@@ -30,9 +30,8 @@ def test_compile_is_byte_stable():
 def test_golden_bytes():
     """The whole guarantee in one assert. Regenerate deliberately with:
     .venv/bin/python -c "from tests.test_compiler import regen; regen()"
-    and review the diff. Last regenerated when time-axis charts gained their
-    TEMPORAL_RANGE filter (test_chart_time_range.py): only the "Sales Over Time"
-    chart's adhoc_filters changed."""
+    and review the diff. Last regenerated when tables stopped writing
+    server_page_length (0.4.0): only the "Sales by Product Line" table's params changed."""
     assert GOLDEN.exists(), "golden missing; run regen() and commit the result"
     assert _bundle() == GOLDEN.read_bytes()
 

@@ -1,7 +1,8 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 6** (4 added `narrative.color-scheme`; 5 the
-> design defaults of §16; 6 the `standard.*` rules of §18's content). This page is both the design and the
+> **Status: SHIPPED, design brain 7** (4 added `narrative.color-scheme`; 5 the
+> design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
+> a null record after an edit, and `default.stale-record`). This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -329,6 +330,7 @@ fails when it drifts.
 | `default.page-length` | info | ✔ | - | 5 | a table whose row_limit outgrows its panel pages by the rows that fit beside its page controls |
 | `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows gets a search box, when its rows still fit beside it (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
+| `default.stale-record` | info | ✔ | - | 7 | design.filled names only charts and fields the spec has |
 | `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or tall enough to space the labels (horizontal) |
 | `default.x-label-format` | info | ✔ | - | 5 | a time axis labels its points in its grain's own format ('Sep 2026' by month); day and week labels only over a year or less |
 | `filters.count` | warn | - | - | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
@@ -973,13 +975,14 @@ Recorded during the content standards (§18, "Content"):
       classification a spec has, and the classification is the author's
       field, so reclassifying a dashboard swaps its locked rows with only a
       warning (§18, "Lifecycle and classification");
-    - design.filled's behaviour after an edit: a fill drops its record, so
-      deleting an edited fill lets `--fix` fill it again, where a standard's
-      released record keeps the deletion (§15.29). Both follow "an author's
-      edit or deletion wins" once fills keep a released record too;
+    - design.filled's behaviour after an edit: a fill dropped its record, so
+      deleting an edited fill let `--fix` fill it again, where a standard's
+      released record keeps the deletion (§15.29). Done in brain 7: an edit
+      records null, as a deletion does (§16);
     - design.filled entries for a renamed or removed chart, which
-      validation still refuses, where design.standard_written accepts them
-      and `standards apply` drops them.
+      validation refused, where design.standard_written accepts them
+      and `standards apply` drops them. Done in brain 7:
+      `default.stale-record` reports them and `--fix` drops them.
 
 Recorded during exceptions, mixed releases and the theme (§18, "Waivers"
 onwards):
@@ -1029,10 +1032,11 @@ onwards):
     drop the confidential row it keys, because the rows were computed from the
     spec's changed value. An unlocked assignment writes the classification and
     its rows in one run, so a first apply converges.
-40. **Still open from §15.33:** fills keep dropping their record after an
-    edit (so a deleted edited fill is filled again), and design.filled still
-    refuses entries for a renamed chart. Both are design-defaults work, not
-    standards work, and stay as they were.
+40. **Closed from §15.33 in brain 7:** fills kept dropping their record after
+    an edit (so a deleted edited fill was filled again), and design.filled
+    refused entries for a renamed chart. An edit now records null, like a
+    deletion, and a stale entry validates, is reported by
+    `default.stale-record` and is dropped by `--fix` (§16).
 41. **`chartwright compile` doesn't vary; the bundle `apply` sends does.**
     The defaults decision says nothing is decided at compile time, and
     `compile` keeps that: it builds one bundle from the spec alone, and
@@ -1099,20 +1103,20 @@ the brain's work from the author's. Per chart and field, on every `--fix`:
   or groupby refreshes field and record together, and both are removed when
   the rule stops applying: a groupby added later brings the legend back.
 - **Recorded, and the chart holds another value:** the author edited it. The
-  record is dropped (a `fixed` entry of kind `release`) and the value kept; from
-  then on it is written with no record, so the author's.
+  record becomes `null` (a `fixed` entry of kind `release`) and the value is
+  kept.
 - **Recorded, and the field is gone:** the author deleted it. The record becomes
-  `null` (kind `release`), and a null record means the brain never fills that
-  field again. A deliberate deletion sticks; deleting the null entry lets the
-  brain fill it once more. A value the author later writes there is theirs,
-  and its null record is dropped.
+  `null` (kind `release`).
+- **Recorded as null:** the author's field, edited or deleted. The brain never
+  fills it again, so an edit the author later deletes stays deleted, and a value
+  written after a deletion is theirs. Deleting the null entry lets the brain fill
+  the field once more.
 - **Unset, no record:** filled when the rule applies, and recorded.
 
 So the author takes a fill over by doing the obvious thing, editing or deleting
 the field, and never needs to touch `design.filled`. (A standard's content keeps
-a released record after an edit, so a later deletion of the edited value stays
-deleted; a fill's dropped record lets `--fix` fill that field again. §15.33
-lists aligning the two as phase 4 work.) To keep a field unset
+the same released record, §18; before brain 7 an edited fill dropped its record,
+so deleting the edited value let `--fix` fill it again.) To keep a field unset
 before anything was filled, ignore the rule for that chart
 (`"default.page-length@Orders"`).
 
@@ -1126,9 +1130,12 @@ message naming the new form.
 
 `design.filled` is the brain's record of its own writes, the same direction as
 §15.13, which names explicit provenance as the real fix for inferred signals.
-It is validated: every key a chart, every field one the brain fills and the
-chart has, every value one that field takes (or null). A renamed chart must
-carry its entry. Brain output never silences a rule: `size.table-window` and
+It is validated: every field one the brain fills, and every value one that
+field takes on its chart (or null). An entry for a chart the spec no longer has,
+or a field the chart no longer has (another chart type), still validates, so
+renaming a chart never stops a spec building: `default.stale-record` reports it
+and `--fix` drops it. Rename the entry with the chart to keep its fills the
+brain's; dropped, the renamed chart's values read as the author's. Brain output never silences a rule: `size.table-window` and
 `size.grid-fit` still report a page the brain filled that no longer fits, but
 leave the height alone, because that page follows the height and the fill
 phase refits it; an author's page gets the ordinary height fix. Decompile
@@ -1747,11 +1754,9 @@ that item and nothing else:
 | a CSS block with no record whose marker hash still matches its text (the standard's own earlier version, as after a decompile) | left as it is; `--claim` takes it over and brings it up to date | a violation; `--claim` brings it up to date |
 | a value of the author's, with no record | the author's | a violation |
 
-This is where content parts from §16's fills: an edited fill drops its record, so
-deleting the edited value lets `--fix` fill it again, while a released standard item
-keeps its record, so the author's deletion is never undone. The decision record's
-rule, "an author's edit or deletion wins", governs both; fills keep their shipped
-behaviour until phase 4 revisits them.
+Fills keep the same released record (§16, since brain 7): an edited fill records
+null, so deleting the edited value later is never undone either. The decision
+record's rule, "an author's edit or deletion wins", governs both.
 
 Unmarked CSS counts only as whole top-level rules, in order, outside comments:
 `.sidebar .dashboard-markdown {...}` doesn't hold the standard's

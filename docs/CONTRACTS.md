@@ -367,9 +367,9 @@ running the tool against real instances of all three releases.
 - **A table's page size is `page_length`.** Superset reads
   `server_page_length` only with server pagination on, and `page_length`
   otherwise (`plugin-chart-table/src/transformProps.ts`, 4.1.4 `:631`, 5.0.0
-  `:699`, 6.1.0 `:789`). The tool never turns server pagination on; the
-  `server_page_length` it has always written is Superset's stored default and
-  changes nothing. `page_length` in the spec sets the page.
+  `:699`, 6.1.0 `:789`). The tool never turns server pagination on, so it
+  writes no `server_page_length` (0.3.0 and earlier wrote Superset's stored
+  default, 10, which changed nothing). `page_length` in the spec sets the page.
 - **A bar sorts its categories two ways.** With one series a post-processing
   sort orders the returned rows on the x column (`operators/sortOperator.ts`,
   which skips any chart with a groupby, 4.1.4 and 5.0.0 `:46`, 6.1.0 `:45`);

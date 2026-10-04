@@ -23,7 +23,10 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # `--fix` writes, so consumers keying on this get the signal.
 # "6" = the standard.* family (sec.18, "Content"): an error and two warn rules that
 # fire when a standard with content applies, so a strict gate can newly block.
-DESIGN_BRAIN_VERSION = "6"
+# "7" = fills keep a null record when the author edits one (an edit later deleted stays
+# deleted), and default.stale-record: a fixable finding for a renamed or removed chart's
+# design.filled entry, which now validates. Both change what `--fix` writes.
+DESIGN_BRAIN_VERSION = "7"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
@@ -271,7 +274,7 @@ class RuleContext:
 
     def filled(self, name: str) -> dict:
         """design.filled for this chart: field -> the value the brain wrote, or None
-        for a fill the author deleted (the brain fills that field no more)."""
+        for a fill the author edited or deleted (the brain fills that field no more)."""
         design = self.spec.design
         return dict(design.filled.get(name, {})) if design else {}
 

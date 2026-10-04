@@ -1677,9 +1677,9 @@ class DesignConfig(BaseModel):
         default_factory=dict,
         description="Written by `chartwright advise --fix`, not by hand: per chart name, each "
                     "field it filled with a design default and the value it wrote. While the "
-                    "chart still holds that value, --fix keeps it up to date. Edit the field "
-                    "and it is yours; delete it and --fix records null here and fills it no "
-                    "more, until you delete that entry. Compile ignores this block.",
+                    "chart still holds that value, --fix keeps it up to date. Edit or delete "
+                    "the field and it is yours: --fix records null here and fills it no more, "
+                    "until you delete that entry. Compile ignores this block.",
     )
     standard_written: dict[str, dict[str, Any] | None] = Field(
         default_factory=dict,
@@ -1787,22 +1787,18 @@ class DashboardSpec(BaseModel):
 
     @model_validator(mode="after")
     def _filled_names_charts(self) -> "DashboardSpec":
-        """design.filled names real charts, fields that chart has, and values that field
-        takes (or null: a fill the author deleted). A renamed chart must carry its entry
-        along, or the brain would lose track of its own fills."""
+        """design.filled holds values its fields take (or null: a fill the author edited
+        or deleted). An entry for a chart that was renamed or removed, or a field the
+        chart no longer has, is accepted: default.stale-record reports it and
+        `advise --fix` drops it, so renaming a chart never stops the spec building."""
         by_name = {c.name: c for c in self.charts}
         for name, record in (self.design.filled if self.design else {}).items():
             chart = by_name.get(name)
             if chart is None:
-                raise ValueError(f"design.filled names chart {name!r}, which is not in charts; "
-                                 "rename its entry with the chart, or delete the entry")
+                continue
             fields = type(chart).model_fields
-            foreign = [f for f in record if f not in fields]
-            if foreign:
-                raise ValueError(f"design.filled[{name!r}]: a {chart.type} chart has no "
-                                 f"{foreign}; delete them from the entry")
             for field, value in record.items():
-                if value is None:
+                if value is None or field not in fields:
                     continue
                 info = fields[field]
                 kind = (Annotated[(info.annotation, *info.metadata)] if info.metadata
