@@ -1044,7 +1044,11 @@ def render_apply(payload: dict) -> str:
             f"{t['unchanged']} unchanged")
     if payload.get("no_standard"):
         head += f"; {len(payload['no_standard'])} follow no standard and stay as they are"
-    if payload["check"]:
+    if payload["check"] and payload.get("strict"):
+        n = sum(1 for e in payload["specs"] if e.get("pending"))
+        head += (f"\n{n} spec{'s' if n != 1 else ''} would change (--strict fails on any)"
+                 if n else "\nno spec would change")
+    elif payload["check"]:
         n = t["locked_stale"]
         head += (f"\n{n} spec{'s lack' if n != 1 else ' lacks'} locked content as the "
                  f"standard has it now" if n else "\nevery spec holds its standard's locked content")
@@ -1081,7 +1085,7 @@ def render_apply(payload: dict) -> str:
 
 def apply_files(paths: list[Path], source: StandardsSource, *, check: bool = False,
                 locked: bool = False, claim: bool = False, only: str | None = None,
-                skipped: list[str] = ()) -> dict:
+                skipped: list[str] = (), strict: bool = False) -> dict:
     """`standards apply` over spec files. Writes only a spec whose data changed (2-space
     JSON, as advise --fix writes), and nothing in check mode. `only` limits the run to
     the specs following that standard, so a rollout splits into one pull request per
@@ -1120,18 +1124,24 @@ def apply_files(paths: list[Path], source: StandardsSource, *, check: bool = Fal
         if changed and not check:
             p.write_text(json.dumps(new, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         entry["written"] = changed and not check
+        entry["pending"] = changed    # apply would rewrite the file (content or record)
         (written if changed else unchanged).append(str(p))
         entries.append(entry)
     summary = apply_summary(entries)
     for e in entries:
         e.pop("decisions", None)
-    if check:
+    if check and strict:
+        # --check --strict, like black --check: any file apply would rewrite fails.
+        ok = not any(e.get("pending") or e.get("locked_stale") or e.get("errors")
+                     for e in entries)
+    elif check:
         # The decision record's #7: --check fails on locked content only, so unlocked
         # changes can reach teams in their own pull requests while CI stays green.
         ok = not any(e.get("locked_stale") or e.get("errors") for e in entries)
     else:
         ok = all(e.get("ok", False) for e in entries)
-    out = {"stage": "standards", "ok": ok, "check": check, "locked": locked, "claim": claim,
+    out = {"stage": "standards", "ok": ok, "check": check, "strict": strict,
+           "locked": locked, "claim": claim,
            "standards_dir": display(standards.directory), "specs": entries,
            "summary": summary,
            "totals": {"specs": sum(1 for e in entries if "changes" in e),

@@ -424,7 +424,7 @@ def standards_show(name: str = "", spec_json: str = "") -> str:
 @mcp.tool()
 @_typed_errors
 def standards_apply(spec_json: str, check: bool = False, locked: bool = False,
-                    claim: bool = False) -> str:
+                    claim: bool = False, strict: bool = False) -> str:
     """The CLI's `standards apply` for one spec, offline: writes the content of the spec's
     standard into it (header and footer rows, CSS blocks, colour scheme, label colours,
     certification, number formats), recording each item in design.standard_written, and
@@ -433,7 +433,8 @@ def standards_apply(spec_json: str, check: bool = False, locked: bool = False,
     stays the standard's, and an unlocked one you edit becomes yours for good. check
     returns no spec, and ok false when the spec doesn't hold the standard's locked content
     as it is now (the CLI's --check; `stale` says whether unlocked content would change
-    too); locked also rewrites locked items the author changed (--locked); claim
+    too), and with strict, ok false on any change apply would make (--check --strict);
+    locked also rewrites locked items the author changed (--locked); claim
     records items that already hold the standard's value (--claim). The standards
     directory is the server's $CHARTWRIGHT_STANDARDS_DIR, or the one found from its
     working directory."""
@@ -463,7 +464,8 @@ def standards_apply(spec_json: str, check: bool = False, locked: bool = False,
     entry.pop("decisions")
     out.update(entry)
     if check:
-        out["ok"] = not entry["locked_stale"] and not entry["errors"]
+        out["ok"] = not entry["locked_stale"] and not entry["errors"] and not (
+            strict and new != data)
     else:
         out["spec"] = new
         out["written"] = new != data

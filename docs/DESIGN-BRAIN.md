@@ -128,7 +128,7 @@ chartwright calibrate [--write] [--min-samples N] [--since 90d]
 chartwright standards check <specs...> [--strict] [--report] [--standards DIR]
 chartwright standards show [NAME | --for SPEC] [--json] [--standards DIR]
 chartwright standards assign <specs...> --standard NAME [--standards DIR]
-chartwright standards apply <specs...> [--check] [--locked] [--claim] [--standard NAME]
+chartwright standards apply <specs...> [--check [--strict]] [--locked] [--claim] [--standard NAME]
                                        [--json] [--standards DIR]
 ```
 
@@ -207,7 +207,9 @@ One additive optional block (models stay `extra="forbid"`):
   Compile, plan and decompile ignore it.
 - `standard_written`: written by `standards apply`, not by hand: each item of
   content a standard wrote and its value or hash (§18, "Content"). A field
-  recorded here is never in `filled` too. Compile, plan and decompile ignore
+  recorded here is never in `filled` too. An entry for a chart that was renamed
+  or removed is accepted: `standards check` warns and `standards apply` drops it
+  (`filled` still refuses one, as §16 says). Compile, plan and decompile ignore
   it.
 
 Precedence everywhere: CLI flag > spec `design` block > built-in default,
@@ -1637,8 +1639,8 @@ before every rule.
 
 #### standards apply
 
-`chartwright standards apply <files|folders|globs> [--check] [--locked]
-[--claim] [--standard NAME] [--json]` writes each spec's standard into it,
+`chartwright standards apply <files|folders|globs> [--check [--strict]]
+[--locked] [--claim] [--standard NAME] [--json]` writes each spec's standard into it,
 deterministically, and rewrites only the files whose data changed. A spec that
 follows no standard is left as it is (§15.32); a spec apply can't read in
 full (CSS markers it can't parse) is left as it is and reported. It prints a
@@ -1683,6 +1685,9 @@ ops (acme -> ops), 3 specs
   changed by its author. Unlocked changes are listed and pass, so they reach
   each team in that team's own pull request; `standards check --strict`
   fails on them (§14.16).
+- `--check --strict` fails on any change apply would make, unlocked content
+  and the record included, like `black --check`, for a repository that wants
+  every spec current at every commit.
 - `--locked` also rewrites locked items their authors changed; each such
   change says `rewrite` and carries `was`. Without it they are reported, and
   apply exits 1.

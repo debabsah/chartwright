@@ -217,6 +217,9 @@ def _main(argv: list[str] | None = None) -> None:
     stp.add_argument("--check", action="store_true",
                      help="write nothing; exit 1 if any spec lacks locked content as the "
                           "standard has it now (unlocked changes are listed, not failed)")
+    stp.add_argument("--strict", action="store_true",
+                     help="with --check, fail on any change apply would make, unlocked "
+                          "content and records included")
     stp.add_argument("--locked", action="store_true",
                      help="also rewrite locked items their authors changed; each change shows "
                           "what was there")
@@ -608,8 +611,11 @@ def _standards_cmd(args) -> None:
 
     if args.standards_cmd == "apply":
         try:
+            if args.strict and not args.check:
+                raise st.StandardsError("usage", "--strict goes with --check")
             payload = st.apply_files(paths, source, check=args.check, locked=args.locked,
-                                     claim=args.claim, only=args.standard, skipped=skipped)
+                                     claim=args.claim, only=args.standard, skipped=skipped,
+                                     strict=args.strict)
         except st.StandardsError as e:
             fail(e)
         print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json

@@ -1795,10 +1795,11 @@ class DashboardSpec(BaseModel):
 
     @model_validator(mode="after")
     def _one_owner_per_field(self) -> "DashboardSpec":
-        """A chart's number_format in design.standard_written names a real chart that has
-        the field, and a field has one owner: the brain (design.filled) or a standard
+        """A field has one owner: the brain (design.filled) or a standard
         (design.standard_written), never both, or each would read the other's write as
-        the author's edit and neither would own it."""
+        the author's edit and neither would own it. An entry for a chart that was
+        renamed or removed, or no longer has a number_format, is accepted: `standards
+        check` warns about it and `standards apply` drops it."""
         if self.design is None:
             return self
         by_name = {c.name: c for c in self.charts}
@@ -1808,12 +1809,8 @@ class DashboardSpec(BaseModel):
                 continue
             name = m.group(1)
             chart = by_name.get(name)
-            if chart is None:
-                raise ValueError(f"design.standard_written names chart {name!r}, which is not "
-                                 "in charts; rename its entry with the chart, or delete it")
-            if "number_format" not in type(chart).model_fields:
-                raise ValueError(f"design.standard_written: a {chart.type} chart has no "
-                                 f"number_format; delete {key!r}")
+            if chart is None or "number_format" not in type(chart).model_fields:
+                continue
             if "number_format" in self.design.filled.get(name, {}):
                 raise ValueError(
                     f"{name!r}: number_format is recorded in design.filled and in "

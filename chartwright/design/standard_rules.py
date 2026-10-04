@@ -58,7 +58,14 @@ def content_locked(ctx: RuleContext):
             continue
         what, layer = _what(d.slot), d.layer
         expected = _show(d.item.value, d.slot)
-        if d.state == "add":
+        waits = (d.id == "dashboard.certification_details" and d.found is None
+                 and ctx.spec.dashboard.certified_by is None)
+        if d.state == "held" or waits:
+            detail = (f"{d.id}: the {layer} standard's certification details, which "
+                      f"{d.locked_by} locks, wait for dashboard.certified_by, which the "
+                      f"author removed; put it back, or `chartwright standards apply "
+                      f"--locked` writes both if certified_by is locked too")
+        elif d.state == "add":
             detail = (f"{d.id}: the {layer} standard's {what} {expected} is missing, and "
                       f"{d.locked_by} locks it; `chartwright standards apply` adds it")
         elif d.state == "refresh":
@@ -89,7 +96,16 @@ def content_stale(ctx: RuleContext):
             yield Finding("standard.content-stale", "warn", None, err["item"],
                           f"{err['item']}: {err['detail']}; standards apply can't update the "
                           f"standard's blocks until the markers are fixed by hand")
+    charts = {c.name: c for c in ctx.spec.charts}
     for d in a.decisions:
+        if d.state == "forget" and d.slot == "number_format":
+            name = d.id[len("charts["):-len("].number_format")]
+            if name not in charts or "number_format" not in type(charts[name]).model_fields:
+                yield Finding("standard.content-stale", "warn", None, d.id,
+                              f"{d.id}: design.standard_written names a chart the spec no "
+                              f"longer has (renamed or removed); `chartwright standards "
+                              f"apply` drops the entry")
+            continue
         if d.locked_by or d.state not in C.WRITES:
             continue
         what = _what(d.slot)

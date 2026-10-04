@@ -68,7 +68,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
     locked one that differs is an error in `standards check` and is left as it is until
     `standards apply --locked` rewrites it, showing what was there.
   - `--check` writes nothing and exits 1 when a spec lacks locked content as the
-    standard has it now; unlocked changes are listed and pass. `--claim` records content
+    standard has it now; unlocked changes are listed and pass. `--check --strict`
+    exits 1 on any change apply would make. `--claim` records content
     a decompiled or adopted spec already holds; apply never adds it twice.
     `--standard NAME` limits a run to one team's specs.
   - New rules, design brain 6: `standard.content-locked` (error),

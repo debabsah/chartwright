@@ -835,6 +835,66 @@ def test_certification_details_wait_for_a_certified_by_the_author_removed(tmp_pa
     assert "wait for dashboard.certified_by" in f["detail"]
 
 
+def test_a_renamed_chart_leaves_an_entry_that_check_names_and_apply_drops(repo, capsys):
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    edit(path, lambda d: (d["charts"][0].update(name="K2"),
+                          d["layout"].__setitem__("rows", [["K2", "R"]])))
+    assert run_ok(capsys, "validate", str(path)) == {"ok": True, "stage": "schema"}
+    [f] = [f for f in findings(capsys, path, "standard.content-stale")
+           if f["where"] == "charts[K].number_format"]
+    assert "no longer has" in f["detail"]
+    apply(capsys, str(path))
+    written = read(path)["design"]["standard_written"]
+    assert "charts[K].number_format" not in written
+    # K2 holds the standard's value under no record: --claim records it.
+    apply(capsys, str(path), "--claim")
+    assert read(path)["design"]["standard_written"]["charts[K2].number_format"] == {
+        "layer": "finance", "value": ",.0f"}
+
+
+def test_held_locked_certification_details_say_they_wait(tmp_path, capsys):
+    org = ("name: org\ndefault: true\ncontent: {certified_by: Platform, "
+           "certification_details: Quarterly}\n"
+           "locked: {content: [certified_by, certification_details]}\n")
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo)
+    apply(capsys, str(path))
+    edit(path, lambda d: (d["dashboard"].pop("certified_by"),
+                          d["dashboard"].pop("certification_details")))
+    details = [f for f in findings(capsys, path, "standard.content-locked")
+               if f["where"] == "dashboard.certification_details"]
+    assert len(details) == 1 and "wait for dashboard.certified_by" in details[0]["detail"]
+    assert "differs" not in details[0]["detail"]
+    code, _ = apply(capsys, str(path), "--locked")
+    assert code == 0 and read(path)["dashboard"]["certification_details"] == "Quarterly"
+
+
+def test_check_strict_fails_on_any_change_apply_would_make(repo, capsys):
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    (repo / "standards" / "teams" / "finance.yaml").write_text(
+        FINANCE.replace('"Finance"', '"Finance v2"'), encoding="utf-8")
+    assert apply(capsys, str(path), "--check")[0] == 0          # unlocked: listed, passes
+    code, out = apply(capsys, str(path), "--check", "--strict")
+    assert code == 1 and out["strict"] and out["specs"][0]["pending"]
+    code, out = run(capsys, "standards", "apply", str(path), "--strict")
+    assert code == 1 and out["errors"][0]["code"] == "usage"
+    apply(capsys, str(path))
+    assert apply(capsys, str(path), "--check", "--strict")[0] == 0
+
+
+def test_mcp_check_strict(repo, monkeypatch, capsys):
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    (repo / "standards" / "teams" / "finance.yaml").write_text(
+        FINANCE.replace('"Finance"', '"Finance v2"'), encoding="utf-8")
+    monkeypatch.setenv("CHARTWRIGHT_STANDARDS_DIR", str(repo / "standards"))
+    assert mcp_call("standards_apply", spec_json=path.read_text(), check=True)["ok"] is True
+    assert mcp_call("standards_apply", spec_json=path.read_text(), check=True,
+                    strict=True)["ok"] is False
+
+
 def test_mcp_standards_apply_returns_a_typed_error_not_a_raise(repo, monkeypatch):
     monkeypatch.setenv("CHARTWRIGHT_STANDARDS_DIR", str(repo / "standards"))
     import chartwright.design.standards as st
