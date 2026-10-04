@@ -641,6 +641,22 @@ def expand_specs(args: list[str]) -> list[Path]:
     return unique
 
 
+def split_specs(paths: list[Path]) -> tuple[list[Path], list[Path]]:
+    """(specs, skipped): a JSON file without a top-level spec_version is no spec (a
+    package.json beside the specs), so a fleet run lists it and moves on. A file that
+    isn't valid JSON at all stays in, to be reported as unreadable: it may be a broken
+    spec."""
+    specs, skipped = [], []
+    for p in paths:
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            specs.append(p)
+            continue
+        (specs if isinstance(data, dict) and "spec_version" in data else skipped).append(p)
+    return specs, skipped
+
+
 def source_for_specs(explicit: str | None, paths: list[Path]) -> StandardsSource:
     """One standards directory for a run over many specs: --standards, or the one every
     spec discovers. Specs that discover different directories, or none, are an error:
@@ -744,7 +760,8 @@ def locks_hit(entry: dict) -> list[str]:
     return sorted(hit)
 
 
-def fleet_report(entries: list[dict], *, strict: bool, standards_dir: str) -> dict:
+def fleet_report(entries: list[dict], *, strict: bool, standards_dir: str,
+                 skipped: list[str] = ()) -> dict:
     """`standards check --report`: per spec its standard, pass or fail, findings counted
     by rule and severity and the locks it hit; then the totals across the fleet."""
     specs = []
@@ -780,7 +797,7 @@ def fleet_report(entries: list[dict], *, strict: bool, standards_dir: str) -> di
     totals["locks_hit"] = dict(sorted(totals["locks_hit"].items()))
     return {"stage": "standards", "report": True, "ok": totals["failed"] == 0,
             "strict": strict, "standards_dir": standards_dir, "specs": specs,
-            "totals": totals}
+            "skipped": list(skipped), "totals": totals}
 
 
 # -- assign -------------------------------------------------------------------

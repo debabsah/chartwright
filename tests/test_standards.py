@@ -728,13 +728,43 @@ def test_standards_check_needs_a_standards_directory(tmp_path, capsys):
     assert code == 1 and payload["errors"][0]["code"] == "no_standards_dir"
 
 
+@pytest.mark.parametrize("other", ['{"name": "web", "version": "1.0.0"}', "[1, 2]", '"x"'])
+def test_json_files_that_are_not_specs_are_skipped_and_listed(repo, capsys, other):
+    """A folder of specs often holds other JSON (package.json, tsconfig.json): a file
+    without a top-level spec_version is no spec, so it is listed, never failed."""
+    spec = write_spec(repo / "specs" / "ok.json", standard="org",
+                      data={**DATA, "charts": [{**DATA["charts"][0], "height": 8}]})
+    pkg = repo / "specs" / "package.json"
+    pkg.write_text(other, encoding="utf-8")
+    code, payload = run(capsys, "standards", "check", str(repo / "specs"))
+    assert code == 0 and payload["ok"] is True, payload
+    assert [e["spec"] for e in payload["specs"]] == [str(spec)]
+    assert payload["skipped"] == [str(pkg)]
+    assert payload["totals"] == {"specs": 1, "passed": 1, "failed": 0}
+    before = pkg.read_bytes()
+    code, payload = run(capsys, "standards", "assign", str(repo / "specs"), "--standard", "finance")
+    assert code == 0 and payload["skipped"] == [str(pkg)]
+    assert [w["spec"] for w in payload["written"]] == [str(spec)]
+    assert pkg.read_bytes() == before
+
+
+def test_a_folder_of_no_specs_is_an_error(repo, capsys):
+    (repo / "specs").mkdir()
+    (repo / "specs" / "package.json").write_text("{}", encoding="utf-8")
+    code, payload = run(capsys, "standards", "check", str(repo / "specs"))
+    assert code == 1 and payload["errors"][0]["code"] == "no_specs"
+
+
 def test_the_fleet_report(repo, capsys):
     write_spec(repo / "specs" / "fin.json", standard="finance", ignore=[AXIS])
     write_spec(repo / "specs" / "org.json")
-    (repo / "specs" / "broken.json").write_text("[]", encoding="utf-8")
+    (repo / "specs" / "broken.json").write_text('{"spec_version": "1"}', encoding="utf-8")
+    (repo / "specs" / "package.json").write_text('{"name": "x"}', encoding="utf-8")
     code, payload = run(capsys, "standards", "check", str(repo / "specs"), "--report")
     assert code == 1
-    assert set(payload) == {"stage", "report", "ok", "strict", "standards_dir", "specs", "totals"}
+    assert set(payload) == {"stage", "report", "ok", "strict", "standards_dir", "specs",
+                            "skipped", "totals"}
+    assert payload["skipped"] == [str(repo / "specs" / "package.json")]
     rows = {Path(r["spec"]).name: r for r in payload["specs"]}
     assert rows["fin.json"] == {
         "spec": str(repo / "specs" / "fin.json"), "standard": "finance", "ok": False,

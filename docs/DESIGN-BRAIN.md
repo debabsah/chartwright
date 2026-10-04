@@ -1293,7 +1293,10 @@ broken `design.yaml` does (§15.14).
 runs `advise` over every spec with its standard applied and `design.yaml` set
 aside entirely: no parameter, severity or disable entry from it reaches the
 result, and the payload names the file it set aside. The specs must find one
-standards folder between them. It exits 1 when any spec has an error finding,
+standards folder between them. A JSON file without a top-level `spec_version`
+(a `package.json` beside the specs) is no spec: it is listed under `skipped`
+and never fails the run, here and in `standards assign`; a file that isn't
+valid JSON is still reported as unreadable. It exits 1 when any spec has an error finding,
 or a warn under `--strict`, or can't be read, or names a standard the folder
 lacks; a broken standards folder fails the whole run.
 

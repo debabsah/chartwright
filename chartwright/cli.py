@@ -573,19 +573,25 @@ def _standards_cmd(args) -> None:
         return
 
     try:
-        paths = st.expand_specs(args.specs)
+        # JSON without a top-level spec_version (a package.json) is listed, not failed.
+        paths, skipped = st.split_specs(st.expand_specs(args.specs))
         if not paths:
-            raise st.StandardsError("no_specs", f"no spec files in {args.specs}")
+            raise st.StandardsError(
+                "no_specs", f"no spec files in {args.specs}"
+                + (f" (skipped, no spec_version: {[str(p) for p in skipped]})" if skipped
+                   else ""))
         source = st.source_for_specs(args.standards, paths)
         standards = source.load()
     except st.StandardsError as e:
         fail(e)
+    skipped = [str(p) for p in skipped]
 
     if args.standards_cmd == "assign":
         try:
             payload = st.assign(paths, args.standard, standards)
         except st.StandardsError as e:
             fail(e)
+        payload["skipped"] = skipped
         print(json.dumps(payload, indent=2))
         sys.exit(0 if payload["ok"] else 1)
 
@@ -598,11 +604,12 @@ def _standards_cmd(args) -> None:
             entries.append({"spec": str(p), **st.check_spec(spec, source, strict=args.strict)})
     sdir = st.display(standards.directory)
     if args.report:
-        payload = st.fleet_report(entries, strict=args.strict, standards_dir=sdir)
+        payload = st.fleet_report(entries, strict=args.strict, standards_dir=sdir,
+                                  skipped=skipped)
     else:
         passed = sum(1 for e in entries if e["ok"])
         payload = {"stage": "standards", "ok": passed == len(entries), "strict": args.strict,
-                   "standards_dir": sdir, "specs": entries,
+                   "standards_dir": sdir, "specs": entries, "skipped": skipped,
                    "totals": {"specs": len(entries), "passed": passed,
                               "failed": len(entries) - passed}}
     from .design.presets import overlay_path

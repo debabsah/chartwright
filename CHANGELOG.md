@@ -43,7 +43,9 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - `chartwright standards check <specs>`: the review over many specs, each under its
   standard, with `design.yaml` set aside; exit 1 on an error finding, or a warn with
   `--strict`. `--report` prints the fleet report: per spec its standard, pass or fail,
-  finding counts by rule and severity, and the locks it hit; then the totals.
+  finding counts by rule and severity, and the locks it hit; then the totals. JSON
+  without a top-level `spec_version` (a `package.json`) is listed under `skipped`, here
+  and in `standards assign`.
 - `chartwright standards show [NAME | --for SPEC] [--json]`: a standard after `extends`,
   each key with its value, the layer that set it and whether it is locked.
 - `chartwright standards assign <specs> --standard NAME`: writes `design.standard` into
