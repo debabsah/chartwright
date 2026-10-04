@@ -1286,6 +1286,32 @@
           "default": null,
           "description": "The dashboard's owners: Superset usernames, or the email address of each account, e.g. [\"jdoe\", \"ana@example.com\"]. Use emails on 4.1.4 and 5.0.0, whose API returns no usernames unless FAB_ADD_SECURITY_API is on. apply sets them after the import, keeping the account that applies as an owner too (Superset adds it on every import, and a non-admin account needs it to import again), and plan reports a difference. Omitted, apply leaves the live owners alone and plan doesn't compare them. Accounts only: Superset's owners are users, not roles.",
           "title": "Owners"
+        },
+        "lifecycle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Lifecycle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where the dashboard is in its life: {\"state\": \"deprecated\", \"successor\": \"sales-v2\", \"sunset_date\": \"2026-12-31\"}. Spec-only: compile and plan ignore it, and Superset has no such field. A standard can turn it into a banner row (`standards apply`). Omitted means active."
+        },
+        "classification": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How sensitive the dashboard is, e.g. \"internal\" or \"confidential\": a free word, or one of the values the repository's standard lists. Spec-only: compile and plan ignore it. A standard can key footer rows off it (`standards apply`).",
+          "title": "Classification"
         }
       },
       "required": [
@@ -1381,6 +1407,22 @@
           },
           "description": "Written by `chartwright advise --fix`, not by hand: per chart name, each field it filled with a design default and the value it wrote. While the chart still holds that value, --fix keeps it up to date. Edit the field and it is yours; delete it and --fix records null here and fills it no more, until you delete that entry. Compile ignores this block.",
           "title": "Filled",
+          "type": "object"
+        },
+        "standard_written": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "Written by `chartwright standards apply`, not by hand: each item of spec content a standard wrote (a header or footer row, a CSS block, a label colour, a dashboard setting, a chart's number_format), the layer that wrote it and its value or hash. While the spec still holds that value, apply keeps it up to date. Edit or delete an unlocked item and it is yours (null here: never written again, until you delete that entry); a locked item stays the standard's. Compile ignores this block.",
+          "title": "Standard Written",
           "type": "object"
         }
       },
@@ -2543,6 +2585,55 @@
         }
       },
       "title": "Layout",
+      "type": "object"
+    },
+    "Lifecycle": {
+      "additionalProperties": false,
+      "description": "Where a dashboard is in its life. Spec-only: compile, plan and decompile never\nread it, and Superset has no field for it. A standard turns it into what readers see,\na banner row per state (docs/DESIGN-BRAIN.md sec.18, \"Content\").",
+      "properties": {
+        "state": {
+          "description": "active (in use), deprecated (still works; readers should move to the successor) or sunset (retired, kept for reference)",
+          "enum": [
+            "active",
+            "deprecated",
+            "sunset"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "successor": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The slug of the dashboard that replaces this one; deprecated or sunset only",
+          "title": "Successor"
+        },
+        "sunset_date": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The day it is (or was) retired, YYYY-MM-DD; deprecated or sunset only",
+          "title": "Sunset Date"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "Lifecycle",
       "type": "object"
     },
     "MarkdownBlock": {

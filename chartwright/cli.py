@@ -13,6 +13,7 @@
     chartwright standards check specs/          check specs against the repository's standards
     chartwright standards show [NAME]           a standard after extends, each key's layer and lock
     chartwright standards assign specs/ --standard NAME   write design.standard into specs
+    chartwright standards apply specs/          write each standard's content into its specs
 """
 
 from __future__ import annotations
@@ -207,6 +208,28 @@ def _main(argv: list[str] | None = None) -> None:
     sta.add_argument("specs", nargs="+", help="spec files, folders (every .json beneath) or globs")
     sta.add_argument("--standard", required=True, metavar="NAME", help="the standard's name")
     sta.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
+    stp = std_verbs.add_parser(
+        "apply", help="write each spec's standard content into it (header and footer rows, "
+                      "CSS blocks, colours, certification, number formats) and print a "
+                      "summary grouped by standard and item")
+    stp.add_argument("specs", nargs="+", help="spec files, folders (every .json beneath) or globs")
+    stp.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
+    stp.add_argument("--check", action="store_true",
+                     help="write nothing; exit 1 if any spec lacks locked content as the "
+                          "standard has it now (unlocked changes are listed, not failed)")
+    stp.add_argument("--strict", action="store_true",
+                     help="with --check, fail on any change apply would make, unlocked "
+                          "content and records included")
+    stp.add_argument("--locked", action="store_true",
+                     help="also rewrite locked items their authors changed; each change shows "
+                          "what was there")
+    stp.add_argument("--claim", action="store_true",
+                     help="record items that already hold the standard's value (a decompiled "
+                          "or adopted dashboard) as the standard's")
+    stp.add_argument("--standard", default=None, metavar="NAME",
+                     help="only the specs that follow this standard, for one pull request "
+                          "per team")
+    stp.add_argument("--json", action="store_true", help="the full result as JSON")
 
     br = sub.add_parser("brief", help="the design brief to read BEFORE authoring a spec")
     br.add_argument("--audience", choices=AUDIENCE_NAMES, default="analytical")
@@ -578,13 +601,26 @@ def _standards_cmd(args) -> None:
         if not paths:
             raise st.StandardsError(
                 "no_specs", f"no spec files in {args.specs}"
-                + (f" (skipped, no spec_version: {[str(p) for p in skipped]})" if skipped
+                + (f" (skipped, no spec_version: {[p.as_posix() for p in skipped]})" if skipped
                    else ""))
         source = st.source_for_specs(args.standards, paths)
         standards = source.load()
     except st.StandardsError as e:
         fail(e)
-    skipped = [str(p) for p in skipped]
+    skipped = [p.as_posix() for p in skipped]
+
+    if args.standards_cmd == "apply":
+        try:
+            if args.strict and not args.check:
+                raise st.StandardsError("usage", "--strict goes with --check")
+            payload = st.apply_files(paths, source, check=args.check, locked=args.locked,
+                                     claim=args.claim, only=args.standard, skipped=skipped,
+                                     strict=args.strict)
+        except st.StandardsError as e:
+            fail(e)
+        print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json
+              else st.render_apply(payload), end="\n" if args.json else "")
+        sys.exit(0 if payload["ok"] else 1)
 
     if args.standards_cmd == "assign":
         try:
@@ -599,9 +635,9 @@ def _standards_cmd(args) -> None:
     for p in paths:
         spec, err = st.load_spec_file(p)
         if err is not None:
-            entries.append({"spec": str(p), "ok": False, "standard": None, "errors": [err]})
+            entries.append({"spec": p.as_posix(), "ok": False, "standard": None, "errors": [err]})
         else:
-            entries.append({"spec": str(p), **st.check_spec(spec, source, strict=args.strict)})
+            entries.append({"spec": p.as_posix(), **st.check_spec(spec, source, strict=args.strict)})
     sdir = st.display(standards.directory)
     if args.report:
         payload = st.fleet_report(entries, strict=args.strict, standards_dir=sdir,
@@ -616,7 +652,7 @@ def _standards_cmd(args) -> None:
 
     if overlay_path().exists():
         # Named, never read: a per-machine file must not decide a fleet check.
-        payload["overlay"] = {"path": str(overlay_path()), "set_aside": True}
+        payload["overlay"] = {"path": overlay_path().as_posix(), "set_aside": True}
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     sys.exit(0 if payload["ok"] else 1)
 

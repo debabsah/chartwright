@@ -12,6 +12,8 @@ untouched.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..resolver import Resolution
 from ..spec import DashboardSpec, load_spec
 from .fix import apply_fixes
@@ -96,7 +98,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
                 severity[r] = level
                 set_by[r] = "overlay"
 
-    ctx = RuleContext(spec, params, resolution, prober)
+    ctx = RuleContext(spec, params, resolution, prober, standard)
     findings: list[Finding] = []
     ignored: list[str] = []
     polished: list[str] = []
@@ -178,7 +180,7 @@ def _overlay_report(overlay: Overlay, audience: str, strict: bool,
         return None
     params = overlay.param_names(audience)
     severity = dict(sorted(overlay.severity.items()))
-    out: dict = {"path": str(overlay.source) if overlay.source else None, "strict": strict}
+    out: dict = {"path": Path(overlay.source).as_posix() if overlay.source else None, "strict": strict}
     if strict:
         set_aside = {"params": params, "disable": sorted(overlay.disable),
                      "severity": severity}
@@ -323,3 +325,4 @@ def gate_block(advice: dict) -> str | None:
 # default.* fills come after the rules, whose grid helpers they share.
 from . import rules  # noqa: E402,F401
 from . import defaults  # noqa: E402,F401
+from . import standard_rules  # noqa: E402,F401

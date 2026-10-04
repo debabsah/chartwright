@@ -1,0 +1,22 @@
+{
+  "spec_version": "1",
+  "dashboard": {
+    "title": "Standards content",
+    "slug": "cw-live-standards",
+    "classification": "confidential",
+    "css": "@import url('https://fonts.googleapis.com/css2?family=Inter');\n.dashboard-header { border-bottom: 2px solid #cccccc; }"
+  },
+  "charts": [
+    {"name": "Flights", "type": "big_number_total", "metric": "COUNT(*)",
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Delays by Cause", "type": "bar", "x_column": "CANCELLATION_REASON",
+     "metrics": ["SUM(ARRIVAL_DELAY) AS Minutes"],
+     "dataset": {"database": "examples", "table": "flights"}}
+  ],
+  "layout": {
+    "header": [[{"markdown": "Delay figures reconcile with the finance close each month", "height": 1}]],
+    "rows": [["Flights", "Delays by Cause"]],
+    "footer": [[{"markdown": "Source: DOT on-time data", "width": 12}]]
+  },
+  "design": {"standard": "ops"}
+}

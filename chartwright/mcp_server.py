@@ -422,6 +422,57 @@ def standards_show(name: str = "", spec_json: str = "") -> str:
 
 @mcp.tool()
 @_typed_errors
+def standards_apply(spec_json: str, check: bool = False, locked: bool = False,
+                    claim: bool = False, strict: bool = False) -> str:
+    """The CLI's `standards apply` for one spec, offline: writes the content of the spec's
+    standard into it (header and footer rows, CSS blocks, colour scheme, label colours,
+    certification, number formats), recording each item in design.standard_written, and
+    returns {spec, changes, stale, locked_stale, locked}. Keep the returned spec. Never
+    edit content the standard wrote by hand to make a finding go away: a locked item
+    stays the standard's, and an unlocked one you edit becomes yours for good. check
+    returns no spec, and ok false when the spec doesn't hold the standard's locked content
+    as it is now (the CLI's --check; `stale` says whether unlocked content would change
+    too), and with strict, ok false on any change apply would make (--check --strict);
+    locked also rewrites locked items the author changed (--locked); claim
+    records items that already hold the standard's value (--claim). The standards
+    directory is the server's $CHARTWRIGHT_STANDARDS_DIR, or the one found from its
+    working directory."""
+    spec, err = _parse_spec(spec_json)
+    if err:
+        return json.dumps(err)
+    from .design.standards import StandardsError, apply_spec, display
+
+    source = _standards()
+    try:
+        standards = source.load()
+        std = source.standard_for(spec)
+    except StandardsError as e:
+        return json.dumps({"ok": False, "stage": "standards", "errors": [e.as_dict()]})
+    if standards is None:
+        return json.dumps({"ok": False, "stage": "standards", "errors": [{
+            "code": "no_standards_dir",
+            "detail": f"no standards directory is configured; {source.hint}"}]})
+    out: dict = {"stage": "standards", "standards_dir": display(standards.directory),
+                 "check": check}
+    if std is None:
+        return json.dumps({**out, "ok": True, "standard": None,
+                           "detail": "the spec follows no standard: it has no design.standard "
+                                     "and no standard says default: true; nothing to write"})
+    data = json.loads(spec_json)
+    new, entry = apply_spec(data, spec, std, locked=locked, claim=claim)
+    entry.pop("decisions")
+    out.update(entry)
+    if check:
+        out["ok"] = not entry["locked_stale"] and not entry["errors"] and not (
+            strict and new != data)
+    else:
+        out["spec"] = new
+        out["written"] = new != data
+    return json.dumps(out)
+
+
+@mcp.tool()
+@_typed_errors
 def decompile_dashboard(dashboard: str, profile: str) -> str:
     """Turn a live dashboard (slug or numeric id) into a spec + a named
     lossiness report. Use to pull UI-born dashboards under spec control."""

@@ -57,6 +57,11 @@ jobs:
       - name: Dashboard-controls apply + slice-id stability
         if: ${{ !cancelled() }}
         run: python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
+      # Standards content: standards apply writes an org footer, a team header and CSS
+      # blocks, the spec applies, plan stays clean and decompile reads the markers back.
+      - name: Standards content apply + round trip
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_standards.py --base-url http://localhost:8098
       - name: Lifecycle soak (25 cycles)
         run: python tools/soak.py --base-url http://localhost:8098 --cycles 25 --seed 7
       - name: Second-writer adversary

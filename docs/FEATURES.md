@@ -11,7 +11,7 @@ into one. Everything below works from that one file.
     - A screenshot of a dashboard in another BI tool, pointed at the same underlying data.
 - **Reviewable Checkpoint**: The AI's output is a small spec file you can read, edit, and version like code.
 - **Open AI Contract**: `chartwright schema` prints the full JSON Schema so any LLM or tool can generate valid specs.
-- **MCP Server**: Thirteen tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
+- **MCP Server**: Fourteen tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
 - **Guardrails**: The dashboard is new; the data behind it must be real. Every dataset, column, and metric the AI references is confirmed to exist before anything is built, so a made-up column becomes a clear error message, never a broken chart. The error suggests the closest real column names and lists the dataset's columns, so the AI can correct itself in one round.
 
 ## Dashboard Design
@@ -41,6 +41,7 @@ into one. Everything below works from that one file.
     - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).
     - Chart: colour scheme, description (viewers open it from the chart menu), certification badge, cache timeout, and a shorter title shown on the dashboard.
     - Tags on Superset 6.0+ (with Superset's `TAGGING_SYSTEM` flag on), and chart timestamps on every card on Superset 6.1+.
+    - Record where a dashboard is in its life (`"lifecycle": {"state": "deprecated", "successor": "sales-v2"}`) and how sensitive it is (`"classification": "confidential"`). Both are kept in the spec, since Superset has a field for neither; a standard shows them on the dashboard as a banner or a footer row (below).
 - **Named Owners**: List the dashboard's owners in the spec (`"owners": ["jdoe", "ana@example.com"]`), so a dashboard applied from CI belongs to the people responsible for it, and its drafts stay visible to them.
     - Each owner is checked against the instance before anything is written; a misspelt one comes back with the closest accounts.
     - Name owners by email on 4.1.4 and 5.0.0, whose API returns usernames only with `FAB_ADD_SECURITY_API` on; usernames work on 6.1.0.
@@ -92,10 +93,20 @@ into one. Everything below works from that one file.
     - Give a locked threshold one value, or one value per audience; with per-audience values, a spec's `design.audience` picks among the values the standard set.
     - A team can still raise a locked rule's severity.
     - A finding of a locked rule is fixed in the spec; to change the lock itself, edit the file that sets it in a pull request.
+- **Shared Headers, Footers and Branding**: Put content every dashboard of a team carries in its standard, and `chartwright standards apply specs/` writes it into each spec as ordinary fields you review in the diff ([reference](DESIGN-BRAIN.md#content)).
+    - Header and footer rows, a CSS block per standard, the colour scheme, label colours, certification, and number formats per metric label.
+    - An org's legal footer, a unit's CSS and a team's header stack up, and a dashboard keeps its own rows and CSS beside them.
+    - Banner rows per `dashboard.lifecycle` state (a "deprecated" notice naming the successor) and footer rows per `dashboard.classification`.
+    - When the standard changes, run `standards apply` again: it updates what it wrote, prints one summary line per item (`dashboard.css[org]: same change × 412 (refresh …); 3 released by authors, skipped: …; 85 already current`), and rewrites only the files that change. `--standard finance` limits the run to one team, for one pull request per team.
+- **Your Edits Stay Yours**: Edit or delete an unlocked item a standard wrote and the dashboard keeps your version; every other item keeps following the standard. `design.standard_written` records what the standard wrote, item by item, and `chartwright explain` shows each item's source and how to change it.
+- **Locked Content**: Lock content in a standard, such as a legal footer, and an edited or missing copy is an error in `standards check` that names the locking file. `standards apply --locked` puts the standard's version back, showing what it replaces.
+    - `standards apply --check` fails CI when a spec lacks locked content as the standard has it now; unlocked changes are listed and reach each team in its own pull request. Add `--strict` to fail on any change at all.
+    - A warning names CSS that could hide locked rows, so you can check it on the dashboard.
+    - `--claim` records content a decompiled or adopted dashboard already carries, and apply never adds it a second time.
 - **One Check for the Whole Folder**: `chartwright standards check specs/` reviews every spec under its standard and exits 1 on any error finding, or on warnings too with `--strict`, ready as a CI gate. It sets `design.yaml` aside, so it gives the same result on every machine.
     - `--report` sums up the folder as JSON: per dashboard its standard, pass or fail, findings by rule and severity, and the locks it hit; then totals per rule and per standard.
-- Through MCP, start the server inside the repository, or point `CHARTWRIGHT_STANDARDS_DIR` at the folder: the advice tools then apply each spec's standard, and `standards_check` and `standards_show` answer as the CLI does.
-- Standards shape the design review only: a spec compiles to the same bundle with or without one, and `plan` compares the same fields. Without a `standards/` folder, none of this applies.
+- Through MCP, start the server inside the repository, or point `CHARTWRIGHT_STANDARDS_DIR` at the folder: the advice tools then apply each spec's standard, `standards_apply` writes a standard's content into a spec, and `standards_check` and `standards_show` answer as the CLI does.
+- Compile reads only the spec: a standard's content reaches a dashboard as the fields `standards apply` wrote, so `plan` and decompile see what you reviewed. Without a `standards/` folder, none of this applies.
 
 ## Dashboards as Code
 - **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, CSS, dashboard settings, layout.
@@ -158,6 +169,7 @@ into one. Everything below works from that one file.
 | `chartwright standards check` | Review every spec in a folder under its standard, without `design.yaml`; `--strict` fails on warnings, `--report` sums up the folder |
 | `chartwright standards show` | Show a standard after `extends`: each setting, the file that set it, and whether it is locked |
 | `chartwright standards assign` | Write `design.standard` into every spec in a folder or glob |
+| `chartwright standards apply` | Write each standard's content into its specs, with a summary grouped by item; `--check` fails on missing locked content, `--locked` restores it, `--claim` records content already there |
 | `chartwright restore` | Bring back a backed-up dashboard, completely |
 
 ## Testing and Evidence

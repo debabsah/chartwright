@@ -1209,8 +1209,11 @@ def markdown_height(ctx: RuleContext):
                 sources.append(([ti, si], f"tab {title!r}", sub.rows))
     if lay.footer:
         sources.append(("footer", "footer", lay.footer))
+    owned = ctx.standard_rows()
     for addr, label, rows in sources:
         for ri, row in enumerate(rows):
+            if addr in ("header", "footer") and (addr, ri) in owned:
+                continue  # a standard's row: the standard is its one owner, not a repair
             # ri indexes the raw rows (headers and dividers included): the fix reads the same list.
             for ii, item in enumerate(row_items(row) or []):
                 if isinstance(item, str):

@@ -21,7 +21,9 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "5" = the default.* family: info-severity fills that `advise --fix` writes into
 # the spec, tracked in design.filled (sec.16). New fixable findings change what
 # `--fix` writes, so consumers keying on this get the signal.
-DESIGN_BRAIN_VERSION = "5"
+# "6" = the standard.* family (sec.18, "Content"): an error and two warn rules that
+# fire when a standard with content applies, so a strict gate can newly block.
+DESIGN_BRAIN_VERSION = "6"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
@@ -197,9 +199,12 @@ class Geo:
 
 class RuleContext:
     def __init__(self, spec: DashboardSpec, params, resolution: Resolution | None = None,
-                 prober=None):
+                 prober=None, standard=None):
         self.spec = spec
         self.params = params
+        # The spec's resolved standard (design/standards.py), or None: the standard.*
+        # rules read its content.
+        self.standard = standard
         self.resolution = resolution
         self.prober = prober
         self.charts = {c.name: c for c in spec.charts}
@@ -256,6 +261,24 @@ class RuleContext:
         for a fill the author deleted (the brain fills that field no more)."""
         design = self.spec.design
         return dict(design.filled.get(name, {})) if design else {}
+
+    def standard_holds(self, chart, field: str) -> bool:
+        """design.standard_written has an entry for this chart field: a standard's write,
+        or the author's after a release. Either way never the brain's to fill: a field
+        has one owner."""
+        from .content import standard_holds
+
+        return standard_holds(self.spec, chart.name, field)
+
+    def standard_rows(self) -> set[tuple[str, int]]:
+        """(slot, index) of the header and footer rows a standard owns, which no repair
+        edits."""
+        cached = getattr(self, "_standard_rows", None)
+        if cached is None:
+            from .content import owned_rows
+
+            cached = self._standard_rows = owned_rows(self.spec)
+        return cached
 
     def brain_owns(self, chart, field: str) -> bool:
         """The chart still holds exactly the value the brain wrote: its fill, which

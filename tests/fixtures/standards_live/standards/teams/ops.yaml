@@ -1,0 +1,12 @@
+# A team's standard on top of the org's: a header row, its own CSS block, the colour
+# scheme, certification and a number format.
+name: ops
+extends: org
+content:
+  header:
+    - [{markdown: "**Operations** | questions: #ops-data", width: 12, height: 1}]
+  css: |
+    .dashboard-markdown h2 { color: #003366; }
+  color_scheme: supersetColors
+  certified_by: Ops analytics
+  number_format: {Minutes: ",.0f"}

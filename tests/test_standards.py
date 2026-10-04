@@ -425,8 +425,8 @@ def test_assign_writes_the_field_and_leaves_the_rest(repo, capsys):
     before_b = b.read_bytes()
     code, payload = run(capsys, "standards", "assign", str(repo / "specs"), "--standard", "finance")
     assert code == 0 and payload["ok"]
-    assert payload["written"] == [{"spec": str(a), "was": None}, {"spec": str(c), "was": "org"}]
-    assert payload["unchanged"] == [str(b)]
+    assert payload["written"] == [{"spec": a.as_posix(), "was": None}, {"spec": c.as_posix(), "was": "org"}]
+    assert payload["unchanged"] == [b.as_posix()]
     assert b.read_bytes() == before_b
     assert json.loads(a.read_text())["design"] == {"standard": "finance"}
     assert json.loads(c.read_text())["design"] == {"standard": "finance"}
@@ -450,7 +450,7 @@ def test_assign_never_writes_a_file_that_is_not_a_valid_spec(repo, capsys):
     code, payload = run(capsys, "standards", "assign", str(repo / "specs" / "*.json"),
                         "--standard", "org")
     assert code == 1
-    assert [e["spec"] for e in payload["errors"]] == [str(bad)]
+    assert [e["spec"] for e in payload["errors"]] == [bad.as_posix()]
     assert bad.read_text() == '{"spec_version": "1"}'
     assert json.loads(good.read_text())["design"] == {"standard": "org"}
 
@@ -497,7 +497,7 @@ def test_the_standards_disable_list_is_reported_as_ignored(repo, capsys):
 def test_explain_names_the_standard_chain(repo, capsys):
     spec = write_spec(repo / "specs" / "s.json", standard="finance")
     text = run_ok(capsys, "explain", str(spec))
-    assert text.splitlines()[0] == ("Design defaults (design brain 5, audience analytical, "
+    assert text.splitlines()[0] == ("Design defaults (design brain 6, audience analytical, "
                                     "standard org -> finance)")
     payload = run_ok(capsys, "explain", str(spec), "--json")
     assert payload["standard"] == {"name": "finance", "chain": ["org", "finance"],
@@ -700,7 +700,7 @@ def test_standards_check_reads_nothing_from_design_yaml(repo, no_overlay, capsys
     _, clean = run(capsys, "standards", "check", str(repo / "specs"))
     (no_overlay / "design.yaml").write_text(overlay, encoding="utf-8")
     code, payload = run(capsys, "standards", "check", str(repo / "specs"))
-    assert payload.pop("overlay") == {"path": str(no_overlay / "design.yaml"), "set_aside": True}
+    assert payload.pop("overlay") == {"path": (no_overlay / "design.yaml").as_posix(), "set_aside": True}
     assert payload == clean and code == 1
 
 
@@ -738,13 +738,13 @@ def test_json_files_that_are_not_specs_are_skipped_and_listed(repo, capsys, othe
     pkg.write_text(other, encoding="utf-8")
     code, payload = run(capsys, "standards", "check", str(repo / "specs"))
     assert code == 0 and payload["ok"] is True, payload
-    assert [e["spec"] for e in payload["specs"]] == [str(spec)]
-    assert payload["skipped"] == [str(pkg)]
+    assert [e["spec"] for e in payload["specs"]] == [spec.as_posix()]
+    assert payload["skipped"] == [pkg.as_posix()]
     assert payload["totals"] == {"specs": 1, "passed": 1, "failed": 0}
     before = pkg.read_bytes()
     code, payload = run(capsys, "standards", "assign", str(repo / "specs"), "--standard", "finance")
-    assert code == 0 and payload["skipped"] == [str(pkg)]
-    assert [w["spec"] for w in payload["written"]] == [str(spec)]
+    assert code == 0 and payload["skipped"] == [pkg.as_posix()]
+    assert [w["spec"] for w in payload["written"]] == [spec.as_posix()]
     assert pkg.read_bytes() == before
 
 
@@ -764,10 +764,10 @@ def test_the_fleet_report(repo, capsys):
     assert code == 1
     assert set(payload) == {"stage", "report", "ok", "strict", "standards_dir", "specs",
                             "skipped", "totals"}
-    assert payload["skipped"] == [str(repo / "specs" / "package.json")]
+    assert payload["skipped"] == [(repo / "specs" / "package.json").as_posix()]
     rows = {Path(r["spec"]).name: r for r in payload["specs"]}
     assert rows["fin.json"] == {
-        "spec": str(repo / "specs" / "fin.json"), "standard": "finance", "ok": False,
+        "spec": (repo / "specs" / "fin.json").as_posix(), "standard": "finance", "ok": False,
         "counts": {"error": 1, "warn": 0, "info": 1},
         "by_rule": {COUNT: {"info": 1}, AXIS: {"error": 1}}, "locks_hit": [AXIS]}
     assert rows["org.json"]["ok"] is True and rows["org.json"]["by_rule"] == {
@@ -889,7 +889,7 @@ def test_no_standards_directory_changes_nothing(tmp_path, capsys):
     assert all("layer" not in f and "locked" not in f for f in payload["findings"])
     assert payload == advise(load_spec(DATA)).payload()
     text = run_ok(capsys, "explain", str(spec))
-    assert text.splitlines()[0] == "Design defaults (design brain 5, audience analytical)"
+    assert text.splitlines()[0] == "Design defaults (design brain 6, audience analytical)"
 
 
 def _bundle_hash(data: dict) -> str:
