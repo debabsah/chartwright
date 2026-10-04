@@ -601,13 +601,13 @@ def _standards_cmd(args) -> None:
         if not paths:
             raise st.StandardsError(
                 "no_specs", f"no spec files in {args.specs}"
-                + (f" (skipped, no spec_version: {[str(p) for p in skipped]})" if skipped
+                + (f" (skipped, no spec_version: {[p.as_posix() for p in skipped]})" if skipped
                    else ""))
         source = st.source_for_specs(args.standards, paths)
         standards = source.load()
     except st.StandardsError as e:
         fail(e)
-    skipped = [str(p) for p in skipped]
+    skipped = [p.as_posix() for p in skipped]
 
     if args.standards_cmd == "apply":
         try:
@@ -635,9 +635,9 @@ def _standards_cmd(args) -> None:
     for p in paths:
         spec, err = st.load_spec_file(p)
         if err is not None:
-            entries.append({"spec": str(p), "ok": False, "standard": None, "errors": [err]})
+            entries.append({"spec": p.as_posix(), "ok": False, "standard": None, "errors": [err]})
         else:
-            entries.append({"spec": str(p), **st.check_spec(spec, source, strict=args.strict)})
+            entries.append({"spec": p.as_posix(), **st.check_spec(spec, source, strict=args.strict)})
     sdir = st.display(standards.directory)
     if args.report:
         payload = st.fleet_report(entries, strict=args.strict, standards_dir=sdir,

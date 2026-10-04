@@ -901,15 +901,15 @@ def assign(paths: list[Path], name: str, standards: Standards) -> dict:
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
-            errors.append({"spec": str(p), "code": "unreadable_spec", "detail": str(e)})
+            errors.append({"spec": p.as_posix(), "code": "unreadable_spec", "detail": str(e)})
             continue
         if not isinstance(data, dict):
-            errors.append({"spec": str(p), "code": "schema", "detail": "a spec is a JSON object"})
+            errors.append({"spec": p.as_posix(), "code": "schema", "detail": "a spec is a JSON object"})
             continue
         design = data.get("design")
         was = design.get("standard") if isinstance(design, dict) else None
         if was == name:
-            unchanged.append(str(p))
+            unchanged.append(p.as_posix())
             continue
         new = dict(data)
         new["design"] = {**(design if isinstance(design, dict) else {}), "standard": name}
@@ -919,12 +919,12 @@ def assign(paths: list[Path], name: str, standards: Standards) -> dict:
             errs = json.loads(e.json())
             first = errs[0] if errs else {}
             loc = ".".join(str(x) for x in first.get("loc", ()))
-            errors.append({"spec": str(p), "code": "schema",
+            errors.append({"spec": p.as_posix(), "code": "schema",
                            "detail": f"not a valid spec, left as it is; first error at "
                                      f"{loc}: {first.get('msg')}"})
             continue
         p.write_text(json.dumps(new, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        written.append({"spec": str(p), "was": was})
+        written.append({"spec": p.as_posix(), "was": was})
     return {"stage": "standards", "ok": not errors, "standard": name,
             "written": written, "unchanged": unchanged, "errors": errors}
 
@@ -1099,34 +1099,34 @@ def apply_files(paths: list[Path], source: StandardsSource, *, check: bool = Fal
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
-            entries.append({"spec": str(p), "ok": False, "standard": None,
+            entries.append({"spec": p.as_posix(), "ok": False, "standard": None,
                             "errors": [{"code": "unreadable_spec", "detail": str(e)}]})
             continue
         spec, err = load_spec_file(p)
         if err is not None:
-            entries.append({"spec": str(p), "ok": False, "standard": None, "errors": [err]})
+            entries.append({"spec": p.as_posix(), "ok": False, "standard": None, "errors": [err]})
             continue
         try:
             std = source.standard_for(spec)
         except StandardsError as e:
-            entries.append({"spec": str(p), "ok": False,
+            entries.append({"spec": p.as_posix(), "ok": False,
                             "standard": spec.design.standard if spec.design else None,
                             "errors": [e.as_dict()]})
             continue
         if std is None:
-            no_standard.append(str(p))
+            no_standard.append(p.as_posix())
             continue
         if only is not None and std.name != only:
-            other.append(str(p))
+            other.append(p.as_posix())
             continue
         new, entry = apply_spec(data, spec, std, locked=locked, claim=claim)
-        entry = {"spec": str(p), **entry}
+        entry = {"spec": p.as_posix(), **entry}
         changed = new != data
         if changed and not check:
             p.write_text(json.dumps(new, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         entry["written"] = changed and not check
         entry["pending"] = changed    # apply would rewrite the file (content or record)
-        (written if changed else unchanged).append(str(p))
+        (written if changed else unchanged).append(p.as_posix())
         entries.append(entry)
     summary = apply_summary(entries)
     for e in entries:
