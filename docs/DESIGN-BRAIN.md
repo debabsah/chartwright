@@ -879,9 +879,16 @@ Recorded during the content standards (§18, "Content"):
     written out, since decompile writes a markdown block's width and height
     back explicitly. When no row holds that hash, the row that is it, edited,
     is the one unclaimed row of the same shape (kind, background, widths and
-    heights; only the text differs) where it stood: anywhere between two
+    heights) where it stood that still reads like it: anywhere between two
     present neighbours, and on the author's side of the managed rows only
-    the one row next to them, so an author's own row is never taken for it.
+    the one row next to them; and at least 0.6 of difflib's similarity ratio
+    with the standard's text. A corrected date, contact or typo keeps far
+    more ("Confidential. Acme Corp. 2026." scores 0.89 against the original);
+    a row the author wrote themselves keeps far less ("My disclaimer, keep
+    me" scores 0.26). A same-shape row below the threshold is the author's
+    own: `--locked` adds the standard's row beside it and names it (`kept`),
+    and the locked finding says so. Where two layers wrote identical rows and
+    one copy is gone, a locked item takes the copy left.
     That row is released, and it is the row `apply --locked` rewrites in
     place. With none or several, the row counts as removed. Either way the
     record keeps the hash written, marked `"released": true`, rather than
@@ -1714,7 +1721,7 @@ its chart's rows. MCP `explain_spec` returns the same JSON under
 
 ```
 Dashboard content (standard acme -> ops, via design.standard)
-  layout.footer[acme][0]           "Acme Corp."                             acme       locked  author
+  layout.footer[acme][0]           "Acme Corp. Internal data: share insi... acme       locked  author
       standard: "Acme Corp. Internal data: do not sha...
       standards apply --locked puts the standard's back
       override: acme locks it: change it in acme's standards file, not in the spec

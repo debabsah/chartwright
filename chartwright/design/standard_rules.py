@@ -71,6 +71,10 @@ def content_locked(ctx: RuleContext):
                       f"{d.locked_by} locks: expected {expected}, {found}. "
                       f"`chartwright standards apply --locked` puts it back; a change goes "
                       f"through the {d.locked_by} standards file")
+            if d.near is not None:
+                detail += (f". The row at layout.{d.slot}[{d.near}] has its shape but reads "
+                           f"differently, so it stays as yours and --locked adds the "
+                           f"standard's beside it")
         yield Finding("standard.content-locked", "error", None, d.id, detail)
 
 

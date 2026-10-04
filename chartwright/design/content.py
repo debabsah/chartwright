@@ -554,6 +554,8 @@ class Decision:
     unmarked: bool = False  # css: the standard's text, found unmarked in the CSS
     moved_from: str | None = None  # rows: the key the record had before the standard's
     #                                list changed (_realign)
+    near: int | None = None  # rows: a row of the item's shape where it stood that reads
+    #                          differently: the author's own, kept
 
     @property
     def locked_by(self) -> str | None:
@@ -752,28 +754,33 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
                 return i
         return None
 
-    for item_id, rec in [*((i.id, recs.get(i.id)) for i in expected),
+    # Locked items take their rows first: where two layers wrote identical rows and one
+    # copy is gone, the copy left is the locked one's, and the unlocked one is released.
+    claim_order = sorted(expected, key=lambda i: i.locked_by is None)
+    for item_id, rec in [*((i.id, recs.get(i.id)) for i in claim_order),
                          *sorted(orphans.items())]:
         if rec and not _released(rec):
             at = take(item_id, rec["hash"])
             if at is not None:
                 located[item_id] = at
     matched: dict[str, int] = {}
-    for item in expected:
+    for item in claim_order:
         if item.id not in located:
             at = take(item.id, item.stamp)
             if at is not None:
                 matched[item.id] = at
     present = {**located, **matched}
 
-    def edited_copy(k: int) -> int | None:
-        """The row that is this item, edited: not any other item's, of the same shape as
-        the standard's row (kind, background, item widths and heights; only text
-        differs), and where the item stood. Between two present neighbours that is any
-        row in the gap; on the author's side of the managed rows (below the header's,
-        above the footer's) only the one row next to them, so an author's own row is
-        never taken for it. Exactly one such row, or none: anything less certain is read
-        as removed."""
+    def edited_copy(k: int) -> tuple[int | None, int | None]:
+        """(the row that is this item, edited; a row that only looks like it). The edited
+        row is not any other item's, has the shape of the standard's row (kind,
+        background, item widths and heights), stands where the item stood, and still
+        reads like it: at least EDIT_SIMILARITY of its text in common (difflib's ratio).
+        Where it stood: anywhere between two present neighbours; on the author's side of
+        the managed rows (below the header's, above the footer's) only the one row next
+        to them. Exactly one such row, or none: anything less certain is read as
+        removed, and a same-shape row that reads differently is the author's own, kept
+        and reported, never overwritten by --locked."""
         before = [present[e.id] for e in expected[:k] if e.id in present]
         after = [present[e.id] for e in expected[k + 1:] if e.id in present]
         lo, hi = (max(before) + 1 if before else 0), (min(after) if after else len(rows))
@@ -782,11 +789,14 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
         elif slot == "footer" and not before:
             lo = max(hi - 1, 0)
         want = row_shape(expected[k].value)
-        free = [i for i in range(lo, hi) if i not in claimed and row_shape(rows[i]) == want]
-        if len(free) != 1:
-            return None
-        claimed[free[0]] = expected[k].id
-        return free[0]
+        shaped = [i for i in range(lo, hi) if i not in claimed and row_shape(rows[i]) == want]
+        if len(shaped) != 1:
+            return None, None
+        text = row_text(expected[k].value)
+        if similarity(row_text(rows[shaped[0]]), text) < EDIT_SIMILARITY:
+            return None, shaped[0]
+        claimed[shaped[0]] = expected[k].id
+        return shaped[0], None
 
     for k, item in enumerate(expected):
         rec = recs.get(item.id, MISSING)
@@ -811,7 +821,7 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
             d.state, d.record = "add", item.record
         elif _released(rec):
             d.state = "tombstone"
-            d.at = edited_copy(k)                 # what --locked would put back over
+            d.at, d.near = edited_copy(k)         # what --locked would put back over
             d.found = rows[d.at] if d.at is not None else None
         else:
             # Recorded, and no row holds what was written: the author changed it (the
@@ -820,7 +830,7 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
             # standard's identity, so without the record apply would add the standard's
             # row beside the author's, and with the hash the record follows the row if
             # the standard reorders its list.
-            d.at = edited_copy(k)
+            d.at, d.near = edited_copy(k)
             d.found = rows[d.at] if d.at is not None else None
             d.state = "released" if d.at is not None else "deleted"
             d.record = {"layer": rec["layer"], "hash": rec["hash"], "released": True}
@@ -834,6 +844,30 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
         else:
             out.decisions.append(Decision(item_id, slot, layer, "forget", None,
                                           record="drop"))
+
+
+# How much of a standard row's text an author's edit of it keeps, at least (difflib's
+# ratio: twice the matched characters over both lengths). A corrected date, contact or
+# typo keeps far more ("Confidential. Acme Corp. 2026." against "Confidential. Acme
+# Corp." is 0.88); a row the author wrote themselves keeps far less ("My disclaimer"
+# against the same, about 0.3). Below it, --locked adds the standard's row and leaves
+# the other where it is.
+EDIT_SIMILARITY = 0.6
+
+
+def similarity(a: str, b: str) -> float:
+    import difflib
+
+    return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+
+
+def row_text(row) -> str:
+    """A row's words: its markdown blocks', or its header's."""
+    n = normal_row(row)
+    if isinstance(n, dict) and "header" in n:
+        return n["header"]
+    return " ".join(i.get("markdown", "") if isinstance(i, dict) else str(i)
+                    for i in row_items(n) or [])
 
 
 def row_shape(row) -> tuple:
@@ -1002,9 +1036,14 @@ class Change:
     # The decision this change acts on: a removed item and a new one can share a key
     # when the standard's rows move, so execute pairs a change with its decision.
     decision: Any = field(default=None, repr=False, compare=False)
+    # A rewrite that added the standard's row beside a same-shape row reading differently:
+    # where that row is, left as the author's.
+    kept: str | None = None
 
     def as_dict(self) -> dict:
         out = {"item": self.item, "action": self.action, "layer": self.layer}
+        if self.kept:
+            out["kept"] = self.kept
         if self.locked_by:
             out["locked_by"] = self.locked_by
         if self.to is not None:
@@ -1046,7 +1085,10 @@ def plan_changes(analysis: Analysis, *, locked: bool = False,
             continue
         if d.violation:
             if locked:
-                _add(out, d, Change(d.id, "rewrite", d.layer, d.locked_by, to=new, was=found))
+                c = Change(d.id, "rewrite", d.layer, d.locked_by, to=new, was=found)
+                if d.near is not None:
+                    c.kept = f"layout.{d.slot}[{d.near}]"
+                _add(out, d, c)
             continue
         if d.state == "add" and d.unmarked and claim:
             # Locked text found unmarked: --claim marks it where it is.

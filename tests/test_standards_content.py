@@ -309,7 +309,7 @@ def test_an_unlocked_row_the_author_deletes_is_a_tombstone(repo, capsys):
 def test_a_locked_row_the_author_edits_is_a_violation_only_locked_rewrites(repo, capsys):
     path = spec_file(repo, standard="finance")
     apply(capsys, str(path))
-    edit(path, lambda d: d["layout"]["footer"][1][0].update(markdown="Share freely"))
+    edit(path, lambda d: d["layout"]["footer"][1][0].update(markdown="Confidential. Acme Corp. Share freely."))
     locked = findings(capsys, path, "standard.content-locked")
     assert len(locked) == 1 and locked[0]["severity"] == "error"
     assert locked[0]["where"] == "layout.footer[org][0]" and "org locks" in locked[0]["detail"]
@@ -318,17 +318,67 @@ def test_a_locked_row_the_author_edits_is_a_violation_only_locked_rewrites(repo,
     code, out = apply(capsys, str(path))
     assert code == 1 and out["specs"][0]["locked"] == ["layout.footer[org][0]"]
     data = read(path)
-    assert data["layout"]["footer"][1][0]["markdown"] == "Share freely"
+    assert data["layout"]["footer"][1][0]["markdown"] == "Confidential. Acme Corp. Share freely."
     assert data["design"]["standard_written"]["layout.footer[org][0]"] is not None
     # --locked puts it back in place, as a visible change with what was there.
     code, out = apply(capsys, str(path), "--locked")
     assert code == 0
     change = next(c for c in out["specs"][0]["changes"] if c["item"] == "layout.footer[org][0]")
     assert change["action"] == "rewrite" and change["locked_by"] == "org"
-    assert change["was"] == C.row_hash([{"markdown": "Share freely", "width": 12,
+    assert change["was"] == C.row_hash([{"markdown": "Confidential. Acme Corp. Share freely.", "width": 12,
                                              "height": 1}])
     assert read(path)["layout"]["footer"] == [[{"markdown": "my note", "width": 12}], ORG_FOOTER]
     assert findings(capsys, path, "standard.content-locked") == []
+
+
+def test_locked_never_overwrites_a_same_shape_row_that_reads_differently(repo, capsys):
+    """An author's own row of the same shape where the locked row stood is not the
+    locked row, edited: --locked adds the standard's row beside it, and says so."""
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    edit(path, lambda d: d["layout"]["footer"][-1][0].update(markdown="My disclaimer, keep me"))
+    [f] = findings(capsys, path, "standard.content-locked")
+    assert "layout.footer[1] has its shape but reads differently" in f["detail"]
+    _, out = apply(capsys, str(path), "--locked")
+    change = next(c for c in out["specs"][0]["changes"] if c["item"] == "layout.footer[org][0]")
+    assert change["action"] == "rewrite" and change["kept"] == "layout.footer[1]"
+    assert [r[0]["markdown"] for r in read(path)["layout"]["footer"]] == [
+        "my note", "My disclaimer, keep me", "Confidential. Acme Corp."]
+
+
+def test_a_locked_item_keeps_the_copy_left_of_two_identical_rows(repo, capsys):
+    """org (locked) and finance both write the same footer row; the author deletes one
+    copy. The copy left is the locked item's, and finance's is the one released."""
+    fin = repo / "standards" / "teams" / "finance.yaml"
+    fin.write_text(FINANCE + "  footer:\n    - [{markdown: \"Confidential. Acme Corp.\", "
+                             "width: 12, height: 1}]\n", encoding="utf-8")
+    path = spec_file(repo, standard="finance")
+    apply(capsys, str(path))
+    assert read(path)["layout"]["footer"].count(ORG_FOOTER) == 2
+    edit(path, lambda d: d["layout"]["footer"].pop(1))
+    assert findings(capsys, path, "standard.content-locked") == []
+    _, out = apply(capsys, str(path))
+    written = read(path)["design"]["standard_written"]
+    assert not written["layout.footer[org][0]"].get("released")
+    assert written["layout.footer[finance][0]"]["released"] is True
+    assert read(path)["layout"]["footer"].count(ORG_FOOTER) == 1
+
+
+def test_on_the_headers_author_side_only_the_next_row_can_be_the_edited_one(
+        tmp_path, capsys):
+    """Below a standard's header rows sit the author's: a row there that reads like the
+    standard's is not taken for it unless it is the one right below the managed rows."""
+    org = ("name: org\ndefault: true\ncontent: {header: [[{markdown: 'Finance dashboard', "
+           "width: 12, height: 1}]]}\nlocked: {content: [header]}\n")
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo)
+    apply(capsys, str(path))
+    edit(path, lambda d: d["layout"].__setitem__("header", [
+        [{"markdown": "Banner", "width": 6}, {"markdown": "Banner", "width": 6}],
+        md("Finance dashboard v2")]))
+    apply(capsys, str(path), "--locked")
+    assert [[i["markdown"] for i in r] for r in read(path)["layout"]["header"]] == [
+        ["Finance dashboard"], ["Banner", "Banner"], ["Finance dashboard v2"]]
 
 
 def test_a_locked_row_the_author_deletes_is_a_violation(repo, capsys):
@@ -1173,7 +1223,7 @@ def test_the_content_example_in_the_design_brain_page_is_what_the_tool_does(
     assert read(Path("specs/ops/delays.json"))["design"] == record
     edit(Path("specs/ops/fleet.json"), lambda d: d["dashboard"].update(color_scheme="bnbColors"))
     edit(Path("specs/ops/routes.json"),
-         lambda d: d["layout"]["footer"][1][0].update(markdown="Acme Corp."))
+         lambda d: d["layout"]["footer"][1][0].update(markdown="Acme Corp. Internal data: share inside the company only."))
     ops = root / "standards" / "teams" / "ops.yaml"
     ops.write_text(ops.read_text().replace("#ops-data", "#ops-analytics"), encoding="utf-8")
     code, out = run(capsys, "standards", "apply", "specs/ops", "--check")
