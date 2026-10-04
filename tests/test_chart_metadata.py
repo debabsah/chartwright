@@ -171,6 +171,15 @@ def test_plan_reports_a_changed_dashboard_title_for_a_chart(monkeypatch):
     assert sorted(out["charts_changed"]) == ["Revenue", "Revenue by Region"]
 
 
+def test_plan_leaves_chart_tags_alone_when_the_spec_omits_them(monkeypatch):
+    def edit(path, doc):
+        if "/charts/" in path:
+            doc["tags"] = ["added-in-ui"]
+    assert plan_against(load_spec(spec_data()), edit, monkeypatch)["clean"] is True
+    out = plan_against(load_spec(with_chart(tags=[])), edit, monkeypatch)
+    assert out["charts_changed"] == ["Revenue by Region"]
+
+
 def test_plan_is_clean_with_chart_settings(monkeypatch):
     out = plan_against(load_spec(with_chart(**META, color_scheme="bnbColors")), None, monkeypatch)
     assert out["clean"] is True

@@ -195,6 +195,13 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
         t_charts[chart.name]["dataset"] = resolution.for_chart(chart.dataset).uuid
     for name in l_charts:
         l_charts[name]["dataset"] = live_result.dataset_uuids.get(name)
+    # Omitted tags are not managed: the bundle leaves them out, so the import
+    # leaves the live tags alone, and plan does not report them either.
+    for chart in target.charts:
+        if chart.tags is None and chart.name in l_charts:
+            l_charts[chart.name].pop("tags", None)
+    if target.dashboard.tags is None:
+        l["dashboard"].pop("tags", None)
     p.charts_added = sorted(set(t_charts) - set(l_charts))
     p.charts_removed = sorted(set(l_charts) - set(t_charts))
     p.charts_changed = sorted(

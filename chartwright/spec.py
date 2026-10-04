@@ -175,7 +175,9 @@ TAGS_DESCRIPTION = (
     "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM "
     "feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails "
     "and apply restores the previous state), and 6.1.0 without the flag ignores them, so "
-    "plan keeps reporting them. [] removes the tags the dashboard's last apply set."
+    "plan keeps reporting them. An apply replaces the object's tags with this list, so [] "
+    "removes them all, tags added in the UI included; omit the field to leave tags alone, "
+    "in apply and in plan."
 )
 
 

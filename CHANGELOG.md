@@ -21,7 +21,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
   (seconds), `filter_bar_orientation` (`"horizontal"` puts the bar above the charts; 4.1.4
   and 5.0.0 need Superset's `HORIZONTAL_FILTER_BAR` flag), and, on Superset 6.1 only,
   `show_chart_timestamps` and `tags`. `plan` names each one that differs in a new
-  `dashboard_settings_changed` list.
+  `dashboard_settings_changed` list. Omitted `tags` are left alone by `apply` and `plan`
+  alike; `[]` clears them.
 - Chart settings: `color_scheme` (on the chart types whose panel has one), `description`
   (viewers open it with "Show chart description"), `certified_by`,
   `certification_details`, `cache_timeout`, `display_name` (a shorter title shown on the

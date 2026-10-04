@@ -227,6 +227,18 @@ def test_plan_treats_empty_tags_as_none(monkeypatch):
     assert out["clean"] is True
 
 
+def test_plan_leaves_tags_alone_when_the_spec_omits_them(monkeypatch):
+    """Omitted tags compile to no `tags` key, so the import leaves live tags as
+    they are; reporting them would be drift no apply can repair. [] manages
+    them (the import then clears them), so live tags are a change."""
+    def tag(doc):
+        doc["tags"] = ["added-in-ui"]
+    edit = edit_dashboard(tag)
+    assert plan_against(load_spec(spec_data()), edit, monkeypatch)["clean"] is True
+    out = plan_against(load_spec(spec_data({"tags": []})), edit, monkeypatch)
+    assert out["dashboard_settings_changed"] == ["tags"]
+
+
 # -- design brain: colour scheme names ------------------------------------------
 
 
