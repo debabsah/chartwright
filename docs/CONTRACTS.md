@@ -42,8 +42,17 @@ running the tool against real instances of all three releases.
 - **Removing a chart behaves differently by release.** A 6.1.0 import
   relinks the dashboard from the bundle alone; 4.1.4 and 5.0.0 merge,
   keeping links to charts the bundle no longer contains (6.1.0
-  `.../v1/__init__.py:186-193`). The tool deletes its own charts when they
-  leave the spec, so the result is the same on every release.
+  `.../v1/__init__.py:186-193`; 4.1.4/5.0.0 only add links, `:124-148`). The
+  tool deletes its own charts when they leave the spec. A chart someone added
+  to the dashboard in Superset is not the tool's to delete: after the import,
+  the tool saves the imported layout the way the dashboard's Save does (a
+  `json_metadata` PUT carrying `positions`, which sets the dashboard's charts
+  to the ones the layout names: `DashboardDAO.set_dash_metadata`, 4.1.4
+  `superset/daos/dashboard.py:186-198`, 5.0.0 `:187-199`, 6.1.0 `:255-267`),
+  sending the whole current metadata, since that call resets keys the payload
+  leaves out. The chart stays on the instance, off the dashboard, and the
+  apply report names it; `restore` does the same with a backup's layout. The
+  result is the same on every release.
 - **The dashboard's CSS travels in the bundle, on every release.** The
   import schema accepts `css` (`ImportV1DashboardSchema`, 4.1.4
   `superset/dashboards/schemas.py:461`, 5.0.0 `:477`, 6.1.0 `:508`), the
