@@ -35,9 +35,10 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1285 tests, 58 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1287 tests, 58 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
+| Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
 | Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every PR and push to main, all 3 versions |
 | Fault injection | A typed failure at every stage boundary; complete restore | every PR and push to main, all 3 versions |
@@ -299,6 +300,7 @@ export SDC_CI_PASSWORD=admin
 python tools/ci_live_check.py --base-url http://localhost:8098   # kitchen sink
 python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_display_controls.json
 python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
+python tools/ci_live_standards.py --base-url http://localhost:8098   # tests/fixtures/standards_live
 python tools/soak.py       --base-url http://localhost:8098 --cycles 500 --seed 1
 python tools/adversary.py  --base-url http://localhost:8098
 python tools/faultline.py  --base-url http://localhost:8098

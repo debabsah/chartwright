@@ -1,0 +1,16 @@
+# The org's standard for tools/ci_live_standards.py: a locked legal footer, a locked
+# CSS block, a classification footer and a label colour.
+name: org
+default: true
+classifications: [public, internal, confidential]
+content:
+  footer:
+    - [{markdown: "Acme Air internal data: do not share outside the company.", width: 12, height: 1}]
+  footer_by_classification:
+    confidential:
+      - [{markdown: "**Confidential**: for named recipients only.", width: 12, height: 1}]
+  css: |
+    .dashboard-markdown { font-family: Georgia, serif; }
+  label_colors: {Minutes: "#1FA8C9"}
+locked:
+  content: [footer, footer_by_classification, css]

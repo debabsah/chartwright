@@ -895,6 +895,36 @@ def test_mcp_check_strict(repo, monkeypatch, capsys):
                     strict=True)["ok"] is False
 
 
+# -- the live fixture -----------------------------------------------------------
+
+
+def test_the_live_fixture_applies_cleanly_offline():
+    """tests/fixtures/standards_live is what tools/ci_live_standards.py applies to a real
+    Superset: its standard must write content, settle in one run, and compile."""
+    from chartwright.compiler import compile_bundle
+    from chartwright.design.standards import StandardsSource, apply_spec
+    from chartwright.testing import stub_resolution
+
+    folder = REPO / "tests" / "fixtures" / "standards_live"
+    source = StandardsSource(folder / "standards")
+    data = json.loads((folder / "spec.json").read_text(encoding="utf-8"))
+    new, entry = apply_spec(data, load_spec(data), source.standard_for(load_spec(data)))
+    assert not entry["errors"] and len(entry["changes"]) == 9
+    assert new["dashboard"]["css"].startswith("@import url(")
+    again, entry2 = apply_spec(new, load_spec(new), source.standard_for(load_spec(new)))
+    assert again == new and entry2["changes"] == []
+    spec = load_spec(new)
+    assert compile_bundle(spec, stub_resolution(spec))
+
+
+def test_the_live_job_runs_the_standards_check():
+    import yaml
+
+    ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    runs = [s.get("run", "") for s in ci["jobs"]["live"]["steps"]]
+    assert any("tools/ci_live_standards.py" in r for r in runs)
+
+
 # -- pins for behaviour a mutation run showed untested ---------------------------
 
 
