@@ -289,6 +289,13 @@ running the tool against real instances of all three releases.
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named
   losses rather than guessing.
+- **Custom SQL runs with the profile's rights.** A `SQL(...)` metric or a
+  `{"sql": ...}` filter reaches Superset as an ad hoc SQL expression, so
+  `check` cannot match it to a column and lists it under `unchecked_sql`;
+  the `apply` report and the MCP `build_dashboard` payload list it the same
+  way. Custom SQL in a spec runs with the profile's rights during apply's
+  data check, which queries each chart once through `/api/v1/chart/data`
+  signed in as that profile.
 
 ## Differences the tool absorbs
 

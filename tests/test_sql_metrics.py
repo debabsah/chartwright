@@ -198,3 +198,40 @@ def test_check_prints_unchecked_sql(monkeypatch, tmp_path, capsys):
     with pytest.raises(SystemExit):
         cli.main(["check", str(path), "--profile", "p", "--design", "off"])
     assert "unchecked_sql" not in json.loads(capsys.readouterr().out)
+
+
+class SomeoneElsesDashboard(FakeClient):
+    """The slug is taken by a dashboard the tool did not create, so apply stops at
+    its ownership guard: after a passing resolve, before anything is written."""
+
+    def find_dashboard_by_slug(self, slug):
+        return {"id": 9}
+
+    def get(self, path):
+        return {"result": {"uuid": "99999999-9999-9999-9999-999999999999"}}
+
+
+def test_apply_and_build_dashboard_report_unchecked_sql(monkeypatch):
+    """apply's data check runs a spec's custom SQL with the profile's rights, so
+    its report lists that SQL as check does, and so does the MCP build_dashboard."""
+    from chartwright.apply import apply
+
+    data = line(filters=[{"sql": "amount > 0"}])
+    report = apply(load_spec(data), SomeoneElsesDashboard())
+    assert report.stage == "ownership" and report.resolution_errors == []
+    assert [u["sql"] for u in report.unchecked_sql] == [
+        "100.0 * SUM(amount) / NULLIF(COUNT(*), 0)", "amount > 0"]
+    assert apply(load_spec(spec_data()), SomeoneElsesDashboard()).unchecked_sql == []
+
+    pytest.importorskip("mcp")
+    import asyncio
+
+    import chartwright.mcp_server as server
+    from test_mcp_server import _text
+
+    monkeypatch.setattr(server, "_client", lambda profile: SomeoneElsesDashboard())
+    out = asyncio.run(server.mcp.call_tool(
+        "build_dashboard", {"spec_json": json.dumps(data), "profile": "p"}))
+    payload = json.loads(_text(out))
+    assert payload["stage"] == "ownership"
+    assert payload["unchecked_sql"] == json.loads(report.to_json())["unchecked_sql"]

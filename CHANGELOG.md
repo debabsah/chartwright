@@ -82,9 +82,10 @@ while the major version is 0, minor bumps may include breaking changes and say s
   any other layer type as a loss, where it used to drop them silently.
 - Custom SQL metrics, `SQL(100.0 * SUM(a) / NULLIF(SUM(b), 0)) AS Rate`, anywhere a
   metric goes, and custom SQL chart filters, `{"sql": "amount > 0 OR refunded"}`.
-  `check` cannot see the columns inside SQL, so it lists them under `unchecked_sql`;
-  apply's data check runs them. UI-built SQL metrics and SQL filters now decompile, where
-  they used to be dropped as losses.
+  `check` cannot see the columns inside SQL, so it lists them under `unchecked_sql`, and
+  so do the `apply` report and the MCP `build_dashboard` payload: apply's data check runs
+  them with the profile's rights. UI-built SQL metrics and SQL filters now decompile,
+  where they used to be dropped as losses.
 - Native filter controls: `description` on every filter; `dependencies` (cascading, by
   filter name); on value pickers `search_all_options`, `inverse_selection`,
   `sort_metric`; on value pickers and sliders a pre-filter (`pre_filter` conditions, and
