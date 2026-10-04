@@ -972,6 +972,21 @@ def test_a_released_row_is_the_authors_for_repairs_too(tmp_path, capsys):
     assert fixed["layout"]["footer"][0][0]["height"] == 2
 
 
+def test_a_released_row_put_back_word_for_word_is_still_the_authors(tmp_path, capsys):
+    """A row the author edited and then restored to the standard's exact text matches the
+    released record's hash; it is still theirs, so repairs may touch it."""
+    org = "name: org\ndefault: true\ncontent: {footer: [[{markdown: Legal notice}]]}\n"
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo, data={**DATA, "layout": {"rows": [["K", "R"]]}})
+    apply(capsys, str(path))
+    edit(path, lambda d: d["layout"]["footer"][0][0].update(markdown="Legal notice!"))
+    apply(capsys, str(path))
+    edit(path, lambda d: d["layout"]["footer"][0][0].update(markdown="Legal notice"))
+    assert C.owned_rows(load_spec(read(path))) == set()
+    fixed, _ = advise_and_fix(read(path))
+    assert fixed["layout"]["footer"][0][0]["height"] == 2
+
+
 def test_blocks_go_after_a_leading_namespace(tmp_path, capsys):
     css = "@namespace svg url(http://www.w3.org/2000/svg);\n.mine { color: red; }"
     path = two_layer_css(tmp_path, css)
