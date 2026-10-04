@@ -53,6 +53,11 @@ class Finding:
     # A default.* finding that hands a field to the author (an edit or a deletion of a
     # fill) is a 'release', not a fill.
     release: bool = False
+    # Set only when a standard is in play (design/standards.py): the layer that set this
+    # finding's severity (a standard's name, "overlay", or "rulebook" for the rule's own
+    # level), and whether a standard locks the rule.
+    layer: str | None = None
+    locked: bool | None = None
 
     @property
     def kind(self) -> str:
@@ -80,6 +85,10 @@ class Finding:
         d.pop("height_driven")
         d.pop("why")
         d.pop("release")
+        if self.layer is None:
+            d.pop("layer")
+        if self.locked is None:
+            d.pop("locked")
         d["fixable"] = self.fix is not None
         return d
 
@@ -112,6 +121,8 @@ class AdviceReport:
     # The per-machine design.yaml this run read and what it changed (design/__init__.py
     # _overlay_report); None when no overlay is in play.
     overlay: dict | None = None
+    # The standard this run applied (design/standards.py report_block); None without one.
+    standard: dict | None = None
 
     def payload(self) -> dict:
         out = {
@@ -130,6 +141,8 @@ class AdviceReport:
             out["polished"] = self.polished
         if self.overlay is not None:
             out["overlay"] = self.overlay
+        if self.standard is not None:
+            out["standard"] = self.standard
         return out
 
 

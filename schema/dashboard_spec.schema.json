@@ -1360,6 +1360,20 @@
           "title": "Ignore",
           "type": "array"
         },
+        "standard": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The standard this dashboard follows: the `name` of a file in the repository's standards/ directory. advise, check, apply and `standards check` apply its rule settings; omitted, the standard marked `default: true` applies, if there is one. Compile ignores it.",
+          "title": "Standard"
+        },
         "filled": {
           "additionalProperties": {
             "additionalProperties": true,

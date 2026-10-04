@@ -32,6 +32,8 @@ def test_tool_surface():
         "get_spec_schema",
         "plan_dashboard",
         "redesign_dashboard",
+        "standards_check",
+        "standards_show",
         "validate_spec",
     ]
 

@@ -11,7 +11,7 @@ into one. Everything below works from that one file.
     - A screenshot of a dashboard in another BI tool, pointed at the same underlying data.
 - **Reviewable Checkpoint**: The AI's output is a small spec file you can read, edit, and version like code.
 - **Open AI Contract**: `chartwright schema` prints the full JSON Schema so any LLM or tool can generate valid specs.
-- **MCP Server**: Eleven tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
+- **MCP Server**: Thirteen tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
 - **Guardrails**: The dashboard is new; the data behind it must be real. Every dataset, column, and metric the AI references is confirmed to exist before anything is built, so a made-up column becomes a clear error message, never a broken chart. The error suggests the closest real column names and lists the dataset's columns, so the AI can correct itself in one round.
 
 ## Dashboard Design
@@ -75,9 +75,27 @@ into one. Everything below works from that one file.
 - **House Style**: A `design.yaml` overlay on your machine tunes thresholds, disables rules, and appends your guidance to the brief, without forking the rulebook.
     - Strict gates (`advise --strict`, `--design strict`) set it aside, so a gate passes or fails the same on every machine.
     - Every review names the overlay: each finding it changed, or, in a strict gate, what was set aside.
+    - For settings a whole team shares, use the repository's standards (below); what a standard locks, the overlay leaves alone.
 - **Heights Calibrated From Your Own Dashboards**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.
 - **Design Audits of Legacy Dashboards**: `decompile` + `advise` grades any UI-built dashboard against the rulebook.
 - **One-Shot Redesign**: `chartwright redesign <dashboard>` decompiles a live dashboard, audits it, applies the safe geometry fixes, and writes the redesigned spec. A tool-built dashboard is redesigned in place; anything else comes back under a new slug and applies side by side, leaving the original untouched.
+
+## Standards
+- **Design Rules in the Repository**: Keep the design review's settings for many dashboards in a `standards/` folder of YAML files: thresholds, severities, rules turned off. They are reviewed in a pull request, and every machine and every CI run reads the same files ([reference](DESIGN-BRAIN.md#18-standards)).
+    - An org file sets the baseline; a unit file `extends` it, and a team file extends the unit's (or the org's directly), each adjusting what the layers above leave open.
+    - Keep the folder at or above your specs inside the git repository and every command finds it; `--standards DIR` names another.
+    - A spec names its team's standard in `design.standard`; specs that name none follow the file marked `default: true`, if there is one.
+    - `chartwright standards assign specs/finance --standard finance` writes that field into every spec in a folder, so moving a dashboard to another team is a one-line diff.
+    - `advise`, `explain`, `check` and `apply` review each spec under its standard, and `explain` names the chain it used.
+    - `chartwright standards show finance` lists every setting with the file that set it and whether it is locked.
+- **Locked Rules**: Lock a rule, or a threshold together with its value, in a standard, and every dashboard that follows it, or a standard extending it, keeps it: no team file, `design.ignore` entry, `--ignore` flag or personal `design.yaml` can turn the rule off, lower its severity, or change the threshold.
+    - Give a locked threshold one value, or one value per audience; with per-audience values, a spec's `design.audience` picks among the values the standard set.
+    - A team can still raise a locked rule's severity.
+    - A finding of a locked rule is fixed in the spec; to change the lock itself, edit the file that sets it in a pull request.
+- **One Check for the Whole Folder**: `chartwright standards check specs/` reviews every spec under its standard and exits 1 on any error finding, or on warnings too with `--strict`, ready as a CI gate. It sets `design.yaml` aside, so it gives the same result on every machine.
+    - `--report` sums up the folder as JSON: per dashboard its standard, pass or fail, findings by rule and severity, and the locks it hit; then totals per rule and per standard.
+- Through MCP, start the server inside the repository, or point `CHARTWRIGHT_STANDARDS_DIR` at the folder: the advice tools then apply each spec's standard, and `standards_check` and `standards_show` answer as the CLI does.
+- Standards shape the design review only: a spec compiles to the same bundle with or without one, and `plan` compares the same fields. Without a `standards/` folder, none of this applies.
 
 ## Dashboards as Code
 - **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, CSS, dashboard settings, layout.
@@ -137,6 +155,9 @@ into one. Everything below works from that one file.
 | `chartwright redesign` | Decompile a live dashboard, audit it, and write the repaired spec |
 | `chartwright absorb` | Pull height polish made in the UI back into the spec |
 | `chartwright calibrate` | Propose recommended heights from your absorb history |
+| `chartwright standards check` | Review every spec in a folder under its standard, without `design.yaml`; `--strict` fails on warnings, `--report` sums up the folder |
+| `chartwright standards show` | Show a standard after `extends`: each setting, the file that set it, and whether it is locked |
+| `chartwright standards assign` | Write `design.standard` into every spec in a folder or glob |
 | `chartwright restore` | Bring back a backed-up dashboard, completely |
 
 ## Testing and Evidence
