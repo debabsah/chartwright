@@ -143,6 +143,23 @@ def _apply_filter_scopes(spec: DashboardSpec, client: SupersetClient, dashboard_
     return []
 
 
+def _unlink_charts_off_the_layout(client: SupersetClient, dashboard_id: int) -> str | None:
+    """Link the dashboard to exactly the charts in its layout, as saving it in Superset
+    does: a json_metadata PUT that carries `positions` sets the dashboard's charts to
+    the ones those positions name (DashboardDAO.set_dash_metadata, 4.1.4, 5.0.0 and
+    6.1.0 alike). The whole current metadata goes with it, because that call resets
+    keys the payload leaves out. The charts themselves are never touched."""
+    detail = client.get(f"/api/v1/dashboard/{dashboard_id}")["result"]
+    metadata = json.loads(detail.get("json_metadata") or "{}")
+    positions = json.loads(detail.get("position_json") or "{}")
+    r = client.put_json(f"/api/v1/dashboard/{dashboard_id}",
+                        {"json_metadata": json.dumps({**metadata, "positions": positions})})
+    if r.status_code != 200:
+        return (f"could not take charts added in Superset off the dashboard: HTTP "
+                f"{r.status_code} {r.text[:300]}")
+    return None
+
+
 def _roundtrip_dataset_files(resolution: Resolution, client: SupersetClient) -> dict[str, bytes]:
     """Export every referenced dataset from the TARGET at apply time (never a
     cached copy) so the bundle carries the dataset/database YAMLs the importer
@@ -318,6 +335,21 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
         report.dashboard_id = dash["id"]
         report.dashboard_url = f"{client.base_url}/superset/dashboard/{slug}/"
 
+        # 4.1.4 and 5.0.0 merge chart links on import, so a chart linked since the
+        # backup (one a failed apply just added, or one added in Superset) would stay
+        # linked to the restored dashboard; 6.1.0 unlinks it. Match the backup.
+        in_backup = {p["slice_name"] for p in payloads.values()}
+        extra = sorted({c["slice_name"] for c in client.dashboard_charts(dash["id"])}
+                       - in_backup)
+        if extra:
+            unlink_error = _unlink_charts_off_the_layout(client, dash["id"])
+            if unlink_error:
+                report.warnings.append(unlink_error)
+            else:
+                report.warnings.append(
+                    f"took charts the backup doesn't have off the dashboard: {extra}; they "
+                    f"are not deleted")
+
         from .decompile import decompile_bundle, live_dataset_lookup
         from .spec import load_spec
 
@@ -397,6 +429,7 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
 
     # Everything below mutates the instance; any failure must still return a
     # report (it carries the backup path) rather than a traceback.
+    foreign_before: dict = {}
     try:
         if existing is not None:
             # Owned charts that fell OUT of the spec (removed or renamed away)
@@ -406,8 +439,8 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
             # otherwise accumulate as an instance orphan. uuid5 ownership
             # (uuid == chart_uuid(slug, its own name)) gates the delete;
             # user charts and UI-renamed drift are never touched.
-            stale = {c["slice_name"] for c in client.dashboard_charts(existing["id"])}
-            stale -= {c.name for c in spec.charts}
+            linked_before = client.dashboard_charts(existing["id"])
+            stale = {c["slice_name"] for c in linked_before} - {c.name for c in spec.charts}
             if stale:
                 owned_stale = client.charts_by_uuids(
                     {str(ids.chart_uuid(spec.dashboard.slug, n)): n for n in stale})
@@ -417,6 +450,11 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
                     report.warnings.append(
                         f"deleted owned charts no longer in spec: {sorted(row['slice_name'] for row in owned_stale.values())}"
                     )
+                # What is left was added in Superset (or is an owned chart renamed there,
+                # which the import renames back and keeps): by id, since a name moves.
+                deleted = {row["id"] for row in owned_stale.values()}
+                foreign_before = {c["id"]: c["slice_name"] for c in linked_before
+                                  if c["slice_name"] in stale and c.get("id") not in deleted}
 
         extra = _roundtrip_dataset_files(resolution, client)
         # Slice ids must survive re-apply (see chart_payloads_from_bundle): existing
@@ -458,8 +496,27 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
         if report.dashboard_id is None:
             report.import_detail = "import returned 200 but dashboard not found at slug"
             return report
-        linked = {c["slice_name"] for c in client.dashboard_charts(report.dashboard_id)}
         expected = {c.name for c in spec.charts}
+        now = client.dashboard_charts(report.dashboard_id)
+        if any(c["slice_name"] not in expected for c in now):
+            # 4.1.4 and 5.0.0 merge the dashboard's chart links on import, so a chart
+            # added in Superset stays linked; 6.1.0 unlinks it. Saving the imported
+            # layout makes every release match the spec (docs/CONTRACTS.md).
+            foreign_before.update({c["id"]: c["slice_name"] for c in now
+                                   if c["slice_name"] not in expected})
+            unlink_error = _unlink_charts_off_the_layout(client, report.dashboard_id)
+            if unlink_error:
+                report.import_detail = unlink_error
+                return report
+            now = client.dashboard_charts(report.dashboard_id)
+        still = {c.get("id") for c in now}
+        unlinked = sorted({n for i, n in foreign_before.items() if i not in still})
+        if unlinked:
+            report.warnings.append(
+                f"took charts the spec doesn't have off the dashboard: {unlinked}. They were "
+                f"added in Superset and are not deleted: find them under Charts. To keep one "
+                f"on the dashboard, add it to the spec")
+        linked = {c["slice_name"] for c in now}
         if linked != expected:
             report.import_detail = (
                 f"dashboard chart linkage mismatch: missing={sorted(expected - linked)}, "

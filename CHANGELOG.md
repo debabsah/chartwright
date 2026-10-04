@@ -3,6 +3,13 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
+## Unreleased
+
+### Fixed
+
+- A chart added to a chartwright dashboard in Superset no longer makes the next `apply` fail on Superset 4.1.4 and 5.0.0. `apply` takes it off the dashboard on every release, leaves the chart itself under Charts, and names it in a warning; on 6.1.0 the chart came off before too, but without a word. To keep such a chart on the dashboard, add it to the spec.
+- `restore` now leaves the dashboard linked to exactly the backup's charts on 4.1.4 and 5.0.0. Before, a chart linked since the backup, such as one a failed apply had just added, stayed linked to the restored dashboard.
+
 ## 0.4.0 (2026-10-04)
 
 Standards gain recorded exceptions, a minimum Superset release per file, a lockable classification and a Superset theme, and a browser check that locked text is visible on the deployed dashboard. A fill you edit stays yours, and renaming a chart no longer breaks a spec that had fills. The design brain is version 7.

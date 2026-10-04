@@ -30,7 +30,7 @@ class Plan:
     detail: str | None = None
     charts_added: list[str] = field(default_factory=list)
     charts_changed: list[str] = field(default_factory=list)
-    charts_removed: list[str] = field(default_factory=list)   # live-but-not-in-spec = orphaned on apply
+    charts_removed: list[str] = field(default_factory=list)   # live-but-not-in-spec: off the dashboard on apply (deleted if owned)
     filters_added: list[str] = field(default_factory=list)
     filters_changed: list[str] = field(default_factory=list)  # incl. live numeric scopes out of sync
     filters_removed: list[str] = field(default_factory=list)
