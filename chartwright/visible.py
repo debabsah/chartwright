@@ -25,6 +25,7 @@ MIN_CONTRAST = 2.0       # below this a text all but disappears (white on white 
 MIN_FONT_PX = 6.0
 MIN_VISIBLE_RATIO = 0.5  # of the text's box left after its containers clip it
 MIN_OPACITY = 0.1
+MAX_BLUR_PX = 2.0        # a blur beyond this smears body text past reading
 INSTALL = ("pip install 'chartwright[visual]' && playwright install chromium")
 
 
@@ -128,7 +129,8 @@ class Facts:
     opacity: float = 1.0         # the product down the element's ancestors
     clip: str | None = None      # a clip-path or clip on the element or an ancestor
     visible_ratio: float = 1.0   # of the box left after overflow-clipping containers
-    font_px: float = 16.0
+    font_px: float = 16.0        # as drawn: the computed size times any scale transform
+    blur_px: float = 0.0         # filter: blur() down the element's ancestors, summed
     color: tuple | None = None   # (r, g, b, a), the text's own colour
     background: tuple | None = None  # the first opaque background behind it; None: unknown
     covered_by: str | None = None    # the element on top of the text's centre, if not it
@@ -182,6 +184,8 @@ def judge(f: Facts, min_contrast: float = MIN_CONTRAST) -> list[str]:
         out.append(f"clipped ({f.clip})")
     if f.font_px < MIN_FONT_PX:
         out.append(f"too small to read ({f.font_px:g}px)")
+    if f.blur_px > MAX_BLUR_PX:
+        out.append(f"blurred (filter: blur({f.blur_px:g}px))")
     if f.color is not None and f.background is not None:
         ratio = contrast(f.color, f.background)
         if ratio < min_contrast:
@@ -268,12 +272,25 @@ MEASURE_JS = r"""
     const r0 = el.getBoundingClientRect();
     window.scrollTo(0, Math.max(0, r0.top + scrollY - innerHeight / 2));
     const r = el.getBoundingClientRect();
+    // The text's own box, not the element's: text-indent or padding can push the glyphs
+    // out of an element that stays in place.
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const tr = range.getBoundingClientRect();
+    const box = (tr.width * tr.height > 0) ? tr : r;
     const cs = getComputedStyle(el);
     let opacity = 1, displayNone = false, clip = null, background = null, bgUnknown = false;
-    let vis = {left: r.left, top: r.top, right: r.right, bottom: r.bottom};
+    let blur = 0, scale = 1;
+    let vis = {left: box.left, top: box.top, right: box.right, bottom: box.bottom};
     for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
       const s = getComputedStyle(n);
       opacity *= parseFloat(s.opacity || "1");
+      for (const m of (s.filter || "").matchAll(/blur\(([\d.]+)px\)/g)) blur += parseFloat(m[1]);
+      const mt = (s.transform || "").match(/^matrix(3d)?\(([^)]+)\)/);
+      if (mt) {
+        const v = mt[2].split(",").map(Number);
+        scale *= mt[1] ? Math.hypot(v[4], v[5]) : Math.hypot(v[2], v[3]);
+      }
       for (const m of (s.filter || "").matchAll(/opacity\(([\d.]+)(%?)\)/g))
         opacity *= parseFloat(m[1]) / (m[2] ? 100 : 1);
       if (/brightness\(0(\.0+)?%?\)/.test(s.filter || "") && !clip) clip = "filter: " + s.filter + " on " + describe(n);
@@ -282,7 +299,7 @@ MEASURE_JS = r"""
       if (!clip && s.clipPath && s.clipPath !== "none") clip = "clip-path: " + s.clipPath + " on " + describe(n);
       if (!clip && s.clip && s.clip !== "auto" && (s.position === "absolute" || s.position === "fixed"))
         clip = "clip: " + s.clip + " on " + describe(n);
-      if (n !== el && /(hidden|clip|auto|scroll)/.test(s.overflowX + " " + s.overflowY)) {
+      if ((n !== el || box !== r) && /(hidden|clip|auto|scroll)/.test(s.overflowX + " " + s.overflowY)) {
         const b = n.getBoundingClientRect();
         if (/(hidden|clip|auto|scroll)/.test(s.overflowX)) { vis.left = Math.max(vis.left, b.left); vis.right = Math.min(vis.right, b.right); }
         if (/(hidden|clip|auto|scroll)/.test(s.overflowY)) { vis.top = Math.max(vis.top, b.top); vis.bottom = Math.min(vis.bottom, b.bottom); }
@@ -296,7 +313,7 @@ MEASURE_JS = r"""
       }
     }
     if (!background && !bgUnknown) background = [255, 255, 255, 1];
-    const area = Math.max(0, r.width) * Math.max(0, r.height);
+    const area = Math.max(0, box.width) * Math.max(0, box.height);
     const visArea = Math.max(0, vis.right - vis.left) * Math.max(0, vis.bottom - vis.top);
     let color = rgba(cs.color);
     const fill = rgba(cs.webkitTextFillColor);
@@ -328,10 +345,11 @@ MEASURE_JS = r"""
     const doc = document.documentElement;
     return {
       found: true, rendered: norm(el.innerText).includes(target),
-      x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height,
+      x: box.left + scrollX, y: box.top + scrollY, width: box.width, height: box.height,
       page_width: innerWidth, page_height: Math.max(doc.scrollHeight, innerHeight),
       visibility: cs.visibility, display_none: displayNone, opacity: opacity, clip: clip,
-      visible_ratio: area > 0 ? visArea / area : 0, font_px: parseFloat(cs.fontSize),
+      visible_ratio: area > 0 ? visArea / area : 0, font_px: parseFloat(cs.fontSize) * scale,
+      blur_px: blur,
       color: color, background: bgUnknown ? null : background, covered_by: covered,
       selector: describe(el)
     };
@@ -344,14 +362,24 @@ class VisualUnavailable(RuntimeError):
     """Playwright (the visual extra) or its browser is not installed."""
 
 
+class VisibleError(RuntimeError):
+    """The browser could not do its part: sign in, load the dashboard, or trust the
+    instance's certificate. `code` goes into the payload's errors entry."""
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(detail)
+        self.code = code
+
+
 def _playwright():
+    """(sync_playwright, Playwright's base Error class, its TimeoutError)."""
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import Error, TimeoutError, sync_playwright
     except ImportError as e:
         raise VisualUnavailable(
             f"verify-visible needs a browser, which chartwright installs only on request: "
             f"{INSTALL}") from e
-    return sync_playwright
+    return sync_playwright, Error, TimeoutError
 
 
 def measure(base_url: str, username: str, password: str, slug: str, texts: list[str], *,
@@ -362,7 +390,27 @@ def measure(base_url: str, username: str, password: str, slug: str, texts: list[
     dashboard that renders as it scrolls draws its rows."""
     import time
 
-    sync_playwright = _playwright()
+    sync_playwright, pw_error, pw_timeout = _playwright()
+    try:
+        return _measure(sync_playwright, base_url, username, password, slug, texts,
+                        timeout_s=timeout_s, viewport=viewport, screenshot=screenshot,
+                        verify_tls=verify_tls, time=time)
+    except pw_timeout as e:
+        raise VisibleError("visible_timeout", (
+            f"the dashboard at {base_url}/superset/dashboard/{slug}/ did not finish loading "
+            f"within {timeout_s:g} s ({str(e).splitlines()[0]}); pass a longer --timeout")) from e
+    except pw_error as e:
+        first = str(e).splitlines()[0] if str(e) else type(e).__name__
+        if "CERT" in first.upper() or "SSL" in first.upper():
+            raise VisibleError("visible_tls", (
+                f"the browser does not trust {base_url}'s certificate ({first}); it checks "
+                f"against the operating system's certificates, so install the CA there, or "
+                f"set verify = false in the profile to skip the check")) from e
+        raise VisibleError("visible_browser", f"the browser failed at {base_url}: {first}") from e
+
+
+def _measure(sync_playwright, base_url, username, password, slug, texts, *, timeout_s,
+             viewport, screenshot, verify_tls, time) -> list[Facts]:
     with sync_playwright() as p:
         try:
             browser = p.chromium.launch()
@@ -381,7 +429,8 @@ def measure(base_url: str, username: str, password: str, slug: str, texts: list[
             page.keyboard.press("Enter")
             page.wait_for_load_state("networkidle")
             if "/login" in page.url:
-                raise RuntimeError(f"signing in to {base_url} as {username!r} failed")
+                raise VisibleError("visible_login",
+                                   f"signing in to {base_url} as {username!r} failed")
             page.goto(f"{base_url}/superset/dashboard/{slug}/")
             page.wait_for_load_state("networkidle")
             deadline = time.monotonic() + timeout_s
@@ -402,14 +451,32 @@ def measure(base_url: str, username: str, password: str, slug: str, texts: list[
             for f in facts]
 
 
+def tls_for(profile) -> tuple[bool, str | None]:
+    """(whether the browser verifies the instance's certificate, a note for the payload).
+    Chromium can't be handed a CA bundle file: it trusts the operating system's
+    certificates, where a corporate CA is normally installed. So a profile with ca_bundle
+    keeps verification on, against the system store, and says so; only verify = false
+    turns it off, and the payload says that too."""
+    if not profile.verify:
+        return False, ("the profile sets verify = false, so the browser did not check the "
+                       "instance's certificate")
+    if profile.ca_bundle:
+        return True, ("the browser checked the instance's certificate against the operating "
+                      "system's certificates; it can't use the profile's ca_bundle file")
+    return True, None
+
+
 def verify(std, spec, *, base_url: str, username: str, password: str,
            min_contrast: float = MIN_CONTRAST, timeout_s: float = 60.0,
-           screenshot: str | None = None, verify_tls: bool = True, measurer=None) -> dict:
+           screenshot: str | None = None, verify_tls: bool = True, measurer=None,
+           tls_note: str | None = None) -> dict:
     """The verify-visible payload for one spec. `measurer` stands in for the browser in
     tests: (texts) -> [Facts]."""
     found, skipped = targets(std, spec)
     out: dict = {"stage": "visible", "slug": spec.dashboard.slug, "standard": std.name,
                  "min_contrast": min_contrast}
+    if tls_note:
+        out["tls"] = tls_note
     if not found:
         out.update(ok=True, items=[], skipped=[s.__dict__ for s in skipped],
                    detail="no locked header or footer text to look for on this dashboard")

@@ -806,6 +806,7 @@ def _verify_visible(args) -> None:
         _die({"stage": "visible", "ok": False, "errors": [{
             "code": "no_standard",
             "detail": "the spec follows no standard, so no text is locked on it"}]})
+    verify_tls, tls_note = visible.tls_for(profile)
     try:
         payload = visible.verify(
             std, spec, base_url=profile.base_url.rstrip("/"), username=profile.username,
@@ -813,12 +814,12 @@ def _verify_visible(args) -> None:
             min_contrast=args.min_contrast if args.min_contrast is not None
             else visible.MIN_CONTRAST,
             timeout_s=args.timeout, screenshot=args.screenshot,
-            verify_tls=bool(profile.verify) and not profile.ca_bundle)
+            verify_tls=verify_tls, tls_note=tls_note)
     except visible.VisualUnavailable as e:
         _die({"stage": "visible", "ok": False, "errors": [{
             "code": "visual_extra_missing", "detail": str(e)}]})
-    except RuntimeError as e:
-        _die({"stage": "visible", "ok": False, "errors": [{"code": "visible", "detail": str(e)}]})
+    except visible.VisibleError as e:
+        _die({"stage": "visible", "ok": False, "errors": [{"code": e.code, "detail": str(e)}]})
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     sys.exit(0 if payload["ok"] else 1)
 

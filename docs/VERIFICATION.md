@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1418 tests, 63 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1429 tests, 63 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -164,11 +164,17 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   when the spec names one and leaves a UI-chosen theme alone otherwise.
 - **Visible locked text** (`test_visible.py`): the verdict over a fake
   page's measurements names each way text is hidden (missing, unrendered,
-  hidden, sizeless, off the page, cut off, transparent, clipped, tiny, low
-  contrast, covered); the targets are the locked rows the spec holds; the
-  command exits 1 naming hidden items, and without the visual extra says how
-  to install it; Playwright is no core dependency. A live test runs the real
-  browser when `CHARTWRIGHT_VISIBLE_LIVE` names a Superset.
+  hidden, sizeless, off the page, cut off, transparent, clipped, tiny, blurred,
+  low contrast, covered); the measurements real Chromium recorded on 4.1.4,
+  5.0.0 and 6.1.0 for ten hiding stylesheets and the unchanged dashboard
+  (`fixtures/visible/measurements.json`) get the right verdict; the browser
+  script returns exactly the facts the verdict reads; the targets are the
+  locked rows the spec holds; the command exits 1 naming hidden items, reports
+  a timeout, an untrusted certificate or a browser failure as a typed error,
+  keeps certificate checks on for a `ca_bundle` profile, and without the
+  visual extra says how to install it; Playwright is no core dependency. A
+  live test runs the real browser when `CHARTWRIGHT_VISIBLE_LIVE` names a
+  Superset.
 - **Dashboard owners** (`test_dashboard_owners.py`): owners never reach
   the bundle; usernames resolve where the security API answers and emails
   everywhere, an unknown or ambiguous owner is a resolve-stage error with
@@ -342,6 +348,7 @@ python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixt
 python tools/ci_live_standards.py --base-url http://localhost:8098   # tests/fixtures/standards_live
 pip install -e ".[visual]" && playwright install chromium
 python tools/ci_live_visible.py --base-url http://localhost:8098     # locked text visible
+python tools/record_visible_measurements.py --base-url http://localhost:8098   # refresh the fixture
 python tools/soak.py       --base-url http://localhost:8098 --cycles 500 --seed 1
 python tools/adversary.py  --base-url http://localhost:8098
 python tools/faultline.py  --base-url http://localhost:8098

@@ -2144,9 +2144,10 @@ opens the dashboard in headless Chromium at 1600×1200, scrolls it so rows
 that render on scroll are drawn, and runs one script in the page. For each
 target the script finds the deepest element whose text holds it (markdown
 marks and case set aside), preferring a copy that renders, scrolls the
-window (never the element's containers) to it, and reads its box, its
-rendered text, its own and its containers' computed styles, and the element at
-the centre of its visible part. Python then judges each one. A line is hidden
+window (never the element's containers) to it, and reads the box of its text
+(not of the element, which stays in place when `text-indent` or padding pushes
+the glyphs out), its rendered text, its own and its containers' computed
+styles, and the element at the centre of its visible part. Python then judges each one. A line is hidden
 when it is:
 
 - not on the page, or not rendered (`display: none` or `content-visibility`
@@ -2158,7 +2159,9 @@ when it is:
   showing;
 - transparent: the product of the opacities, `filter: opacity()` included,
   below 0.1; or clipped by `clip-path`, `clip` or `filter: brightness(0)`;
-- smaller than 6 px;
+- smaller than 6 px as drawn: the computed size times any `scale()` down its
+  containers;
+- blurred: `filter: blur()` down its containers adding up to more than 2 px;
 - of a colour whose WCAG contrast with the first opaque background behind it
   is below `--min-contrast` (2.0 by default; white on white is 1.0, `#ccc` on
   white 1.6), the text colour's alpha composited first;
@@ -2167,11 +2170,28 @@ when it is:
 
 It prints the `items` (each with its text, `visible`, the `reasons` and the
 measured `contrast`), `skipped` and `hidden`, and exits 1 when any line is
-hidden. Verified live on 4.1.4, 5.0.0 and 6.1.0 with six author stylesheets
-hiding the locked footer: `display: none`, `visibility: hidden`, near-white
-text, `filter: opacity(0)`, a white `::after` overlay, and a shift 4000 px to
-the right. It caught all six on every release; `standard.css-hides` warned on
-the first two only. The unchanged dashboard passed.
+hidden. A browser problem is a typed error, never a traceback:
+`visible_timeout` when the dashboard doesn't load within `--timeout`,
+`visible_tls` when the browser doesn't trust the certificate, `visible_login`,
+and `visible_browser` for anything else.
+
+Chromium can't be handed a CA bundle file; it trusts the operating system's
+certificates, where a corporate CA is normally installed. So a profile with
+`ca_bundle` keeps certificate checks on, against the system's certificates,
+and the payload's `tls` says so; only `verify = false` turns the checks off,
+and `tls` says that too.
+
+Verified live on 4.1.4, 5.0.0 and 6.1.0 with ten author stylesheets hiding
+the locked footer: `display: none`, `visibility: hidden`, near-white text,
+dark text on a dark band, `filter: opacity(0)`, a white `::after` overlay, a
+shift 4000 px to the right, `text-indent: -9999px` with hidden overflow,
+`filter: blur(4px)` and `transform: scale(0.05)`. It caught all ten on every
+release, and the unchanged dashboard passed; `standard.css-hides` warns on the
+first two only. What the browser measured for each is kept in
+`tests/fixtures/visible/measurements.json`
+(`tools/record_visible_measurements.py` refreshes it), and the offline suite
+judges those measurements, so a change to the verdict is caught without a
+browser.
 
 Limits, each a way a line could be hidden and still pass:
 

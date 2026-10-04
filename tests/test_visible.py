@@ -63,6 +63,8 @@ def test_visible_text_passes():
     (replace(SEEN, color=(253, 253, 253, 1)), "colour contrast 1.02:1 (#fdfdfd on #ffffff)"),
     (replace(SEEN, color=(0, 0, 0, 0)), "colour contrast 1.00:1"),
     (replace(SEEN, covered_by="div#MARKDOWN-sdc-footer-2-1::after"), "covered by div#MARKDOWN"),
+    (replace(SEEN, blur_px=4), "blurred (filter: blur(4px))"),
+    (replace(SEEN, font_px=0.7), "too small to read (0.7px)"),
 ])
 def test_each_way_to_hide_text_is_named(facts, says):
     reasons = V.judge(facts)
@@ -251,3 +253,156 @@ def test_live_locked_text_is_visible_and_hiding_css_is_caught(live_repo, capsys)
     out = V.verify(std, load_spec(data), base_url=base, username=user, password=pw,
                    timeout_s=30)
     assert not out["ok"] and len(out["hidden"]) == 2
+
+
+# -- what real browsers measured, judged offline -----------------------------------
+
+MEASURED = json.loads((Path(__file__).parent / "fixtures" / "visible" / "measurements.json")
+                      .read_text(encoding="utf-8"))
+# What the verdict must say for each recorded stylesheet (tools/record_visible_measurements.py).
+EXPECT = {"visible": None, "display": "display none", "visibility": "visibility: hidden",
+          "nearwhite": "colour contrast", "darkband": "colour contrast",
+          "opacity": "transparent", "overlay": "covered by", "offscreen": "off the page",
+          "textindent": "off the page", "blur": "blurred", "scale": "too small to read"}
+
+
+def as_facts(raw: dict) -> V.Facts:
+    return V.Facts(**{k: (tuple(v) if isinstance(v, list) else v) for k, v in raw.items()})
+
+
+@pytest.mark.parametrize("release", sorted(MEASURED["releases"]))
+def test_recorded_measurements_get_the_right_verdict(release):
+    """text-indent: -9999px and filter: blur(4px) passed as visible before: the box was
+    the element's, not its text's, and blur wasn't read."""
+    recorded = MEASURED["releases"][release]
+    assert set(recorded) == set(EXPECT) == set(MEASURED["css"])
+    for name, lines in recorded.items():
+        assert len(lines) == 2, name
+        for raw in lines:
+            reasons = V.judge(as_facts(raw))
+            if EXPECT[name] is None:
+                assert reasons == [], (release, name, reasons)
+            else:
+                assert any(EXPECT[name] in r for r in reasons), (release, name, reasons)
+
+
+def test_the_browser_script_returns_exactly_the_facts_judge_reads():
+    """MEASURE_JS can't run without a browser; its result's keys can still be held to
+    Facts, so a renamed or dropped measurement fails here."""
+    import dataclasses
+    import re
+
+    body = V.MEASURE_JS[V.MEASURE_JS.rindex("return {"):]
+    keys = set(re.findall(r"([a-z_]+):", body[:body.index("};")]))
+    assert keys == {f.name for f in dataclasses.fields(V.Facts)}
+    assert "createRange" in V.MEASURE_JS and "blur" in V.MEASURE_JS
+
+
+# -- the browser, faked: errors and TLS ------------------------------------------------
+
+
+class FakeError(Exception):
+    pass
+
+
+class FakeTimeout(FakeError):
+    pass
+
+
+def fake_playwright(calls, fail=None):
+    class Page:
+        url = "http://superset.test/superset/welcome/"
+
+        def set_default_timeout(self, ms):
+            calls["timeout_ms"] = ms
+
+        def goto(self, url):
+            calls.setdefault("goto", []).append(url)
+            if fail and "dashboard" in url:
+                raise fail
+
+        def wait_for_selector(self, sel):
+            pass
+
+        def locator(self, sel):
+            class L:
+                first = type("F", (), {"fill": lambda self, v: None})()
+            return L()
+
+        def fill(self, sel, v):
+            pass
+
+        keyboard = type("K", (), {"press": lambda self, k: None})()
+        mouse = type("M", (), {"wheel": lambda self, x, y: None})()
+
+        def wait_for_load_state(self, s):
+            pass
+
+        def wait_for_timeout(self, ms):
+            pass
+
+        def evaluate(self, js, texts):
+            return [{"found": True, "x": 10, "y": 10, "width": 300, "height": 16,
+                     "page_width": 1600, "page_height": 1200, "font_px": 14,
+                     "color": [0, 0, 0, 1], "background": [255, 255, 255, 1]} for _ in texts]
+
+    class Browser:
+        def new_context(self, **kw):
+            calls["context"] = kw
+            return type("C", (), {"new_page": lambda self: Page()})()
+
+        def close(self):
+            pass
+
+    class P:
+        chromium = type("Ch", (), {"launch": lambda self: Browser()})()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    return lambda: (lambda: P(), FakeError, FakeTimeout)
+
+
+def test_a_slow_dashboard_is_a_typed_error_not_a_traceback(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(V, "_playwright", fake_playwright(calls, FakeTimeout("Timeout 60000ms")))
+    with pytest.raises(V.VisibleError) as e:
+        V.measure("http://superset.test", "admin", "pw", "s", ["x"], timeout_s=60)
+    assert e.value.code == "visible_timeout" and "--timeout" in str(e.value)
+    monkeypatch.setattr(V, "_playwright", fake_playwright(
+        calls, FakeError("net::ERR_CERT_AUTHORITY_INVALID at https://x")))
+    with pytest.raises(V.VisibleError) as e:
+        V.measure("https://superset.test", "admin", "pw", "s", ["x"])
+    assert e.value.code == "visible_tls"
+    monkeypatch.setattr(V, "_playwright", fake_playwright(calls, FakeError("boom")))
+    with pytest.raises(V.VisibleError) as e:
+        V.measure("http://superset.test", "admin", "pw", "s", ["x"])
+    assert e.value.code == "visible_browser"
+
+
+def test_the_command_reports_a_timeout_as_json(live_repo, capsys, monkeypatch, tmp_path):
+    path = applied(capsys, live_repo)
+    profiles(tmp_path, monkeypatch)
+    monkeypatch.setattr(V, "_playwright", fake_playwright({}, FakeTimeout("Timeout")))
+    code, out = run(capsys, "standards", "verify-visible", str(path), "--profile", "s")
+    assert code == 1 and out["errors"][0]["code"] == "visible_timeout"
+
+
+@pytest.mark.parametrize("extra, ignore, note", [
+    ("", False, None),
+    ('ca_bundle = "/etc/corp-ca.pem"\n', False, "operating system's certificates"),
+    ("verify = false\n", True, "did not check"),
+])
+def test_tls_is_verified_unless_the_profile_turns_it_off(live_repo, capsys, monkeypatch,
+                                                         tmp_path, extra, ignore, note):
+    """A ca_bundle profile used to switch certificate checks off in the browser, silently."""
+    path = applied(capsys, live_repo)
+    profiles(tmp_path, monkeypatch, extra)
+    calls = {}
+    monkeypatch.setattr(V, "_playwright", fake_playwright(calls))
+    code, out = run(capsys, "standards", "verify-visible", str(path), "--profile", "s")
+    assert code == 0 and calls["context"]["ignore_https_errors"] is ignore
+    assert (note in out["tls"]) if note else "tls" not in out
