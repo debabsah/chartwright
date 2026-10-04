@@ -250,10 +250,20 @@ def test_expiry_fails_only_the_specs_checked(tmp_path, capsys):
 def test_an_expired_waiver_with_nothing_left_to_cover_still_fails(tmp_path, capsys):
     """The decision record's #5 read literally: expiry is an error on a pull request
     touching the dashboard, so the stale entry is removed from the waivers file."""
-    repo = make(tmp_path, waiver(expires=EARLIER))
+    repo = make(tmp_path)                               # the footer is written first
     path = applied(capsys, repo, drop_footer=False)
+    (repo / "standards" / "waivers.yaml").write_text(waivers_yaml(waiver(expires=EARLIER)),
+                                                     encoding="utf-8")
     code, out = check(capsys, str(path), "--as-of", "2026-10-04")
     assert code == 1 and rules(out["specs"][0]) .count("standard.waiver-expired") == 1
+    assert rules(out["specs"][0]).count("standard.content-locked") == 0
+    [f] = [f for f in out["specs"][0]["findings"] if f["rule"] == "standard.waiver-expired"]
+    assert "covers nothing now" in f["detail"] and "delete the entry" in f["detail"]
+    # One that still covers a finding says renew or fix, as before.
+    lapsed = applied(capsys, repo, "lapsed.json")
+    code, out = check(capsys, str(lapsed), "--as-of", "2026-10-04")
+    [f] = [f for f in out["specs"][0]["findings"] if f["rule"] == "standard.waiver-expired"]
+    assert "covers nothing" not in f["detail"] and "Renew or remove it" in f["detail"]
 
 
 def test_advise_enforces_expiry_too(tmp_path, capsys):

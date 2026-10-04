@@ -105,6 +105,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     waived: list[dict] = []
     warnings: list[str] = list(getattr(standard, "waiver_notes", None) or [])
     waivers = standard.waivers if standard is not None else []
+    covering: set[int] = set()   # expired waivers that still cover a finding here
     for r in RULES.values():
         if r.data_aware and resolution is None:
             continue
@@ -123,7 +124,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
                 f.layer = set_by.get(f.rule, "rulebook")
                 f.locked = f.rule in locked
             # A waiver (standards/waivers.yaml) is the one way past a lock.
-            if f.locked and waivers and _waive(f, standard, waived, warnings):
+            if f.locked and waivers and _waive(f, standard, waived, warnings, covering):
                 continue
             # Explicit intent first: an ignore entry is ALWAYS visible in
             # `ignored`, even when the polish skip below would also apply.
@@ -160,6 +161,7 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
             if moved:
                 changed.append(moved)
 
+    _word_lapsed(findings, standard, covering)
     if chart is not None:
         findings = [f for f in findings if f.chart == chart]
         ignored = [k for k in ignored if k.endswith(f"@{chart}")]
@@ -177,7 +179,28 @@ def advise(spec: DashboardSpec, *, audience: str | None = None,
     )
 
 
-def _waive(f: Finding, standard: Standard, waived: list[dict], warnings: list[str]) -> bool:
+def _word_lapsed(findings: list[Finding], standard: Standard | None, covering: set[int]) -> None:
+    """An expired waiver that covers no finding any more still fails its dashboard's next
+    check (the decision record's #5, read literally), so its finding says the fix is to
+    delete the entry, not to renew it."""
+    from .waivers import EXPIRED_RULE
+
+    if standard is None:
+        return
+    by_index = {w.index: w for w in standard.waivers}
+    for f in findings:
+        if f.rule != EXPIRED_RULE or not f.where.startswith("waivers["):
+            continue
+        w = by_index.get(int(f.where[len("waivers["):-1]))
+        if w is not None and w.index not in covering:
+            f.detail = (f"the waiver for {w.rule} on this dashboard ({w.target}) expired on "
+                        f"{w.expires.isoformat()} (owner: {w.owner}) and covers nothing now: "
+                        f"the dashboard meets the standard, so delete the entry from "
+                        f"standards/waivers.yaml")
+
+
+def _waive(f: Finding, standard: Standard, waived: list[dict], warnings: list[str],
+           covering: set[int] | None = None) -> bool:
     """Let a locked finding pass when a waiver covers it, recording who, why and until
     when. An expired waiver still lets it pass, with a warning, except where the run
     enforces expiry (standards check, advise): there the finding stays, and
@@ -193,6 +216,8 @@ def _waive(f: Finding, standard: Standard, waived: list[dict], warnings: list[st
         return False
     expired = w.expired(standard.as_of)
     if expired and standard.enforce_expiry:
+        if covering is not None:
+            covering.add(w.index)
         return False
     key = f.key if f.chart else f.scope_key
     # The waiver's fields, then the finding's: its rule is the finding's (a waiver

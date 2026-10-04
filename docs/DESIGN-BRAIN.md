@@ -2022,7 +2022,8 @@ So CI checks the specs a pull request changes with `standards check`, and an
 expiry fails only the pull requests that touch that dashboard; a hotfix to
 another dashboard, a deploy and a rollback never trip on it. An expired waiver
 fails the dashboard's next pull request even when the dashboard conforms
-again, so the stale entry is removed from the file. Every `standards check`
+again, so the stale entry is removed from the file: its finding then says the
+waiver covers nothing now and to delete the entry. Every `standards check`
 also lists, under `waiver_warnings`, each past-dated entry in the file, checked
 spec or not, without failing.
 
