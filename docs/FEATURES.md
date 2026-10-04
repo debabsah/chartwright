@@ -101,7 +101,7 @@ into one. Everything below works from that one file.
     - Preset-hosted workspaces (preset.io) sign in with an API token and secret: take them from env vars, or reuse the credentials preset-cli already stored.
 - **What the AI Can See**: The AI proposes; the tool verifies, using your own Superset login. Verification reads names (datasets, columns, metrics), not rows; the AI never queries your warehouse.
     - The post-apply data check keeps a row count and discards the rows.
-    - Custom SQL in a spec runs with the profile's rights during apply's data check; `check` and the apply report list it under `unchecked_sql`, so you can review it before it runs.
+    - Custom SQL in a spec runs with the profile's rights during apply's data check; `check` lists it under `unchecked_sql` so you can review it before it runs, and the apply report lists it too.
 - **Corporate Networks**: Custom CA bundles, proxies, LDAP auth, internal pip mirrors (only 3 dependencies).
 - **Works Where You Work**: Windows, macOS, Linux; PowerShell and git bash; run from any directory; the Claude Code skill installs by copy, no admin rights.
 
