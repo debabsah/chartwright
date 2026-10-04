@@ -62,7 +62,12 @@ approximate it with a different mechanism.
 5. `CW check <abs-spec-path> --profile <profile>`: fix referential errors
    (max 3 attempts total across 4+5; errors name the exact dataset/column/
    metric at fault). The payload carries an `advice` block (design findings);
-   act on it in step 6.
+   act on it in step 6. `superset_version_too_old` names a field the
+   instance's Superset release can't take: remove it and tell the user.
+   `superset_version_unknown` means the instance didn't report its release:
+   ask the user for it and pass `--superset-version <release>` to check,
+   apply and plan. Pass `version_warnings` (fields that release ignores) on
+   to the user verbatim.
 6. `CW advise <abs-spec-path> --profile <profile>`: the design critic, with
    data-aware rules (column types, cardinality). Apply what it suggests:
    `CW advise <abs-spec-path> --fix` applies the safe geometry subset in

@@ -173,11 +173,11 @@ def _tag_list(tags: list[str], where: str) -> list[str]:
 
 TAGS_DESCRIPTION = (
     "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.1.0+ with the TAGGING_SYSTEM "
-    "feature flag on: 4.1.4 and 5.0.0 reject a bundle that carries tags (the import fails "
-    "and apply restores the previous state), and 6.1.0 without the flag ignores them, so "
-    "plan keeps reporting them. An apply replaces the object's tags with this list, so [] "
-    "removes them all, tags added in the UI included; omit the field to leave tags alone, "
-    "in apply and in plan."
+    "feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, "
+    "apply and plan refuse the field there before anything is written; 6.1.0 without the "
+    "flag ignores them, so plan keeps reporting them. An apply replaces the object's tags "
+    "with this list, so [] removes them all, tags added in the UI included; omit the field "
+    "to leave tags alone, in apply and in plan."
 )
 
 
@@ -1423,7 +1423,8 @@ class DashboardMeta(BaseModel):
         default=False,
         description="Show each chart's last-queried time on its card. Superset 6.1.0+ only: "
                     "4.1.4 and 5.0.0 import it, then refuse to save the dashboard's settings "
-                    "(their metadata schema rejects the key), so leave it off there.",
+                    "(their metadata schema rejects the key), so check, apply and plan refuse "
+                    "it there before anything is written.",
     )
     tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
 

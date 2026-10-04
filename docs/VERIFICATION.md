@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (648 tests, 49 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (672 tests, 50 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | 15-chart apply, per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
@@ -87,6 +87,12 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   the shape Superset saves, compiles to the earlier output when omitted,
   decompiles back, shows up in `plan` when changed live, and names a bad
   value.
+- **Release-specific fields** (`test_superset_version.py`): with the
+  instance's answer mocked, `check`, `apply` and `plan` refuse tags before
+  6.0.0 and chart timestamps before 6.1.0 ahead of any write, warn for the
+  fields older releases ignore, and read the version from `/version` (6.1.0)
+  or the sign-in page (4.1.4, 5.0.0); `compile --superset-version` gives
+  the same answers and the same bundle.
 - **The design brain** (`test_design*.py`, `test_calibrate.py`,
   `test_redesign.py`): every rule table-driven against violating and clean
   specs; fix-loop convergence, idempotence, and the no-fractional-heights
@@ -254,7 +260,8 @@ Stated plainly, so the green above means something:
   SSO or OAuth sign-in. CI signs in with a database login; LDAP and Preset
   sign-in aren't tested live.
 - **Versions**: 4.1.4, 5.0.0, and 6.1.0 exactly; other release lines are
-  untested.
+  untested. Reading the instance's version is tested against responses
+  shaped like each release's source, not yet against the live containers.
 - **Concurrency**: the second-writer harness scripts the known stale-tab
   patterns; arbitrary multi-writer races are not exhaustively explored.
 - **Permissions**: all verification runs as an admin. Restricted roles

@@ -39,13 +39,17 @@ class ApplyReport:
     backup: str | None = None
     smoke_results: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # The Superset release the spec was held to, and the fields it ignores
+    # (chartwright.versions); set only when the spec uses a version-gated field.
+    superset_version: str | None = None
+    version_warnings: list[dict] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
 
 
-def check(spec: DashboardSpec, client: SupersetClient) -> Resolution:
-    return resolve(spec, client)
+def check(spec: DashboardSpec, client: SupersetClient, superset_version: str | None = None) -> Resolution:
+    return resolve(spec, client, superset_version)
 
 
 def _ownership_guard(spec: DashboardSpec, client: SupersetClient) -> str | None:
@@ -331,11 +335,16 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
     return report
 
 
-def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default") -> ApplyReport:
+def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
+          superset_version: str | None = None) -> ApplyReport:
     report = ApplyReport(ok=False, stage="resolve")
 
-    resolution = resolve(spec, client)
+    # Resolution also holds the spec to the instance's Superset release, so a
+    # field that release can't take stops the apply here, before any write.
+    resolution = resolve(spec, client, superset_version)
     report.resolution_errors = [e.as_dict() for e in resolution.errors]
+    report.superset_version = resolution.superset_version
+    report.version_warnings = resolution.version_warnings
     if not resolution.ok:
         return report
 

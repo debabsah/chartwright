@@ -321,7 +321,7 @@ def test_unrepresentable_values_are_named_losses():
 
 def _plan(spec, edit, monkeypatch):
     live = _decompile(spec, edit)
-    monkeypatch.setattr(resolver, "resolve", lambda s, c: stub_resolution(s))
+    monkeypatch.setattr(resolver, "resolve", lambda s, c, *_: stub_resolution(s))
     monkeypatch.setattr(dashdiff, "decompile_live", lambda slug, c: live)
 
     class Client:

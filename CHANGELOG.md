@@ -64,6 +64,15 @@ while the major version is 0, minor bumps may include breaking changes and say s
   `certification_details`, `cache_timeout`, `display_name` (a shorter title shown on the
   dashboard card, Superset's `sliceNameOverride`) and `tags` (6.1 only). A re-apply
   updates description, certification and cache timeout on existing charts too.
+- `check`, `apply` and `plan` hold a spec to the instance's Superset release. When the
+  spec uses a release-specific field, they read the version (`/version` on 6.1, the
+  sign-in page on 4.1 and 5.0) and refuse `tags` before 6.0.0 and
+  `show_chart_timestamps` before 6.1.0 with a resolve-stage error, before anything is
+  written: `superset_version_too_old`, or `superset_version_unknown` when the instance
+  doesn't say. Fields older releases ignore (`x_label_every`, a trendline's `subtitle`,
+  `column_headers`, a stacked mixed query's totals-only labels) come back as
+  `version_warnings`. `--superset-version` (the MCP tools' `superset_version`) states
+  the release instead; `compile --superset-version` runs the same check offline.
 - A colour scheme name Superset doesn't ship gets a `narrative.color-scheme` warning (with
   a did-you-mean for a case slip); a deployment's own registered schemes are accepted.
   The design brain's version is now 4.

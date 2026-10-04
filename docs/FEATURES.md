@@ -76,7 +76,7 @@ into one. Everything below works from that one file.
 - **Environment Promotion**: Specs name their data (connection, schema, table), never instance ids, so the same file applies to dev, staging, and production when they share connection names; where names differ, generate one copy per instance.
 - **PR-Gated Dashboard Changes**: Specs live in git; `chartwright plan` passes when the live dashboard matches the spec and fails when it drifted, ready as a merge gate; read-only `chartwright check` runs safely on any schedule.
 - **Offline Compilation**: Build the import bundle with `chartwright compile`, no server needed; the output is reproducible byte-for-byte.
-- **Instance Migration**: Decompile from one Superset, apply the spec to another; it applies to 4.1.4 and 5.0.0 even when it came from 6.1.0, whose exports those releases reject.
+- **Instance Migration**: Decompile from one Superset, apply the spec to another; it applies to 4.1.4 and 5.0.0 even when it came from 6.1.0, whose exports those releases reject. `chartwright check` names any 6.1-only setting the spec carries, such as tags, for you to remove first.
 - **Git as the Source of Truth**: A lost or mangled dashboard is one re-apply away from its spec.
 
 ## Safety and Recovery
@@ -85,6 +85,7 @@ into one. Everything below works from that one file.
 - **Self-Healing Applies**: When an apply fails while preparing, importing or updating charts, the previous state is restored automatically, whatever the error. A failure after that (linkage, filter scopes, chart queries) leaves the new version live, and the report gives the backup to restore.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once: an error fails the apply, and a chart that returns no rows is named. Any failure says what went wrong and where.
+    - Your spec is held to the instance's Superset release too: a setting the release can't take (tags on 4.1.4 or 5.0.0, chart timestamps before 6.1) stops the apply before anything is written and names the field to remove; one it would ignore, such as a trendline subtitle before 6.1, comes back as a warning. Offline, `chartwright compile --superset-version 5.0.0` runs the same check.
 - **Ownership Guard**: The tool only ever overwrites dashboards it created. To manage a hand-built dashboard, decompile it into a spec and build it at a new slug; the original stays untouched.
 
 ## Enterprise Ready

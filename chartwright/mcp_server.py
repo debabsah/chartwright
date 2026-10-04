@@ -43,6 +43,20 @@ def _client(profile: str):
     return c
 
 
+def _stated_version(superset_version: str):
+    """(release or None, error JSON or None) for a tool's superset_version argument."""
+    if not superset_version:
+        return None, None
+    from .versions import format_version, parse_version
+
+    release = parse_version(superset_version)
+    if release is None:
+        return None, json.dumps({"ok": False, "stage": "version", "errors": [{
+            "code": "bad_superset_version",
+            "detail": f"{superset_version!r} is not a Superset release, e.g. 5.0.0"}]})
+    return format_version(release), None
+
+
 def _typed_errors(fn):
     """Return the CLI's typed error JSON instead of raising, for tools that
     sign in. A raised exception reached the agent as a bare tool failure it
@@ -112,17 +126,26 @@ def _bad_audience(audience: str) -> str | None:
 
 @mcp.tool()
 @_typed_errors
-def check_spec(spec_json: str, profile: str) -> str:
+def check_spec(spec_json: str, profile: str, superset_version: str = "") -> str:
     """Pre-flight referential resolution against the live Superset instance:
-    every dataset triple, column, and metric must exist. Returns typed errors
-    plus a design-brain advice block."""
+    every dataset triple, column, and metric must exist, and every field must
+    suit the instance's Superset release. Returns typed errors plus a
+    design-brain advice block. superset_version (optional, e.g. "5.0.0") names the
+    instance's Superset release; omitted, the instance is asked."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    version, err = _stated_version(superset_version)
+    if err:
+        return err
     from .apply import check
 
-    res = check(spec, _client(profile))
+    res = check(spec, _client(profile), version)
     out = {"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]}
+    if res.superset_version:
+        out["superset_version"] = res.superset_version
+    if res.version_warnings:
+        out["version_warnings"] = res.version_warnings
     if res.unchecked_sql:
         # Custom SQL is not checkable by name; say so instead of passing it silently.
         out["unchecked_sql"] = res.unchecked_sql
@@ -132,29 +155,38 @@ def check_spec(spec_json: str, profile: str) -> str:
 
 @mcp.tool()
 @_typed_errors
-def build_dashboard(spec_json: str, profile: str) -> str:
+def build_dashboard(spec_json: str, profile: str, superset_version: str = "") -> str:
     """Compile the spec and apply it to the live Superset instance
     (resolve -> import -> linkage -> data smoke). Returns the full apply report
-    including the dashboard URL."""
+    including the dashboard URL. A field the instance's release can't take
+    stops the build at resolve, before anything is written. superset_version (optional, e.g. "5.0.0") names the
+    instance's Superset release; omitted, the instance is asked."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    version, err = _stated_version(superset_version)
+    if err:
+        return err
     from .apply import apply as run_apply
 
-    return run_apply(spec, _client(profile), profile).to_json()
+    return run_apply(spec, _client(profile), profile, version).to_json()
 
 
 @mcp.tool()
 @_typed_errors
-def plan_dashboard(spec_json: str, profile: str) -> str:
+def plan_dashboard(spec_json: str, profile: str, superset_version: str = "") -> str:
     """Diff a spec against the live dashboard at its slug: what would apply
-    change? clean=true means no drift."""
+    change? clean=true means no drift. superset_version (optional, e.g. "5.0.0") names the
+    instance's Superset release; omitted, the instance is asked."""
     spec, err = _parse_spec(spec_json)
     if err:
         return json.dumps(err)
+    version, err = _stated_version(superset_version)
+    if err:
+        return err
     from .dashdiff import plan as run_plan
 
-    return run_plan(spec, _client(profile)).to_json()
+    return run_plan(spec, _client(profile), version).to_json()
 
 
 @mcp.tool()

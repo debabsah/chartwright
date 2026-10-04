@@ -40,6 +40,7 @@ class ResolvedDataset:
 @dataclass
 class ResolutionError:
     code: str          # dataset_not_found | dataset_ambiguous | column_not_found | metric_not_found | bad_metric
+    #                    | superset_version_too_old | superset_version_unknown (chartwright.versions)
     chart: str | None
     ref: str
     detail: str
@@ -59,6 +60,11 @@ class Resolution:
     # free text, so resolution cannot check it: listed here, never an error.
     # Apply's data check runs every chart's query, which is where bad SQL fails.
     unchecked_sql: list[dict] = field(default_factory=list)
+    # The Superset release the spec was held to (chartwright.versions), when a
+    # version-gated field made it matter; None when no gated field is in use or
+    # the instance did not say. Fields that release ignores warn here.
+    superset_version: str | None = None
+    version_warnings: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -68,8 +74,12 @@ class Resolution:
         return self.datasets[ref.key()]
 
 
-def resolve(spec: DashboardSpec, client: SupersetClient) -> Resolution:
+def resolve(spec: DashboardSpec, client: SupersetClient,
+            superset_version: str | None = None) -> Resolution:
+    """`superset_version` states the target release; omitted, the instance is
+    asked, and only when the spec uses a version-gated field."""
     res = Resolution()
+    _check_version(spec, client, res, superset_version)
     cache: dict[str, ResolvedDataset | None] = {}
 
     def dataset_for(ref: DatasetRef) -> ResolvedDataset | None:
@@ -108,6 +118,21 @@ def resolve(spec: DashboardSpec, client: SupersetClient) -> Resolution:
         if f.type == "time_column" and f.default:
             _check_column(f.default, where, ds, res, "time_column default")
     return res
+
+
+def _check_version(spec: DashboardSpec, client: SupersetClient, res: Resolution,
+                   stated: str | None) -> None:
+    from .versions import check_spec_version, format_version, gated_fields_used, parse_version
+
+    uses = gated_fields_used(spec)
+    if not uses:
+        release = parse_version(stated)
+        res.superset_version = format_version(release) if release else None
+        return
+    checked = check_spec_version(spec, stated if stated else client.superset_version(), uses)
+    res.superset_version = checked.version
+    res.version_warnings = checked.warnings
+    res.errors += [ResolutionError(e["code"], e["chart"], e["ref"], e["detail"]) for e in checked.errors]
 
 
 def _check_where(filters, where: str, ds: "ResolvedDataset", res: "Resolution", what: str) -> None:

@@ -63,7 +63,11 @@ running the tool against real instances of all three releases.
   (`superset/commands/dashboard/importers/v1/__init__.py:152,207`) and
   replaces the object's tags with the bundle's list
   (`superset/commands/importers/v1/utils.py:335`). The tool writes `tags`
-  only when the spec sets them, and the field's description says all this.
+  only when the spec sets them, and `check`, `apply` and `plan` refuse a
+  spec with `tags` on an instance older than 6.0.0, the first release whose
+  import schemas declare them (6.0.0 `superset/dashboards/schemas.py:502`,
+  `superset/charts/schemas.py:1589`); see "Which release is on the other
+  end".
 - **A chart's own settings change through the chart API.** Since the
   importer never overwrites an existing chart, a re-apply sends a chart's
   description, certification and cache timeout with its options in the
@@ -95,8 +99,9 @@ running the tool against real instances of all three releases.
   declare (4.1.4 `superset/dashboards/schemas.py:107-116,403-406`; the
   same in 5.0.0). `show_chart_timestamps` is declared from 6.1.0 (`:167`),
   so on 4.1.4 and 5.0.0 a dashboard carrying it imports, then fails every
-  save, including apply's filter-scope step. The compiler writes it only
-  when the spec turns it on, and the field is documented as 6.1-only.
+  save, including apply's filter-scope step (6.0.0 does not declare it
+  either). The compiler writes it only when the spec turns it on, and
+  `check`, `apply` and `plan` refuse it on an instance older than 6.1.0.
 - **The horizontal filter bar is behind a flag before 6.1.0.**
   `filter_bar_orientation` is a declared setting in every release, but
   4.1.4 and 5.0.0 draw the horizontal bar only with the
@@ -120,6 +125,45 @@ running the tool against real instances of all three releases.
   deleted charts are stored without complaint in every release. The tool
   compares meaning rather than raw text when verifying, and `plan`
   recomputes filter scopes instead of trusting stored ids.
+
+## Which release is on the other end
+
+- **6.1.0 reports its version at `/version`; 4.1.4 and 5.0.0 report it in
+  their sign-in page.** 6.1.0's health blueprint answers `GET /version`
+  with JSON carrying `version_string`, signed out
+  (`superset/views/health.py:36-45`, registered at
+  `superset/initialization/__init__.py:234-236`). 4.1.4 and 5.0.0 have no
+  such route (their `superset/views/health.py:22-29` serves `/health`,
+  `/healthcheck` and `/ping` only), but their sign-in page carries the
+  version in its bootstrap data: Flask-AppBuilder's `login_db.html` extends
+  `appbuilder/base.html`, whose base template is `superset/base.html`
+  (`superset/initialization/__init__.py:564` at 4.1.4, `:559` at 5.0.0),
+  which extends `appbuilder/baselayout.html`, whose `data-bootstrap`
+  attribute (`superset/templates/appbuilder/baselayout.html:45`) holds
+  `common.menu_data.navbar_right.version_string`
+  (`superset/views/base.py:282` at 4.1.4, `:274` at 5.0.0). `check`,
+  `apply` and `plan` ask `/version` first, then the sign-in page, both
+  signed out, and only when the spec uses one of the fields below. A
+  development build reports 0.0.0, which counts as unknown.
+- **A field a release can't take is refused before anything is written.**
+  `chartwright/versions.py` lists each version-gated field with the first
+  release that takes it: `tags` (6.0.0) and `show_chart_timestamps`
+  (6.1.0), for the reasons above. Against an older instance, the spec gets
+  a `superset_version_too_old` error at the resolve stage, so `apply` stops
+  before its backup, import or any update; remove the field for that
+  instance. When the instance doesn't report its version, the error is
+  `superset_version_unknown`: state the release with `--superset-version`
+  (the MCP tools' `superset_version`), which also skips the lookup.
+  `compile --superset-version` runs the same check offline; without it,
+  `compile` writes the same bundle for every release.
+- **A field a release ignores is a warning.** `x_label_every`, a
+  trendline's `subtitle` and a table's `column_headers` write 6.1.0
+  controls that older plugins never read (next section). A stacked mixed
+  query with `show_value` labels every segment before 6.1.0, because the
+  Mixed Chart reads `onlyTotal` from 6.1.0 only
+  (`MixedTimeseries/transformProps.ts:186-187`); `only_total: false` asks
+  for exactly that, so it raises nothing. These come back in
+  `version_warnings`, and the dashboard still builds.
 
 ## What chart options mean
 

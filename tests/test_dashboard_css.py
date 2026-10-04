@@ -101,7 +101,7 @@ def _plan(spec, live_css, monkeypatch):
             doc["css"] = live_css
 
     live = decompile_bundle(edit_bundle(compile_bundle(spec, res), edit), _lookup(res))
-    monkeypatch.setattr(resolver, "resolve", lambda s, c: stub_resolution(s))
+    monkeypatch.setattr(resolver, "resolve", lambda s, c, *_: stub_resolution(s))
     monkeypatch.setattr(dashdiff, "decompile_live", lambda slug, c: live)
 
     class Client:

@@ -44,6 +44,8 @@ class Plan:
     # Why a plan is blocked by the spec: the same typed errors `check` and
     # `apply` return (column_not_found carries `candidates`). Empty otherwise.
     resolution_errors: list[dict] = field(default_factory=list)
+    # Fields the instance's Superset release ignores (chartwright.versions).
+    version_warnings: list[dict] = field(default_factory=list)
 
     @property
     def clean(self) -> bool:
@@ -74,6 +76,7 @@ class Plan:
                 "dashboard_settings_changed": self.dashboard_settings_changed,
                 "decompile_losses": self.decompile_losses,
                 "resolution_errors": self.resolution_errors,
+                "version_warnings": self.version_warnings,
             },
             indent=2,
         )
@@ -151,7 +154,7 @@ def _normalize(spec: DashboardSpec) -> dict:
     return data
 
 
-def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
+def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | None = None) -> Plan:
     from .resolver import resolve
 
     existing = client.find_dashboard_by_slug(target.dashboard.slug)
@@ -168,13 +171,14 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
         return Plan(dashboard="blocked",
                     detail=f"slug {target.dashboard.slug!r} exists but is not owned by this tool")
 
-    resolution = resolve(target, client)
+    resolution = resolve(target, client, superset_version)
     if not resolution.ok:
         n = len(resolution.errors)
         return Plan(dashboard="blocked",
-                    detail=f"the spec names {n} thing{'s' if n != 1 else ''} this instance doesn't have; "
-                           f"see resolution_errors",
-                    resolution_errors=[e.as_dict() for e in resolution.errors])
+                    detail=f"the spec names {n} thing{'s' if n != 1 else ''} this instance doesn't have "
+                           f"or can't take; see resolution_errors",
+                    resolution_errors=[e.as_dict() for e in resolution.errors],
+                    version_warnings=resolution.version_warnings)
 
     live_result = decompile_live(target.dashboard.slug, client)
     try:
@@ -182,10 +186,12 @@ def plan(target: DashboardSpec, client: SupersetClient) -> Plan:
     except Exception as e:  # noqa: BLE001 - decompiled live state can be arbitrarily degraded
         return Plan(dashboard="update",
                     detail=f"live dashboard not representable as a spec ({e}); apply will rebuild it",
-                    decompile_losses=live_result.losses_json())
+                    decompile_losses=live_result.losses_json(),
+                    version_warnings=resolution.version_warnings)
 
     t, l = _normalize(target), _normalize(live_spec)
-    p = Plan(dashboard="unchanged", decompile_losses=live_result.losses_json())
+    p = Plan(dashboard="unchanged", decompile_losses=live_result.losses_json(),
+             version_warnings=resolution.version_warnings)
 
     t_charts = {c["name"]: c for c in t["charts"]}
     l_charts = {c["name"]: c for c in l["charts"]}

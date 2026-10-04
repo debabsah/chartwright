@@ -84,7 +84,7 @@ def assert_lossless(spec):
 def plan_against(spec, edit, monkeypatch) -> dict:
     """plan() against a live dashboard that is the spec's own build, edited."""
     live = roundtrip(spec, edit)
-    monkeypatch.setattr(resolver, "resolve", lambda s, c: stub_resolution(s))
+    monkeypatch.setattr(resolver, "resolve", lambda s, c, *_: stub_resolution(s))
     monkeypatch.setattr(dashdiff, "decompile_live", lambda slug, c: live)
 
     class Client:

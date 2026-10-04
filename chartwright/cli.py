@@ -36,6 +36,20 @@ def _load(path: str):
         _die({"stage": "schema", "errors": json.loads(e.json())})
 
 
+def _release(text: str) -> str:
+    """argparse type for --superset-version: a release such as 5.0.0."""
+    from .versions import format_version, parse_version
+
+    release = parse_version(text)
+    if release is None:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a Superset release, e.g. 5.0.0")
+    return format_version(release)
+
+
+_VERSION_HELP = ("the Superset release to hold the spec to, e.g. 5.0.0; fields that release "
+                 "can't take are refused, fields it ignores warn")
+
+
 def _die(payload: dict, code: int = 1) -> None:
     print(json.dumps(payload, indent=2, default=str))
     sys.exit(code)
@@ -119,6 +133,8 @@ def _main(argv: list[str] | None = None) -> None:
     comp = sub.add_parser("compile", help="compile an import bundle offline (stub dataset ids)")
     comp.add_argument("spec")
     comp.add_argument("-o", "--output", default=None)
+    comp.add_argument("--superset-version", type=_release, default=None,
+                      help=_VERSION_HELP + " (default: no check; the bundle is the same either way)")
 
     subhelp = {"check": "pre-flight referential resolution against the live instance",
                "apply": "check -> compile -> import -> verify -> smoke",
@@ -127,6 +143,8 @@ def _main(argv: list[str] | None = None) -> None:
         p = sub.add_parser(name, help=subhelp[name])
         p.add_argument("spec")
         p.add_argument("--profile", required=True)
+        p.add_argument("--superset-version", type=_release, default=None,
+                       help=_VERSION_HELP + " (default: ask the instance)")
         if name != "plan":
             p.add_argument("--design", choices=["off", "warn", "strict"], default="warn",
                            help="design-brain advice: warn (report, default), strict (block), off")
@@ -190,11 +208,23 @@ def _main(argv: list[str] | None = None) -> None:
         from .compiler import compile_bundle
         from .testing import stub_resolution
 
+        checked = None
+        if args.superset_version:
+            from .versions import check_spec_version
+
+            checked = check_spec_version(spec, args.superset_version)
+            if not checked.ok:
+                _die({"ok": False, "stage": "version", "superset_version": checked.version,
+                      "errors": checked.errors, "version_warnings": checked.warnings})
         bundle = compile_bundle(spec, stub_resolution(spec))
         out = Path(args.output or f"{spec.dashboard.slug}.zip")
         out.write_bytes(bundle)
-        print(json.dumps({"ok": True, "stage": "compile", "output": str(out), "bytes": len(bundle),
-                          "note": "stub resolution (fake dataset ids); use apply for a real import"}))
+        payload = {"ok": True, "stage": "compile", "output": str(out), "bytes": len(bundle),
+                   "note": "stub resolution (fake dataset ids); use apply for a real import"}
+        if checked is not None:
+            payload["superset_version"] = checked.version
+            payload["version_warnings"] = checked.warnings
+        print(json.dumps(payload))
         return
 
     if args.cmd == "check":
@@ -202,8 +232,12 @@ def _main(argv: list[str] | None = None) -> None:
         client = _client(args.profile)
         from .apply import check
 
-        res = check(spec, client)
+        res = check(spec, client, args.superset_version)
         payload = {"ok": res.ok, "stage": "resolve", "errors": [e.as_dict() for e in res.errors]}
+        if res.superset_version:
+            payload["superset_version"] = res.superset_version
+        if res.version_warnings:
+            payload["version_warnings"] = res.version_warnings
         if res.unchecked_sql:
             # Custom SQL is not checkable by name; say so instead of passing it silently.
             payload["unchecked_sql"] = res.unchecked_sql
@@ -234,7 +268,7 @@ def _main(argv: list[str] | None = None) -> None:
         client = _client(args.profile)
         from .apply import apply as run_apply
 
-        report = run_apply(spec, client, args.profile)
+        report = run_apply(spec, client, args.profile, args.superset_version)
         out = json.loads(report.to_json())
         if advice is not None:
             out["advice"] = advice
@@ -362,7 +396,7 @@ def _main(argv: list[str] | None = None) -> None:
         client = _client(args.profile)
         from .dashdiff import plan as run_plan
 
-        p = run_plan(spec, client)
+        p = run_plan(spec, client, args.superset_version)
         print(p.to_json())
         sys.exit(0 if p.clean else 1)
 
