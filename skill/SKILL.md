@@ -125,7 +125,12 @@ approximate it with a different mechanism.
    previous state under `~/.config/chartwright/backups/<profile>/<slug>/` (restore with
    `CW restore <zip> --profile <profile>`).
 8. Modify tool-born dashboards by editing their spec and re-running 5-7.
-   Modify UI-born dashboards via
+   To manage a UI-born dashboard where it is (same address, id and chart ids),
+   `CW adopt <slug-or-id> --profile <profile> -o <abs-spec-path>`: show the
+   user every entry under `resets` (what the first apply resets because a spec
+   can't hold it) and pass `--accept-reset` only after they agree; never pass
+   `--allow-shared` without asking. Then `CW plan` before the first apply.
+   To build a copy instead, use
    `CW decompile <slug-or-id> --profile <profile> -o <abs-spec-path>`;
    show the user the lossiness report before editing. `CW advise` on a
    decompiled spec is a design audit of a legacy dashboard. To redesign one

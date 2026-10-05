@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import re
+import uuid as _uuid
 from typing import Annotated, Any, ClassVar, Literal, Union
 
 from pydantic import (BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator,
@@ -1422,11 +1423,50 @@ class Lifecycle(BaseModel):
         return self
 
 
+SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]*$"  # a dashboard's URL name, as a spec holds it
+
+
+class AdoptedIdentity(BaseModel):
+    """The existing dashboard this spec takes over in place, written by `chartwright
+    adopt`. Without it, a spec's dashboard and charts get ids derived from the slug,
+    and the tool refuses to touch any dashboard it did not create; with it, apply
+    updates THIS dashboard and these charts (same ids, same address)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dashboard_uuid: str = Field(description="uuid of the adopted dashboard")
+    slug: str = Field(
+        min_length=1,
+        description="The adopted dashboard's address (URL name), as recorded by adopt. Must equal "
+                    "dashboard.slug: copying an adopted spec to make a new dashboard means removing this "
+                    "whole block; moving the dashboard means changing its address in Superset and adopting again.")
+    charts: dict[str, str] = Field(
+        default_factory=dict,
+        description="Chart name -> uuid of the adopted chart. Renaming a chart in the spec renames it in "
+                    "Superset; rename its key here too.",
+    )
+
+    @model_validator(mode="after")
+    def _uuids(self) -> "AdoptedIdentity":
+        def canonical(label: str, value: str) -> str:
+            try:
+                return str(_uuid.UUID(value))  # one spelling, as Superset exports it
+            except ValueError:
+                raise ValueError(f"adopted: {label!r} is not a uuid: {value!r}") from None
+        self.dashboard_uuid = canonical("dashboard_uuid", self.dashboard_uuid)
+        self.charts = {k: canonical(k, v) for k, v in self.charts.items()}
+        values = list(self.charts.values())
+        dupes = {v for v in values if values.count(v) > 1}
+        if dupes:
+            raise ValueError(f"adopted: one chart uuid mapped to several names: {sorted(dupes)}")
+        return self
+
+
 class DashboardMeta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1)
-    slug: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9-]*$", description="uuid seed input; lowercase kebab-case")
+    slug: str = Field(min_length=1, pattern=SLUG_PATTERN, description="uuid seed input; lowercase kebab-case")
     cross_filters: bool = Field(
         default=False,
         description=(
@@ -1530,6 +1570,26 @@ class DashboardMeta(BaseModel):
                     "Spec-only: compile and plan ignore it. A standard can key footer rows "
                     "off it (`standards apply`).",
     )
+    adopted: AdoptedIdentity | None = Field(
+        default=None,
+        description=(
+            "Set by `chartwright adopt`: the existing dashboard (and its charts) this spec "
+            "manages in place. Leave it out for dashboards the tool creates."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _adopted_slug(self) -> "DashboardMeta":
+        # The adopted uuid points at one existing dashboard. A copy of the spec under
+        # a new slug would still carry it and overwrite the ORIGINAL on apply, so the
+        # two must move together; this fails offline, at validate, before any import.
+        if self.adopted and self.adopted.slug != self.slug:
+            raise ValueError(
+                f"dashboard.slug {self.slug!r} differs from dashboard.adopted.slug "
+                f"{self.adopted.slug!r}. Making a new dashboard from a copy of this spec? Remove "
+                f"dashboard.adopted. Moving the adopted dashboard to a new address? Change it in "
+                f"Superset, then run `chartwright adopt` on it again.")
+        return self
 
     @field_validator("owners")
     @classmethod
@@ -1772,6 +1832,28 @@ class DashboardSpec(BaseModel):
     layout: Layout
     design: DesignConfig | None = Field(default=None, description="Design-brain settings (optional)")
 
+    @model_validator(mode="after")
+    def _adopted_names(self) -> "DashboardSpec":
+        from . import ids
+
+        adopted = self.dashboard.adopted
+        if adopted:
+            unknown = sorted(set(adopted.charts) - {c.name for c in self.charts})
+            if unknown:
+                raise ValueError(
+                    f"dashboard.adopted.charts names charts not in the spec: {unknown}; "
+                    "rename the key together with its chart, or drop the entry")
+            # A chart outside the adopted map gets a uuid derived from its name; if that
+            # equals an adopted chart's uuid, two charts would share one identity.
+            taken = set(adopted.charts.values())
+            clash = sorted(c.name for c in self.charts if c.name not in adopted.charts
+                           and str(ids.chart_uuid(self.dashboard.slug, c.name)) in taken)
+            if clash:
+                raise ValueError(
+                    f"charts {clash} would get the same id as an adopted chart; give them "
+                    "another name, or run `chartwright adopt` again")
+        return self
+
     @field_validator("charts")
     @classmethod
     def _unique_names(cls, charts: list[Chart]) -> list[Chart]:
@@ -2005,6 +2087,22 @@ class DashboardSpec(BaseModel):
         pos = next(i for i, x in enumerate(implicit)
                    if x is item or (isinstance(item, str) and x == item))
         return max(1, base + (1 if pos < rem else 0))
+
+    # -- identity: derived from the slug, or the adopted dashboard's own ids ----
+
+    def dashboard_uuid(self) -> _uuid.UUID:
+        from . import ids
+
+        adopted = self.dashboard.adopted
+        return _uuid.UUID(adopted.dashboard_uuid) if adopted else ids.dashboard_uuid(self.dashboard.slug)
+
+    def chart_uuid(self, name: str) -> _uuid.UUID:
+        from . import ids
+
+        adopted = self.dashboard.adopted
+        if adopted and name in adopted.charts:
+            return _uuid.UUID(adopted.charts[name])
+        return ids.chart_uuid(self.dashboard.slug, name)
 
     def resolved_height(self, name: str) -> float:
         chart = next(c for c in self.charts if c.name == name)

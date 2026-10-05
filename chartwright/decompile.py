@@ -332,6 +332,11 @@ class DecompileResult:
     dataset_uuids: dict[str, str] = field(default_factory=dict)  # chart name -> dataset uuid
     # The live dashboard's owner ids (decompile_live only: exports carry no owners).
     owner_ids: list[int] | None = None
+    chart_uuids: dict[str, str] = field(default_factory=dict)  # chart name -> chart uuid
+    skipped_charts: list[str] = field(default_factory=list)  # charts the spec can't represent
+    dashboard_uuid: str | None = None
+    source_slug: str | None = None  # the live dashboard's own slug (None when it has none)
+    chart_titles: list[str] = field(default_factory=list)  # every chart's title, skipped ones too
 
     def losses_json(self) -> list[dict]:
         return [loss.as_dict() for loss in self.losses]
@@ -1260,16 +1265,27 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
 
     charts_by_name: dict[str, dict] = {}
     dataset_uuids: dict[str, str] = {}
+    chart_uuids: dict[str, str] = {}
+    skipped: list[str] = []
+    titles: list[str] = []
     for n in zf.namelist():
         if "/charts/" in n and n.endswith(".yaml"):
             cy = yaml.safe_load(zf.read(n))
+            titles.append(cy.get("slice_name") or "Unnamed")
             spec_chart = _chart_to_spec(cy, lookup, losses)
             if spec_chart:
                 if spec_chart["name"] in charts_by_name:
                     losses.append(Loss(spec_chart["name"], "duplicate slice_name in bundle; suffixed to keep uuid seeds unique"))
-                    spec_chart["name"] = f"{spec_chart['name']} (2)"
+                    k = 2
+                    while f"{spec_chart['name']} ({k})" in charts_by_name:
+                        k += 1
+                    spec_chart["name"] = f"{spec_chart['name']} ({k})"
                 charts_by_name[spec_chart["name"]] = spec_chart
                 dataset_uuids[spec_chart["name"]] = str(cy.get("dataset_uuid"))
+                if cy.get("uuid"):
+                    chart_uuids[spec_chart["name"]] = str(cy["uuid"])
+            else:
+                skipped.append(cy.get("slice_name") or "Unnamed")
 
     title = dash.get("dashboard_title") or "Untitled"
     slug = dash.get("slug")
@@ -1435,7 +1451,13 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             f"the dataset index stopped at {truncated} datasets (page cap); any "
             f"'dataset uuid not resolvable' loss above may be a dataset past the cap "
             f"rather than a missing one -- re-check those charts before trusting this spec"))
-    return DecompileResult(spec=spec, losses=losses, dataset_uuids=dataset_uuids)
+    kept_names = {c["name"] for c in spec.get("charts", [])}
+    return DecompileResult(spec=spec, losses=losses, dataset_uuids=dataset_uuids,
+                           chart_uuids={n: u for n, u in chart_uuids.items() if n in kept_names},
+                           skipped_charts=skipped,
+                           dashboard_uuid=str(dash["uuid"]) if dash.get("uuid") else None,
+                           source_slug=dash.get("slug") or None,
+                           chart_titles=titles)
 
 
 PAGE_CAP = 200  # 20,000 datasets; a runaway guard, not an expected ceiling

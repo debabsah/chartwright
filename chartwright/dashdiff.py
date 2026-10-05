@@ -6,11 +6,15 @@ Exit contract (CLI): 0 = no changes (clean), 1 = changes pending / drift.
 
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from dataclasses import dataclass, field
 
-from . import ids
+import yaml
+
 from .client import SupersetClient
+from .compiler import compile_bundle, filter_id
 from .decompile import decompile_live
 from .spec import (
     DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
@@ -51,6 +55,10 @@ class Plan:
     # compare (design/standards.py for_instance); and why nothing could be held.
     held: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Adopted dashboards only: chart -> the stored option keys apply rewrites. A
+    # spec-to-spec compare can't see options decompile leaves out, which a chart
+    # built in the UI really has. Each chart here is also in charts_changed.
+    chart_option_changes: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def clean(self) -> bool:
@@ -88,6 +96,8 @@ class Plan:
             out["held"] = self.held
         if self.warnings:
             out["warnings"] = self.warnings
+        if self.chart_option_changes:
+            out["chart_option_changes"] = self.chart_option_changes
         return json.dumps(out, indent=2)
 
 
@@ -175,11 +185,67 @@ def _normalize(spec: DashboardSpec) -> dict:
     return data
 
 
+# Keys Superset keeps in a chart's params for its own bookkeeping, not chart options.
+_SERVER_PARAM_KEYS = {"slice_id", "dashboards", "url_params"}
+# Keys Superset's import and export fill in where the compiler leaves them out: absent
+# reads as this value (the adopt CI diagnostic, 4.1.4 and 5.0.0, 2026-10-02).
+_PARAM_ABSENT_AS = {"annotation_layers": []}
+
+
+def _bundle_charts(bundle: bytes) -> dict[str, dict]:
+    """uuid -> chart yaml, for every chart in an import/export bundle."""
+    zf = zipfile.ZipFile(io.BytesIO(bundle))
+    out = {}
+    for n in zf.namelist():
+        if "/charts/" in n and n.endswith(".yaml"):
+            cy = yaml.safe_load(zf.read(n)) or {}
+            out[str(cy.get("uuid"))] = cy
+    return out
+
+
+def _chart_options(cy: dict) -> dict:
+    params = {k: v for k, v in (cy.get("params") or {}).items() if k not in _SERVER_PARAM_KEYS}
+    for k, absent in _PARAM_ABSENT_AS.items():
+        params.setdefault(k, absent)
+    return params
+
+
+def option_changes(compiled: dict, live: dict) -> list[str]:
+    """The option keys (and viz_type) that differ between a compiled chart yaml and the
+    live one."""
+    want, have = _chart_options(compiled), _chart_options(live)
+    keys = sorted(k for k in set(want) | set(have) if want.get(k) != have.get(k))
+    if compiled.get("viz_type") != live.get("viz_type"):
+        keys.append("viz_type")
+    return keys
+
+
+def _adopted_blocks(target: DashboardSpec, live: dict[str, dict]) -> str | None:
+    """The cases apply refuses for an adopted spec, so plan can't promise otherwise."""
+    titles = [cy.get("slice_name") for cy in live.values()]
+    dupes = sorted({t for t in titles if titles.count(t) > 1})
+    if dupes:
+        return (f"charts share a title on the adopted dashboard: {dupes}; apply would refuse. "
+                "Give each a distinct title in Superset, then run `chartwright adopt` again.")
+    absent = sorted(n for n, u in target.dashboard.adopted.charts.items() if u not in live)
+    if absent:
+        return (f"adopted charts {absent} are not on the adopted dashboard; apply would refuse. "
+                "Remove their entries from dashboard.adopted.charts, or run `chartwright adopt` again.")
+    return None
+
+
 def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | None = None) -> Plan:
     from .resolver import resolve
 
     existing = client.find_dashboard_by_slug(target.dashboard.slug)
+    adopted = target.dashboard.adopted
     if existing is None:
+        if adopted:
+            # apply refuses this case too: the importer would overwrite the adopted
+            # dashboard wherever it now lives.
+            return Plan(dashboard="blocked",
+                        detail=f"the dashboard this spec adopted is no longer at "
+                               f"{target.dashboard.slug!r}; run `chartwright adopt` on it where it is now")
         return Plan(dashboard="create", detail="no dashboard at this slug",
                     charts_added=[c.name for c in target.charts])
 
@@ -188,9 +254,12 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
     # list_columns; find_dashboard_by_slug already returned it.
     live_uuid = existing.get("uuid") or client.get(
         f"/api/v1/dashboard/{existing['id']}")["result"].get("uuid")
-    if str(live_uuid) != str(ids.dashboard_uuid(target.dashboard.slug)):
+    if str(live_uuid) != str(target.dashboard_uuid()):
         return Plan(dashboard="blocked",
-                    detail=f"slug {target.dashboard.slug!r} exists but is not owned by this tool")
+                    detail=(f"the dashboard at {target.dashboard.slug!r} is not the one this spec "
+                            f"adopted" if adopted else
+                            f"slug {target.dashboard.slug!r} exists but is not owned by this tool; "
+                            f"take it over with `chartwright adopt`"))
 
     resolution = resolve(target, client, superset_version)
     if not resolution.ok:
@@ -202,6 +271,13 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
                     version_warnings=resolution.version_warnings)
 
     live_result = decompile_live(target.dashboard.slug, client)
+    live_bundle_charts: dict[str, dict] = {}
+    if adopted:
+        live_bundle_charts = _bundle_charts(client.export_dashboard(existing["id"]))
+        blocked = _adopted_blocks(target, live_bundle_charts)
+        if blocked:
+            return Plan(dashboard="blocked", detail=blocked, decompile_losses=live_result.losses_json(),
+                        version_warnings=resolution.version_warnings)
     try:
         live_spec = load_spec(live_result.spec)
     except Exception as e:  # noqa: BLE001 - decompiled live state can be arbitrarily degraded
@@ -216,6 +292,15 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
 
     t_charts = {c["name"]: c for c in t["charts"]}
     l_charts = {c["name"]: c for c in l["charts"]}
+    if adopted:
+        # apply matches adopted charts by uuid, so a chart renamed in the spec is the
+        # same chart under a new title (a change), not one removed and one added.
+        spec_name = {str(target.chart_uuid(c.name)): c.name for c in target.charts}
+        for live_name, u in live_result.chart_uuids.items():
+            new = spec_name.get(u)
+            if new and new != live_name and live_name in l_charts and new not in l_charts:
+                l_charts[new] = l_charts.pop(live_name)
+                live_result.dataset_uuids[new] = live_result.dataset_uuids.get(live_name)
     # Dataset identity compares by resolved uuid, not by literal triple:
     # an omitted schema in the spec means "unambiguous", not "different".
     for chart in target.charts:
@@ -239,6 +324,18 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
     p.charts_changed = sorted(
         n for n in set(t_charts) & set(l_charts) if t_charts[n] != l_charts[n]
     )
+    if adopted:
+        # Compare what apply will WRITE with what each chart stores: on a dashboard built
+        # in the UI, options decompile leaves out are real content the first apply resets.
+        compiled = _bundle_charts(compile_bundle(target, resolution))
+        for chart in target.charts:
+            u = str(target.chart_uuid(chart.name))
+            if u in live_bundle_charts and u in compiled:
+                keys = option_changes(compiled[u], live_bundle_charts[u])
+                if keys:
+                    p.chart_option_changes[chart.name] = keys
+        p.charts_changed = sorted(set(p.charts_changed) | set(p.chart_option_changes))
+        p.charts_removed = sorted(set(p.charts_removed) | set(live_result.skipped_charts))
     # Filters: same identity model as charts (name-keyed, dataset by resolved
     # uuid). Without this, the primary real-world drift (a stale browser tab
     # writing back metadata without our native filters) is invisible.
@@ -299,6 +396,24 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
     # Whole-layout compare: a tabs layout has no "rows" key after
     # exclude_none dumping, so keyed access would KeyError.
     p.layout_changed = t["layout"] != l["layout"]
+    if adopted:
+        # Losses are content the first apply drops: a filter it changes or removes, a
+        # layout it rebuilds. Filters get the tool's own ids.
+        for loss in live_result.losses_json():
+            where = loss["where"]
+            if where.startswith("filter:"):
+                name = where.split(":", 1)[1]
+                (p.filters_changed if name in t_filters else p.filters_removed).append(name)
+            elif where == "layout":
+                p.layout_changed = True
+        if target.filters:
+            meta = json.loads(client.get(f"/api/v1/dashboard/{existing['id']}")["result"]
+                              .get("json_metadata") or "{}")
+            live_ids = {nf.get("name"): nf.get("id") for nf in meta.get("native_filter_configuration") or []}
+            p.filters_changed += [f.name for f in target.filters if f.name in live_ids
+                                  and live_ids[f.name] != filter_id(target.dashboard.slug, f.name)]
+        p.filters_changed = sorted(set(p.filters_changed))
+        p.filters_removed = sorted(set(p.filters_removed))
     if not p.clean:
         p.dashboard = "update"
     return p

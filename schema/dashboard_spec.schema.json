@@ -1,5 +1,36 @@
 {
   "$defs": {
+    "AdoptedIdentity": {
+      "additionalProperties": false,
+      "description": "The existing dashboard this spec takes over in place, written by `chartwright\nadopt`. Without it, a spec's dashboard and charts get ids derived from the slug,\nand the tool refuses to touch any dashboard it did not create; with it, apply\nupdates THIS dashboard and these charts (same ids, same address).",
+      "properties": {
+        "dashboard_uuid": {
+          "description": "uuid of the adopted dashboard",
+          "title": "Dashboard Uuid",
+          "type": "string"
+        },
+        "slug": {
+          "description": "The adopted dashboard's address (URL name), as recorded by adopt. Must equal dashboard.slug: copying an adopted spec to make a new dashboard means removing this whole block; moving the dashboard means changing its address in Superset and adopting again.",
+          "minLength": 1,
+          "title": "Slug",
+          "type": "string"
+        },
+        "charts": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Chart name -> uuid of the adopted chart. Renaming a chart in the spec renames it in Superset; rename its key here too.",
+          "title": "Charts",
+          "type": "object"
+        }
+      },
+      "required": [
+        "dashboard_uuid",
+        "slug"
+      ],
+      "title": "AdoptedIdentity",
+      "type": "object"
+    },
     "Annotation": {
       "additionalProperties": false,
       "description": "A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal\nline at y = 80. Superset draws it as a series named ``name`` (in the legend\nand tooltip); formula layers have no on-chart label in any release.",
@@ -1327,6 +1358,18 @@
           "default": null,
           "description": "How sensitive the dashboard is, e.g. \"internal\" or \"confidential\": a free word, or one of the values the repository's standard lists. Spec-only: compile and plan ignore it. A standard can key footer rows off it (`standards apply`).",
           "title": "Classification"
+        },
+        "adopted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdoptedIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Set by `chartwright adopt`: the existing dashboard (and its charts) this spec manages in place. Leave it out for dashboards the tool creates."
         }
       },
       "required": [
