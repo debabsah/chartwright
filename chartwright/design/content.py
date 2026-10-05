@@ -633,8 +633,8 @@ class Decision:
     id: str
     slot: str
     layer: str
-    state: str           # current | add | refresh | remove | unrecorded | released |
-    #                      deleted | author | tombstone | forget | held | earlier
+    state: str           # current | add | refresh | remove | unrecorded | in_body |
+    #                      released | deleted | author | tombstone | forget | held | earlier
     item: Item | None    # None: the standard no longer has this recorded item
     found: Any = None    # what the spec holds (a row, a CSS body, a string), or None
     record: Any = MISSING  # the new record: MISSING keeps it, None writes null, "drop"
@@ -646,6 +646,8 @@ class Decision:
     #                                list changed (_realign)
     near: int | None = None  # rows: a row of the item's shape where it stood that reads
     #                          differently: the author's own, kept
+    body_at: int | None = None  # rows, in_body: the body row (layout.rows) that already
+    #                             holds this item, at the body's edge
     waiver: Any = None       # a locked item a waiver lets differ (design/waivers.py)
 
     @property
@@ -657,7 +659,7 @@ class Decision:
         """The spec holds the standard's current value for this item."""
         if self.item is None:
             return True
-        return self.state in ("current", "unrecorded") or (
+        return self.state in ("current", "unrecorded", "in_body") or (
             self.state == "tombstone" and self.found is not None
             and _same(self.item, self.found))
 
@@ -937,6 +939,7 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
             d.state = "released" if d.at is not None else "deleted"
             d.record = {"layer": rec["layer"], "hash": rec["hash"], "released": True}
         out.decisions.append(d)
+    _found_in_body(out, slot, view)
     for item_id, rec in sorted(orphans.items()):
         layer = standard_item_kind(item_id)[1].group(2)
         if item_id in located:
@@ -946,6 +949,28 @@ def _rows_slot(out: Analysis, slot: str, view: dict, expected: list[Item],
         else:
             out.decisions.append(Decision(item_id, slot, layer, "forget", None,
                                           record="drop"))
+
+
+def _found_in_body(out: Analysis, slot: str, view: dict) -> None:
+    """A row the standard would add that the body already holds at its edge: the body's
+    last rows for a footer, its first for a header. A dashboard built in the UI has no
+    header or footer, so decompile (and adopt) read its legal line as a body row; adding
+    the standard's would show it twice. Such an item is `in_body`: present, so never
+    added, and `standards apply --claim` moves it into the slot and records it. Only a
+    flat body (layout.rows) has an edge to look at."""
+    body = (view.get("layout") or {}).get("rows")
+    adds = [d for d in out.decisions if d.slot == slot and d.state == "add" and d.item]
+    if not body or not adds:
+        return
+    span = len([d for d in out.decisions if d.slot == slot and d.item])
+    edge = range(len(body) - 1, max(len(body) - span, 0) - 1, -1) if slot == "footer" \
+        else range(0, min(span, len(body)))
+    taken: set[int] = set()
+    for d in adds:
+        at = next((i for i in edge if i not in taken and row_hash(body[i]) == d.item.stamp), None)
+        if at is not None:
+            taken.add(at)
+            d.state, d.record, d.body_at, d.found = "in_body", MISSING, at, body[at]
 
 
 # How much of a standard row's text an author's edit of it keeps, at least (difflib's
@@ -1202,7 +1227,7 @@ def plan_changes(analysis: Analysis, *, locked: bool = False,
                               was=found if d.state == "refresh" else None))
         elif d.state == "remove":
             _add(out, d, Change(d.id, "remove", d.layer, was=found))
-        elif d.state == "unrecorded" and claim:
+        elif d.state in ("unrecorded", "in_body") and claim:
             _add(out, d, Change(d.id, "claim", d.layer, d.locked_by, to=new))
         elif d.state == "released":
             _add(out, d, Change(d.id, "release", d.layer, d.locked_by, was=new, to=found))
@@ -1250,6 +1275,14 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
         c = acting.get(id(d))
         return c.action if c is not None and c.action in CONTENT_ACTIONS else None
 
+    # A claimed row found in the body moves out of it, into its slot (added there below).
+    moving = sorted((d.body_at for d in analysis.decisions
+                     if d.state == "in_body" and content_op(d) == "claim"), reverse=True)
+    if moving:
+        body = out["layout"]["rows"]
+        for i in moving:
+            del body[i]
+
     # Rows: one rebuilt list per slot.
     for slot in ROW_SLOTS:
         ds = [d for d in analysis.decisions if d.slot == slot]
@@ -1272,7 +1305,8 @@ def execute(data: dict, spec, analysis: Analysis, *, locked: bool = False,
         order = [d.id for d in ds if d.item is not None]
         for d in ds:
             op = content_op(d)
-            if not (op == "add" or (op == "rewrite" and d.at is None)):
+            if not (op == "add" or (op == "rewrite" and d.at is None)
+                    or (op == "claim" and d.state == "in_body")):
                 continue
             pos = {e[2]: i for i, e in enumerate(entries) if e[2] and e[0] != "gone"}
             k = order.index(d.id)
@@ -1534,6 +1568,11 @@ def explain_rows(std, spec) -> list[dict]:
         elif d.state == "unrecorded":
             source = "author"
             pending = "it matches the standard: standards apply --claim records it as the standard's"
+        elif d.state == "in_body":
+            source = "author"
+            pending = (f"the body's {'last' if d.slot == 'footer' else 'first'} rows already hold "
+                       f"it, so standards apply never adds it twice; --claim moves it into the "
+                       f"{d.slot} and records it as the standard's")
         elif d.state == "author" and d.id not in records:
             source, pending = "author", None
         else:

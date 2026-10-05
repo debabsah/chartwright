@@ -1558,3 +1558,60 @@ def test_mcp_standards_apply_locked_and_claim(repo, monkeypatch, capsys):
     assert plain["spec"]["layout"]["footer"][-1] == ORG_FOOTER
     claimed = mcp_call("standards_apply", spec_json=json.dumps(data), claim=True)
     assert {c["action"] for c in claimed["changes"]} == {"add", "claim"}
+
+
+# -- a header or footer row a UI dashboard already holds in its body ----------------------------
+
+
+def _ui_board(header_first: bool = False) -> dict:
+    """As decompile (and adopt) read a dashboard built in the UI: no header or footer,
+    the legal line its last body row, maybe the team banner its first."""
+    rows = [["K", "R"], [ORG_FOOTER[0]]]
+    if header_first:
+        rows.insert(0, [FIN_HEADER[0]])
+    return {**DATA, "dashboard": {k: v for k, v in DATA["dashboard"].items() if k != "css"},
+            "layout": {"rows": rows}}
+
+
+def test_a_footer_row_already_in_the_body_is_never_added_twice(repo, capsys):
+    """Fleet review 3, #1: the adopted board's legal line sat in the body, and apply
+    added the standard's footer below it, so the dashboard showed it twice."""
+    path = spec_file(repo, data=_ui_board(), standard="org")
+    code, out = apply(capsys, str(path))
+    layout = read(path)["layout"]
+    assert layout["rows"].count([ORG_FOOTER[0]]) == 1
+    assert ORG_FOOTER not in (layout.get("footer") or []), "not added a second time"
+    # Present and locked: --check has nothing to fail on.
+    assert "layout.footer[org][0]" not in apply(capsys, str(path), "--check")[1]["specs"][0][
+        "locked_stale"]
+
+
+def test_claim_moves_the_body_row_into_the_footer_and_records_it(repo, capsys):
+    path = spec_file(repo, data=_ui_board(header_first=True), standard="finance")
+    code, out = apply(capsys, str(path), "--claim")
+    assert code == 0, out
+    layout = read(path)["layout"]
+    assert layout["rows"] == [["K", "R"]]
+    assert layout["footer"] == [ORG_FOOTER] and layout["header"] == [FIN_HEADER]
+    written = read(path)["design"]["standard_written"]
+    assert "layout.footer[org][0]" in written and "layout.header[finance][0]" in written
+    again = path.read_bytes()
+    apply(capsys, str(path), "--claim")
+    assert path.read_bytes() == again, "a second --claim is a no-op"
+
+
+def test_only_the_bodys_edge_counts(repo, capsys):
+    """The same words in the middle of the body are the author's own: the footer is
+    added as usual."""
+    data = _ui_board()
+    data["layout"]["rows"] = [[ORG_FOOTER[0]], ["K", "R"]]
+    path = spec_file(repo, data=data, standard="org")
+    apply(capsys, str(path))
+    assert read(path)["layout"]["footer"][0] == ORG_FOOTER
+
+
+def test_explain_says_the_body_already_holds_it(repo, capsys):
+    path = spec_file(repo, data=_ui_board(), standard="org")
+    rows = C.explain_rows(std(repo, "org"), load_spec(read(path)))
+    row = next(r for r in rows if r["item"] == "layout.footer[org][0]")
+    assert "already hold" in row["pending"] and "--claim" in row["pending"]

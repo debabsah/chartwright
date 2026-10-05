@@ -3,6 +3,12 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
+## Unreleased
+
+### Fixed
+
+- `standards apply` no longer adds a header or footer row that the body already holds at its edge (the last rows for a footer, the first for a header). A dashboard built in the UI has no header or footer, so `decompile` and `adopt` read its legal line as a body row, and the standard's footer was then added below it, showing it twice. `--claim` moves such a row into the header or footer and records it; `explain` and the apply summary name it.
+
 ## 0.5.0 (2026-10-04)
 
 Take over a dashboard built in the UI where it is, with everything the first apply resets listed up front. Save each chart's query so Superset's CSV reports work on the charts the tool builds. Decompile names the settings it can't carry and keeps stacked charts; backups record their instance, prune themselves and clean up after a restore.

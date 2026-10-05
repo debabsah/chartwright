@@ -1291,7 +1291,7 @@ def _bucket(d, c: dict | None) -> tuple[str, object]:
         return "waived", None
     if d.violation:
         return "locked", None
-    if d.state == "unrecorded":
+    if d.state in ("unrecorded", "in_body"):
         return "unrecorded", None
     if d.conforms or d.state == "current":
         return "current", None
@@ -1382,7 +1382,8 @@ def render_apply(payload: dict) -> str:
                              f"standards/waivers.yaml, left as they are: {_names(it['waived'])}")
             if it["unrecorded"]:
                 parts.append(f"{len(it['unrecorded'])} hold it already, unrecorded (--claim "
-                             f"records them): {_names(it['unrecorded'])}")
+                             f"records them, and moves a header or footer row found in the "
+                             f"body into its place): {_names(it['unrecorded'])}")
             if it["released"]:
                 parts.append(f"{len(it['released'])} released by authors, skipped: "
                              f"{_names(it['released'])}")
