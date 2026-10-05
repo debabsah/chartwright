@@ -119,7 +119,7 @@ as-is.
   automatically. Dashboards Chartwright did not create are never overwritten;
   to bring a hand-built one under a spec, decompile it and build it at a new
   slug.
-- **What a spec can express**: 16 chart types, metrics as you write them,
+- **What a spec can express**: 17 chart types, metrics as you write them,
   per-chart filters, a native filter bar, tabs, markdown notes, a header and
   footer shown on every tab, and layouts you can draw as ASCII sketches.
 - **Environment promotion**: specs name their data (connection, schema,

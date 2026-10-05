@@ -16,7 +16,7 @@ into one. Everything below works from that one file.
 
 ## Dashboard Design
 - **Deterministic Dashboards**: The same spec always produces the identical dashboard. Diff it in git, review it in a PR.
-- **16 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, mixed (bars and a line on two value axes, over time or over categories), and waterfall (a bridge from one total to the next through the steps that move it).
+- **17 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, mixed (bars and a line on two value axes, over time or over categories), waterfall (a bridge from one total to the next through the steps that move it), and box plot (a distribution per group: median, quartiles, whiskers and outliers).
 - **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`), and custom SQL for ratios the dataset doesn't define: `SQL(100.0 * SUM(on_time) / NULLIF(COUNT(*), 0)) AS On-time %`. `chartwright check` lists custom SQL as unchecked, and apply's data check runs it.
 - **Filters and Formatting**: Per-chart WHERE conditions (a column test, or custom SQL such as `{"sql": "amount > 0 OR refunded"}`), a native filter bar, and formatting for table and pivot cells.
     - Filter bar: value pickers, a time range with an optional starting range, numeric sliders, and time grain and time column pickers.
@@ -37,6 +37,7 @@ into one. Everything below works from that one file.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
     - Heatmap values and colour scheme; what pie, funnel and treemap labels show, and their number format.
     - Waterfalls: the rising, falling and total bar colours (green, amber, red or any hex), each step's value on its bar, and a breakdown per period. On Superset 6.1+, list a bridge's steps in its own order and name the rows that open and close it, each drawn as a total under its own name (an opening total needs a dashboard theme that keeps zero on the axis; `check` says when it doesn't); on earlier releases the steps draw in label order, closed by a total named Total. `apply`'s data check says when a step or the closing has no row, or the closing doesn't equal the steps added up.
+    - Box plots: the columns whose rows are the observations (a date at a daily grain), the groups that get a box each, and the whiskers: Tukey's, the lowest and highest values, or any two percentiles such as 5 and 95. `apply`'s data check says when the observations reach the row limit, so the boxes miss some.
 - **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend.
 - **Dashboard and Chart Settings**: Set the dashboard's own settings and each chart's in the spec, so a change made in the UI shows up in `plan`.
     - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).

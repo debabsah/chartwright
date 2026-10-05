@@ -98,6 +98,22 @@ def _bridge_warning(chart, result: list) -> str | None:
     return "bridge: " + "; ".join(out) if out else None
 
 
+# Superset 6.x fills an unset box plot row limit with the control's default
+# (sharedControls.tsx row_limit, 6.1.0 :236); smoke asks for as many.
+BOX_PLOT_ROWS = 10000
+
+
+def _observations_warning(chart, rows: int) -> str | None:
+    """A box plot's query returns its observations before the boxplot step makes
+    quartiles of them; a query that stops at its row limit leaves some out."""
+    if chart.type != "box_plot" or rows < (chart.row_limit or BOX_PLOT_ROWS):
+        return None
+    where = ("its row_limit" if chart.row_limit else
+             f"{BOX_PLOT_ROWS:,}, where Superset 6.0.0 or later stops an unset row_limit")
+    return (f"the observations reached {where} ({rows:,} rows), so the boxes may leave "
+            f"some out; raise row_limit or coarsen distribute_across")
+
+
 @dataclass
 class SmokeResult:
     chart: str
@@ -224,6 +240,23 @@ def _waterfall_query(chart, spec: DashboardSpec, ds) -> dict:
     }, chart)
 
 
+def _box_plot_query(chart, spec: DashboardSpec, ds) -> dict:
+    """The observations, as BoxPlot/buildQuery.ts asks for them before its boxplot
+    step: each time column of distribute_across at the grain, then the groups."""
+    across = [_time_axis(c, chart.time_grain)
+              if chart.time_grain and ds.is_temporal(c) is not False else c
+              for c in chart.distribute_across]
+    return _with_where({
+        "filters": _filters_payload(chart),
+        "extras": {"time_grain_sqla": chart.time_grain or "P1D"},
+        "time_range": "No filter",
+        "row_limit": chart.row_limit or BOX_PLOT_ROWS,
+        "columns": [*across, *chart.groupby],
+        "metrics": [_metric_payload(m, spec.dashboard.slug, chart.name) for m in chart.metrics],
+        "orderby": [],
+    }, chart)
+
+
 def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
     """Query A and query B, as MixedTimeseries/buildQuery.ts sends them."""
     x = (_time_axis(chart.x_column, chart.time_grain)
@@ -248,6 +281,8 @@ def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: Supe
         queries = _mixed_queries(chart, spec, ds)
     elif chart.type == "waterfall":
         queries = [_waterfall_query(chart, spec, ds)]
+    elif chart.type == "box_plot":
+        queries = [_box_plot_query(chart, spec, ds)]
     else:
         queries = [_query_for(chart, spec)]
     ctx = {
@@ -266,7 +301,8 @@ def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: Supe
         return SmokeResult(chart.name, False, False, f"unparseable chart/data response: {e}")
     if rows == 0:
         return SmokeResult(chart.name, True, True, "query succeeded but returned 0 rows")
-    fit = _fit_warning(chart, spec, result) or _bridge_warning(chart, result)
+    fit = (_fit_warning(chart, spec, result) or _bridge_warning(chart, result)
+           or _observations_warning(chart, rows))
     if fit:
         return SmokeResult(chart.name, True, True, f"{rows} rows; {fit}")
     return SmokeResult(chart.name, True, False, f"{rows} rows")

@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1626 tests, 69 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1658 tests, 70 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -63,8 +63,8 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   timestamps and entry order pinned, so the same spec produces the
   identical bundle on any build platform.
 - **Lossless round-trips** (`test_decompile.py`): decompiling a compiled
-  spec reproduces that spec exactly, across the full surface (17 charts
-  covering all 16 chart types, chart filters, the native filter bar,
+  spec reproduces that spec exactly, across the full surface (18 charts
+  covering all 17 chart types, chart filters, the native filter bar,
   markdown, tabs), and stays stable under a second round-trip. Decompiling
   a real 25-chart export that uses unsupported chart types names every
   loss; nothing drops silently.
@@ -194,10 +194,10 @@ collects, the same "generated, not hand-maintained" rule the rule table in
 
 Superset's backend has no schema for chart options; each chart type's
 options are defined only by its frontend plugin. The file
-`tools/contracts/params-contract.json` holds the option names for the 15
+`tools/contracts/params-contract.json` holds the option names for the 16
 chart plugins the compiler writes, extracted from plugin source at each
 supported release (the Mixed Chart's by `tools/extract_mixed_contract.py`,
-the waterfall's by `tools/extract_panel_contract.py`), and `tools/params_drift.py` (run by `test_params_contract.py`)
+the waterfall's and the box plot's by `tools/extract_panel_contract.py`), and `tools/params_drift.py` (run by `test_params_contract.py`)
 fails the build if the compiler ever emits an option a target release does
 not declare. Current status: clean against all three releases; the single
 tool-owned key (`sdc_categorical_bar`) is allowlisted with its rationale
@@ -212,7 +212,7 @@ resolution, which collects every bad reference into typed errors, and a
 deliberately misspelled column, which must come back with the real column
 as its first suggestion. Then an
 apply of the complete example spec (`tests/fixtures/kitchen_sink.json`),
-which exercises all 16 chart types, per-chart WHERE filters, a native
+which exercises all 17 chart types, per-chart WHERE filters, a native
 filter bar with two value pickers and a time range, plus markdown and tabs.
 (A numeric range filter scoped to specific charts is exercised live by the
 second-writer and fault-injection runs.) The same check then runs on two

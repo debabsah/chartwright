@@ -33,6 +33,7 @@ from extract_mixed_contract import (  # noqa: E402
 # viz_type -> its control panel.
 PANELS = {
     "waterfall": f"{EC}/Waterfall/controlPanel.tsx",
+    "box_plot": f"{EC}/BoxPlot/controlPanel.ts",
 }
 # A control named by string after an object in its row: [{ name: 'time_grain_sqla', ...},
 # 'temporal_columns_lookup'].

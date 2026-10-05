@@ -3,7 +3,7 @@
 Anything not expressible here does not exist. Validation errors are the only
 feedback channel an LLM caller gets; keep messages precise and actionable.
 
-Surface: 16 chart types, per-chart WHERE filters, a dashboard-level native
+Surface: 17 chart types, per-chart WHERE filters, a dashboard-level native
 filter bar (select, time range, numeric range, time grain, time column),
 markdown blocks, headers, dividers, and tabs.
 """
@@ -1239,12 +1239,78 @@ class WaterfallChart(_ChartBase):
         return named_hex(value) if value is not None else WATERFALL_DEFAULT_HEX[field]
 
 
+Percentiles = Annotated[list[int], Field(min_length=2, max_length=2)]
+
+
+class BoxPlotChart(_ChartBase, _ColorSchemeMixin):
+    """The distribution of a measure in each group (Superset's Box Plot): its median,
+    quartiles, whiskers and outliers, e.g. the daily sales of each month. Each row of
+    ``distribute_across`` (a day, with time_grain P1D) is one observation of the
+    ``metrics``; ``groupby`` draws one box per value, each from its own observations."""
+
+    type: Literal["box_plot"]
+    metrics: list[str] = Field(
+        min_length=1,
+        description="The measure each observation takes, e.g. [\"SUM(sales)\"]: a box per "
+                    "group and metric, all on one value axis")
+    distribute_across: list[str] = Field(
+        min_length=1,
+        description="The columns whose rows are the observations (Superset's Distribute "
+                    "across), e.g. [\"order_date\"] with time_grain P1D: one observation a day")
+    groupby: list[str] = Field(
+        default_factory=list,
+        description="One box per value of these columns (Superset's Dimensions), e.g. "
+                    "[\"month\"]; omitted, one box for every observation")
+    time_grain: str | None = Field(
+        default=None,
+        description="The period of a time column in distribute_across, e.g. P1D; omitted, "
+                    "each distinct timestamp is one observation")
+    whiskers: Literal["tukey", "min_max"] | Percentiles = Field(
+        default="tukey",
+        description="How far the whiskers reach: \"tukey\" (to the furthest value within 1.5 "
+                    "times the box's height, values beyond drawn as outliers; Superset's "
+                    "default), \"min_max\" (the lowest and highest values, no outliers), or two "
+                    "percentiles, e.g. [5, 95], with the values beyond them as outliers")
+    number_format: str | None = Field(
+        default=None, description="d3 format for the value axis and tooltip, e.g. '$,.0f'")
+    x_label_format: str | None = Field(
+        default=None, description="d3 time format for groups of a time column, e.g. '%b %Y'")
+    x_axis_title: str | None = Field(default=None, description="Title under the x axis")
+    y_axis_title: str | None = Field(default=None, description="Title above the value axis, e.g. its unit")
+    x_label_rotation: Literal[0, 45, 90] | None = Field(
+        default=None, description="Rotate the group labels: 0, 45 or 90 degrees (Superset's "
+                                  "X Tick Layout); omitted, Superset lays them out itself")
+    row_limit: int | None = Field(
+        default=None, ge=1,
+        description="The most rows the query returns, observations of every group together; "
+                    "past it, the boxes miss observations (apply's data check says when it "
+                    "is reached). Superset 6.0.0 or later declares it; omitted, 6.x stops at "
+                    "10,000 rows and older releases at the server's ROW_LIMIT")
+
+    @model_validator(mode="after")
+    def _distribution(self) -> "BoxPlotChart":
+        both = sorted(set(self.distribute_across) & set(self.groupby))
+        if both:
+            raise ValueError(f"chart {self.name!r}: {both} are in both distribute_across and "
+                             "groupby; a box would hold one observation")
+        for field in ("distribute_across", "groupby", "metrics"):
+            values = getattr(self, field)
+            if len(set(values)) != len(values):
+                raise ValueError(f"chart {self.name!r}: {field} lists a value twice")
+        if isinstance(self.whiskers, list):
+            lo, hi = self.whiskers
+            if not 0 <= lo < hi <= 100:
+                raise ValueError(f"chart {self.name!r}: whisker percentiles {self.whiskers} must "
+                                 "be two whole numbers from 0 to 100, the lower first, e.g. [5, 95]")
+        return self
+
+
 Chart = Annotated[
     Union[
         BigNumberChart, BigNumberTrendChart, TimeseriesLineChart, TimeseriesBarChart,
         TimeseriesAreaChart, TimeseriesScatterChart, BarChart, PieChart, TableChart,
         PivotTableChart, HeatmapChart, HistogramChart, FunnelChart, TreemapChart,
-        MixedChart, WaterfallChart,
+        MixedChart, WaterfallChart, BoxPlotChart,
     ],
     Field(discriminator="type"),
 ]
@@ -1252,7 +1318,7 @@ Chart = Annotated[
 CHART_TYPES = (
     "big_number_total", "big_number_trend", "timeseries_line", "timeseries_bar",
     "timeseries_area", "timeseries_scatter", "bar", "pie", "table", "pivot_table",
-    "heatmap", "histogram", "funnel", "treemap", "mixed", "waterfall",
+    "heatmap", "histogram", "funnel", "treemap", "mixed", "waterfall", "box_plot",
 )
 
 

@@ -9,6 +9,7 @@
 | Several measures per item | `table` or `pivot_table`, not grouped bars. Pivots: <= 3 total dimensions; column-dim values x metrics <= ~15 rendered columns |
 | Two dimensions, one measure | `heatmap` (keep the grid under ~400 cells) |
 | Distribution of one column | `histogram`, 20-30 bins; trim long tails with a WHERE filter and say so in the title |
+| A distribution per group | `box_plot`: median, quartiles, whiskers and outliers of many observations each (daily sales by month) |
 | Staged conversion | `funnel`, 3-8 ordered stages |
 | Hierarchical share | `treemap`, at most 2 levels |
 | A bridge between two totals | `waterfall`: the opening, 3-12 steps that add up, the closing; `steps` and `closing` keep its order |
@@ -39,6 +40,13 @@
   in `steps` (6.1.0+). An opening total needs a dashboard theme that keeps zero
   on the axis (see `opening` in the schema); without `opening`, the first step
   rises from zero. Set the three colours and `show_value`.
+- Show the distribution, not the average, when the spread is the story
+  (delivery times, daily sales, latency): an average hides skew and outliers.
+  A `box_plot` beats a line of P50 and P90 across categories or a few periods,
+  and whenever the outliers matter; keep the line for a trend over many
+  periods. Give each box many observations: `distribute_across` a time column
+  at P1D, `groupby` the month. Superset colours each box by its group: pin one
+  colour to the group labels in `dashboard.label_colors`.
 - One dominant category flattening its siblings is the data talking: note it
   or filter it, don't hide it.
 - Every chart with a time axis should tolerate the dashboard time filter;

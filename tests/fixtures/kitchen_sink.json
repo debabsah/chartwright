@@ -274,6 +274,24 @@
       },
       "x_column": "status",
       "metric": "SUM(sales)"
+    },
+    {
+      "name": "Daily Sales by Month",
+      "type": "box_plot",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metrics": [
+        "SUM(sales)"
+      ],
+      "distribute_across": [
+        "order_date"
+      ],
+      "time_grain": "P1D",
+      "groupby": [
+        "month"
+      ]
     }
   ],
   "layout": {
@@ -327,7 +345,8 @@
             "Sales and Price by Month"
           ],
           [
-            "Sales by Status"
+            "Sales by Status",
+            "Daily Sales by Month"
           ]
         ]
       }

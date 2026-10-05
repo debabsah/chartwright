@@ -90,6 +90,7 @@ SINCE = {
     "waterfall:decrease_label": "6.1.0",
     "waterfall:show_total": "6.1.0",
     "waterfall:total_label": "6.1.0",
+    "box_plot:row_limit": "6.0.0",  # BoxPlot/controlPanel.ts:81 at 6.0.0 and 6.1.0
 }
 
 # The reverse: keys a later release dropped, still written for the releases before

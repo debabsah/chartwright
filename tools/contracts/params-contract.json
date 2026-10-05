@@ -575,6 +575,26 @@
    "x_ticks_layout",
    "y_axis_format",
    "y_axis_label"
+  ],
+  "box_plot": [
+   "adhoc_filters",
+   "color_scheme",
+   "columns",
+   "date_format",
+   "groupby",
+   "metrics",
+   "number_format",
+   "series_limit",
+   "series_limit_metric",
+   "temporal_columns_lookup",
+   "time_grain_sqla",
+   "whiskerOptions",
+   "x_axis_title",
+   "x_axis_title_margin",
+   "x_ticks_layout",
+   "y_axis_title",
+   "y_axis_title_margin",
+   "y_axis_title_position"
   ]
  },
  "5.0.0": {
@@ -1158,6 +1178,26 @@
    "x_ticks_layout",
    "y_axis_format",
    "y_axis_label"
+  ],
+  "box_plot": [
+   "adhoc_filters",
+   "color_scheme",
+   "columns",
+   "date_format",
+   "groupby",
+   "metrics",
+   "number_format",
+   "series_limit",
+   "series_limit_metric",
+   "temporal_columns_lookup",
+   "time_grain_sqla",
+   "whiskerOptions",
+   "x_axis_title",
+   "x_axis_title_margin",
+   "x_ticks_layout",
+   "y_axis_title",
+   "y_axis_title_margin",
+   "y_axis_title_position"
   ]
  },
  "6.1.0": {
@@ -1808,6 +1848,28 @@
    "x_ticks_layout",
    "y_axis_format",
    "y_axis_label"
+  ],
+  "box_plot": [
+   "adhoc_filters",
+   "color_scheme",
+   "columns",
+   "date_format",
+   "groupby",
+   "metrics",
+   "number_format",
+   "row_limit",
+   "series_limit",
+   "series_limit_metric",
+   "temporal_columns_lookup",
+   "time_grain_sqla",
+   "whiskerOptions",
+   "x_axis_title",
+   "x_axis_title_margin",
+   "x_ticks_layout",
+   "y_axis_title",
+   "y_axis_title_margin",
+   "y_axis_title_position",
+   "zoomable"
   ]
  }
 }

@@ -293,7 +293,8 @@ running the tool against real instances of all three releases.
   since `only_total` is on by default; `only_total: false` asks for every
   segment on every release, so it raises nothing. A waterfall's
   `total_label`, `increase_label` and `decrease_label` are 6.1.0 controls;
-  older releases name the bars Total, Increase and Decrease. These come back in
+  older releases name the bars Total, Increase and Decrease. A box plot's
+  `row_limit` is a 6.0.0 control (see "A box plot's row limit" below). These come back in
   `version_warnings`, and the dashboard still builds.
 - **6.0.x is checked against its source, not tested live.** Each field's
   first release, 6.0.0 or 6.1.0, was read from the 6.0.0 tag, so `check`,
@@ -318,9 +319,10 @@ running the tool against real instances of all three releases.
   controls the tool does not emit yet; `--check` fails when the JSON no
   longer matches the source. Among the controls 6.1.0 declares and 5.0.0
   does not are `only_total` and `only_totalB`, both new in 6.0.0
-  (`MixedTimeseries/controlPanel.tsx:204` at 6.0.0). The `waterfall` entry
-  is extracted the same way by `tools/extract_panel_contract.py`, from
-  `Waterfall/controlPanel.tsx` and the `showValueControl` it imports.
+  (`MixedTimeseries/controlPanel.tsx:204` at 6.0.0). The `waterfall` and `box_plot` entries
+  are extracted the same way by `tools/extract_panel_contract.py`, from
+  `Waterfall/controlPanel.tsx` (and the `showValueControl` it imports) and
+  `BoxPlot/controlPanel.ts` (and its title section).
 - **Formula annotation layers draw the same way in every release.** The line,
   bar, area, scatter and mixed panels all include the annotation section
   (`chart-controls/src/sections/annotationsAndLayers.tsx:31`), and both
@@ -470,6 +472,42 @@ running the tool against real instances of all three releases.
   (`transformProps.ts:445-464` at 6.1.0, the same at 4.1.4), so a y title
   can sit under wide tick labels and rotated labels hang over an x title (seen
   on 4.1.4 and 6.1.0); `advise` says so (`chart.waterfall-axis-titles`).
+- **A box plot's observations are its query's rows.** The plugin queries the
+  Distribute across columns and then the Dimensions, and its boxplot
+  post-processing step groups the rows by the Dimensions into median,
+  quartiles, whiskers and outliers (`BoxPlot/buildQuery.ts:29-57`;
+  `superset/utils/pandas_postprocessing/boxplot.py`, the groups sorted by value
+  at `aggregate.py:43`; all three releases). A time column is bucketed by the
+  grain only where the stored `temporal_columns_lookup` marks it
+  (`buildQuery.ts:38-50`), a control Explore fills from the dataset, so the
+  compiler writes it for the time columns of `distribute_across`. Without
+  `whiskerOptions` the plugin adds no boxplot step, so the compiler always
+  writes it, Tukey included.
+- **Whiskers take any two percentiles on every release.** The panel's select is
+  free-form (`BoxPlot/controlPanel.ts:87` at 4.1.4, `:88` at 6.1.0) and the
+  operator reads any `lo/hi percentiles` (`operators/boxplotOperator.ts:28`,
+  all three releases), so `[5, 95]` works on 4.1.4, whose choices list only
+  2/98 and 9/91 (seen drawn).
+- **A box plot's row limit is a 6.0.0 control, and it cuts observations.**
+  6.0.0 adds Row limit to the panel (`BoxPlot/controlPanel.ts:81`), and a
+  dashboard fills an unset one with its default, 10,000
+  (`sharedControls.tsx:236` at 6.1.0); 4.1.4 and 5.0.0 have no such control,
+  so the query falls back to the server's `ROW_LIMIT` (50,000,
+  `superset/config.py:156` at 4.1.4). A stored `row_limit` still reaches a
+  4.1.4 dashboard's query, since `buildQueryObject.ts:117-120` reads it, but
+  Explore's query there leaves it out (both seen on 4.1.4 and 5.0.0), so the
+  field warns before 6.0.0. Rows past the limit are observations the boxes
+  miss, so `apply`'s data check warns when the query reaches it.
+- **Superset colours each box by its group.** The plugin paints a box with the
+  colour scheme's colour for its group label (`BoxPlot/transformProps.ts:113`
+  at 6.1.0, `:112` at 4.1.4), so `dashboard.label_colors` pins it: one colour
+  for every label draws every box alike (seen on 4.1.4 and 6.1.0). On 6.1.0 the
+  chart also shows a "boxplot / outlier" legend: the ECharts theme Superset
+  merges into every chart has a legend entry
+  (`plugin-chart-echarts/src/components/Echart.tsx:212`) and the box plot has
+  no control to hide it; a dashboard theme's
+  `{"echartsOptionsOverridesByChartType": {"box_plot": {"legend": {"show":
+  false}}}}` does (seen on 6.1.0).
 - **On 4.1.4, heatmap and histogram exist twice** (a legacy plugin and a
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named

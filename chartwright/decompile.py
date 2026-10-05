@@ -20,7 +20,7 @@ import yaml
 from .compiler import (
     BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
     LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
-    bridge_totals_sql, parse_steps_order_sql,
+    WHISKER_OPTIONS, bridge_totals_sql, parse_steps_order_sql,
 )
 from .spec import (
     ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX,
@@ -60,7 +60,8 @@ _IGNORABLE = {
     "left_margin", "show_percentage", "show_values", "value_bounds",
     "xscale_interval", "yscale_interval", "column", "bins", "normalize",
     "show_value", "slice_id", "url_params", "percent_calculation_type",
-    "show_tooltip_labels", "tooltip_label_type", "show_total", "x_ticks_layout", SDC_BAR_MARKER,
+    "show_tooltip_labels", "tooltip_label_type", "show_total", "x_ticks_layout", "zoomable",
+    "series_limit", "series_limit_metric", SDC_BAR_MARKER,
 }
 
 # Of the keys above, those a user changes from the value an untouched chart stores:
@@ -105,6 +106,9 @@ _STORED_DEFAULTS: dict[str, tuple] = {
     # Waterfall/controlPanel.tsx: a closing total (show_total, 6.1.0 :134) and Superset's
     # own tick layout (x_ticks_layout, 4.1.4 :130, 6.1.0 :210).
     "show_total": (True,), "x_ticks_layout": ("auto",),
+    # sharedControls.tsx: data zoom off (zoomable, 6.1.0 :422) and no series limit
+    # (series_limit and series_limit_metric, the box plot's at all three releases).
+    "zoomable": (False,), "series_limit": (None, "", 0), "series_limit_metric": (None, "", [], {}),
 }
 # A currency format has no default: unset reads as {} or every part empty.
 _UNSET_WHEN_EMPTY = {"currency_format"}
@@ -120,7 +124,7 @@ _STORED_DEFAULT_WHEN = {
 
 # Spec chart types with a color_scheme field (spec._ColorSchemeMixin).
 _COLOR_SCHEME_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter",
-                       "bar", "pie", "histogram", "funnel", "treemap", "mixed")
+                       "bar", "pie", "histogram", "funnel", "treemap", "mixed", "box_plot")
 _REVERSE_HEADER_SIZE = {v: k for k, v in HEADER_SIZE.items()}
 _REVERSE_OPACITY = {"opacityLow": "low", "opacityMedium": "medium", "opacityHigh": "high"}
 
@@ -376,6 +380,49 @@ def _waterfall_to_spec(p: dict, out: dict, losses: list, name: str, metric_one) 
     if p.get("row_limit"):
         out["row_limit"] = p["row_limit"]
     return read
+
+
+_WHISKER_SPEC = {v: k for k, v in WHISKER_OPTIONS.items()}
+_PERCENTILES = re.compile(r"^(\d+)/(\d+) percentiles$")  # the boxplot operator's own reading
+
+
+def _box_plot_to_spec(p: dict, out: dict, losses: list, name: str, metric_one) -> set[str] | None:
+    """A box plot's params into out; the params it read, or None when the chart can't be
+    a spec chart (an observation or group the spec can't name: a SQL column)."""
+    ms = [m for m in (metric_one(m) for m in (p.get("metrics") or [])) if m]
+    across, groupby = p.get("columns") or [], p.get("groupby") or []
+    if not ms or not across:
+        losses.append(Loss(name, "box plot needs metrics + distribute across; chart skipped"))
+        return None
+    if not all(isinstance(c, str) for c in [*across, *groupby]):
+        losses.append(Loss(name, "box plot over SQL columns the spec can't express; chart skipped"))
+        return None
+    out.update({"metrics": ms, "distribute_across": list(across)})
+    if groupby:
+        out["groupby"] = list(groupby)
+    whiskers = p.get("whiskerOptions") or "Tukey"
+    percentiles = _PERCENTILES.match(whiskers) if isinstance(whiskers, str) else None
+    if whiskers in _WHISKER_SPEC:
+        if whiskers != "Tukey":
+            out["whiskers"] = _WHISKER_SPEC[whiskers]
+    elif percentiles and int(percentiles.group(1)) < int(percentiles.group(2)) <= 100:
+        out["whiskers"] = [int(percentiles.group(1)), int(percentiles.group(2))]
+    else:
+        losses.append(Loss(name, f"whisker option {whiskers!r} not preserved (Tukey on re-apply)"))
+    if p.get("time_grain_sqla"):
+        out["time_grain"] = p["time_grain_sqla"]
+    if p.get("number_format") not in (None, "", "SMART_NUMBER"):
+        out["number_format"] = p["number_format"]
+    if p.get("date_format") not in (None, "", "smart_date"):
+        out["x_label_format"] = p["date_format"]
+    for key in ("x_axis_title", "y_axis_title"):
+        if isinstance(p.get(key), str) and p[key].strip():
+            out[key] = p[key]
+    _tick_layout_to_spec(p, out, losses, name)
+    if p.get("row_limit"):
+        out["row_limit"] = p["row_limit"]
+    return {"columns", "whiskerOptions", "date_format", "x_axis_title", "y_axis_title",
+            "x_ticks_layout"}
 
 
 def _annotations_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
@@ -1015,6 +1062,10 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         waterfall_read = _waterfall_to_spec(p, out, losses, name, metric_one)
         if waterfall_read is None:
             return None
+    elif spec_type == "box_plot":
+        box_plot_read = _box_plot_to_spec(p, out, losses, name, metric_one)
+        if box_plot_read is None:
+            return None
 
     mapped_here = {"combineMetric", "conditional_formatting", "rowTotals", "colTotals", "colSubTotals"} if spec_type == "pivot_table" else (
         {"order_by_cols", "timeseries_limit_metric", "series_limit_metric",
@@ -1049,6 +1100,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         mapped_here = mapped_here | {"show_total"}
     if spec_type == "waterfall":
         mapped_here = mapped_here | waterfall_read
+    if spec_type == "box_plot":
+        mapped_here = mapped_here | box_plot_read
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
         mapped_here = mapped_here | _axis_to_spec(p, out, losses, name, spec_type)

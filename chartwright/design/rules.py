@@ -798,6 +798,60 @@ def waterfall_steps(ctx: RuleContext):
             )
 
 
+# -- chart: box plots ------------------------------------------------------------------
+
+BOX_PLOT_MAX_GROUPS = 20
+# Time grains from finest to coarsest, and the period a group column's name says it is.
+# A day column is left out: day of week and day of month read alike by name.
+_GRAIN_RANK = {"PT1S": 0, "PT1M": 0, "PT1H": 0, "P1D": 1, "P1W": 2, "P1M": 3, "P3M": 4, "P1Y": 5}
+_PERIOD_COLUMN = re.compile(r"(?:^|_)(week|month|quarter|qtr|year)(?:_|$|id$|name$)", re.I)
+_PERIOD_RANK = {"week": 2, "month": 3, "quarter": 4, "qtr": 4, "year": 5}
+
+
+@rule("chart.box-plot-observations", "warn",
+      "a box needs many observations: distribute across a finer grain than the groups",
+      since="9")
+def box_plot_observations(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type != "box_plot" or not c.time_grain:
+            continue
+        grain = _GRAIN_RANK.get("P1W" if "P1W" in c.time_grain else c.time_grain)
+        for col in c.groupby:
+            m = _PERIOD_COLUMN.search(col)
+            if grain is None or not m or grain < _PERIOD_RANK[m.group(1).lower()]:
+                continue
+            yield Finding(
+                "chart.box-plot-observations", "warn", c.name, ctx.where(c.name),
+                f"observations at {c.time_grain} grouped by {col!r}: each box holds one "
+                f"observation per {m.group(1).lower()}, too few for quartiles; distribute "
+                f"across a finer grain, e.g. P1D",
+            )
+            break
+
+
+@rule("chart.box-plot-groups", "warn",
+      f"past ~{BOX_PLOT_MAX_GROUPS} boxes each thins to a sliver and the labels drop",
+      since="9")
+def box_plot_groups(ctx: RuleContext):
+    # Offline the groups are unknown; with a live resolution it probes one group column,
+    # as vbar-categories does.
+    if ctx.prober is None:
+        return
+    for c in ctx.spec.charts:
+        if c.type != "box_plot" or len(c.groupby) != 1:
+            continue
+        ds = ctx.dataset_for(c)
+        if ds is None:
+            continue
+        if ctx.prober.more_than(ds, c.groupby[0], BOX_PLOT_MAX_GROUPS):
+            yield Finding(
+                "chart.box-plot-groups", "warn", c.name, ctx.where(c.name),
+                f"{c.groupby[0]!r} has more than {BOX_PLOT_MAX_GROUPS} values, a box each; "
+                f"group coarser, filter to the groups that matter, or chart the spread per "
+                f"group as a table",
+            )
+
+
 @rule("chart.heatmap-grid", "warn", "a heatmap past ~400 cells is unreadable at any size", data_aware=True)
 def heatmap_grid(ctx: RuleContext):
     if ctx.prober is None:
@@ -911,10 +965,20 @@ def ordinal_order(ctx: RuleContext):
             return [c.x_column, c.y_column]
         if c.type == "pivot_table":
             return [*c.rows, *c.columns]
+        if c.type == "box_plot":
+            return list(c.groupby)  # the boxplot step groups and sorts by them
         return []
+
+    def own_order(c, column) -> bool:
+        # A column the dataset reports numeric or temporal sorts in its own order
+        # (1..12); only names sort alphabetically. Known with a live resolution only.
+        ds = ctx.dataset_for(c)
+        return ds is not None and ds.column_types.get(column) in (0, 2)
 
     for c in ctx.spec.charts:
         hits = [d for d in dims(c) if d and _ORDINAL_RE.search(d)]
+        if c.type != "bar":
+            hits = [d for d in hits if not own_order(c, d)]
         if hits and c.type == "bar" and not c.category_sort:
             # A bar sorts by its first metric unless category_sort is set, so an
             # order-encoded label alone changes nothing.

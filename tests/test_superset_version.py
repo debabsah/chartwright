@@ -92,6 +92,7 @@ def test_the_registry_gates_the_unsafe_fields_and_warns_for_the_ignored_ones():
         "total_label": ("6.1.0", "warn"),
         "increase_label": ("6.1.0", "warn"),
         "decrease_label": ("6.1.0", "warn"),
+        "row_limit": ("6.0.0", "warn"),  # a box plot's: the 4.1.4 and 5.0.0 panel has none
     }
     schema = json.dumps(json_schema())
     for g in GATED_FIELDS:

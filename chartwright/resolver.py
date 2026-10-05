@@ -425,3 +425,10 @@ def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
         _check_column(chart.x_column, chart.name, ds, res, "x_column")
         if chart.groupby:
             _check_column(chart.groupby, chart.name, ds, res, "groupby")
+    elif t == "box_plot":
+        for m in chart.metrics:
+            _check_metric(m, chart.name, ds, res)
+        for c in chart.distribute_across:
+            _check_column(c, chart.name, ds, res, "distribute_across")
+        for g in chart.groupby:
+            _check_column(g, chart.name, ds, res, "groupby")

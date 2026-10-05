@@ -70,6 +70,7 @@ VIZ_TYPE = {
     "treemap": "treemap_v2",
     "mixed": "mixed_timeseries",
     "waterfall": "waterfall",
+    "box_plot": "box_plot",
 }
 # 'bar' and 'timeseries_bar' share a viz_type; the compiler marks categorical
 # bars in params so the decompiler can tell them apart (x column not temporal
@@ -498,6 +499,8 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["number_format"] = chart.number_format
     elif t == "waterfall":
         _waterfall_params(chart, p, metric)
+    elif t == "box_plot":
+        _box_plot_params(chart, p, ds, metric)
 
     if isinstance(chart, _SeriesDisplay):
         _series_display_params(chart, p, metric)
@@ -843,6 +846,53 @@ def _waterfall_params(chart, p: dict, metric) -> None:
         p["x_ticks_layout"] = TICK_LAYOUTS[chart.x_label_rotation]
     if chart.x_label_format:
         p["x_axis_time_format"] = chart.x_label_format
+
+
+# whiskers -> whiskerOptions, the Box Plot panel's choices (BoxPlot/controlPanel.ts, 4.1.4
+# and 5.0.0 :83-99, 6.1.0 :84-102). The select is free-form, and the boxplot operator
+# reads any 'lo/hi percentiles' (operators/boxplotOperator.ts:28, all three releases), so
+# [5, 95] works on 4.1.4 too, whose choices don't list it (seen rendering).
+WHISKER_OPTIONS = {"tukey": "Tukey", "min_max": "Min/max (no outliers)"}
+
+
+def whisker_options(whiskers) -> str:
+    if isinstance(whiskers, list):
+        return f"{whiskers[0]}/{whiskers[1]} percentiles"
+    return WHISKER_OPTIONS[whiskers]
+
+
+def _box_plot_params(chart, p: dict, ds, metric) -> None:
+    """BoxPlot/controlPanel.ts at 4.1.4, 5.0.0 and 6.1.0: the observations are the rows
+    of `columns` (Distribute across), a box per `groupby` value, and the boxplot
+    post-processing turns them into quartiles (BoxPlot/buildQuery.ts:29-57). row_limit
+    is a 6.0.0 control."""
+    p["columns"] = list(chart.distribute_across)
+    p["groupby"] = list(chart.groupby)
+    p["metrics"] = [metric(m) for m in chart.metrics]
+    # Written even as Tukey: without it buildQuery adds no boxplot post-processing.
+    p["whiskerOptions"] = whisker_options(chart.whiskers)
+    if chart.time_grain:
+        # buildQuery buckets a column by the grain only if temporal_columns_lookup marks
+        # it, a control Explore fills from the dataset (BoxPlot/buildQuery.ts:38-50).
+        p["time_grain_sqla"] = chart.time_grain
+        lookup = {c: True for c in chart.distribute_across if ds.is_temporal(c) is not False}
+        if lookup:
+            p["temporal_columns_lookup"] = lookup
+    if chart.row_limit:
+        p["row_limit"] = chart.row_limit
+    if chart.number_format:
+        p["number_format"] = chart.number_format
+    if chart.x_label_format:
+        p["date_format"] = chart.x_label_format
+    if chart.x_label_rotation is not None:
+        p["x_ticks_layout"] = TICK_LAYOUTS[chart.x_label_rotation]
+    # sections.titleControls, as the axis charts write them (_y_axis_params).
+    if chart.x_axis_title:
+        p["x_axis_title"] = chart.x_axis_title
+        p["x_axis_title_margin"] = 50 if chart.x_label_rotation else 30
+    if chart.y_axis_title:
+        p["y_axis_title"] = chart.y_axis_title
+        _y_title_layout(p)
 
 
 def _x_label_params(chart: _AxisChart, p: dict) -> None:

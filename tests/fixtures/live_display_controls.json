@@ -231,6 +231,31 @@
       "y_axis_title": "Sales",
       "x_label_format": "%Y",
       "x_label_rotation": 0
+    },
+    {
+      "name": "Daily Sales Spread",
+      "type": "box_plot",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metrics": ["SUM(sales)"],
+      "distribute_across": ["order_date"],
+      "time_grain": "P1D",
+      "groupby": ["deal_size"],
+      "whiskers": [5, 95],
+      "number_format": "$,.0f",
+      "x_axis_title": "Deal size",
+      "y_axis_title": "Daily sales",
+      "x_label_rotation": 45,
+      "row_limit": 5000,
+      "color_scheme": "wavesOfBlue"
+    },
+    {
+      "name": "Order Value Range",
+      "type": "box_plot",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metrics": ["SUM(sales)"],
+      "distribute_across": ["order_number"],
+      "groupby": ["product_line"],
+      "whiskers": "min_max"
     }
   ],
   "layout": {
@@ -244,7 +269,8 @@
       ["Sales Pivot"],
       ["Line by Deal Size", "Price Spread"],
       ["Revenue and Orders"],
-      ["Yearly Sales Steps"]
+      ["Yearly Sales Steps"],
+      ["Daily Sales Spread", "Order Value Range"]
     ]
   }
 }

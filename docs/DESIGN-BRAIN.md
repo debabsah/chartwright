@@ -2,8 +2,9 @@
 
 > **Status: SHIPPED, design brain 9** (4 added `narrative.color-scheme`; 5 the
 > design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
-> a null record after an edit, and `default.stale-record`; 9 the waterfall's rules
-> and fills, §7 "Waterfalls"). This page is both the design and the
+> a null record after an edit, and `default.stale-record`; 9 the waterfall's and
+> the box plot's rules and fills, §7 "Waterfalls" and "Box plots"). This page is
+> both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -295,7 +296,8 @@ several offline rules additionally sharpen or stand down when probes are
 available (noted in their text). `since` is the design-brain version that
 introduced the rule: "2" the post-review batch
 (docs/DESIGN-BRAIN-V2.md), "3" the review burn-down (§15.11 onward), "4"
-the colour-scheme check, "5" the design defaults (§16), "9" the waterfall.
+the colour-scheme check, "5" the design defaults (§16), "9" the waterfall and
+the box plot.
 
 The table below is GENERATED from the registry by
 `tools/gen_rule_table.py --write`; do not hand-edit it. `tests/test_docs.py`
@@ -305,6 +307,8 @@ fails when it drifts.
 
 | id | sev | fix | data | since | rule |
 |---|---|---|---|---|---|
+| `chart.box-plot-groups` | warn | - | - | 9 | past ~20 boxes each thins to a sliver and the labels drop |
+| `chart.box-plot-observations` | warn | - | - | 9 | a box needs many observations: distribute across a finer grain than the groups |
 | `chart.dupe` | info | - | - | 1 | two charts answering the identical question is redundancy |
 | `chart.format-bands` | warn/info | - | - | 2 | conditional-formatting bands must tell one coherent story per metric |
 | `chart.funnel-stages` | warn | - | ⚡ | 1 | funnels need 3-8 ordered stages |
@@ -411,6 +415,32 @@ on it. Drawn as a total row, the opening floats the axis up to the smallest
 total and is cut away (seen on 6.1.0). `opening` draws it as a total anyway,
 on a dashboard whose theme keeps zero on the axis, which `check` verifies on
 the instance; the guideline tells an author both ways.
+
+### Box plots
+
+A box plot shows a distribution per group, which an average hides. Two rules
+hold a spec to a box that means something:
+
+- `chart.box-plot-observations` (warn): a box's quartiles come from its
+  observations, the rows of `distribute_across`. Grouped by a column named as a
+  period (week, month, quarter, year) at that period's grain or coarser, each
+  box holds one observation per period, a month box three over three years.
+  A day column is left out: by name, day of week and day of month look alike.
+- `chart.box-plot-groups` (warn, with `--profile`): past ~20 groups each box
+  thins to a sliver and the labels drop.
+
+`chart.ordinal-order` reads a box plot's groups too: the boxplot step sorts
+them as values, so month names read A to Z. A group column the dataset reports
+numeric or temporal (a month numbered 1 to 12) sorts in its own order, so with
+`--profile` the rule stands down there, for heatmaps and pivots as well.
+
+Superset colours each box by its group label from the colour scheme, a hue
+that encodes nothing; pinning one colour to every group label in
+`dashboard.label_colors` draws the boxes in one (seen on 4.1.4 and 6.1.0). On
+6.1.0 the plugin also shows a "boxplot / outlier" legend no chart option hides;
+a dashboard theme with `{"echartsOptionsOverridesByChartType": {"box_plot":
+{"legend": {"show": false}}}}` hides it (seen on 6.1.0). Both are styling, so
+they are guidance, not rules.
 
 Anything fuzzier than this (reading order beyond KPI-first, grouping
 related metrics, matched granularity across a row, insight-stating titles)

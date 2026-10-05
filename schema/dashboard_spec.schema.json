@@ -1057,6 +1057,330 @@
       "title": "BigNumberTrendChart",
       "type": "object"
     },
+    "BoxPlotChart": {
+      "additionalProperties": false,
+      "description": "The distribution of a measure in each group (Superset's Box Plot): its median,\nquartiles, whiskers and outliers, e.g. the daily sales of each month. Each row of\n``distribute_across`` (a day, with time_grain P1D) is one observation of the\n``metrics``; ``groupby`` draws one box per value, each from its own observations.",
+      "properties": {
+        "color_scheme": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Categorical colour scheme for this chart's series, e.g. \"bnbColors\"; a dashboard color_scheme overrides it on the dashboard. Superset ships supersetColors, supersetAndPresetColors, presetColors, bnbColors, d3Category10, d3Category20, d3Category20b, d3Category20c, echarts4Colors, echarts5Colors, googleCategory10c, googleCategory20c, lyftColors, modernSunset, colorsOfRainbow, blueToGreen, redToYellow, wavesOfBlue; other names must be registered by your deployment (EXTRA_CATEGORICAL_COLOR_SCHEMES) or Superset uses its default.",
+          "title": "Color Scheme"
+        },
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "title": "Tags"
+        },
+        "type": {
+          "const": "box_plot",
+          "title": "Type",
+          "type": "string"
+        },
+        "metrics": {
+          "description": "The measure each observation takes, e.g. [\"SUM(sales)\"]: a box per group and metric, all on one value axis",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Metrics",
+          "type": "array"
+        },
+        "distribute_across": {
+          "description": "The columns whose rows are the observations (Superset's Distribute across), e.g. [\"order_date\"] with time_grain P1D: one observation a day",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Distribute Across",
+          "type": "array"
+        },
+        "groupby": {
+          "description": "One box per value of these columns (Superset's Dimensions), e.g. [\"month\"]; omitted, one box for every observation",
+          "items": {
+            "type": "string"
+          },
+          "title": "Groupby",
+          "type": "array"
+        },
+        "time_grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The period of a time column in distribute_across, e.g. P1D; omitted, each distinct timestamp is one observation",
+          "title": "Time Grain"
+        },
+        "whiskers": {
+          "anyOf": [
+            {
+              "enum": [
+                "tukey",
+                "min_max"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "integer"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            }
+          ],
+          "default": "tukey",
+          "description": "How far the whiskers reach: \"tukey\" (to the furthest value within 1.5 times the box's height, values beyond drawn as outliers; Superset's default), \"min_max\" (the lowest and highest values, no outliers), or two percentiles, e.g. [5, 95], with the values beyond them as outliers",
+          "title": "Whiskers"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the value axis and tooltip, e.g. '$,.0f'",
+          "title": "Number Format"
+        },
+        "x_label_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 time format for groups of a time column, e.g. '%b %Y'",
+          "title": "X Label Format"
+        },
+        "x_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title under the x axis",
+          "title": "X Axis Title"
+        },
+        "y_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title above the value axis, e.g. its unit",
+          "title": "Y Axis Title"
+        },
+        "x_label_rotation": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                45,
+                90
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rotate the group labels: 0, 45 or 90 degrees (Superset's X Tick Layout); omitted, Superset lays them out itself",
+          "title": "X Label Rotation"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The most rows the query returns, observations of every group together; past it, the boxes miss observations (apply's data check says when it is reached). Superset 6.0.0 or later declares it; omitted, 6.x stops at 10,000 rows and older releases at the server's ROW_LIMIT",
+          "title": "Row Limit"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "metrics",
+        "distribute_across"
+      ],
+      "title": "BoxPlotChart",
+      "type": "object"
+    },
     "ChartFilter": {
       "additionalProperties": false,
       "description": "A WHERE-clause condition on the chart's dataset: column/op/value, or\n``sql`` for a custom SQL condition.",
@@ -7613,6 +7937,7 @@
             "bar": "#/$defs/BarChart",
             "big_number_total": "#/$defs/BigNumberChart",
             "big_number_trend": "#/$defs/BigNumberTrendChart",
+            "box_plot": "#/$defs/BoxPlotChart",
             "funnel": "#/$defs/FunnelChart",
             "heatmap": "#/$defs/HeatmapChart",
             "histogram": "#/$defs/HistogramChart",
@@ -7677,6 +8002,9 @@
           },
           {
             "$ref": "#/$defs/WaterfallChart"
+          },
+          {
+            "$ref": "#/$defs/BoxPlotChart"
           }
         ]
       },

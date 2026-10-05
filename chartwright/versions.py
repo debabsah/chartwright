@@ -168,6 +168,20 @@ GATED_FIELDS: tuple[GatedField, ...] = (
         _charts(lambda c: c.type == "waterfall" and c.increase_label),
     ),
     GatedField(
+        # A dashboard's query takes it on every release (buildQueryObject.ts reads row_limit
+        # from the stored params: seen on a 4.1.4 dashboard); the older panel has no
+        # control for it, so Explore's query leaves it out (seen on 4.1.4 and 5.0.0).
+        "row_limit", "6.0.0", "warn",
+        "has no Row limit on a box plot's panel: the dashboard's query stops at it, but "
+        "the chart opened in Explore queries without it",
+        "row_limit at 6.0.0 BoxPlot/controlPanel.ts:81 (6.1.0 :81); absent at 4.1.4 and 5.0.0, "
+        "where buildQueryObject.ts:117-120 still reads the stored value",
+        _charts(lambda c: c.type == "box_plot" and c.row_limit is not None),
+        warning="row_limit on {where} is a Superset {since} control on a box plot; {runs}, "
+                "and {that} has no Row limit on the box plot's panel: the dashboard's query "
+                "stops at it, but the chart opened in Explore queries without it.",
+    ),
+    GatedField(
         "decrease_label", "6.1.0", "warn",
         "calls a falling step Decrease in the legend and tooltip",
         "decrease_label at 6.1.0 Waterfall/controlPanel.tsx:116, read at transformProps.ts:204; "
