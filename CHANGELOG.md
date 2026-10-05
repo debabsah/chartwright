@@ -33,6 +33,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- `decompile` (and so `adopt`, `plan` and `redesign`) reads charts stacked beside a taller one (a Superset COLUMN) back as a `sketch` layout, which holds them, instead of flattening them into one row. The decompiled spec compiles to the same layout, so adopting a dashboard built in the UI with stacked charts no longer rearranges them. A section that also holds text, headers or dividers stays rows, and the flattening is still named.
 - The rule table and the rule registry mark `size.table-window` and `size.pivot-window` as fixable: both raise a chart's height under `advise --fix`, which they always did. A test now fails when any rule emits a fix while registered as not fixable.
 - `restore` (and the automatic restore after a failed apply) deletes the charts the tool created after the backup that it leaves on no dashboard, such as the new chart of a failed apply; before, they stayed behind as orphans. Charts made in Superset are never deleted.
 - A GET or PUT the server drops without answering (a pooled connection it had already closed, as a recycled gunicorn worker or an idle timeout does) is sent once more instead of failing the run. A chart query (`POST /api/v1/chart/data`) only reads, so it is sent once more too; other POSTs and DELETEs are never repeated.

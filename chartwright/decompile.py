@@ -1333,8 +1333,91 @@ def _theme_to_spec(dash: dict, themes: dict[str, str], losses: list[Loss]) -> st
 
 
 def _leaf_tabs(layout: dict) -> list[dict]:
-    """The spec-layout tabs that hold rows: each top tab, or its sub-tabs."""
+    """The spec-layout tabs that hold rows or a sketch: each top tab, or its sub-tabs."""
     return [leaf for tab in layout.get("tabs") or [] for leaf in (tab.get("tabs") or [tab])]
+
+
+_SKETCH_SYMBOLS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def _sketch_from(position: dict, children: list[str], kept_names: set[str],
+                 geometry: dict[str, dict]) -> dict | None:
+    """A section of rows holding charts and COLUMNs of charts, as a sketch: the only
+    spec layout that stacks charts beside a taller one (triage J). Each chart keeps its
+    exact height as an explicit `height`, which wins over the sketch's line height, so
+    a line per stacked chart is enough. None when the section holds anything a sketch
+    can't (markdown, a header, a divider, a white row, a chart decompile can't keep),
+    and the caller walks it as rows instead."""
+    from math import lcm
+
+    rows: list[list[tuple[int, list[str]]]] = []
+    for row_id in children:
+        node = position.get(row_id) or {}
+        if node.get("type") != "ROW" or (node.get("meta") or {}).get("background") == BACKGROUND["white"]:
+            return None
+        items: list[tuple[int, list[str]]] = []
+        for ch_id in node.get("children", []):
+            ch = position.get(ch_id) or {}
+            if ch.get("type") == "CHART":
+                stack = [ch]
+            elif ch.get("type") == "COLUMN":
+                stack = [position.get(x) or {} for x in ch.get("children", [])]
+                if not stack or any(x.get("type") != "CHART" for x in stack):
+                    return None
+            else:
+                return None
+            names = [(x.get("meta") or {}).get("sliceName") for x in stack]
+            if any(n not in kept_names for n in names):
+                return None
+            width = int((ch.get("meta") or {}).get("width") or 0)
+            if width < 1:
+                return None
+            items.append((width, names))
+        if not items or sum(w for w, _ in items) > 12:
+            return None
+        rows.append(items)
+    names = [n for items in rows for _, stack in items for n in stack]
+    if not rows or len(names) != len(set(names)) or len(names) > len(_SKETCH_SYMBOLS):
+        return None
+    symbol = {n: _SKETCH_SYMBOLS[i] for i, n in enumerate(names)}
+    lines: list[str] = []
+    for items in rows:
+        depth = lcm(*(len(stack) for _, stack in items))
+        for line in range(depth):
+            cells = "".join(symbol[stack[line * len(stack) // depth]] * width
+                            for width, stack in items)
+            lines.append(cells.ljust(12, "."))
+    for row_id in children:
+        for ch_id in (position.get(row_id) or {}).get("children", []):
+            ch = position.get(ch_id) or {}
+            for x in ([ch] if ch.get("type") == "CHART" else
+                      [position.get(c) or {} for c in ch.get("children", [])]):
+                meta = x.get("meta") or {}
+                geo = _geo(meta)
+                geo.pop("width", None)  # the sketch holds widths
+                geometry[meta.get("sliceName")] = geo
+    return {"sketch": lines, "legend": {symbol[n]: n for n in names}}
+
+
+def _section(position: dict, children: list[str], kept_names: set[str],
+             losses: list[Loss], geometry: dict[str, dict]) -> dict:
+    """A grid or tab's content: a sketch when its rows stack charts in COLUMNs and a
+    sketch can hold them all, rows otherwise (a COLUMN is then flattened, and says so)."""
+    stacks = any((position.get(c) or {}).get("type") == "COLUMN"
+                 for r in children for c in (position.get(r) or {}).get("children", []))
+    if stacks:
+        sketch = _sketch_from(position, children, kept_names, geometry)
+        if sketch is not None:
+            return sketch
+    return {"rows": _walk_rows(position, children, kept_names, losses, geometry)}
+
+
+def _section_rows(section: dict) -> list:
+    """A section's rows, a sketch read as one row of its charts in reading order."""
+    if "sketch" in section:
+        return [list(section["legend"][ch] for ch in dict.fromkeys(
+            c for line in section["sketch"] for c in line if c in section["legend"]))]
+    return section.get("rows") or []
 
 
 def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult:
@@ -1436,9 +1519,9 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
                         for sub_id in (position.get(sub_tabs_id) or {}).get("children", []):
                             sub_node = position.get(sub_id) or {}
                             sub_title = (sub_node.get("meta") or {}).get("text") or "Tab"
-                            sub_rows = _walk_rows(position, sub_node.get("children", []), kept, losses, geometry)
-                            if sub_rows:
-                                subs.append({"title": sub_title, "rows": sub_rows})
+                            sub = _section(position, sub_node.get("children", []), kept, losses, geometry)
+                            if _section_rows(sub):
+                                subs.append({"title": sub_title, **sub})
                             else:
                                 losses.append(Loss("layout", f"tab {tab_title!r} > {sub_title!r} had no representable content; dropped"))
                     if subs:
@@ -1446,17 +1529,16 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
                     else:
                         losses.append(Loss("layout", f"tab {tab_title!r} had no representable content; dropped"))
                     continue
-                tab_rows = _walk_rows(position, kids, kept, losses, geometry)
-                if tab_rows:
-                    tabs.append({"title": tab_title, "rows": tab_rows})
+                sec = _section(position, kids, kept, losses, geometry)
+                if _section_rows(sec):
+                    tabs.append({"title": tab_title, **sec})
                 else:
                     losses.append(Loss("layout", f"tab {tab_title!r} had no representable content; dropped"))
         layout = {"tabs": tabs} if tabs else {"rows": []}
     else:
         if "TABS" in top_types:
             losses.append(Loss("layout", "mixed rows + tabs at top level; tabs flattened into rows"))
-        rows = _walk_rows(position, grid_children, kept, losses, geometry)
-        layout = {"rows": rows}
+        layout = _section(position, grid_children, kept, losses, geometry)
     if footer_rows:
         layout["footer"] = footer_rows
     if header_rows:
@@ -1465,20 +1547,23 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
     def body_and_footer() -> list:
         """The rows of charts and markdown (headers and dividers skipped), header
         and footer included."""
-        body = layout.get("rows") if "rows" in layout else [r for leaf in _leaf_tabs(layout) for r in leaf["rows"]]
+        body = (_section_rows(layout) if "tabs" not in layout
+                else [r for leaf in _leaf_tabs(layout) for r in _section_rows(leaf)])
         rows = [*layout.get("header", []), *(body or []), *layout.get("footer", [])]
         return [items for items in (row_items(r) for r in rows) if items is not None]
 
     all_rows = body_and_footer()
     placed = {x for row in (all_rows or []) for x in row if isinstance(x, str)}
-    unplaced_target = layout.get("rows") if "rows" in layout else (_leaf_tabs(layout)[0]["rows"] if layout.get("tabs") else None)
+    # A tabs layout always has a first tab; any other layout holds rows or a sketch.
+    target = _leaf_tabs(layout)[0] if "tabs" in layout else layout
     for name in sorted(kept - placed):
         losses.append(Loss("layout", f"chart {name!r} not found in layout; appended as its own row"))
-        if unplaced_target is None:
-            layout = {"rows": [[name]]}
-            unplaced_target = layout["rows"]
+        if "sketch" in target:
+            sym = next(c for c in _SKETCH_SYMBOLS if c not in target["legend"])
+            target["legend"][sym] = name
+            target["sketch"].append(sym * 12)
         else:
-            unplaced_target.append([name])
+            target.setdefault("rows", []).append([name])
 
     for name, geo in geometry.items():
         c = charts_by_name.get(name)
