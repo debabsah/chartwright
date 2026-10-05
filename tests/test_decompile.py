@@ -1,6 +1,8 @@
 """Round-trip and lossy-decompile tests (offline)."""
 
 import json
+
+import pytest
 from pathlib import Path
 
 from chartwright.compiler import compile_bundle
@@ -183,3 +185,75 @@ def test_a_6_1_big_number_subtitle_is_read():
     totals = [c for c in result.spec["charts"] if c["type"] == "big_number_total"]
     assert totals and all(c.get("subtitle") == "all regions" for c in totals)
     assert not any("subtitle" in l.what for l in result.losses)
+
+
+# -- triage J: charts stacked in a COLUMN beside a taller one ----------------------------------
+
+
+def _position_of(bundle: bytes) -> dict:
+    import io
+    import zipfile
+
+    import yaml
+
+    zf = zipfile.ZipFile(io.BytesIO(bundle))
+    dash = next(yaml.safe_load(zf.read(n)) for n in zf.namelist() if "/dashboards/" in n)
+    return dash["position"]
+
+
+def _stacked_spec(tabs: bool = False) -> dict:
+    data = json.loads((FIXTURES / "sales_overview.json").read_text())
+    names = [c["name"] for c in data["charts"]]
+    a, b, c, d = names[:4]
+    sketch = {"sketch": ["AAAABBBBCCCC", "AAAABBBBDDDD"],
+              "legend": {"A": a, "B": b, "C": c, "D": d}, "line": 3}
+    rest = [[n] for n in names[4:]]
+    if tabs:
+        data["layout"] = {"tabs": [{"title": "Stacked", **sketch},
+                                   {"title": "Rest", "rows": rest or [[a]]}]}
+        if not rest:
+            data["layout"]["tabs"] = [{"title": "Stacked", **sketch}]
+    else:
+        data["layout"] = sketch
+        data["charts"] = data["charts"][:4]
+    return data
+
+
+@pytest.mark.parametrize("tabs", [False, True])
+def test_a_column_beside_a_tall_chart_round_trips_as_a_sketch(tabs):
+    """Decompile flattened a COLUMN (two charts stacked beside a taller one) into one
+    row and reported a loss; a copy then drew them side by side. A sketch holds it, and
+    the decompiled spec compiles to the same layout."""
+    data = _stacked_spec(tabs)
+    spec = load_spec(data)
+    bundle = compile_bundle(spec, stub_resolution(spec))
+    result = decompile_bundle(bundle, _stub_lookup_for(spec))
+    assert not [l for l in result.losses if "COLUMN" in l.what], result.losses
+    layout = result.spec["layout"]
+    section = layout["tabs"][0] if tabs else layout
+    assert "sketch" in section and "rows" not in section
+    again = load_spec(result.spec)
+    assert _position_of(compile_bundle(again, stub_resolution(again))) == _position_of(bundle)
+    # plan compares normalized layouts: the spec and its live state read the same.
+    assert _normalize(spec)["layout"] == _normalize(again)["layout"]
+
+
+def test_a_column_beside_markdown_stays_rows_and_says_so():
+    """A sketch holds charts only: with a text block in the section, the COLUMN is
+    flattened as before and named."""
+    data = _stacked_spec()
+    spec = load_spec(data)
+    from chartwright.testing import edit_bundle
+
+    def text_row(path, doc):
+        if "/dashboards/" in path:
+            pos = doc["position"]
+            pos["MARKDOWN-x"] = {"type": "MARKDOWN", "id": "MARKDOWN-x", "children": [],
+                                 "meta": {"code": "Notes", "width": 12, "height": 50}}
+            pos["ROW-x"] = {"type": "ROW", "id": "ROW-x", "children": ["MARKDOWN-x"],
+                            "meta": {"background": "BACKGROUND_TRANSPARENT"}}
+            pos["GRID_ID"]["children"].append("ROW-x")
+    blob = edit_bundle(compile_bundle(spec, stub_resolution(spec)), text_row)
+    result = decompile_bundle(blob, _stub_lookup_for(spec))
+    assert "rows" in result.spec["layout"]
+    assert any("COLUMN" in l.what for l in result.losses)

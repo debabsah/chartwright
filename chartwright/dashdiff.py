@@ -142,15 +142,17 @@ def _normalize(spec: DashboardSpec) -> dict:
                     ditem.setdefault("height", 4)
 
     def sketch_as_rows(holder) -> list[list]:
-        """Sketch -> the rows form decompile produces for the same dashboard
-        (columns flattened in order, matching decompile's named flattening),
-        so a sketch spec and its live state compare equal."""
+        """Sketch -> rows of chart names, a stacked COLUMN as a nested list, so a
+        sketch spec and its live state compare equal: decompile reads a dashboard
+        with columns back as a sketch, and one without as rows of the same names."""
         rows = []
         for srow in holder.parsed_sketch():
             row = []
             for child in srow.children:
-                for sc in (child.children if hasattr(child, "children") else [child]):
-                    row.append(sc.name)
+                if hasattr(child, "children"):
+                    row.append([sc.name for sc in child.children])
+                else:
+                    row.append(child.name)
             rows.append(row)
         return rows
 
