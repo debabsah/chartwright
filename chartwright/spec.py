@@ -2144,6 +2144,23 @@ def load_spec(data: dict) -> DashboardSpec:
 # as unset (docs/CONTRACTS.md, "A written Superset default").
 SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
     "legend": {"legend_position": "top", "legend_type": "scroll"},  # every chart with a legend
+    # Every chart with the field; each is the control's default at 4.1.4, 5.0.0 and 6.1.0.
+    # time_range: NO_TIME_RANGE (superset-ui-chart-controls shared-controls/
+    # sharedControls.tsx:210, :215 at 6.1.0). number_format: y_axis_format's
+    # DEFAULT_NUMBER_FORMAT, which the pivot's valueFormat and the mixed chart's secondary
+    # format spread (sharedControls.tsx:289, :307 at 6.1.0; utils/D3Formatting.ts:55), and
+    # 'SMART_NUMBER' in the pie's, funnel's and treemap's DEFAULT_FORM_DATA
+    # (plugin-chart-echarts Pie/types.ts:78, Funnel/types.ts:72 (:71 at 6.1.0),
+    # Treemap/types.ts:64 (:63 at 6.1.0)). x_label_format: x_axis_time_format's
+    # DEFAULT_TIME_FORMAT, smart_date (sharedControls.tsx:320, :341 at 6.1.0;
+    # D3Formatting.ts:67, :70 at 5.0.0, :78 at 6.1.0). x_label_rotation: xAxisLabelRotation
+    # 0 (plugin-chart-echarts src/defaults.ts:31).
+    "chart": {"time_range": "No filter", "number_format": "SMART_NUMBER",
+              "number_format_secondary": "SMART_NUMBER", "x_label_format": "smart_date",
+              "x_label_rotation": 0},
+    # table_timestamp_format: SMART_DATE_ID (plugin-chart-table controlPanel.tsx:394, :413
+    # at 5.0.0, :488 at 6.1.0).
+    "table": {"date_format": "smart_date"},
     "big_number_trend": {"trend_color": TREND_DEFAULT_HEX},
     "timeseries_line": {"marker_size": 6, "opacity": 0.2},
     "timeseries_area": {"marker_size": 6, "opacity": 0.2},
@@ -2158,7 +2175,8 @@ SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
 
 def _default_fields(model: BaseModel) -> dict[str, object]:
     kind = "dashboard" if isinstance(model, DashboardMeta) else getattr(model, "type", None)
-    out = {f: v for f, v in SUPERSET_DEFAULTS["legend"].items() if f in type(model).model_fields}
+    shared = {**SUPERSET_DEFAULTS["legend"], **SUPERSET_DEFAULTS["chart"]} if kind != "dashboard" else {}
+    out = {f: v for f, v in shared.items() if f in type(model).model_fields}
     return {**out, **SUPERSET_DEFAULTS.get(kind, {})}
 
 

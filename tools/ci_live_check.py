@@ -1,7 +1,8 @@
 """Live matrix check: the guarantee exercised against a real Superset.
 
 Flow: resolve (typed version-gate signal) -> apply fresh -> re-apply and
-assert slice-id stability (the clobber class seen in real use). Used by CI per
+assert slice-id stability (the clobber class seen in real use) -> plan, which
+must be clean straight after apply. Used by CI per
 Superset version; runnable by hand against any sandbox:
 
     SDC_CI_PASSWORD=admin python tools/ci_live_check.py --base-url http://host:8098
@@ -24,6 +25,7 @@ sys.path.insert(0, str(REPO))
 
 from chartwright.apply import apply as run_apply
 from chartwright.client import SupersetClient
+from chartwright.dashdiff import plan as run_plan
 from chartwright.resolver import resolve
 from chartwright.spec import load_spec
 
@@ -79,7 +81,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL: slice ids churned on re-apply: {ids1} -> {ids2}")
         return 1
 
-    print(f"LIVE CHECK PASS: {len(spec.charts)} charts, ids stable across re-apply ({len(ids1)} slices)")
+    # Straight after apply, plan must find nothing to change: every value the spec
+    # writes reads back from the live dashboard as the same spec.
+    p = run_plan(spec, client)
+    if not p.clean:
+        print(p.to_json())
+        print("FAIL: plan not clean straight after apply")
+        return 1
+
+    print(f"LIVE CHECK PASS: {len(spec.charts)} charts, ids stable across re-apply ({len(ids1)} "
+          f"slices), plan clean")
     return 0
 
 

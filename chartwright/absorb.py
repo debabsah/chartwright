@@ -22,7 +22,7 @@ import copy
 import json
 from dataclasses import asdict, dataclass, field
 
-from .compiler import ROW_UNITS_PER_SPEC_UNIT, _position
+from .compiler import _position, spec_units
 from .spec import DashboardSpec
 
 
@@ -36,12 +36,6 @@ class AbsorbReport:
 
     def to_json(self) -> str:
         return json.dumps({"stage": "absorb", **asdict(self)}, indent=2)
-
-
-def _exact_units(row_units: int) -> float | int:
-    """Superset row units (8px) -> spec units (40px), exactly representable."""
-    units = row_units / ROW_UNITS_PER_SPEC_UNIT
-    return int(units) if units.is_integer() else round(units, 1)
 
 
 def absorb_heights(spec: DashboardSpec, spec_data: dict, live_position: dict) -> tuple[dict, AbsorbReport]:
@@ -82,7 +76,7 @@ def absorb_heights(spec: DashboardSpec, spec_data: dict, live_position: dict) ->
         live_h = have.get("height")
         if not isinstance(live_h, int) or live_h == want["height"]:
             continue
-        charts_by_name[chart.name]["height"] = _exact_units(live_h)
+        charts_by_name[chart.name]["height"] = spec_units(live_h)
         report.absorbed.append({
             "chart": chart.name,
             "from_px": want["height"] * 8,

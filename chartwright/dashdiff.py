@@ -14,11 +14,11 @@ from dataclasses import dataclass, field
 import yaml
 
 from .client import SupersetClient
-from .compiler import compile_bundle, filter_id
-from .decompile import decompile_live
+from .compiler import _metric_payload, compile_bundle, filter_id, grid_rows, spec_units
+from .decompile import _metric_to_spec, decompile_live
 from .spec import (
-    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
-    without_superset_defaults,
+    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX,
+    DashboardSpec, load_spec, row_items, without_superset_defaults,
 )
 
 # Dashboard settings `plan` compares one by one (dashboard_settings_changed).
@@ -110,23 +110,82 @@ def _normalize_tags(holder: dict) -> None:
         holder.pop("tags", None)
 
 
+def _canonical_metric(metric: str) -> str:
+    """A metric as decompile reads back what compile writes for it, so two spellings of
+    one stored metric compare equal: `SQL(COUNT(*)) AS N` and `COUNT(*) AS N`, or
+    `SUM(x)  AS  N` and `SUM(x) AS N`, which differ only in a key Superset never shows."""
+    return _metric_to_spec(_metric_payload(metric, "", ""), [], "") or metric
+
+
+def _canonical_metrics(chart: dict) -> None:
+    """Every metric a chart names (spec.chart_metrics), in its canonical spelling."""
+    for holder in (chart, chart.get("a"), chart.get("b")):
+        if not isinstance(holder, dict):
+            continue
+        for key in ("metric", "series_limit_metric"):
+            if isinstance(holder.get(key), str):
+                holder[key] = _canonical_metric(holder[key])
+        if holder.get("metrics"):
+            holder["metrics"] = [_canonical_metric(m) for m in holder["metrics"]]
+    if chart["type"] == "table" and chart.get("sort_by") and not chart.get("columns"):
+        chart["sort_by"] = _canonical_metric(chart["sort_by"])  # a metric in aggregate mode
+
+
+def _canonical_colours(chart: dict) -> None:
+    """A named shade's own hex reads as the name: compile paints both alike, and
+    decompile names the shade (_rgb_to_spec, _format_to_spec)."""
+    text_names = {v.upper(): k for k, v in FORMAT_TEXT_HEX.items()}
+    cell_names = {v.upper(): k for k, v in FORMAT_COLOR_HEX.items()}
+    if isinstance(chart.get("trend_color"), str):
+        chart["trend_color"] = text_names.get(chart["trend_color"].upper(), chart["trend_color"])
+    for rule in chart.get("conditional_formatting") or []:
+        names = text_names if rule.get("paint") == "text" else cell_names
+        rule["color"] = names.get(str(rule["color"]).upper(), rule["color"])
+
+
+def _drop_blank_text(model, data: dict) -> None:
+    """Blank text in an optional field (a description of "  ") reads as unset, as
+    decompile reads it back: Superset shows nothing for it either."""
+    for key, value in list(data.items()):
+        f = type(model).model_fields.get(key)
+        if isinstance(value, str) and not value.strip() and f is not None and not f.is_required():
+            del data[key]
+
+
 def _normalize(spec: DashboardSpec) -> dict:
     """Canonical form for comparison: validated model dump with every
     compiler default materialized, so spec-with-defaults-omitted and
     decompiled-with-defaults-present compare equal. Chart identity is the
     name, so chart list order is canonicalized by name. A written Superset default
-    compares equal to the omitted field, which is all decompile can read back."""
+    compares equal to the omitted field, which is all decompile can read back, and
+    any other spelling compile stores alike compares as the one decompile reads."""
     data = without_superset_defaults(spec).model_dump(exclude_none=True, by_alias=True)
-    for chart in data["charts"]:
+    _drop_blank_text(spec.dashboard, data["dashboard"])
+    for model, chart in zip(spec.charts, data["charts"]):
+        _drop_blank_text(model, chart)
         chart["width"] = spec.resolved_item_width(chart["name"])
-        chart["height"] = spec.resolved_height(chart["name"])
+        # On the grid compile writes: whole 8 px rows, read back in fifths (4.65 -> 4.6).
+        chart["height"] = spec_units(grid_rows(spec.resolved_height(chart["name"])))
         if chart["type"] in DEFAULT_ROW_LIMIT:
             chart.setdefault("row_limit", DEFAULT_ROW_LIMIT[chart["type"]])
         if chart["type"] in ("timeseries_line", "timeseries_bar", "timeseries_area",
                              "timeseries_scatter", "big_number_trend"):
             chart.setdefault("time_grain", DEFAULT_TIME_GRAIN)
+        if chart["type"] == "table":
+            # An empty list compiles as the omitted one, which is how decompile reads it.
+            for key in ("metrics", "groupby"):
+                if chart.get(key) == []:
+                    del chart[key]
+        _canonical_metrics(chart)
+        _canonical_colours(chart)
         _normalize_tags(chart)
     data["charts"].sort(key=lambda c: c["name"])
+    for model, f in zip(spec.filters, data.get("filters") or []):
+        _drop_blank_text(model, f)
+        if f.get("time_range") == "No filter":
+            # A pre-filter over every time is no pre-filter, which is how decompile reads it.
+            f.pop("time_range")
+            f.pop("time_column", None)
     _normalize_tags(data["dashboard"])
     # Owners are names in a spec and ids live; plan compares them as ids, apart.
     data["dashboard"].pop("owners", None)
