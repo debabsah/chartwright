@@ -73,7 +73,7 @@ For a dashboard Chartwright built, edit the spec it was built from. If that spec
 - filters scoped to some tabs, which the spec scopes to the whole dashboard;
 - layout changes: nested tabs flattened, sizes rounded, and charts stacked beside a taller one flattened into a row when that part of the layout also holds something a `sketch` can't (text, a header, a divider, a white row, or a chart decompile skips); otherwise they come back as a `sketch`.
 
-Some settings are dropped without a note ([listed in LIMITS.md](LIMITS.md#settings-decompile-drops-without-a-note)), so check them on the original before you retire it. Where one matters, keep the original dashboard for it, or rework the chart with the fields the spec has (`chartwright schema` lists every field). Once a spec manages the dashboard, make changes in the spec and apply them, since each apply overwrites edits made in the UI. To move the copy to other instances, see [MOVE-BETWEEN-INSTANCES.md](MOVE-BETWEEN-INSTANCES.md).
+A few dashboard settings are dropped without a note ([listed in LIMITS.md](LIMITS.md#settings-decompile-drops-without-a-note)), so check them on the original before you retire it. Where one matters, keep the original dashboard for it, or rework the chart with the fields the spec has (`chartwright schema` lists every field). Once a spec manages the dashboard, make changes in the spec and apply them, since each apply overwrites edits made in the UI. To move the copy to other instances, see [MOVE-BETWEEN-INSTANCES.md](MOVE-BETWEEN-INSTANCES.md).
 
 ## Embedding and row-level security
 
@@ -91,7 +91,7 @@ Both are untested with Chartwright, and neither is in the spec. Confirm them on 
 | Each copy's datasets must already exist on the instance | Register them in Superset first; `check` lists the missing ones |
 | A copy at a new slug gets new chart ids, so links to the original's charts don't follow it | To keep the original's address and ids, adopt it with `chartwright adopt` instead of copying it |
 | `decompile` reads a dashboard from a live instance, not from a ZIP export | Import the ZIP into your test instance and decompile it there |
-| Some settings are dropped by `decompile` without a note ([listed in LIMITS.md](LIMITS.md#settings-decompile-drops-without-a-note)) | Check them on the original before you retire it, and keep the original where one matters |
+| A few dashboard settings are dropped by `decompile` without a note ([listed in LIMITS.md](LIMITS.md#settings-decompile-drops-without-a-note)) | Check them on the original before you retire it, and keep the original where one matters |
 | A chart Chartwright built that leaves the spec is deleted, even if someone also added it to another dashboard | To show a chart on two dashboards, put it in both specs; each builds a chart of its own |
 | A chart added in the UI to a copy is taken off it by the next apply (the chart stays in Superset's Charts list) | Add charts to the template and run the loop |
 | Embedding and row-level security are untested | Confirm them on your test instance, as above |

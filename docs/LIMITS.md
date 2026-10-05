@@ -20,7 +20,7 @@ Each limit below comes with what to do instead, so you can tell whether Chartwri
 | **UI edits:** every `apply` writes the spec over the dashboard. Layout, chart settings, dashboard CSS and the dashboard's settings go back to the spec's, and filters added in the UI are removed. Tags and a theme the spec leaves out stay as they are, and so do owners, except that each apply adds the account that applies | Make lasting changes in the spec. Run `chartwright plan` first to see what someone changed in Superset, and `chartwright absorb` to copy dragged chart heights into the spec |
 | **Charts added in the UI:** the next `apply` takes a chart added in the UI off the dashboard, names it in a warning, and leaves the chart itself in Superset's Charts list | Add new charts to the spec. To keep one that was added in the UI, describe it in the spec: the next apply builds Chartwright's own chart from it, and you can delete the UI-made one |
 | **Chart names:** a chart's name is its identity. Renaming a chart in the spec deletes the old chart and creates a new one with a new id (in an adopted spec, rename its key in `dashboard.adopted.charts` too, and the chart keeps its id) | Settle chart names before reports or links point at a chart. `plan` shows a rename as one chart removed and one added (in an adopted spec, as one chart changed) |
-| **Decompile:** `decompile` lists what it can't carry over in its `losses`, including many chart settings changed from Superset's defaults, but drops some without a note ([listed below](#settings-decompile-drops-without-a-note)) | Before you retire the original, compare it with the copy for those settings |
+| **Decompile:** `decompile` lists what it can't carry over in its `losses`, including chart settings changed from Superset's defaults, but drops a few dashboard settings without a note ([listed below](#settings-decompile-drops-without-a-note)) | Before you retire the original, compare it with the copy for those settings |
 | **Taking over a dashboard made in the UI:** the first apply of an adopted spec resets what a spec can't hold, such as a forecast on a chart or per-chart cross-filter scopes | `chartwright adopt` lists every such reset and refuses until you pass `--accept-reset`. For a setting you need, rework the chart with fields the spec has (`chartwright schema` lists them), or leave that dashboard unadopted; run `plan` before the first apply |
 | **Decompile input:** `decompile` reads a live dashboard, not a ZIP export | Import the ZIP into a test instance and decompile it there |
 | **Chart types and queries:** 15 chart types. Metrics are a saved metric, SUM, AVG, COUNT, COUNT_DISTINCT, MIN or MAX of a column, or a custom SQL expression (`SQL(...) AS Label`); a chart filter is a WHERE condition or custom SQL. The filter bar has five filter types: value picker, time range, numeric range, time grain and time column. `check` can't look inside custom SQL, so the columns it names are listed under `unchecked_sql` | For anything else, save the SQL as a metric or a virtual dataset in Superset, and name it in the spec |
@@ -41,12 +41,6 @@ Each limit below comes with what to do instead, so you can tell whether Chartwri
 
 ## Settings decompile drops without a note
 
-- **Charts:**
-    - any chart: currency format;
-    - big numbers: font sizes, and a hidden trendline;
-    - lines and bars: a smooth or step line, and horizontal bars on a time axis;
-    - pies, funnels and treemaps: a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, and treemap labels;
-    - heatmaps and histograms: a heatmap's axis sort, legend, margins, label intervals and value bounds, and a histogram's normalize setting.
 - **Dashboard:** per-chart and dashboard-wide cross-filter scopes, charts exempt from auto-refresh, charts shown expanded, staggered refresh and the colour namespace. `chartwright adopt` lists each of these it finds as a reset.
 
 ## Related
