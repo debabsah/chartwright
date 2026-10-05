@@ -336,13 +336,20 @@ def backup_dir_for(profile: str, slug: str) -> "Path":
     return base / profile / slug
 
 
-def write_backup(backup_dir: "Path", data: bytes) -> "Path":
+BACKUP_KEEP_DEFAULT = 50
+
+
+def write_backup(backup_dir: "Path", data: bytes, record: dict | None = None) -> "Path":
     """Write a backup zip under a new name; never overwrite an earlier one.
 
     Names are local time to the microsecond (``20261003T141502.123456.zip``),
     fixed width, so they sort oldest to newest. Two applies within one second
     used to share a name and the second overwrote the first. Exclusive create
-    makes a collision a retry, never a silent overwrite."""
+    makes a collision a retry, never a silent overwrite.
+
+    ``record`` (the instance's base URL, the profile, the slug and the dashboard id)
+    goes beside it as ``<name>.json``: the zip alone can't say which instance it came
+    from, since a slug's derived ids are the same on every instance."""
     import datetime
 
     while True:
@@ -351,9 +358,67 @@ def write_backup(backup_dir: "Path", data: bytes) -> "Path":
         try:
             with open(path, "xb") as fh:
                 fh.write(data)
-            return path
+            break
         except FileExistsError:
             continue
+    if record is not None:
+        path.with_suffix(".json").write_text(
+            json.dumps({**record, "created": stamp}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8")
+    return path
+
+
+def backup_keep() -> tuple[int, str | None]:
+    """How many backups to keep per profile and dashboard: $CHARTWRIGHT_BACKUP_KEEP, or
+    BACKUP_KEEP_DEFAULT; 0 keeps them all. An unreadable value keeps the default and
+    says so."""
+    import os
+
+    raw = os.environ.get("CHARTWRIGHT_BACKUP_KEEP")
+    if raw is None or not raw.strip():
+        return BACKUP_KEEP_DEFAULT, None
+    try:
+        keep = int(raw)
+        if keep < 0:
+            raise ValueError
+    except ValueError:
+        return BACKUP_KEEP_DEFAULT, (f"CHARTWRIGHT_BACKUP_KEEP={raw!r} is not a whole number of 0 "
+                                     f"or more; kept the newest {BACKUP_KEEP_DEFAULT}")
+    return keep, None
+
+
+def prune_backups(backup_dir: "Path", keep: int) -> list["Path"]:
+    """Delete all but the newest `keep` backups in this folder (0 keeps all), each zip
+    with its record. Only names write_backup makes are touched, so a file someone put
+    there by hand stays. Returns the zips removed."""
+    import re as _re
+
+    if keep <= 0:
+        return []
+    zips = sorted(p for p in backup_dir.glob("*.zip")
+                  if _re.fullmatch(r"\d{8}T\d{6}(\.\d{6})?\.zip", p.name))
+    old = zips[:-keep] if len(zips) > keep else []
+    for z in old:
+        z.unlink()
+        side = z.with_suffix(".json")
+        if side.exists():
+            side.unlink()
+    return old
+
+
+def backup_record(zip_path: "Path") -> dict | None:
+    """The record write_backup left beside a backup, or None (a backup from before
+    0.5.0, or a zip from elsewhere)."""
+    side = zip_path.with_suffix(".json")
+    try:
+        data = json.loads(side.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def same_instance(a: str, b: str) -> bool:
+    return a.rstrip("/").lower() == b.rstrip("/").lower()
 
 
 def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> ApplyReport:
@@ -364,6 +429,10 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
     bundle's own name-based markers (via its decompiled spec)."""
     report = ApplyReport(ok=False, stage="restore")
     try:
+        # The charts on the dashboard now: 6.1.0's import unlinks those the backup
+        # doesn't have, so read them first to find the tool's own left behind (below).
+        before = client.find_dashboard_by_slug(slug)
+        linked_before = client.dashboard_charts(before["id"]) if before else []
         r = client.import_dashboard_bundle(zip_bytes, overwrite=True)
         report.import_status = r.status_code
         if r.status_code != 200:
@@ -427,8 +496,26 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
                 report.warnings.append(unlink_error)
             else:
                 report.warnings.append(
-                    f"took charts the backup doesn't have off the dashboard: {extra}; they "
-                    f"are not deleted")
+                    f"took charts the backup doesn't have off the dashboard: {extra}")
+
+        # A chart the tool created since the backup (its derived uuid for this slug),
+        # now on no dashboard, would be left as an orphan: a failed apply's new chart,
+        # most often. Delete those; any other chart stays, wherever it is (triage M).
+        gone = [c for c in linked_before if c["slice_name"] not in in_backup]
+        derived = client.charts_by_uuids(
+            {str(ids.chart_uuid(slug, c["slice_name"])): c["slice_name"] for c in gone})
+        orphans = []
+        for row in derived.values():
+            if not client.get(f"/api/v1/chart/{row['id']}")["result"].get("dashboards"):
+                client.delete_chart(row["id"])
+                orphans.append(row["slice_name"])
+        if orphans:
+            report.warnings.append(
+                f"deleted charts the tool created after this backup, now on no dashboard: "
+                f"{sorted(orphans)}")
+        kept = sorted(set(extra) - set(orphans))
+        if kept:
+            report.warnings.append(f"charts not deleted, find them under Charts: {kept}")
 
         from .decompile import decompile_bundle, live_dataset_lookup
         from .spec import load_spec
@@ -491,7 +578,18 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
             # the owner. (No-op on Windows; custom dirs are the user's to manage.)
             os.chmod(backup_dir.parent.parent, 0o700)
         backup_bytes = client.export_dashboard(existing["id"])
-        report.backup = write_backup(backup_dir, backup_bytes).as_posix()
+        written = write_backup(backup_dir, backup_bytes, record={
+            "base_url": client.base_url, "profile": profile, "slug": spec.dashboard.slug,
+            "dashboard_id": existing["id"]})
+        report.backup = written.as_posix()
+        keep, keep_warning = backup_keep()
+        if keep_warning:
+            report.warnings.append(keep_warning)
+        removed = prune_backups(backup_dir, keep)
+        if removed:
+            report.warnings.append(
+                f"removed {len(removed)} old backup(s) of this dashboard, keeping the newest {keep} "
+                f"(CHARTWRIGHT_BACKUP_KEEP changes it; 0 keeps all)")
 
     def _auto_restore(reason: str) -> None:
         """Import failed mid-mutation: put the previous state back rather
