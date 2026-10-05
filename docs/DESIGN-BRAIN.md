@@ -1,8 +1,10 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 7** (4 added `narrative.color-scheme`; 5 the
+> **Status: SHIPPED, design brain 10** (4 added `narrative.color-scheme`; 5 the
 > design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
-> a null record after an edit, and `default.stale-record`). This page is both the design and the
+> a null record after an edit, and `default.stale-record`; 9 rolling trendline
+> windows and date tiles; 10 no page-size picker, pager or search box on a table
+> whose rows all show, and `size.table-chrome`). This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -330,7 +332,7 @@ fails when it drifts.
 | `default.count-format` | info | ✔ | - | 5 | counts read as whole numbers with thousands separators (',.0f') |
 | `default.date-tile` | info | ✔ | - | 9 | a big number of a date column's MIN or MAX reads as a whole date ('Sat 3 Oct 2026'); needs the column's type (--profile) |
 | `default.page-length` | info | ✔ | - | 5 | a table whose row_limit outgrows its panel pages by the rows that fit beside its page controls |
-| `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows gets a search box, when its rows still fit beside it (the 20 is judgement) |
+| `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows that outgrow its panel, and so page, gets a search box; one whose rows all show gets none (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
 | `default.stale-record` | info | ✔ | - | 7 | design.filled names only charts and fields the spec has |
 | `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or tall enough to space the labels (horizontal) |
@@ -364,6 +366,7 @@ fails when it drifts.
 | `size.pie-geometry` | warn | ✔ | - | 1 | pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds |
 | `size.pivot-window` | warn | ✔ | - | 2 | a pivot's height should show a meaningful share of its row_limit |
 | `size.row-harmony` | warn | ✔ | - | 1 | charts sharing a row should share a height (Superset sizes the row to its tallest child) |
+| `size.table-chrome` | info | - | - | 10 | a table whose rows all show in its panel draws no page-size picker, pager or search box |
 | `size.table-window` | warn | ✔ | - | 1 | a table's height should show a meaningful share of its row_limit |
 | `standard.classification` | error | - | - | 6 | the dashboard's classification is one the standard lists |
 | `standard.content-locked` | error | - | - | 6 | content a standard locks is in the spec as the standard has it (standards apply writes it; a change goes through the standard's file) |
@@ -1077,12 +1080,22 @@ thresholds; those marked judgement are usability choices, not pixel facts.
 | `default.count-format` | `number_format` | `,.0f` | every metric the chart shows is `COUNT` or `COUNT_DISTINCT`, on a chart with one `number_format` (not a table or a mixed chart); not with `contribution`, a 100 % stack, or a pivot aggregation that leaves fractions |
 | `default.cell-bars` | `cell_bars` | `false` | a raw-mode table with a column named `id`, `code`, `year`, `zip`, `zipcode` or `postcode` as a whole trailing token (`order_id`, `fiscal_year`; not `uuid` or `zip_count`). With column types (`--profile`), only a numeric one counts. Aggregate tables draw bars on metrics only, so they never need it |
 | `default.page-length` | `page_length` | the whole rows that fit beside the page-size bar and the pager | a table with an explicit `row_limit` larger than the rows that fit on one page, and a page of at least `page_min_rows` (3, judgement). The one grid model `size.table-window` reads, so the fill can never make that rule ask for more height |
-| `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, judgement), when the bar the box sits in hides no row: a paged table already draws it, and a table on one page must still fit every row beside it |
+| `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, judgement) that outgrows its panel and pages (`page_length` above 0 and below `row_limit`), so the box sits in the bar the page-size picker already draws and hides no row. Never on a table whose rows all show (brain 10; brain 5 to 9 also filled one there when every row still fit beside it) |
 | `default.single-series-legend` | `show_legend` | `false` | a timeseries chart or categorical bar with one metric, no groupby, no series limit, no goal lines and no legend placement written, whose shown title or `y_axis_title` contains the metric's label, and that label is at least 3 characters long. Never a heatmap, whose legend is the colour scale |
 | `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17) |
 
 `narrative.big-number-format` stands down where `default.count-format`
 offers the same remedy with a fix: one remedy, one finding.
+
+A table whose rows all show in its panel gets no DataTables chrome from the
+brain: no page-size picker, which any `page_length` above 0 draws even on one
+page (`hasPagination`, `plugin-chart-table/src/DataTable/DataTable.tsx:123` at
+4.1.4 and 5.0.0, `:173` at 6.1.0), no pager and no search box. The two table
+fills read the same grid model, so neither adds one there, and a fill an
+earlier brain left is removed by the next `--fix`. `size.table-chrome` (info,
+no fix) names an author's `page_length` or `search_box` on such a table;
+"rows" there is `row_limit`, the most the table can show, so a table with no
+`row_limit` is left alone.
 
 The decision record's suggestion-only list stays without fills: category
 sort (`chart.ordinal-order` reports ordinal names), y-axis truncation,

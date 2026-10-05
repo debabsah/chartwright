@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1624 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1727 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -217,8 +217,8 @@ filter bar with two value pickers and a time range, plus markdown and tabs.
 second-writer and fault-injection runs.) The same check then runs on two
 more specs, `tests/fixtures/live_display_controls.json` (every chart display
 control: legends, axis titles and bounds, stacking, labels, table and pivot
-options, a trendline KPI's rolling window, a mixed chart's filled areas and a
-heatmap's axis order) and `tests/fixtures/live_dashboard_controls.json` (dashboard
+options, a trendline KPI's rolling window and fitted axis, a mixed chart's
+filled areas and a heatmap's axis order) and `tests/fixtures/live_dashboard_controls.json` (dashboard
 settings and owners, colour schemes, goal lines, a header and footer
 outside the tabs, header rows inside them, cascading and
 pre-filtered native filters, time grain and time column filters). They are

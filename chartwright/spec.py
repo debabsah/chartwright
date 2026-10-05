@@ -441,6 +441,14 @@ class BigNumberTrendChart(_ChartBase):
                     "point (and the number) is a whole trailing window; 0 also draws the "
                     "partial windows of the first steps, as Superset's own default does",
     )
+    y_axis_truncate: bool = Field(
+        default=False,
+        description="Fit the trendline to its values instead of drawing it up from zero "
+                    "(Superset's Start y-axis at 0, unticked). A trailing-12-month total "
+                    "that moves a few percent is a flat line over a solid block from zero; "
+                    "fitted, the line shows the movement. Say so where the reader expects a "
+                    "zero baseline",
+    )
 
     @field_validator("trend_color", mode="before")
     @classmethod
@@ -603,13 +611,22 @@ def json_value(v) -> str:
     return "true" if v is True else "false" if v is False else f'"{v}"'
 
 
+# The line, bar, area and scatter panels have one number format, "Axis Format"
+# (y_axis_format), for the value axis, the values on the marks and the tooltip
+# (Timeseries/transformProps.ts at 4.1.4, 5.0.0 and 6.1.0); 6.1.0's x_axis_number_format
+# formats a numeric x axis only.
+_VALUE_FORMAT = ("d3 format for the value axis, e.g. {example}. Superset uses the same "
+                 "format for the values show_value writes and the tooltip; a '~' drops "
+                 "trailing zeros, so ',.1~f' labels the axis 0, 5, 10 and a value 12.5")
+
+
 class _TimeseriesBase(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
     metrics: list[str] = Field(min_length=1)
     time_column: str
     time_grain: str | None = Field(default=None, description="ISO 8601 duration, e.g. P1D, P1W, P1M")
     groupby: str | None = Field(default=None, description="At most one dimension column")
     row_limit: int | None = Field(default=None, ge=1)
-    number_format: str | None = Field(default=None, description="d3 format for the value axis, e.g. '.1%'")
+    number_format: str | None = Field(default=None, description=_VALUE_FORMAT.format(example="'.1%'"))
 
     STACKS: ClassVar[tuple] = (False, True, "stream")
 
@@ -652,7 +669,9 @@ class TimeseriesAreaChart(_TimeseriesBase):
     markers: bool = Field(default=False, description="A marker at each point")
     marker_size: int | None = _marker_size()
     opacity: float | None = Field(
-        default=None, ge=0, le=1, description="Opacity of the area fill, 0-1 (default 0.2)")
+        default=None, ge=0, le=1,
+        description="Opacity of the area fill, 0-1 (default 0.2). Each area's edge stays "
+                    "a full-strength line: Superset's area chart has no line width")
     STACKS: ClassVar[tuple] = (False, True, "stream", "expand")
 
     @model_validator(mode="after")
@@ -681,7 +700,7 @@ class BarChart(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
     groupby: str | None = None
     row_limit: int | None = Field(default=None, ge=1)
     orientation: Literal["vertical", "horizontal"] = "vertical"
-    number_format: str | None = Field(default=None, description="d3 format for the value axis, e.g. ',.0f'")
+    number_format: str | None = Field(default=None, description=_VALUE_FORMAT.format(example="',.0f'"))
     category_sort: Literal["asc", "desc"] | None = Field(
         default=None,
         description="Order the bars by their category (x_column) instead of by the first "
@@ -1042,7 +1061,11 @@ class TreemapChart(_ChartBase, _ColorSchemeMixin):
 
 class MixedSeries(BaseModel):
     """One of a mixed chart's two queries: its metrics, drawn as bars, a line or a
-    filled area, on the primary (left) or secondary (right) value axis."""
+    filled area, on the primary (left) or secondary (right) value axis. Superset draws
+    every line of a mixed chart solid at one width: it has no line width or dash for a
+    query or a metric. To draw a reference series lighter, such as last year under this
+    year, put it in its own query and give it a pale colour with the dashboard's
+    label_colors, or make it an area with a low opacity."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1110,8 +1133,21 @@ class MixedChart(_Legend, _AxisChart, _ColorSchemeMixin):
     a: MixedSeries
     b: MixedSeries
     row_limit: int | None = Field(default=None, ge=1)
-    number_format: str | None = Field(default=None, description="d3 format for the primary axis")
-    number_format_secondary: str | None = Field(default=None, description="d3 format for the secondary axis")
+    # MixedTimeseries/transformProps.ts formats each axis, and the tooltip values of the
+    # series on it, with that axis's format (:268-282 and :605-631 at 4.1.4, :348-357 and
+    # :800-827 at 6.1.0), but query A's value labels with y_axis_format and query B's with
+    # y_axis_format_secondary, whichever axis each sits on (:374-380 and :421-427 at 4.1.4,
+    # :449-455 and :522-528 at 6.1.0).
+    number_format: str | None = Field(
+        default=None,
+        description="d3 format for the primary axis and the tooltip values of its series; "
+                    "Superset also writes query a's show_value labels in it, whichever axis "
+                    "a sits on")
+    number_format_secondary: str | None = Field(
+        default=None,
+        description="d3 format for the secondary axis and the tooltip values of its series; "
+                    "Superset also writes query b's show_value labels in it, whichever axis "
+                    "b sits on")
     y_axis_title_secondary: str | None = Field(default=None, description="Title of the secondary axis")
     y_axis_min_secondary: float | None = Field(default=None, description="Bottom of the secondary axis")
     y_axis_max_secondary: float | None = Field(default=None, description="Top of the secondary axis")

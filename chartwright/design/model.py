@@ -32,7 +32,11 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # ordered by value alone; default.date-tile fills date_format on a big number of a date
 # column (data-aware), and a big number shown as a date gets no number format from
 # narrative.big-number-format, default.count-format or a standard.
-DESIGN_BRAIN_VERSION = "9"
+# "10" = no DataTables chrome on a table whose rows all show: default.search-box fills only
+# a paged table whose rows outgrow its panel (and --fix removes a box it filled on one
+# whose rows all show), and size.table-chrome, a new info rule, names an author's page
+# size or search box there.
+DESIGN_BRAIN_VERSION = "10"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

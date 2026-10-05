@@ -114,3 +114,97 @@ def test_a_rolling_kpi_warns_when_its_data_holds_too_few_buckets():
     assert _window_warning(spec_with({**ttm, "compare_lag": None}).charts[0], 13) is None
     cum = {**ttm, "rolling_type": "cumsum", "rolling_periods": None}
     assert _window_warning(spec_with(cum).charts[0], 2) is None
+
+
+# -- values an IN filter lists that return no rows ---------------------------------------
+
+ZONES = ["North", "South", "East", "West"]
+
+
+class _ChartData:
+    """A client whose chart_data answers each query with rows(query)."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def chart_data(self, ctx):
+        result = [{"data": self.rows(q)} for q in ctx["queries"]]
+
+        class Response:
+            status_code = 200
+
+            def json(self):
+                return {"result": result}
+
+        return Response()
+
+
+def _smoke(chart, rows, temporal=()):
+    from chartwright.smoke import smoke_chart
+    from chartwright.testing import stub_resolution
+
+    spec = spec_with(chart)
+    res = stub_resolution(spec)
+    for ds in res.datasets.values():
+        ds.temporal_columns = set(temporal)
+    return smoke_chart(spec.charts[0], spec, res, _ChartData(rows))
+
+
+def test_a_listed_value_with_no_rows_is_named():
+    """The analytics QA's line chart named four zones and drew two: its lines and legend
+    said nothing of the other two."""
+    line = {"type": "timeseries_line", "name": "By zone", "dataset": DS, "metrics": ["SUM(x)"],
+            "time_column": "ts", "groupby": "zone",
+            "filters": [{"column": "zone", "op": "IN", "value": ZONES}]}
+    out = _smoke(line, lambda q: [{"ts": 1, "zone": z, "SUM(x)": 1} for z in ("North", "South")])
+    assert out.ok and out.warning
+    assert out.detail == ("2 rows; zone IN lists 'East', 'West', which return no rows, so the "
+                          "chart draws nothing for them")
+    every = _smoke(line, lambda q: [{"ts": 1, "zone": z} for z in ZONES])
+    assert not every.warning and every.detail == "4 rows"
+
+
+def test_listed_values_are_compared_as_text_and_named_one_at_a_time():
+    bar = {"type": "bar", "name": "B", "dataset": DS, "x_column": "hour", "metrics": ["COUNT(*)"],
+           "filters": [{"column": "hour", "op": "IN", "value": [1, 2, 3]}]}
+    out = _smoke(bar, lambda q: [{"hour": "1"}, {"hour": 2.0}])
+    assert out.detail == ("2 rows; hour IN lists 3, which returns no rows, so the chart draws "
+                          "nothing for it")
+
+
+def test_only_a_column_the_query_returns_is_checked():
+    """A filter on a column the chart neither groups nor draws by: the rows don't say
+    which values came back, so there is nothing to name; nor on a time column (it comes
+    back as timestamps), nor values a series limit drops on purpose."""
+    pie = {"type": "pie", "name": "P", "dataset": DS, "metric": "COUNT(*)", "groupby": "status",
+           "filters": [{"column": "zone", "op": "IN", "value": ["North", "East"]}]}
+    assert not _smoke(pie, lambda q: [{"status": "open"}]).warning
+    table = {"type": "table", "name": "T", "dataset": DS, "columns": ["day", "x"],
+             "filters": [{"column": "day", "op": "IN", "value": ["2026-01-01", "2026-01-02"]}]}
+    assert not _smoke(table, lambda q: [{"day": 1767225600000, "x": 1}], temporal=["day"]).warning
+    assert _smoke(table, lambda q: [{"day": "2026-01-01", "x": 1}]).warning
+    top = {"type": "timeseries_line", "name": "L", "dataset": DS, "metrics": ["SUM(x)"],
+           "time_column": "ts", "groupby": "zone", "series_limit": 2,
+           "filters": [{"column": "zone", "op": "IN", "value": ZONES}]}
+    assert not _smoke(top, lambda q: [{"ts": 1, "zone": "North"}]).warning
+    other = {**top, "series_limit": None,
+             "filters": [{"column": "zone", "op": "NOT IN", "value": ["North"]}]}
+    assert not _smoke(other, lambda q: [{"ts": 1, "zone": "South"}]).warning
+
+
+def test_a_mixed_chart_reads_both_queries_and_a_capped_query_says_so():
+    mixed = {"type": "mixed", "name": "M", "dataset": DS, "x_column": "zone", "row_limit": 2,
+             "filters": [{"column": "zone", "op": "IN", "value": ["North", "South", "East"]}],
+             "a": {"metrics": ["SUM(x)"]}, "b": {"metrics": ["SUM(y)"], "kind": "line"}}
+    out = _smoke(mixed, lambda q: [{"zone": "North"}, {"zone": "South"}])
+    assert out.detail == ("4 rows; zone IN lists 'East', which returns no rows within the row "
+                          "limit, so the chart draws nothing for it")
+    answers = iter([[{"zone": "North"}], [{"zone": "South"}, {"zone": "East"}]])
+    assert not _smoke({**mixed, "row_limit": 10}, lambda q: next(answers)).warning
+
+
+def test_a_height_warning_and_empty_values_are_both_reported():
+    table = {"type": "table", "name": "T", "dataset": DS, "columns": ["zone"], "height": 4,
+             "row_limit": 50, "filters": [{"column": "zone", "op": "IN", "value": ["a", "z"]}]}
+    out = _smoke(table, lambda q: [{"zone": "a"}] * 10)
+    assert "inner scrollbar" in out.detail and "zone IN lists 'z'" in out.detail

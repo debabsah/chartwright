@@ -26,7 +26,8 @@
       "rolling_periods": 12,
       "rolling_min_periods": 6,
       "compare_lag": 12,
-      "subtitle": "Trailing 12 months"
+      "subtitle": "Trailing 12 months",
+      "y_axis_truncate": true
     },
     {
       "name": "Orders This Quarter",

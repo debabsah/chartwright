@@ -375,17 +375,81 @@ def test_search_threshold_comes_from_the_audience_params():
     assert fills(data, "default.search-box", overlay=Overlay(params={"search_min_rows": 100})) == {}
 
 
-def test_a_search_box_on_one_page_needs_room_for_its_bar():
-    """The search bar sits above the rows (41.1 px at 6.1.0): on a table that shows
-    every row on one page it takes room from them. 25 rows fit at height 21 without
-    it and 23 with it, so the fill stands down there, and fills at height 23."""
-    assert fills(mk([raw_table(row_limit=25, height=21, page_length=0)]),
-                 "default.search-box") == {}
-    assert "T" in fills(mk([raw_table(row_limit=25, height=23, page_length=0)]),
-                        "default.search-box")
-    # A paged table already draws the bar (its page-size picker): no room to find.
+def test_no_search_box_on_a_table_whose_rows_all_show():
+    """DataTables chrome over rows the reader already sees is noise (brain 10): 25 rows
+    show at heights 21 and 23, so neither gets a box, paged or not. A table whose rows
+    outgrow its panel gets one once it pages, in the bar its page-size picker already
+    draws (41.1 px at 6.1.0), so the box costs no row."""
+    for height in (21, 23):
+        for page in (0, 10):
+            assert fills(mk([raw_table(row_limit=25, height=height, page_length=page)]),
+                         "default.search-box") == {}, (height, page)
     assert "T" in fills(mk([raw_table(row_limit=400, height=8, page_length=4)]),
                         "default.search-box")
+    # On one long page (0, or a page that holds every row) it waits for paging.
+    for page in (0, 400):
+        assert fills(mk([raw_table(row_limit=400, height=8, page_length=page)]),
+                     "default.search-box") == {}, page
+
+
+def test_a_search_box_an_older_brain_filled_over_rows_that_all_show_is_removed():
+    """Brain 9 filled a box on a table that showed all its rows when they still fit
+    beside it; --fix now removes that fill and its record."""
+    data = mk([raw_table(row_limit=25, height=23, search_box=True)],
+              design={"filled": {"T": {"search_box": True}}})
+    found = fills(data, "default.search-box")["T"]
+    assert found.fix["unset"] == ["search_box"] and "all 25 rows show" in found.detail
+    fixed, _ = fix(data)
+    assert "search_box" not in fixed["charts"][0]
+    assert "search_box" not in (fixed.get("design") or {}).get("filled", {}).get("T", {})
+
+
+@pytest.mark.parametrize("row_limit", [10, 21, 25, 30, 50, 400])
+@pytest.mark.parametrize("height", range(6, 21))
+def test_the_fills_add_no_chrome_to_a_table_whose_rows_all_show(row_limit, height):
+    """No page-size picker, pager or search box over rows that all show in the panel,
+    whatever height the fix loop settles on (a picker shows on one page too:
+    DataTable.tsx hasPagination)."""
+    fixed, rep = fix(mk([raw_table(row_limit=row_limit, height=height)]))
+    t = fixed["charts"][0]
+    if row_limit <= math.floor(grid_rows_visible(t["height"], table_header_units())):
+        assert "page_length" not in t and "search_box" not in t, t
+    else:
+        assert t.get("search_box") is (True if row_limit > 20 and t.get("page_length")
+                                       else None), t
+    assert not [f for f in rep.findings if f.rule == "size.table-chrome"]
+
+
+def _chrome(data):
+    return [f for f in advise(load_spec(data), overlay=EMPTY).findings
+            if f.rule == "size.table-chrome"]
+
+
+def test_table_chrome_names_an_authors_page_size_or_search_box_over_rows_that_all_show():
+    """8 rows show at height 9 with nothing above them: a page-size picker (drawn on one
+    page too), a pager or a search box over them is chrome. Reported, never fixed: the
+    fields are the author's."""
+    (f,) = _chrome(mk([raw_table(row_limit=8, height=9, page_length=10)]))
+    assert f.severity == "info" and not f.fix and f.chart == "T"
+    assert "all 8 rows show at height 9, yet page_length 10 draws a page-size picker" in f.detail
+    (f,) = _chrome(mk([raw_table(row_limit=8, height=9, page_length=4, search_box=True)]))
+    assert ("page_length 4 and search_box draw a page-size picker and a pager over 2 pages "
+            "and a search box") in f.detail
+    for quiet in ({"row_limit": 8}, {"row_limit": 8, "page_length": 0},
+                  {"row_limit": 400, "page_length": 6, "search_box": True},  # rows outgrow it
+                  {"page_length": 10}):                                     # rows unknown
+        assert _chrome(mk([raw_table(height=9, **quiet)])) == [], quiet
+    assert _chrome(mk([{"type": "table", "name": "Agg", "dataset": DS, "groupby": ["r"],
+                        "metrics": ["SUM(x)"], "row_limit": 5, "search_box": True}])) != []
+
+
+def test_table_chrome_leaves_the_brains_own_page_to_its_fill():
+    """A page the brain filled follows the panel: default.page-length removes it once the
+    rows all show, so size.table-chrome doesn't name it too (one remedy, one finding)."""
+    data = mk([raw_table(row_limit=8, height=9, page_length=5)],
+              design={"filled": {"T": {"page_length": 5}}})
+    assert _chrome(data) == []
+    assert fills(data, "default.page-length")["T"].fix["unset"] == ["page_length"]
 
 
 @pytest.mark.parametrize("row_limit", [21, 24, 30, 50, 400])
@@ -818,7 +882,7 @@ def test_explain_shows_every_governed_field_and_its_source(monkeypatch, tmp_path
     code, out = _cli(["explain", str(spec), "--json", "--chart", "A"], monkeypatch, tmp_path, capsys)
     assert code == 0 and json.loads(out)["charts"][0]["chart"] == "A"
     code, out = _cli(["explain", str(spec)], monkeypatch, tmp_path, capsys)
-    assert code == 0 and out.startswith("Design defaults (design brain 9")
+    assert code == 0 and out.startswith("Design defaults (design brain 10")
     code, out = _cli(["explain", str(spec), "--chart", "Z"], monkeypatch, tmp_path, capsys)
     assert code == 1 and "unknown_chart" in out
 

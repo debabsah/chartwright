@@ -8,7 +8,8 @@ replicate each viz's post-processing (binning, pivoting, normalization); that
 stays the renderer's job.
 
 Pass = HTTP 200 AND non-empty result payload. Empty = warning naming the
-chart, not a silent pass.
+chart, not a silent pass; so are values an IN filter lists on a column the
+chart groups or draws by that return no rows (they would draw nothing).
 """
 
 from __future__ import annotations
@@ -77,6 +78,50 @@ def _window_warning(chart, rows: int) -> str | None:
     return (f"a {least}-step rolling window" + (f" with compare_lag {lag}" if lag else "")
             + f" over {rows} time buckets draws {points} trendline point(s)"
             + (" and no change" if lag else "") + "; widen the chart's time range")
+
+
+def _value_key(v) -> str:
+    """A filter value or a returned one, compared as text: a list of [2, 4] matches the 2
+    and 4 a numeric column returns, and 2.0 reads as 2."""
+    if isinstance(v, bool):
+        return str(v).lower()
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
+def _series_limited(chart, column: str) -> bool:
+    """The chart keeps only its top N series by `column`, so listed values it drops are
+    the limit's doing, not missing data."""
+    holders = (chart.a, chart.b) if chart.type == "mixed" else (chart,)
+    return any(getattr(h, "series_limit", None) and getattr(h, "groupby", None) == column
+               for h in holders)
+
+
+def _empty_values_warning(chart, queries: list[dict], result: list, ds) -> str | None:
+    """Values a chart lists with IN on a column it groups or draws by, which come back
+    with no rows: a line chart that names four zones where two have data draws two lines
+    and a legend of two, and nothing on the dashboard says the other two are missing.
+    Only a column the query returns can be checked, since the data says which values
+    came back; a time column comes back as timestamps, so it is left alone."""
+    notes = []
+    for f in chart.filters:
+        if f.op != "IN" or f.sql is not None or not isinstance(f.value, list):
+            continue
+        column = f.column
+        pairs = [(q, r) for q, r in zip(queries, result) if column in q.get("columns", [])]
+        if not pairs or ds.is_temporal(column) or _series_limited(chart, column):
+            continue
+        back = {_value_key(row.get(column)) for _, r in pairs for row in r.get("data") or []}
+        missing = [v for v in f.value if _value_key(v) not in back]
+        if not missing:
+            continue
+        capped = any(len(r.get("data") or []) >= q.get("row_limit", math.inf) for q, r in pairs)
+        names = ", ".join(repr(v) for v in missing)
+        notes.append(f"{column} IN lists {names}, which return{'s' if len(missing) == 1 else ''}"
+                     f" no rows" + (" within the row limit" if capped else "")
+                     + f", so the chart draws nothing for {'it' if len(missing) == 1 else 'them'}")
+    return "; ".join(notes) or None
 
 
 @dataclass
@@ -209,10 +254,11 @@ def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
 
 def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: SupersetClient) -> SmokeResult:
     ds = resolution.for_chart(chart.dataset)
+    queries = [_with_time_range(q, chart, ds) for q in (
+        _mixed_queries(chart, spec, ds) if chart.type == "mixed" else [_query_for(chart, spec)])]
     ctx = {
         "datasource": {"id": ds.id, "type": "table"},
-        "queries": [_with_time_range(q, chart, ds) for q in (
-            _mixed_queries(chart, spec, ds) if chart.type == "mixed" else [_query_for(chart, spec)])],
+        "queries": queries,
         "result_format": "json",
         "result_type": "full",
     }
@@ -226,9 +272,10 @@ def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: Supe
         return SmokeResult(chart.name, False, False, f"unparseable chart/data response: {e}")
     if rows == 0:
         return SmokeResult(chart.name, True, True, "query succeeded but returned 0 rows")
-    fit = _fit_warning(chart, spec, result) or _window_warning(chart, rows)
-    if fit:
-        return SmokeResult(chart.name, True, True, f"{rows} rows; {fit}")
+    notes = [w for w in (_fit_warning(chart, spec, result) or _window_warning(chart, rows),
+                         _empty_values_warning(chart, queries, result, ds)) if w]
+    if notes:
+        return SmokeResult(chart.name, True, True, f"{rows} rows; " + "; ".join(notes))
     return SmokeResult(chart.name, True, False, f"{rows} rows")
 
 

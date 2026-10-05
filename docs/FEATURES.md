@@ -34,6 +34,7 @@ into one. Everything below works from that one file.
     - A time range per chart, such as a "Last 30 days" KPI on a dashboard that shows all time.
     - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
     - A trendline KPI over a rolling window: a trailing-12-month total compared with the 12 months before ("+30% vs prior 12 months"), a 3-month average, or a running total.
+    - A trendline fitted to its values, so a trailing total that moves a few percent shows the movement.
     - Filled areas on a mixed chart, such as solar output under a net-load line.
     - A big number shown as a date, such as the latest order date as "Sat 3 Oct 2026".
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
@@ -73,7 +74,7 @@ into one. Everything below works from that one file.
 - **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices); `--chart` looks at one chart.
 - **Design Defaults in the Spec**: Leave the small display choices unset and `advise --fix` writes sensible values into the spec, where the diff shows them; `chartwright explain` says where each value came from and how to change it.
     - Monthly time axes labelled `Sep 2026`, counts shown as `12,345`, "vs previous month" after a trendline KPI's change.
-    - Tables that page by what fits their panel, a search box on long raw tables, no cell bars behind id, code, year or zip columns.
+    - Tables that page by what fits their panel, a search box on long raw tables that page, no cell bars behind id, code, year or zip columns. A table whose rows all fit its panel shows just its rows, and `advise` points out a page size or search box you wrote there.
     - No legend on a single series the title already names, values written on a few bars.
     - A field you write is never touched. A filled value is kept up to date as the chart changes until you edit or delete it; then it is yours, and a deleted one stays deleted. To keep Superset's default from the start, add the rule to `design.ignore`.
     - The bundle depends on the spec alone: compile, `plan` and decompile never add a value of their own.
@@ -153,6 +154,7 @@ into one. Everything below works from that one file.
 - **Self-Healing Applies**: When an apply fails while preparing, importing or updating charts, the previous state is restored automatically, whatever the error. A failure after that (linkage, filter scopes, chart queries) leaves the new version live, and the report gives the backup to restore.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once: an error fails the apply, and a chart that returns no rows is named. Any failure says what went wrong and where.
+    - The data check also names each value a chart's `IN` filter lists that has no rows, such as the two empty zones of a line chart that lists four.
     - Your spec is held to the instance's Superset release too: a setting the release can't take (tags or a theme on 4.1.4 or 5.0.0, chart timestamps before 6.1) stops the apply before anything is written and names the field to remove; one it would ignore, such as a trendline subtitle before 6.0, comes back as a warning. Offline, `chartwright compile --superset-version 5.0.0` runs the same check.
 - **Ownership Guard**: The tool overwrites only dashboards it created or that you adopted with `chartwright adopt`; to manage any other dashboard, adopt it first.
 

@@ -33,10 +33,16 @@
 - A rolling KPI (`rolling_type`) shows a trailing window, not the latest
   period: name the window in its title or subtitle ("Revenue, trailing 12
   months"), and give it a range that holds the window plus `compare_lag`
-  (24 months for a trailing year against the year before).
+  (24 months for a trailing year against the year before). Its trendline,
+  drawn up from zero, barely moves; when asked to show the movement, set
+  `y_axis_truncate`.
 - A paged table (`page_length`) needs room for one page and its pager, not
-  for every row; a timeseries with many groups keeps the top few with
+  for every row; a table whose rows all show takes no `page_length` or
+  `search_box`. A timeseries with many groups keeps the top few with
   `series_limit`.
+- Superset draws every line of a mixed chart solid at one width; draw a
+  reference series lighter with a pale `label_colors` colour in its own
+  query.
 - One dominant category flattening its siblings is the data talking: note it
   or filter it, don't hide it.
 - Every chart with a time axis should tolerate the dashboard time filter;

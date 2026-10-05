@@ -668,6 +668,9 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         colour = _rgb_to_spec(p.get("color_picker"))
         if colour:
             out["trend_color"] = colour
+        # "Start y-axis at 0" unticked (an unset key is the control's default, true).
+        if p.get("start_y_axis_at_zero") is False:
+            out["y_axis_truncate"] = True
         _rolling_to_spec(p, out, losses, name)
     elif spec_type in ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"):
         ms = [metric_one(m) for m in (p.get("metrics") or [])]
@@ -1019,7 +1022,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         mapped_here = mapped_here | _legend_to_spec(p, out, spec_type)
     if spec_type == "big_number_trend":
         mapped_here = mapped_here | {"compare_lag", "compare_suffix", "subtitle", "color_picker",
-                                     "rolling_type", "rolling_periods", "min_periods"}
+                                     "rolling_type", "rolling_periods", "min_periods",
+                                     "start_y_axis_at_zero"}
     if spec_type == "big_number_total":
         mapped_here = mapped_here | {"subtitle", "time_format", "force_timestamp_formatting"}
     if spec_type == "table":
