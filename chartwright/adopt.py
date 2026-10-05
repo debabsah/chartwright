@@ -12,8 +12,8 @@ apply resets some of it to the spec's form. Adopt lists every such reset it can
 find (`resets`) and refuses while there are any, unless the caller accepts them
 (`accept_reset`): decompile's losses (settings and charts the spec can't hold,
 which the first apply drops or takes off the dashboard) plus what decompile reads
-past without a loss (tab-scoped filters, per-chart cross-filter scopes, charts
-exempt from auto-refresh, saved chart queries, tab and filter ids).
+past without a loss (per-chart cross-filter scopes, charts exempt from
+auto-refresh, saved chart queries, tab and filter ids).
 
 Adopt also refuses, each time saying what to do instead, when the result could not
 be applied safely:
@@ -88,12 +88,6 @@ def first_apply_resets(result: DecompileResult, export: bytes,
     resets = [{"where": loss["where"], "what": loss["what"]} for loss in result.losses_json()]
     dash, charts = _export_parts(export)
     meta = dash.get("metadata") or {}
-    for nf in meta.get("native_filter_configuration") or []:
-        root = (nf.get("scope") or {}).get("rootPath") or ["ROOT_ID"]
-        if root != ["ROOT_ID"]:
-            resets.append({"where": f"filter:{nf.get('name') or nf.get('id')}",
-                           "what": "scoped to some tabs; the first apply scopes it to the whole "
-                                   "dashboard (or the charts the spec names)"})
     resets += [{"where": "dashboard", "what": what} for _, what in adopted_metadata_resets(meta)]
     kept = set(result.chart_uuids)
     if option_changes is not None:
