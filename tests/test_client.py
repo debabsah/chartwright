@@ -50,8 +50,8 @@ def test_json_q_survives_fab_parse_qs_fallback():
 # -- a connection the server dropped before answering --------------------------------------
 
 
-def _dropped(method: str) -> requests.exceptions.ConnectionError:
-    req = requests.Request(method, "http://superset.test/api/v1/x").prepare()
+def _dropped(method: str, path: str = "/api/v1/x") -> requests.exceptions.ConnectionError:
+    req = requests.Request(method, f"http://superset.test{path}").prepare()
     return requests.exceptions.ConnectionError(
         "('Connection aborted.', RemoteDisconnected('Remote end closed connection without "
         "response'))", request=req)
@@ -101,3 +101,17 @@ def test_a_request_dropped_twice_fails():
     with pytest.raises(SupersetAPIError):
         c._send(fn)
     assert len(calls) == 2
+
+
+def test_a_dropped_chart_query_is_sent_once_more():
+    """A chart query only reads, so a POST to /api/v1/chart/data is repeatable (it
+    dropped on the 6.1.0 sandbox after the client sat idle during a browser capture)."""
+    c = SupersetClient("http://superset.test", "u", "p")
+    calls = []
+
+    def fn():
+        calls.append(1)
+        if len(calls) == 1:
+            raise _dropped("POST", "/api/v1/chart/data")
+        return _Ok()
+    assert c._send(fn).status_code == 200 and len(calls) == 2
