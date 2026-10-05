@@ -32,6 +32,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 ### Fixed
 
 - `restore` (and the automatic restore after a failed apply) deletes the charts the tool created after the backup that it leaves on no dashboard, such as the new chart of a failed apply; before, they stayed behind as orphans. Charts made in Superset are never deleted.
+- A GET or PUT the server drops without answering (a pooled connection it had already closed, as a recycled gunicorn worker or an idle timeout does) is sent once more instead of failing the run. POSTs and DELETEs are never repeated.
 - `decompile` (and so `redesign`, `plan` and `adopt`) names chart settings it can't carry when they differ from what an untouched Superset chart stores (a rolling sum, a forecast, a legend margin, a series sort, among others); before, it dropped them without a note. Superset's own defaults stay unreported, and so does any setting the spec writes back with the same value.
 - `decompile` names a filter scoped to some tabs, which the spec scopes to the whole dashboard.
 - `decompile` reads a big-number total's subtitle on Superset 6.0 and later, which stores it as `subtitle` rather than `subheader`.
