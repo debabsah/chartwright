@@ -540,3 +540,18 @@ def test_a_written_default_passes_the_checks_an_omitted_field_passes():
     _spec({**LINE, "marker_size": 6, "opacity": 0.2})
     _spec({**LINE, "type": "timeseries_area", "marker_size": 6})
     _spec({**PIE, "type": "funnel", "legend_type": "scroll"})
+
+
+@pytest.mark.parametrize("chart, field", [
+    ({"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "SUM(x)",
+      "time_column": "ts", "trend_color": "#1b7f3b"}, "trend_color"),
+    ({"name": "W", "type": "waterfall", "dataset": DS, "x_column": "c", "metric": "SUM(x)",
+      "decrease_color": "#B3261E"}, "decrease_color"),
+])
+def test_a_named_shade_written_as_its_hex_plans_clean(chart, field, monkeypatch):
+    """Decompile reads a named shade's own hex back as the name (green, amber, red), so
+    plan compares the hex the two paint, not the spelling."""
+    spec = _spec(chart)
+    back = next(c for c in _decompile(spec).spec["charts"] if c["name"] == chart["name"])
+    assert back[field] in ("green", "red")
+    assert _plan(spec, None, monkeypatch)["clean"] is True

@@ -7144,6 +7144,442 @@
       ],
       "title": "TreemapChart",
       "type": "object"
+    },
+    "WaterfallChart": {
+      "additionalProperties": false,
+      "description": "Steps that add up to a running total (Superset's Waterfall), e.g. a bridge from\nlast year's revenue through each driver to this year's. Each value of ``x_column``\nis a bar rising or falling by ``metric``; Superset adds the closing total.\n\nSuperset draws the steps in the x_column's own order (labels A to Z). For a bridge\nin its own order, ``steps`` lists them, opening first, and ``closing`` names the\ndataset row that closes it (Superset 6.1.0 or later). The first step always rises\nfrom zero, in the increase colour: the plugin keeps zero on its value axis only\nwhile the first bar is a step (it has no axis bounds).",
+      "properties": {
+        "name": {
+          "description": "Chart title; unique within the dashboard (uuid seed input)",
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "dataset": {
+          "$ref": "#/$defs/DatasetRef"
+        },
+        "filters": {
+          "description": "WHERE conditions on this chart only",
+          "items": {
+            "$ref": "#/$defs/ChartFilter"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "time_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset time range for this chart alone, e.g. \"Last 30 days\"; defaults to \"No filter\". A chart without a time axis of its own is filtered on its dataset's main time column, so a dataset without one ignores it.",
+          "title": "Time Range"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Height in 40px units. Fractional values (0.2 steps = Superset's 8px grid) are tool-written by `chartwright absorb`; humans write integers.",
+          "title": "Height"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A shorter title shown on this dashboard's chart card (Superset's sliceNameOverride); `name` stays the chart's name everywhere else",
+          "title": "Display Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the chart shows, e.g. a metric definition; dashboard viewers open it with \"Show chart description\" in the chart menu",
+          "title": "Description"
+        },
+        "certified_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who certified the chart: Superset shows a certified badge",
+          "title": "Certified By"
+        },
+        "certification_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The certified badge's tooltip text; needs certified_by",
+          "title": "Certification Details"
+        },
+        "cache_timeout": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds Superset caches this chart's query results; omit for the default",
+          "title": "Cache Timeout"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
+          "title": "Tags"
+        },
+        "type": {
+          "const": "waterfall",
+          "title": "Type",
+          "type": "string"
+        },
+        "x_column": {
+          "description": "The column whose values are the steps, one bar each, e.g. a revenue driver; or a time column, one bar per time_grain period",
+          "title": "X Column",
+          "type": "string"
+        },
+        "metric": {
+          "description": "The one measure every step adds to the running total, e.g. SUM(delta); it must add up, so not AVG, MIN, MAX or COUNT_DISTINCT",
+          "title": "Metric",
+          "type": "string"
+        },
+        "time_grain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For a time x_column: the period of each bar, e.g. P1M; omitted, each distinct timestamp is a bar",
+          "title": "Time Grain"
+        },
+        "groupby": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Break each x value down by this column (Superset's Breakdowns): its values as steps, then that x value's running total",
+          "title": "Groupby"
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 1000,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The x_column's values in the order to draw them, opening first, e.g. [\"FY2025\", \"Price\", \"Volume\", \"Mix\"]; values not listed are drawn after them, A to Z. Needs closing. Superset 6.1.0 or later: older releases draw a running total after every step, so check, apply and plan refuse it there",
+          "title": "Steps"
+        },
+        "closing": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With steps: the x_column value of the row that closes the bridge, e.g. \"FY2026\". Superset draws it last, as the running total in total_color, and names it so in the legend and tooltip; the row's own value is not drawn, so a closing that doesn't reconcile with the steps shows their sum (apply's data check says so). It must start with a letter or a digit 1-9",
+          "title": "Closing"
+        },
+        "total_label": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Without steps: the name of the closing total Superset adds, e.g. \"FY2026\" (Superset 6.1.0 or later; older releases name it Total)",
+          "title": "Total Label"
+        },
+        "increase_color": {
+          "anyOf": [
+            {
+              "enum": [
+                "green",
+                "amber",
+                "red"
+              ],
+              "type": "string"
+            },
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Colour of the rising bars: green, amber or red (the text shades colour rules use) or any #RRGGBB; Superset's default is green #5AC189",
+          "title": "Increase Color"
+        },
+        "decrease_color": {
+          "anyOf": [
+            {
+              "enum": [
+                "green",
+                "amber",
+                "red"
+              ],
+              "type": "string"
+            },
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Colour of the falling bars: green, amber or red (the text shades colour rules use) or any #RRGGBB; Superset's default is red #E04355",
+          "title": "Decrease Color"
+        },
+        "total_color": {
+          "anyOf": [
+            {
+              "enum": [
+                "green",
+                "amber",
+                "red"
+              ],
+              "type": "string"
+            },
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Colour of the total bars: green, amber or red (the text shades colour rules use) or any #RRGGBB; Superset's default is grey #666666",
+          "title": "Total Color"
+        },
+        "increase_label": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the legend and tooltip call a rising step, e.g. \"Gain\" (Superset 6.1.0 or later; older releases say Increase)",
+          "title": "Increase Label"
+        },
+        "decrease_label": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the legend and tooltip call a falling step, e.g. \"Loss\" (Superset 6.1.0 or later; older releases say Decrease)",
+          "title": "Decrease Label"
+        },
+        "show_value": {
+          "default": false,
+          "description": "Write each step's value on its bar",
+          "title": "Show Value",
+          "type": "boolean"
+        },
+        "show_legend": {
+          "default": false,
+          "description": "A legend naming the rising, falling and total bars (Superset's waterfall shows none by default)",
+          "title": "Show Legend",
+          "type": "boolean"
+        },
+        "number_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 format for the value axis, labels and tooltip, e.g. ',.0f'",
+          "title": "Number Format"
+        },
+        "x_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title under the x axis",
+          "title": "X Axis Title"
+        },
+        "y_axis_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title of the value axis, e.g. its unit",
+          "title": "Y Axis Title"
+        },
+        "x_label_rotation": {
+          "anyOf": [
+            {
+              "enum": [
+                0,
+                45,
+                90
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rotate the step labels: 0, 45 or 90 degrees (Superset's X Tick Layout); omitted, Superset lays them out itself",
+          "title": "X Label Rotation"
+        },
+        "x_label_format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 time format for the labels of a time x_column, e.g. '%b %Y'",
+          "title": "X Label Format"
+        },
+        "row_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Limit"
+        }
+      },
+      "required": [
+        "name",
+        "dataset",
+        "type",
+        "x_column",
+        "metric"
+      ],
+      "title": "WaterfallChart",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -7174,7 +7610,8 @@
             "timeseries_bar": "#/$defs/TimeseriesBarChart",
             "timeseries_line": "#/$defs/TimeseriesLineChart",
             "timeseries_scatter": "#/$defs/TimeseriesScatterChart",
-            "treemap": "#/$defs/TreemapChart"
+            "treemap": "#/$defs/TreemapChart",
+            "waterfall": "#/$defs/WaterfallChart"
           },
           "propertyName": "type"
         },
@@ -7223,6 +7660,9 @@
           },
           {
             "$ref": "#/$defs/MixedChart"
+          },
+          {
+            "$ref": "#/$defs/WaterfallChart"
           }
         ]
       },

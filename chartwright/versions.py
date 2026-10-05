@@ -142,6 +142,38 @@ GATED_FIELDS: tuple[GatedField, ...] = (
                 "Superset {since}; {runs}, and {that} labels every segment of a stacked "
                 "mixed chart. Set only_total: false for the same labels on every release.",
     ),
+    GatedField(
+        # A bridge in its own order needs show_total: false, or the plugin adds a running
+        # total after every step (seen on 4.1.4); steps always comes with closing.
+        "steps", "6.1.0", "error",
+        "draws a running total after every step of the bridge: its waterfall has no "
+        "show_total control and adds one per x value",
+        "show_total at 6.1.0 Waterfall/controlPanel.tsx:134, read at transformProps.ts:126,148; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0, whose transformer adds a total per x value "
+        "(transformProps.ts:120-124 at 4.1.4)",
+        _charts(lambda c: c.type == "waterfall" and c.steps is not None),
+    ),
+    GatedField(
+        "total_label", "6.1.0", "warn",
+        "names the closing total Total",
+        "total_label at 6.1.0 Waterfall/controlPanel.tsx:159, read at transformProps.ts:201; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0 (TOTAL_MARK, Waterfall/constants.ts:22)",
+        _charts(lambda c: c.type == "waterfall" and c.total_label),
+    ),
+    GatedField(
+        "increase_label", "6.1.0", "warn",
+        "calls a rising step Increase in the legend and tooltip",
+        "increase_label at 6.1.0 Waterfall/controlPanel.tsx:86, read at transformProps.ts:203; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0",
+        _charts(lambda c: c.type == "waterfall" and c.increase_label),
+    ),
+    GatedField(
+        "decrease_label", "6.1.0", "warn",
+        "calls a falling step Decrease in the legend and tooltip",
+        "decrease_label at 6.1.0 Waterfall/controlPanel.tsx:116, read at transformProps.ts:204; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0",
+        _charts(lambda c: c.type == "waterfall" and c.decrease_label),
+    ),
 )
 
 

@@ -3,7 +3,7 @@
 Anything not expressible here does not exist. Validation errors are the only
 feedback channel an LLM caller gets; keep messages precise and actionable.
 
-Surface: 15 chart types, per-chart WHERE filters, a dashboard-level native
+Surface: 16 chart types, per-chart WHERE filters, a dashboard-level native
 filter bar (select, time range, numeric range, time grain, time column),
 markdown blocks, headers, dividers, and tabs.
 """
@@ -24,7 +24,7 @@ DEFAULT_ROW_LIMIT = {
     "timeseries_line": 10000, "timeseries_bar": 10000, "timeseries_area": 10000,
     "timeseries_scatter": 10000, "bar": 10000, "pie": 100, "table": 1000,
     "pivot_table": 10000, "heatmap": 10000, "histogram": 10000, "funnel": 10,
-    "treemap": 100, "mixed": 10000,
+    "treemap": 100, "mixed": 10000, "waterfall": 10000,
 }
 DEFAULT_TIME_GRAIN = "P1D"
 
@@ -1042,12 +1042,161 @@ class MixedChart(_Legend, _AxisChart, _ColorSchemeMixin):
         return self
 
 
+# Superset's own bar colours for a waterfall: the colour pickers' defaults in
+# Waterfall/controlPanel.tsx (4.1.4 and 5.0.0 :72, :81, :90; 6.1.0 :78, :108, :150),
+# the same three in transformProps.ts.
+WATERFALL_DEFAULT_HEX = {"increase_color": "#5AC189", "decrease_color": "#E04355",
+                         "total_color": "#666666"}
+# x_label_rotation -> the waterfall's and box plot's x_ticks_layout choices ("auto"
+# is Superset's default: no rotation set).
+TICK_LAYOUTS = {0: "flat", 45: "45°", 90: "90°"}
+# A bridge's closing total is named by its own order key (compiler.steps_order_sql), and
+# every step's key sorts before it: keys are '0' and three digits, so the name must
+# start with a letter or a digit 1-9, which every common collation sorts after '0'.
+CLOSING_NAME_RE = re.compile(r"^(?:[^\W\d_]|[1-9])")
+
+
+def _named_colour(field: str, v):
+    """green, amber or red (the text shades colour rules use) or #RRGGBB, upper-cased."""
+    if v is None or v in FORMAT_TEXT_HEX:
+        return v
+    if not isinstance(v, str) or not HEX_COLOUR_RE.fullmatch(v):
+        raise ValueError(f"{field} must be green, amber, red or #RRGGBB, got {v!r}")
+    return v.upper()
+
+
+def named_hex(colour: str) -> str:
+    """The #RRGGBB a named or hex colour paints."""
+    return FORMAT_TEXT_HEX.get(colour, colour)
+
+
+NamedColour = Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
+
+
+def _bar_colour(what: str, stock: str):
+    return Field(
+        default=None,
+        description=f"Colour of the {what} bars: green, amber or red (the text shades colour "
+                    f"rules use) or any #RRGGBB; Superset's default is {stock}",
+    )
+
+
+class WaterfallChart(_ChartBase):
+    """Steps that add up to a running total (Superset's Waterfall), e.g. a bridge from
+    last year's revenue through each driver to this year's. Each value of ``x_column``
+    is a bar rising or falling by ``metric``; Superset adds the closing total.
+
+    Superset draws the steps in the x_column's own order (labels A to Z). For a bridge
+    in its own order, ``steps`` lists them, opening first, and ``closing`` names the
+    dataset row that closes it (Superset 6.1.0 or later). The first step always rises
+    from zero, in the increase colour: the plugin keeps zero on its value axis only
+    while the first bar is a step (it has no axis bounds)."""
+
+    type: Literal["waterfall"]
+    x_column: str = Field(
+        description="The column whose values are the steps, one bar each, e.g. a revenue "
+                    "driver; or a time column, one bar per time_grain period")
+    metric: str = Field(
+        description="The one measure every step adds to the running total, e.g. "
+                    "SUM(delta); it must add up, so not AVG, MIN, MAX or COUNT_DISTINCT")
+    time_grain: str | None = Field(
+        default=None,
+        description="For a time x_column: the period of each bar, e.g. P1M; omitted, each "
+                    "distinct timestamp is a bar")
+    groupby: str | None = Field(
+        default=None,
+        description="Break each x value down by this column (Superset's Breakdowns): its "
+                    "values as steps, then that x value's running total")
+    steps: list[str] | None = Field(
+        default=None, min_length=2, max_length=1000,
+        description="The x_column's values in the order to draw them, opening first, e.g. "
+                    "[\"FY2025\", \"Price\", \"Volume\", \"Mix\"]; values not listed are "
+                    "drawn after them, A to Z. Needs closing. Superset 6.1.0 or later: "
+                    "older releases draw a running total after every step, so check, "
+                    "apply and plan refuse it there")
+    closing: str | None = Field(
+        default=None, min_length=1,
+        description="With steps: the x_column value of the row that closes the bridge, "
+                    "e.g. \"FY2026\". Superset draws it last, as the running total in "
+                    "total_color, and names it so in the legend and tooltip; the row's own "
+                    "value is not drawn, so a closing that doesn't reconcile with the steps "
+                    "shows their sum (apply's data check says so). It must start with a "
+                    "letter or a digit 1-9")
+    total_label: str | None = Field(
+        default=None, min_length=1,
+        description="Without steps: the name of the closing total Superset adds, e.g. "
+                    "\"FY2026\" (Superset 6.1.0 or later; older releases name it Total)")
+    increase_color: NamedColour | None = _bar_colour("rising", "green #5AC189")
+    decrease_color: NamedColour | None = _bar_colour("falling", "red #E04355")
+    total_color: NamedColour | None = _bar_colour("total", "grey #666666")
+    increase_label: str | None = Field(
+        default=None, min_length=1,
+        description="What the legend and tooltip call a rising step, e.g. \"Gain\" "
+                    "(Superset 6.1.0 or later; older releases say Increase)")
+    decrease_label: str | None = Field(
+        default=None, min_length=1,
+        description="What the legend and tooltip call a falling step, e.g. \"Loss\" "
+                    "(Superset 6.1.0 or later; older releases say Decrease)")
+    show_value: bool = Field(default=False, description="Write each step's value on its bar")
+    show_legend: bool = Field(
+        default=False, description="A legend naming the rising, falling and total bars "
+                                   "(Superset's waterfall shows none by default)")
+    number_format: str | None = Field(
+        default=None, description="d3 format for the value axis, labels and tooltip, e.g. ',.0f'")
+    x_axis_title: str | None = Field(default=None, description="Title under the x axis")
+    y_axis_title: str | None = Field(default=None, description="Title of the value axis, e.g. its unit")
+    x_label_rotation: Literal[0, 45, 90] | None = Field(
+        default=None, description="Rotate the step labels: 0, 45 or 90 degrees (Superset's "
+                                  "X Tick Layout); omitted, Superset lays them out itself")
+    x_label_format: str | None = Field(
+        default=None, description="d3 time format for the labels of a time x_column, e.g. '%b %Y'")
+    row_limit: int | None = Field(default=None, ge=1)
+
+    @field_validator("increase_color", "decrease_color", "total_color", mode="before")
+    @classmethod
+    def _colours(cls, v, info):
+        return _named_colour(info.field_name, v)
+
+    @model_validator(mode="after")
+    def _bridge(self) -> "WaterfallChart":
+        if self.steps is None:
+            if self.closing is not None:
+                raise ValueError(f"chart {self.name!r}: closing needs steps (the bridge's order)")
+            return self
+        dupes = sorted({s for s in self.steps if self.steps.count(s) > 1})
+        if dupes:
+            raise ValueError(f"chart {self.name!r}: steps lists {dupes} more than once")
+        if any(not s for s in self.steps):
+            raise ValueError(f"chart {self.name!r}: steps must be non-empty values of {self.x_column!r}")
+        if self.closing is None:
+            raise ValueError(f"chart {self.name!r}: steps needs closing: the x_column value of "
+                             "the row that closes the bridge, drawn as its total")
+        if self.closing in self.steps:
+            raise ValueError(f"chart {self.name!r}: closing {self.closing!r} is also a step; "
+                             "list the opening and the steps, and name the closing row apart")
+        if not CLOSING_NAME_RE.match(self.closing):
+            raise ValueError(f"chart {self.name!r}: closing {self.closing!r} must start with a "
+                             "letter or a digit 1-9 (Superset sorts the bars by keys that "
+                             "must come before the closing's name)")
+        for field in ("time_grain", "groupby", "total_label"):
+            if getattr(self, field) is not None:
+                why = ("the closing row names the total" if field == "total_label"
+                       else "steps orders the values of one categorical x_column")
+                raise ValueError(f"chart {self.name!r}: {field} does not go with steps ({why})")
+        return self
+
+    def colour_hex(self, field: str) -> str:
+        """The #RRGGBB Superset paints for one of the three bar colours."""
+        value = getattr(self, field)
+        return named_hex(value) if value is not None else WATERFALL_DEFAULT_HEX[field]
+
+
 Chart = Annotated[
     Union[
         BigNumberChart, BigNumberTrendChart, TimeseriesLineChart, TimeseriesBarChart,
         TimeseriesAreaChart, TimeseriesScatterChart, BarChart, PieChart, TableChart,
         PivotTableChart, HeatmapChart, HistogramChart, FunnelChart, TreemapChart,
-        MixedChart,
+        MixedChart, WaterfallChart,
     ],
     Field(discriminator="type"),
 ]
@@ -1055,7 +1204,7 @@ Chart = Annotated[
 CHART_TYPES = (
     "big_number_total", "big_number_trend", "timeseries_line", "timeseries_bar",
     "timeseries_area", "timeseries_scatter", "bar", "pie", "table", "pivot_table",
-    "heatmap", "histogram", "funnel", "treemap", "mixed",
+    "heatmap", "histogram", "funnel", "treemap", "mixed", "waterfall",
 )
 
 
@@ -2152,6 +2301,7 @@ SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
     "funnel": {"label_type": "key"},
     "treemap": {"label_type": "key_value"},
     "heatmap": {"color_scheme": HEATMAP_DEFAULT_SCHEME},
+    "waterfall": dict(WATERFALL_DEFAULT_HEX),
     "dashboard": {"refresh_frequency": 0, "filter_bar_orientation": "vertical"},
 }
 

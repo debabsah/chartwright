@@ -150,14 +150,16 @@ def test_fixture_slugs_are_distinct_and_carry_a_tool_prefix():
 
 def test_the_live_job_applies_kitchen_sink_and_every_live_fixture():
     """Each Superset version in the live matrix applies the kitchen sink and
-    every tests/fixtures/live_*.json spec through tools/ci_live_check.py."""
+    every tests/fixtures/live_*.json spec through tools/ci_live_check.py, or a live
+    tool of its own that needs more than an apply (ci_live_waterfall.py makes the
+    bridge's dataset first)."""
     import yaml
 
     assert len(LIVE_FIXTURES) >= 2, "expected the live display and dashboard controls fixtures"
     ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
     live = ci["jobs"]["live"]
     assert set(live["strategy"]["matrix"]["superset"]) == {"4.1.4", "5.0.0", "6.1.0"}
-    runs = [s["run"] for s in live["steps"] if "ci_live_check.py" in s.get("run", "")]
+    runs = [s["run"] for s in live["steps"] if re.search(r"tools/ci_live_\w+\.py", s.get("run", ""))]
     wanted = ["tests/fixtures/kitchen_sink.json"] + [
         f"tests/fixtures/{p.name}" for p in LIVE_FIXTURES]
     for fixture in wanted:

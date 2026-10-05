@@ -38,7 +38,7 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "",
         f"- Height budget per tab: {p.fold_units} units (~{p.fold_units * 40}px). Over budget -> tabs or prune.",
         f"- KPI band: {p.kpi_row_min}-{p.kpi_row_max} big numbers, {p.kpi_height} units tall, first band on the page.",
-        f"- Axis charts (timeseries/bar/heatmap/histogram): >= {p.min_axis_height} units tall, 8 is the comfortable default.",
+        f"- Axis charts (timeseries/bar/heatmap/histogram/waterfall): >= {p.min_axis_height} units tall, 8 is the comfortable default.",
         f"- At most {p.max_row_charts} axis charts per row; below 3/12 width a chart is unreadable.",
         "- Pie/donut: >= 5/12 wide, >= 8 tall. Heatmap: >= 5/12 wide (7/12 when many columns), >= 6 tall.",
         f"- Vertical bars: <= {p.vbar_max_categories} categories, then flip horizontal; an ordered axis "

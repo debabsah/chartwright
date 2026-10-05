@@ -11,6 +11,7 @@
 | Distribution of one column | `histogram`, 20-30 bins; trim long tails with a WHERE filter and say so in the title |
 | Staged conversion | `funnel`, 3-8 ordered stages |
 | Hierarchical share | `treemap`, at most 2 levels |
+| A bridge between two totals | `waterfall`: the opening, 3-12 steps that add up, the closing; `steps` and `closing` keep its order |
 
 - A `row_limit` on a pie redefines the whole: the shown slices read as 100%,
   so a truncated pie lies about share. Prefer a horizontal bar for top-N; a
@@ -30,6 +31,13 @@
 - A paged table (`page_length`) needs room for one page and its pager, not
   for every row; a timeseries with many groups keeps the top few with
   `series_limit`.
+- A waterfall explains how one total became another (last year to this year,
+  plan to actual) through steps that ADD UP: one SUM or COUNT of the change,
+  never an average or a distinct count. Not for shares (a bar) or trends (a
+  line). Put the opening, each step and the closing in the dataset as rows of
+  one step column; list the opening and steps in `steps`, the closing row in
+  `closing` (6.1.0+). Superset draws the opening as a rising bar from zero:
+  name it by its period. Set the three colours and `show_value`.
 - One dominant category flattening its siblings is the data talking: note it
   or filter it, don't hide it.
 - Every chart with a time axis should tolerate the dashboard time filter;

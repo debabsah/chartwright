@@ -17,9 +17,13 @@ from .client import SupersetClient
 from .compiler import compile_bundle, filter_id
 from .decompile import decompile_live
 from .spec import (
-    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
-    without_superset_defaults,
+    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, named_hex,
+    row_items, without_superset_defaults,
 )
+
+# Colour fields that take green, amber or red or a #RRGGBB: a name and its own hex paint
+# the same, and decompile reads that hex back as the name, so plan compares the hex.
+NAMED_COLOUR_FIELDS = ("trend_color", "increase_color", "decrease_color", "total_color")
 
 # Dashboard settings `plan` compares one by one (dashboard_settings_changed).
 DASHBOARD_SETTINGS = (
@@ -125,6 +129,9 @@ def _normalize(spec: DashboardSpec) -> dict:
         if chart["type"] in ("timeseries_line", "timeseries_bar", "timeseries_area",
                              "timeseries_scatter", "big_number_trend"):
             chart.setdefault("time_grain", DEFAULT_TIME_GRAIN)
+        for field in NAMED_COLOUR_FIELDS:
+            if chart.get(field):
+                chart[field] = named_hex(chart[field])
         _normalize_tags(chart)
     data["charts"].sort(key=lambda c: c["name"])
     _normalize_tags(data["dashboard"])

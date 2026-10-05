@@ -17,7 +17,7 @@ def _copy():
 
 def test_kitchen_sink_valid():
     spec = load_spec(SINK)
-    assert len(spec.charts) == 16
+    assert len(spec.charts) == 17
     assert {c.type for c in spec.charts} == set(CHART_TYPES)  # every type covered
     assert len(spec.filters) == 3
     assert spec.layout.tabs and len(spec.layout.tabs) == 2

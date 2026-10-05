@@ -88,6 +88,10 @@ def test_the_registry_gates_the_unsafe_fields_and_warns_for_the_ignored_ones():
         "subtitle": ("6.0.0", "warn"),
         "column_headers": ("6.0.0", "warn"),
         "show_value": ("6.0.0", "warn"),  # on a stacked mixed query: only_total's labels
+        "steps": ("6.1.0", "error"),  # a bridge needs show_total: false (6.1.0)
+        "total_label": ("6.1.0", "warn"),
+        "increase_label": ("6.1.0", "warn"),
+        "decrease_label": ("6.1.0", "warn"),
     }
     schema = json.dumps(json_schema())
     for g in GATED_FIELDS:

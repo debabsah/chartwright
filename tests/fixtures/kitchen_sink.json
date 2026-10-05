@@ -264,6 +264,16 @@
       "number_format_secondary": ",.2f",
       "x_label_format": "%b %y",
       "x_label_every": true
+    },
+    {
+      "name": "Sales by Status",
+      "type": "waterfall",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "x_column": "status",
+      "metric": "SUM(sales)"
     }
   ],
   "layout": {
@@ -315,6 +325,9 @@
           ],
           [
             "Sales and Price by Month"
+          ],
+          [
+            "Sales by Status"
           ]
         ]
       }

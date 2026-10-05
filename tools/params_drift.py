@@ -84,6 +84,12 @@ SINCE = {
     "big_number:subtitle": "6.0.0",  # BigNumberWithTrendline controlPanel.tsx:33 subtitleControl
     "mixed_timeseries:only_total": "6.0.0",  # MixedTimeseries controlPanel.tsx:204 at 6.0.0
     "mixed_timeseries:only_totalB": "6.0.0",
+    # Waterfall/controlPanel.tsx at 6.1.0 (:86, :116, :134, :159); none at 6.0.0. A bridge's
+    # show_total is refused before 6.1.0 (versions.py: steps); the labels warn.
+    "waterfall:increase_label": "6.1.0",
+    "waterfall:decrease_label": "6.1.0",
+    "waterfall:show_total": "6.1.0",
+    "waterfall:total_label": "6.1.0",
 }
 
 # The reverse: keys a later release dropped, still written for the releases before

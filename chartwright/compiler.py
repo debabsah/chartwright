@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import uuid
 import zipfile
 from decimal import Decimal
@@ -24,6 +25,7 @@ from .spec import (
     FUNNEL_LABEL_TYPES,
     HEATMAP_DEFAULT_SCHEME,
     PIVOT_ORDER,
+    TICK_LAYOUTS,
     DashboardSpec,
     DividerBlock,
     HeaderBlock,
@@ -31,6 +33,8 @@ from .spec import (
     _AxisChart,
     _ColorSchemeMixin,
     _SeriesDisplay,
+    hex_to_rgb,
+    named_hex,
     parse_metric,
     row_items,
     without_superset_defaults,
@@ -62,6 +66,7 @@ VIZ_TYPE = {
     "funnel": "funnel",
     "treemap": "treemap_v2",
     "mixed": "mixed_timeseries",
+    "waterfall": "waterfall",
 }
 # 'bar' and 'timeseries_bar' share a viz_type; the compiler marks categorical
 # bars in params so the decompiler can tell them apart (x column not temporal
@@ -488,6 +493,8 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["label_type"] = chart.label_type
         if chart.number_format:
             p["number_format"] = chart.number_format
+    elif t == "waterfall":
+        _waterfall_params(chart, p, metric)
 
     if isinstance(chart, _SeriesDisplay):
         _series_display_params(chart, p, metric)
@@ -551,6 +558,8 @@ def time_binding(chart, ds) -> tuple[str, str] | None:
     if chart.type in TIME_AXIS_TYPES:
         return ("axis", chart.time_column)
     if chart.type == "mixed" and mixed_time_axis(chart, ds):
+        return ("axis", chart.x_column)
+    if chart.type == "waterfall" and waterfall_time_axis(chart, ds):
         return ("axis", chart.x_column)
     if ds.main_dttm_col:
         return ("granularity", ds.main_dttm_col)
@@ -687,6 +696,112 @@ def mixed_time_axis(chart, ds) -> bool:
     The compiler and smoke share it, so the smoke query matches the chart."""
     temporal = ds.is_temporal(chart.x_column)
     return bool(temporal or (temporal is None and chart.time_grain))
+
+
+def waterfall_time_axis(chart, ds) -> bool:
+    """Whether a waterfall's steps are periods of a time column, by the same test as a
+    mixed chart's. A bridge's own order (steps) is always categorical."""
+    return chart.steps is None and mixed_time_axis(chart, ds)
+
+
+# A bridge in its own order (WaterfallChart.steps) draws its bars in the order of an x
+# axis the compiler writes: a CASE over the step column giving each step a key, the
+# closing row its own name. The plugin groups and sorts the rows by the x axis and then
+# by the Breakdowns column (Waterfall/buildQuery.ts:27-35, orderby every column
+# ascending, all three releases); with the step column as the breakdown, each bar is
+# labelled by its step and the closing row, matched by total_label, is drawn as the
+# running total under its x value: its name (Waterfall/transformProps.ts at 6.1.0,
+# :240-254 and :326-330). show_total: false keeps the plugin from adding a running total
+# after every step (:117-134), a 6.1.0 control: older plugins always add one.
+STEPS_ORDER_LABEL = "Bridge order"
+STEPS_OTHER_KEY = "0zzz"  # values steps doesn't list: after every listed step, before the closing
+_PLAIN_COLUMN = re.compile(r"[a-z_][a-z0-9_]*")
+
+
+def _sql_text(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _sql_column(column: str) -> str:
+    # A lowercase identifier as it is; anything else double-quoted (ANSI SQL).
+    return column if _PLAIN_COLUMN.fullmatch(column) else '"' + column.replace('"', '""') + '"'
+
+
+def steps_order_sql(column: str, steps: list[str], closing: str) -> str:
+    """The bridge's x axis: '0000', '0001', ... per step, the closing's own name, and
+    '0zzz' for anything else. Every key starts with '0', which sorts before a letter or
+    a digit 1-9 in every common collation (the spec holds closing to that)."""
+    whens = [f"WHEN {_sql_text(s)} THEN '0{i:03d}'" for i, s in enumerate(steps)]
+    whens.append(f"WHEN {_sql_text(closing)} THEN {_sql_text(closing)}")
+    return f"CASE {_sql_column(column)} {' '.join(whens)} ELSE '{STEPS_OTHER_KEY}' END"
+
+
+_SQL_TEXT = r"'(?:[^']|'')*'"
+_STEPS_SQL = re.compile(
+    rf"CASE (?P<column>[a-z_][a-z0-9_]*|\"(?:[^\"]|\"\")+\") "
+    rf"(?P<whens>(?:WHEN {_SQL_TEXT} THEN '0\d{{3}}' )+)"
+    rf"WHEN (?P<closing>{_SQL_TEXT}) THEN (?P=closing) ELSE '{STEPS_OTHER_KEY}' END", re.S)
+
+
+def parse_steps_order_sql(sql: str) -> tuple[str, list[str], str] | None:
+    """(column, steps, closing) from an x axis steps_order_sql wrote, or None."""
+    m = _STEPS_SQL.fullmatch(sql or "")
+    if not m:
+        return None
+
+    def text(lit: str) -> str:
+        return lit[1:-1].replace("''", "'")
+
+    pairs = re.findall(rf"WHEN ({_SQL_TEXT}) THEN '0(\d{{3}})'", m.group("whens"))
+    if [int(k) for _, k in pairs] != list(range(len(pairs))):
+        return None
+    column = m.group("column")
+    if column.startswith('"'):
+        column = column[1:-1].replace('""', '"')
+    return column, [text(lit) for lit, _ in pairs], text(m.group("closing"))
+
+
+def _waterfall_params(chart, p: dict, metric) -> None:
+    """Waterfall/controlPanel.tsx at 4.1.4, 5.0.0 and 6.1.0; the labels and show_total
+    are 6.1.0 controls. Emitted only when set, but for the query keys."""
+    if chart.steps:
+        p["x_axis"] = {"expressionType": "SQL", "label": STEPS_ORDER_LABEL,
+                       "sqlExpression": steps_order_sql(chart.x_column, chart.steps, chart.closing)}
+        p["groupby"] = [chart.x_column]
+        p["show_total"] = False
+        p["total_label"] = chart.closing
+    else:
+        p["x_axis"] = chart.x_column
+        p["groupby"] = [chart.groupby] if chart.groupby else []
+        if chart.time_grain:
+            # Written as the spec says: the backend buckets a temporal x axis only and
+            # leaves a categorical one as it is (seen on 4.1.4 and 6.1.0).
+            p["time_grain_sqla"] = chart.time_grain
+        if chart.total_label:
+            p["total_label"] = chart.total_label
+    p["metric"] = metric(chart.metric)
+    p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT["waterfall"]
+    # The colour pickers store {r, g, b, a}; transformProps paints rgbToHex(r, g, b).
+    for field in ("increase_color", "decrease_color", "total_color"):
+        if getattr(chart, field):
+            p[field] = hex_to_rgb(named_hex(getattr(chart, field)))
+    for field in ("increase_label", "decrease_label"):
+        if getattr(chart, field):
+            p[field] = getattr(chart, field)
+    if chart.show_value:
+        p["show_value"] = True
+    if chart.show_legend:
+        p["show_legend"] = True  # the control's default is false
+    if chart.number_format:
+        p["y_axis_format"] = chart.number_format
+    if chart.x_axis_title:
+        p["x_axis_label"] = chart.x_axis_title
+    if chart.y_axis_title:
+        p["y_axis_label"] = chart.y_axis_title
+    if chart.x_label_rotation is not None:
+        p["x_ticks_layout"] = TICK_LAYOUTS[chart.x_label_rotation]
+    if chart.x_label_format:
+        p["x_axis_time_format"] = chart.x_label_format
 
 
 def _x_label_params(chart: _AxisChart, p: dict) -> None:

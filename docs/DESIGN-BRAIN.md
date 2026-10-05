@@ -1,8 +1,9 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 7** (4 added `narrative.color-scheme`; 5 the
+> **Status: SHIPPED, design brain 9** (4 added `narrative.color-scheme`; 5 the
 > design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
-> a null record after an edit, and `default.stale-record`). This page is both the design and the
+> a null record after an edit, and `default.stale-record`; 9 the waterfall's rules
+> and fills, §7 "Waterfalls"). This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -294,7 +295,7 @@ several offline rules additionally sharpen or stand down when probes are
 available (noted in their text). `since` is the design-brain version that
 introduced the rule: "2" the post-review batch
 (docs/DESIGN-BRAIN-V2.md), "3" the review burn-down (§15.11 onward), "4"
-the colour-scheme check, "5" the design defaults (§16).
+the colour-scheme check, "5" the design defaults (§16), "9" the waterfall.
 
 The table below is GENERATED from the registry by
 `tools/gen_rule_table.py --write`; do not hand-edit it. `tests/test_docs.py`
@@ -320,6 +321,11 @@ fails when it drifts.
 | `chart.treemap-vs-bar` | info | - | ⚡ | 2 | a one-level treemap of few categories is a worse bar chart |
 | `chart.trend-grain` | info | - | - | 2 | trend tiles at a fine grain over full history draw thousands of points in a small card |
 | `chart.vbar-categories` | warn | ✔ | - | 1 | vertical bars drop labels past ~8 categories; rank with horizontal bars |
+| `chart.waterfall-additive` | warn | - | - | 9 | a waterfall's steps must add up: SUM or COUNT of one measure, never AVG, MIN, MAX or COUNT_DISTINCT |
+| `chart.waterfall-axis-titles` | info | - | - | 9 | a waterfall's axis titles sit where Superset puts them, over wide tick labels |
+| `chart.waterfall-colors` | info/warn | - | - | 9 | a waterfall's rising, falling and total bars take colours set for the dashboard, each at least 3:1 against the panel |
+| `chart.waterfall-order` | info | - | - | 9 | a bridge reads in its own order, and Superset draws a waterfall's steps A to Z unless steps orders them |
+| `chart.waterfall-steps` | warn | - | - | 9 | a waterfall past ~12 steps stops reading as a bridge |
 | `data.grain-vs-range` | warn | - | - | 1 | the time grain should yield a sane number of points for the range |
 | `data.row-limit-intent` | info | - | - | 1 | row limits doing design work should be deliberate, not defaults |
 | `data.top-n-sort` | warn | - | - | 2 | a limit without an order is a sample, not a ranking |
@@ -331,7 +337,7 @@ fails when it drifts.
 | `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows gets a search box, when its rows still fit beside it (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
 | `default.stale-record` | info | ✔ | - | 7 | design.filled names only charts and fields the spec has |
-| `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or tall enough to space the labels (horizontal) |
+| `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical, and a waterfall's steps) or tall enough to space the labels (horizontal) |
 | `default.x-label-format` | info | ✔ | - | 5 | a time axis labels its points in its grain's own format ('Sep 2026' by month); day and week labels only over a year or less |
 | `filters.count` | warn | - | - | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
 | `filters.duplicate-column` | info | - | - | 2 | two filters on the same column fight each other |
@@ -371,6 +377,39 @@ fails when it drifts.
 | `standard.waiver-expired` | error | - | - | 6 | no waiver naming this dashboard in standards/waivers.yaml has expired (checked by standards check and advise; a deploy warns instead) |
 
 <!-- END rule-table -->
+
+### Waterfalls
+
+A waterfall is a bridge: one total becoming another through steps that add
+up. Five rules hold a spec to that, each from what Superset's Waterfall plugin
+does (`docs/CONTRACTS.md`, "A waterfall"):
+
+- `chart.waterfall-additive` (warn): the plugin adds every step to a running
+  total and draws it as the closing, so an `AVG`, `MIN`, `MAX` or
+  `COUNT_DISTINCT` metric draws a closing that means nothing.
+- `chart.waterfall-order` (info): without `steps`, the plugin orders the bars
+  by the x column, so a categorical bridge reads A to Z. Not for a time column
+  (`time_grain`, or a column the dataset reports temporal) or a numeric one,
+  whose own order is the reading order.
+- `chart.waterfall-colors` (info, or warn per colour): Superset's stock green
+  `#5AC189` is 2.2:1 against the white chart card, under the 3:1 WCAG 2.1
+  (1.4.11) asks of a graphic; the stock red and grey pass. Left stock, any of
+  the three colours is an info finding that names them; a colour the spec
+  sets below 3:1 is a warn. Contrast is the rule's universal part; which
+  colours to use is house style, so it has no fix.
+- `chart.waterfall-steps` (warn): past ~12 bars the step labels drop. Offline
+  it counts `steps`; with `--profile` it probes an unordered x column's values.
+- `chart.waterfall-axis-titles` (info): the plugin puts both axis titles at a
+  fixed distance with no margin control, so a y title can sit under tick labels
+  such as `$3.00M`, and rotated step labels hang over an x title (both seen on
+  4.1.4 and 6.1.0). The unit belongs in the chart's title or number format.
+
+Superset draws the opening as the first step, rising from zero in the
+increase colour, and no spec can make it a grey total: the plugin's value axis
+does not hold zero (ECharts `scale: true`, no bounds control), and the first
+bar is what keeps zero on it. Drawn as a total row, the opening floats the axis
+up to the smallest total and is cut away (seen on 6.1.0). The guideline tells
+an author to name the opening by its period instead.
 
 Anything fuzzier than this (reading order beyond KPI-first, grouping
 related metrics, matched granularity across a row, insight-stating titles)
@@ -1076,7 +1115,7 @@ thresholds; those marked judgement are usability choices, not pixel facts.
 | `default.page-length` | `page_length` | the whole rows that fit beside the page-size bar and the pager | a table with an explicit `row_limit` larger than the rows that fit on one page, and a page of at least `page_min_rows` (3, judgement). The one grid model `size.table-window` reads, so the fill can never make that rule ask for more height |
 | `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, judgement), when the bar the box sits in hides no row: a paged table already draws it, and a table on one page must still fit every row beside it |
 | `default.single-series-legend` | `show_legend` | `false` | a timeseries chart or categorical bar with one metric, no groupby, no series limit, no goal lines and no legend placement written, whose shown title or `y_axis_title` contains the metric's label, and that label is at least 3 characters long. Never a heatmap, whose legend is the colour scale |
-| `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17) |
+| `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17). A waterfall with no breakdown and at most 12 bars counting the total (its `steps` and closing, or an explicit `row_limit` and the total), at least 6/12 wide: a bridge is read by its steps' changes |
 
 `narrative.big-number-format` stands down where `default.count-format`
 offers the same remedy with a fix: one remedy, one finding.

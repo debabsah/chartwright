@@ -5,7 +5,19 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ## Unreleased
 
+### Added
+
+- A waterfall chart (`"type": "waterfall"`, Superset's Waterfall): steps that add up to a running total, such as a bridge from last year's revenue through each driver to this year's. Compiled, decompiled, compared by `plan` and checked by `apply` on 4.1.4, 5.0.0 and 6.1.0.
+  - `x_column` holds the steps (or a time column, one bar per `time_grain` period), `metric` the one measure they add, and `groupby` an optional breakdown per x value.
+  - `increase_color`, `decrease_color` and `total_color` take green, amber, red or any `#RRGGBB`, and replace Superset's stock green, red and grey on every release. `show_value`, `show_legend`, `number_format`, axis titles, `x_label_rotation` (0, 45 or 90) and `x_label_format` set the rest.
+  - On Superset 6.1.0 or later, `steps` lists a bridge's values in its own order, opening first, and `closing` names the row that closes it, drawn last as the running total in the total colour: `"steps": ["FY2025", "Price", "Volume"], "closing": "FY2026"`. Older releases draw a running total after every step, so `check`, `apply` and `plan` refuse `steps` there. `total_label`, `increase_label` and `decrease_label` name the bars on 6.1.0 and warn before it.
+  - `apply`'s data check says when a bridge's step or closing has no row, a value isn't in `steps`, or the closing row doesn't equal the steps added up (Superset draws the sum either way).
+- The design brain is version 9. A waterfall gets `chart.waterfall-additive` (warn: `AVG`, `MIN`, `MAX` or `COUNT_DISTINCT` steps don't add up), `chart.waterfall-steps` (warn: past ~12 bars), `chart.waterfall-order` (info: a categorical waterfall without `steps` reads A to Z), `chart.waterfall-colors` (info for Superset's stock colours, whose green is 2.2:1 against the panel; warn for a colour under 3:1) and `chart.waterfall-axis-titles` (info: Superset puts the titles over wide or rotated tick labels). `advise --fix` fills a waterfall's `show_value` when it has at most 12 bars, and `number_format` `,.0f` on a count. The brief's chart-choice guide says when a waterfall is the right form.
+- `tools/extract_panel_contract.py` extracts the waterfall's options for the params contract from its control panel at each release; `tools/ci_live_waterfall.py` builds a bridge on a virtual dataset in CI.
+
 ### Fixed
+
+- `plan` reads a `trend_color` written as the hex of a named shade (`#1B7F3B` for green) as equal to the dashboard, which decompile reads back as the name; before, the chart showed as changed after every apply. The waterfall's colours compare the same way.
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 

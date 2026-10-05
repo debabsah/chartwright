@@ -209,6 +209,40 @@
       "y_axis_log_secondary": true,
       "y_axis_truncate": true,
       "legend_position": "bottom"
+    },
+    {
+      "name": "Status Bridge",
+      "type": "waterfall",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "status",
+      "metric": "SUM(sales)",
+      "steps": ["Shipped", "Resolved", "On Hold", "Disputed", "In Process"],
+      "closing": "Cancelled",
+      "increase_color": "green",
+      "decrease_color": "red",
+      "total_color": "#5B6770",
+      "increase_label": "Gain",
+      "decrease_label": "Loss",
+      "show_value": true,
+      "show_legend": true,
+      "number_format": ",.0f",
+      "x_axis_title": "Status",
+      "y_axis_title": "Sales",
+      "x_label_rotation": 45,
+      "row_limit": 50
+    },
+    {
+      "name": "Yearly Sales Steps",
+      "type": "waterfall",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "order_date",
+      "time_grain": "P1Y",
+      "groupby": "deal_size",
+      "metric": "SUM(sales)",
+      "total_label": "All years",
+      "x_label_format": "%Y",
+      "x_label_rotation": 0,
+      "time_range": "Last year"
     }
   ],
   "layout": {
@@ -221,7 +255,8 @@
       ["Top Customers"],
       ["Sales Pivot"],
       ["Line by Deal Size", "Price Spread"],
-      ["Revenue and Orders"]
+      ["Revenue and Orders"],
+      ["Status Bridge", "Yearly Sales Steps"]
     ]
   }
 }

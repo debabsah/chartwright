@@ -369,3 +369,8 @@ def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
         _check_metric(chart.metric, chart.name, ds, res)
         for g in chart.groupby:
             _check_column(g, chart.name, ds, res, "groupby")
+    elif t == "waterfall":
+        _check_metric(chart.metric, chart.name, ds, res)
+        _check_column(chart.x_column, chart.name, ds, res, "x_column")
+        if chart.groupby:
+            _check_column(chart.groupby, chart.name, ds, res, "groupby")

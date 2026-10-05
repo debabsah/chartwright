@@ -57,6 +57,11 @@ jobs:
       - name: Dashboard-controls apply + slice-id stability
         if: ${{ !cancelled() }}
         run: python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
+      # A waterfall bridge on a virtual dataset made for it: built and read back on
+      # 6.1.0; refused before 6.1.0, where the plain waterfalls are built instead.
+      - name: Waterfall bridge apply + round trip
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_waterfall.py --base-url http://localhost:8098 --spec tests/fixtures/live_waterfall.json
       # A chart added in Superset: re-apply takes it off the dashboard (4.1.4 and 5.0.0
       # merge chart links on import), never deletes it, and restores match their backups.
       - name: UI-added chart taken off on re-apply

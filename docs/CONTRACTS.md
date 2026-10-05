@@ -255,8 +255,9 @@ running the tool against real instances of all three releases.
   development build reports 0.0.0, which counts as unknown.
 - **A field a release can't take is refused before anything is written.**
   `chartwright/versions.py` lists each version-gated field with the first
-  release that takes it: `tags` and `theme` (6.0.0) and
-  `show_chart_timestamps` (6.1.0), for the reasons above. Against an older instance, the spec gets
+  release that takes it: `tags` and `theme` (6.0.0), and
+  `show_chart_timestamps` and a waterfall's `steps` (6.1.0), for the reasons above
+  and in "A waterfall" below. Against an older instance, the spec gets
   a `superset_version_too_old` error at the resolve stage, so `apply` stops
   before its backup, import or any update; remove the field for that
   instance. When the instance doesn't report its version, the error is
@@ -290,7 +291,9 @@ running the tool against real instances of all three releases.
   (`MixedTimeseries/transformProps.ts`, 6.0.0 `:178-179`, 6.1.0
   `:186-187`). That warning names `show_value`, the field the spec wrote,
   since `only_total` is on by default; `only_total: false` asks for every
-  segment on every release, so it raises nothing. These come back in
+  segment on every release, so it raises nothing. A waterfall's
+  `total_label`, `increase_label` and `decrease_label` are 6.1.0 controls;
+  older releases name the bars Total, Increase and Decrease. These come back in
   `version_warnings`, and the dashboard still builds.
 - **6.0.x is checked against its source, not tested live.** Each field's
   first release, 6.0.0 or 6.1.0, was read from the 6.0.0 tag, so `check`,
@@ -315,7 +318,9 @@ running the tool against real instances of all three releases.
   controls the tool does not emit yet; `--check` fails when the JSON no
   longer matches the source. Among the controls 6.1.0 declares and 5.0.0
   does not are `only_total` and `only_totalB`, both new in 6.0.0
-  (`MixedTimeseries/controlPanel.tsx:204` at 6.0.0).
+  (`MixedTimeseries/controlPanel.tsx:204` at 6.0.0). The `waterfall` entry
+  is extracted the same way by `tools/extract_panel_contract.py`, from
+  `Waterfall/controlPanel.tsx` and the `showValueControl` it imports.
 - **Formula annotation layers draw the same way in every release.** The line,
   bar, area, scatter and mixed panels all include the annotation section
   (`chart-controls/src/sections/annotationsAndLayers.tsx:31`), and both
@@ -410,6 +415,47 @@ running the tool against real instances of all three releases.
   With `series_limit` the same control ranks the series, so the tool leaves
   it to the series limit; there a `row_limit` still keeps the largest values,
   and `advise` warns about it (`data.top-n-sort`).
+- **A waterfall draws its bars in the order of its query.** The plugin
+  queries the x axis and then the breakdown, each ascending
+  (`Waterfall/buildQuery.ts:27-35`, all three releases), stacks each bar on
+  the running total and colours it by sign. Its stock colours are increase
+  `rgb(90,193,137)`, decrease `rgb(224,67,85)` and total `rgb(102,102,102)`
+  (`Waterfall/controlPanel.tsx`, 4.1.4 and 5.0.0 `:72`, `:81`, `:90`; 6.1.0
+  `:78`, `:108`, `:150`), and the spec's three colours replace them on every
+  release. Without a breakdown, every x value is a step and the plugin adds a
+  closing total, named by `total_label` from 6.1.0 (`controlPanel.tsx:159`,
+  read at `transformProps.ts:201`) and Total before. The step order is the x
+  column's own, so labels read A to Z.
+- **A bridge in its own order needs 6.1.0.** With a breakdown, a bar is
+  labelled by the breakdown's value, and a row whose breakdown is the total's
+  name is drawn as the running total under its x value
+  (`transformProps.ts:240-254`, `:326-330` at 6.1.0). The compiler builds
+  `steps` on that: the x axis is a CASE over the step column giving each step a
+  key (`'0000'`, `'0001'`, ...), and the `closing` row its own name; the
+  breakdown is the step column, `total_label` the closing, and `show_total`
+  false, a 6.1.0 control (`controlPanel.tsx:134`, read at `:126` and `:148`)
+  that stops the plugin adding a running total after every step. 4.1.4, 5.0.0
+  and 6.0.0 always add one (`transformProps.ts:120-124` at 4.1.4; seen drawn
+  on 4.1.4), so `check`, `apply` and `plan` refuse `steps` there. Every key
+  starts with `0`, which sorts before a letter or a digit 1-9 in binary and
+  linguistic collations alike, so the spec holds `closing` to that first
+  character. The column goes into the SQL as it is when it is a lowercase
+  identifier, and double-quoted (ANSI) otherwise. Verified live on 6.1.0: the
+  bars drew in order, the closing grey under its name, and `plan` was clean.
+- **The opening rises from zero in the increase colour.** The value axis
+  doesn't keep zero on it (`defaultYAxis` `scale: true`, `defaults.ts:25-28`,
+  all three releases) and the panel has no axis bounds; the first bar, a step,
+  is what keeps zero there. Drawn as a total, the opening floats the axis up to
+  the smallest total and disappears (seen on 6.1.0), so a spec can't make it
+  one.
+- **A waterfall's time grain is written as the spec says.** The backend
+  buckets a temporal x axis and leaves a categorical one as it is (seen on
+  4.1.4 and 6.1.0), so `time_grain` round-trips whatever the column's type.
+- **A waterfall's axis titles have no margin control.** The plugin sets both
+  mid-axis with ECharts' default gap and a fixed pad
+  (`transformProps.ts:445-464` at 6.1.0, the same at 4.1.4), so a y title
+  can sit under wide tick labels and rotated labels hang over an x title (seen
+  on 4.1.4 and 6.1.0); `advise` says so (`chart.waterfall-axis-titles`).
 - **On 4.1.4, heatmap and histogram exist twice** (a legacy plugin and a
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named

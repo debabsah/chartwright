@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1564 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1612 tests, 69 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -63,8 +63,8 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   timestamps and entry order pinned, so the same spec produces the
   identical bundle on any build platform.
 - **Lossless round-trips** (`test_decompile.py`): decompiling a compiled
-  spec reproduces that spec exactly, across the full surface (15 charts
-  covering all 15 chart types, chart filters, the native filter bar,
+  spec reproduces that spec exactly, across the full surface (17 charts
+  covering all 16 chart types, chart filters, the native filter bar,
   markdown, tabs), and stays stable under a second round-trip. Decompiling
   a real 25-chart export that uses unsupported chart types names every
   loss; nothing drops silently.
@@ -194,9 +194,10 @@ collects, the same "generated, not hand-maintained" rule the rule table in
 
 Superset's backend has no schema for chart options; each chart type's
 options are defined only by its frontend plugin. The file
-`tools/contracts/params-contract.json` holds the option names for the 13
-emitted chart types, extracted from plugin source at each supported
-release (the Mixed Chart's by `tools/extract_mixed_contract.py`), and `tools/params_drift.py` (run by `test_params_contract.py`)
+`tools/contracts/params-contract.json` holds the option names for the 15
+chart plugins the compiler writes, extracted from plugin source at each
+supported release (the Mixed Chart's by `tools/extract_mixed_contract.py`,
+the waterfall's by `tools/extract_panel_contract.py`), and `tools/params_drift.py` (run by `test_params_contract.py`)
 fails the build if the compiler ever emits an option a target release does
 not declare. Current status: clean against all three releases; the single
 tool-owned key (`sdc_categorical_bar`) is allowlisted with its rationale
@@ -211,7 +212,7 @@ resolution, which collects every bad reference into typed errors, and a
 deliberately misspelled column, which must come back with the real column
 as its first suggestion. Then an
 apply of the complete example spec (`tests/fixtures/kitchen_sink.json`),
-which exercises all 15 chart types, per-chart WHERE filters, a native
+which exercises all 16 chart types, per-chart WHERE filters, a native
 filter bar with two value pickers and a time range, plus markdown and tabs.
 (A numeric range filter scoped to specific charts is exercised live by the
 second-writer and fault-injection runs.) The same check then runs on two
@@ -229,6 +230,16 @@ warning, never a silent pass. Finally a second apply of the same spec,
 asserting that every chart keeps its id. Id stability matters because
 dashboard metadata references charts by id: changing ids is what turns a
 stale browser tab into a writer that corrupts filter scopes.
+
+A waterfall bridge needs rows for its opening, steps and closing, which no
+example dataset has, so `tools/ci_live_waterfall.py` makes one, a virtual
+dataset on the examples database, and applies
+`tests/fixtures/live_waterfall.json`. On 6.1.0 the bridge applies, the data
+check passes it (a row for every step and the closing, and a closing that
+equals the steps added up), `plan` is clean, decompile reads its steps back
+and a re-apply keeps every chart id. On 4.1.4 and 5.0.0 resolve must refuse
+the bridge's `steps` with `superset_version_too_old` and warn for its 6.1.0
+labels, and the plain waterfalls apply with `plan` clean.
 
 ## 4. Lifecycle soak (`tools/soak.py`)
 
@@ -345,6 +356,7 @@ export SDC_CI_PASSWORD=admin
 python tools/ci_live_check.py --base-url http://localhost:8098   # kitchen sink
 python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_display_controls.json
 python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
+python tools/ci_live_waterfall.py --base-url http://localhost:8098   # a bridge; --cleanup removes it
 python tools/ci_live_standards.py --base-url http://localhost:8098   # tests/fixtures/standards_live
 python tools/ci_live_ui_chart.py --base-url http://localhost:8098    # a chart added in Superset
 python tools/ci_live_adopt.py --base-url http://localhost:8098       # adopt in place

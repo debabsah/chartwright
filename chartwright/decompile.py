@@ -20,11 +20,13 @@ import yaml
 from .compiler import (
     BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
     LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
+    parse_steps_order_sql,
 )
 from .spec import (
     ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES,
-    HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, TREND_DEFAULT_HEX, FilterOp, LabelType,
-    PivotAggregate, SequentialScheme, metric_label, row_items,
+    HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, TICK_LAYOUTS, TREND_DEFAULT_HEX,
+    WATERFALL_DEFAULT_HEX, FilterOp, LabelType, PivotAggregate, SequentialScheme, metric_label,
+    row_items,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
@@ -57,7 +59,7 @@ _IGNORABLE = {
     "left_margin", "show_percentage", "show_values", "value_bounds",
     "xscale_interval", "yscale_interval", "column", "bins", "normalize",
     "show_value", "slice_id", "url_params", "percent_calculation_type",
-    "show_tooltip_labels", "tooltip_label_type", SDC_BAR_MARKER,
+    "show_tooltip_labels", "tooltip_label_type", "show_total", "x_ticks_layout", SDC_BAR_MARKER,
 }
 
 # Of the keys above, those a user changes from the value an untouched chart stores:
@@ -99,6 +101,9 @@ _STORED_DEFAULTS: dict[str, tuple] = {
     "bottom_margin": ("auto",), "left_margin": ("auto",), "xscale_interval": (-1,),
     "yscale_interval": (-1,), "value_bounds": ([None, None], [], None),
     "normalize": (False,),
+    # Waterfall/controlPanel.tsx: a closing total (show_total, 6.1.0 :134) and Superset's
+    # own tick layout (x_ticks_layout, 4.1.4 :130, 6.1.0 :210).
+    "show_total": (True,), "x_ticks_layout": ("auto",),
 }
 # A currency format has no default: unset reads as {} or every part empty.
 _UNSET_WHEN_EMPTY = {"currency_format"}
@@ -279,18 +284,89 @@ def _line_style_to_spec(p: dict, out: dict, spec_type: str) -> set[str]:
     return {"markerEnabled", "markerSize", "area", "opacity"}
 
 
-def _rgb_to_spec(colour) -> str | None:
-    """A color_picker {r, g, b} as the spec writes it: a named shade, a hex, or None
-    for Superset's own default teal."""
+def _rgb_to_spec(colour, default: str = TREND_DEFAULT_HEX) -> str | None:
+    """A colour picker's {r, g, b} as the spec writes it: a named shade, a hex, or None
+    for Superset's own default (a trendline's teal unless another is given)."""
     if not isinstance(colour, dict):
         return None
     try:
         hexed = "#{:02X}{:02X}{:02X}".format(*(int(colour[k]) for k in "rgb"))
     except (KeyError, TypeError, ValueError):
         return None
-    if hexed == TREND_DEFAULT_HEX:
+    if hexed == default:
         return None
     return {v.upper(): k for k, v in FORMAT_TEXT_HEX.items()}.get(hexed, hexed)
+
+
+_TICK_LAYOUT_SPEC = {v: k for k, v in TICK_LAYOUTS.items()} | {"staggered": 45}  # drawn at 45°
+
+
+def _tick_layout_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
+    # "staggered" is rotated -45 degrees exactly like "45°" (transformProps.ts, waterfall
+    # and box plot, all three releases), so it reads back as 45.
+    layout = p.get("x_ticks_layout")
+    if layout in _TICK_LAYOUT_SPEC:
+        out["x_label_rotation"] = _TICK_LAYOUT_SPEC[layout]
+    elif layout not in (None, "", "auto"):
+        losses.append(Loss(name, f"x_ticks_layout {layout!r} not preserved (auto on re-apply)"))
+
+
+def _waterfall_to_spec(p: dict, out: dict, losses: list, name: str, metric_one) -> set[str] | None:
+    """A waterfall's params into out; the params it read, or None when the chart can't
+    be a spec chart. A bridge's x axis is the steps_order_sql the compiler writes."""
+    m = metric_one(p.get("metric"))
+    x = p.get("x_axis")
+    groupby = [g for g in (p.get("groupby") or []) if isinstance(g, str)]
+    if m is None or not x:
+        losses.append(Loss(name, "waterfall needs metric + x_axis; chart skipped"))
+        return None
+    out["metric"] = m
+    read = {"x_axis_label", "y_axis_label", "increase_color", "decrease_color", "total_color",
+            "increase_label", "decrease_label", "total_label", "show_legend", "x_ticks_layout"}
+    bridge = parse_steps_order_sql(x.get("sqlExpression")) if isinstance(x, dict) else None
+    if bridge is not None:
+        column, steps, closing = bridge
+        if groupby != [column] or p.get("show_total") is not False or p.get("total_label") != closing:
+            losses.append(Loss(name, "waterfall bridge order changed outside the spec (breakdown, "
+                                     "show_total or total_label); chart skipped"))
+            return None
+        out.update({"x_column": column, "steps": steps, "closing": closing})
+        read.add("show_total")
+    elif isinstance(x, str):
+        out["x_column"] = x
+        if len(groupby) > 1:
+            losses.append(Loss(name, f"multiple breakdowns {groupby}; kept first only"))
+        if groupby:
+            out["groupby"] = groupby[0]
+        if p.get("time_grain_sqla"):
+            out["time_grain"] = p["time_grain_sqla"]
+        if isinstance(p.get("total_label"), str) and p["total_label"].strip():
+            out["total_label"] = p["total_label"]
+    else:
+        losses.append(Loss(name, f"waterfall x axis {x!r} is SQL the spec can't express; chart skipped"))
+        return None
+    for field, stock in WATERFALL_DEFAULT_HEX.items():
+        colour = _rgb_to_spec(p.get(field), stock)
+        if colour:
+            out[field] = colour
+    for field in ("increase_label", "decrease_label"):
+        if isinstance(p.get(field), str) and p[field].strip():
+            out[field] = p[field]
+    if p.get("show_value") is True:
+        out["show_value"] = True
+    if p.get("show_legend") is True:
+        out["show_legend"] = True
+    if p.get("y_axis_format") not in (None, "", "SMART_NUMBER"):
+        out["number_format"] = p["y_axis_format"]
+    for key, field in (("x_axis_label", "x_axis_title"), ("y_axis_label", "y_axis_title")):
+        if isinstance(p.get(key), str) and p[key].strip():
+            out[field] = p[key]
+    _tick_layout_to_spec(p, out, losses, name)
+    if p.get("x_axis_time_format") not in (None, "", "smart_date"):
+        out["x_label_format"] = p["x_axis_time_format"]
+    if p.get("row_limit"):
+        out["row_limit"] = p["row_limit"]
+    return read
 
 
 def _annotations_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
@@ -926,6 +1002,10 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         if p.get("y_axis_format_secondary") not in (None, "SMART_NUMBER"):
             out["number_format_secondary"] = p["y_axis_format_secondary"]
         keep_row_limit()
+    elif spec_type == "waterfall":
+        waterfall_read = _waterfall_to_spec(p, out, losses, name, metric_one)
+        if waterfall_read is None:
+            return None
 
     mapped_here = {"combineMetric", "conditional_formatting", "rowTotals", "colTotals", "colSubTotals"} if spec_type == "pivot_table" else (
         {"order_by_cols", "timeseries_limit_metric", "series_limit_metric",
@@ -958,6 +1038,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         mapped_here = mapped_here | {"x_axis_title", "y_axis_title"}
     if spec_type == "pie":
         mapped_here = mapped_here | {"show_total"}
+    if spec_type == "waterfall":
+        mapped_here = mapped_here | waterfall_read
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
         mapped_here = mapped_here | _axis_to_spec(p, out, losses, name, spec_type)
