@@ -192,7 +192,8 @@ def test_resets_list_what_the_first_apply_resets_without_a_loss():
     hand, _, spec = _hand_built(edit=ui_state)
     resets = first_apply_resets(decompile_bundle(hand, _stub_lookup_for(spec)), hand)
     whats = " | ".join(f"{r['where']}: {r['what']}" for r in resets)
-    for needle in ("scoped to some tabs", "cross-filter scopes", "exempt from auto-refresh",
+    # Tab-scoped filters are decompile's own loss now (test_decompile.py).
+    for needle in ("cross-filter scopes", "exempt from auto-refresh",
                    "saved queries of ['Total Sales']", "tab ids change", "native filters get"):
         assert needle in whats, needle
 

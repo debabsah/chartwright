@@ -128,7 +128,7 @@ into one. Everything below works from that one file.
 - **Start From Existing Dashboards**: Take over a dashboard built in the UI where it is, or build a copy of it.
     - `chartwright adopt` writes a spec that updates that same dashboard, keeping its address, id and chart ids, so links and embeds keep pointing at it.
     - Before anything changes, adopt lists what the first apply resets because a spec can't hold it, and refuses until you pass `--accept-reset`; `plan` then names each chart whose stored options the first apply rewrites. Charts a spec can't hold come off the dashboard and stay under Charts.
-    - `chartwright decompile` turns any dashboard into a spec you build as a copy at a new slug. Most of what it can't carry over is listed; a few settings (such as tab-scoped filters and some legend and tooltip options) are dropped without a note, so compare before you retire the original.
+    - `chartwright decompile` turns any dashboard into a spec you build as a copy at a new slug. What it can't carry over is listed, including chart settings changed from Superset's defaults (a rolling sum, a forecast, a legend margin) and filters scoped to some tabs; compare before you retire the original.
 - **Lossless Round-Trips**: Tool-built dashboards with `rows` or `tabs` layouts decompile back with nothing lost; a `sketch` comes back as rows.
 - **Targeted Edits**: Replace, rename, resize, or remove one chart and re-apply; old charts are cleaned up, never orphaned.
 - **Stable Identity**: Chart ids never change across re-applies, so links, scopes, and open browser tabs stay valid.

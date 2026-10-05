@@ -60,6 +60,39 @@ _IGNORABLE = {
     "show_tooltip_labels", "tooltip_label_type", SDC_BAR_MARKER,
 }
 
+# Of the keys above, those a user changes from the value an untouched chart stores:
+# that value (any of these, across 4.1.4, 5.0.0 and 6.1.0) is no choice to lose, any
+# other is, and decompile names it instead of dropping it silently (triage I). Each is
+# the control's own default in the plugin source at all three tags
+# (plugin-chart-echarts/src/controls.tsx, Timeseries/constants.ts DEFAULT_FORM_DATA,
+# superset-ui-chart-controls sections/forecastInterval.tsx FORECAST_DEFAULT_DATA,
+# sections/advancedAnalytics.tsx, utils/series.ts DEFAULT_SORT_SERIES_DATA and
+# DEFAULT_XAXIS_SORT_SERIES_DATA, constants.ts TITLE_MARGIN_OPTIONS and
+# TITLE_POSITION_OPTIONS). A key a chart type maps into the spec is never checked here.
+_STORED_DEFAULTS: dict[str, tuple] = {
+    "legendType": ("scroll",), "legendOrientation": ("top",), "legendMargin": (None, ""),
+    "show_legend": (True,), "rich_tooltip": (True,), "tooltipTimeFormat": ("smart_date",),
+    "truncateXAxis": (True,), "markerSize": (6,), "opacity": (0.2,),
+    "sort_series_type": ("sum",), "y_axis_bounds": ([None, None], [], None),
+    "x_axis_title_margin": (0, 15), "y_axis_title_margin": (15, 30),
+    "y_axis_title_position": ("Left",), "only_total": (True,), "comparison_type": ("values",),
+    "rolling_type": (None, "None", ""), "forecastEnabled": (False, None),
+    "order_desc": (True,), "truncate_metric": (True,), "show_empty_columns": (True,),
+    "x_axis_sort_asc": (True,), "x_axis_sort_series": ("name",),
+    "x_axis_sort_series_ascending": (True,), "show_labels_threshold": (5,),
+    "sort_by_metric": (True,), "start_y_axis_at_zero": (True,),
+    "time_format": ("smart_date",), "date_format": ("smart_date",),
+    "table_timestamp_format": ("smart_date",),
+}
+# Keys that matter only when another is set: a changed value with no effect is no loss.
+_STORED_DEFAULT_WHEN = {
+    "only_total": lambda p: bool(p.get("show_value")) and bool(p.get("stack")),
+    "comparison_type": lambda p: bool(p.get("time_compare")),
+    "x_axis_title_margin": lambda p: bool(p.get("x_axis_title")),
+    "y_axis_title_margin": lambda p: bool(p.get("y_axis_title")),
+    "y_axis_title_position": lambda p: bool(p.get("y_axis_title")),
+}
+
 # Spec chart types with a color_scheme field (spec._ColorSchemeMixin).
 _COLOR_SCHEME_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter",
                        "bar", "pie", "histogram", "funnel", "treemap", "mixed")
@@ -483,7 +516,11 @@ def _groupby_one(p: dict, losses: list[Loss], chart: str) -> str | None:
     return gb[0] if gb and isinstance(gb[0], str) else None
 
 
-def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) -> dict | None:
+def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
+                   changed_defaults: dict | None = None) -> dict | None:
+    """With `changed_defaults`, keys a user changed from Superset's stored default go
+    there ({key: value}) for the caller to check against what apply writes back;
+    without it, each becomes a loss here."""
     name = chart_yaml.get("slice_name") or "Unnamed"
     viz = chart_yaml.get("viz_type")
     p = chart_yaml.get("params") or {}
@@ -533,8 +570,12 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         if m is None:
             return None
         out["metric"] = m
-        if p.get("subheader"):
-            out["subtitle"] = p["subheader"]
+        # 6.0+ stores the subtitle as `subtitle` (BigNumberTotal controlPanel at 6.1.0);
+        # 4.1.4 and 5.0.0 as `subheader`, which 6.1.0 still reads.
+        text = p.get("subtitle") if isinstance(p.get("subtitle"), str) and p["subtitle"].strip() \
+            else p.get("subheader")
+        if text:
+            out["subtitle"] = text
         if p.get("y_axis_format"):
             out["number_format"] = p["y_axis_format"]
     elif spec_type == "big_number_trend":
@@ -888,6 +929,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
         mapped_here = mapped_here | _legend_to_spec(p, out, spec_type)
     if spec_type == "big_number_trend":
         mapped_here = mapped_here | {"compare_lag", "compare_suffix", "subtitle", "color_picker"}
+    if spec_type == "big_number_total":
+        mapped_here = mapped_here | {"subtitle"}
     if spec_type == "table":
         mapped_here = mapped_here | {"page_length", "show_totals", "include_search"}
     if spec_type == "pivot_table":
@@ -905,7 +948,47 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss]) 
     unmapped = sorted(k for k in p if k not in _IGNORABLE and k not in mapped_here)
     if unmapped:
         losses.append(Loss(name, f"params not preserved: {unmapped}"))
+    changed = {k: p[k] for k in sorted(p)
+               if k in _STORED_DEFAULTS and k not in mapped_here
+               and p[k] not in _STORED_DEFAULTS[k]
+               and _STORED_DEFAULT_WHEN.get(k, lambda _: True)(p)}
+    if changed:
+        if changed_defaults is None:
+            losses.append(_defaults_loss(name, changed))
+        else:
+            changed_defaults["__last__"] = changed
     return out
+
+
+def _defaults_loss(name: str, changed: dict) -> Loss:
+    return Loss(name, f"settings not preserved (apply puts Superset's default back): "
+                      f"{[f'{k}={v!r}' for k, v in changed.items()]}")
+
+
+def _check_changed_defaults(spec: dict, pending: dict[str, dict], losses: list[Loss]) -> None:
+    """Report each changed default apply would NOT write back. Compiling the spec just
+    read (offline, stub ids) shows which ones the spec carries under its own fields,
+    without a hand list of the keys each chart type maps; if it can't be compiled,
+    every one is reported."""
+    from .compiler import compile_bundle
+    from .spec import load_spec as _load
+    from .testing import stub_resolution
+
+    compiled: dict[str, dict] = {}
+    try:
+        built = _load(spec)
+        zf = zipfile.ZipFile(io.BytesIO(compile_bundle(built, stub_resolution(built))))
+        for n in zf.namelist():
+            if "/charts/" in n and n.endswith(".yaml"):
+                cy = yaml.safe_load(zf.read(n)) or {}
+                compiled[cy.get("slice_name")] = cy.get("params") or {}
+    except Exception:  # noqa: BLE001 - an unloadable spec reports every change
+        compiled = {}
+    for name, changed in pending.items():
+        params = compiled.get(name)
+        lost = {k: v for k, v in changed.items() if params is None or params.get(k) != v}
+        if lost:
+            losses.append(_defaults_loss(name, lost))
 
 
 def _tags_to_spec(tags, losses: list, where: str) -> list[str]:
@@ -1062,6 +1145,14 @@ def _native_filters_to_spec(
         dm = nf.get("defaultDataMask") or {}
         if dm.get("filterState") or dm.get("extraFormData"):
             losses.append(Loss(f"filter:{name}", "default value not preserved"))
+    # A filter scoped to some tabs (scope.rootPath other than the whole dashboard): the
+    # spec scopes by chart name or not at all, so apply widens it (triage I).
+    for nf in configs:
+        root = (nf.get("scope") or {}).get("rootPath") or ["ROOT_ID"]
+        nm = nf.get("name") or nf.get("id") or "filter"
+        if root != ["ROOT_ID"] and any(f["name"] == nm for f in out):
+            losses.append(Loss(f"filter:{nm}", f"scoped to tabs {root}; not preserved, apply "
+                                               f"scopes it to the whole dashboard"))
     kept = {f["name"]: f["type"] for f in out}
     for f in out:
         nf = next((c for c in configs if (c.get("name") or c.get("id") or "filter") == f["name"]), {})
@@ -1268,18 +1359,27 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
     chart_uuids: dict[str, str] = {}
     skipped: list[str] = []
     titles: list[str] = []
+    changed_defaults_pending: dict[str, dict] = {}
     for n in zf.namelist():
         if "/charts/" in n and n.endswith(".yaml"):
             cy = yaml.safe_load(zf.read(n))
             titles.append(cy.get("slice_name") or "Unnamed")
-            spec_chart = _chart_to_spec(cy, lookup, losses)
+            changed: dict = {}
+            spec_chart = _chart_to_spec(cy, lookup, losses, changed)
+            if spec_chart and changed.get("__last__"):
+                changed_defaults_pending[spec_chart["name"]] = changed["__last__"]
             if spec_chart:
                 if spec_chart["name"] in charts_by_name:
                     losses.append(Loss(spec_chart["name"], "duplicate slice_name in bundle; suffixed to keep uuid seeds unique"))
                     k = 2
                     while f"{spec_chart['name']} ({k})" in charts_by_name:
                         k += 1
+                    old = spec_chart["name"]
                     spec_chart["name"] = f"{spec_chart['name']} ({k})"
+                    if changed.get("__last__"):
+                        changed_defaults_pending[spec_chart["name"]] = changed["__last__"]
+                        if changed_defaults_pending.get(old) is changed["__last__"]:
+                            changed_defaults_pending.pop(old)
                 charts_by_name[spec_chart["name"]] = spec_chart
                 dataset_uuids[spec_chart["name"]] = str(cy.get("dataset_uuid"))
                 if cy.get("uuid"):
@@ -1451,6 +1551,8 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
             f"the dataset index stopped at {truncated} datasets (page cap); any "
             f"'dataset uuid not resolvable' loss above may be a dataset past the cap "
             f"rather than a missing one -- re-check those charts before trusting this spec"))
+    if changed_defaults_pending:
+        _check_changed_defaults(spec, changed_defaults_pending, losses)
     kept_names = {c["name"] for c in spec.get("charts", [])}
     return DecompileResult(spec=spec, losses=losses, dataset_uuids=dataset_uuids,
                            chart_uuids={n: u for n, u in chart_uuids.items() if n in kept_names},
