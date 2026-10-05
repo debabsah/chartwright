@@ -1046,7 +1046,9 @@ class TreemapChart(_ChartBase, _ColorSchemeMixin):
 
 class MixedSeries(BaseModel):
     """One of a mixed chart's two queries: its metrics, drawn as bars or a line, on
-    the primary (left) or secondary (right) value axis."""
+    the primary (left) or secondary (right) value axis. No release gives a query's
+    line a width or dash of its own (docs/CONTRACTS.md): set a ghost line apart by
+    colour, with dashboard.label_colors on its series label."""
 
     model_config = ConfigDict(extra="forbid")
 

@@ -3242,7 +3242,7 @@
     },
     "MixedSeries": {
       "additionalProperties": false,
-      "description": "One of a mixed chart's two queries: its metrics, drawn as bars or a line, on\nthe primary (left) or secondary (right) value axis.",
+      "description": "One of a mixed chart's two queries: its metrics, drawn as bars or a line, on\nthe primary (left) or secondary (right) value axis. No release gives a query's\nline a width or dash of its own (docs/CONTRACTS.md): set a ghost line apart by\ncolour, with dashboard.label_colors on its series label.",
       "properties": {
         "metrics": {
           "items": {

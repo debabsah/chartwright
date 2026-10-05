@@ -31,6 +31,9 @@
   if the dataset has one, and give a bar `category_sort: "asc"`. An ordered
   axis such as hours stays vertical: add `x_label_every` so every label shows.
   A heatmap's `x_label_every`/`y_label_every` is a step: 6 on hours reads 0, 6, 12, 18.
+- No release gives a mixed chart's line its own width or dash: set a ghost line
+  apart by colour (`dashboard.label_colors`, a pale grey on its series label);
+  a fixed level is an annotation, which takes `style` and `width`.
 - A paged table (`page_length`) needs room for one page and its pager, not
   for every row; a timeseries with many groups keeps the top few with
   `series_limit`.

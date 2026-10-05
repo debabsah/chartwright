@@ -13,6 +13,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Changed
 
+- Documented: no supported release gives one line of a mixed chart its own width or dash. The plugin has no such control and its transform passes none, and 6.1's ECharts Options replace the series list whole. Set a ghost line apart by colour with `dashboard.label_colors`, or draw a fixed level as an annotation.
 - Design brain 12: `advise --fix` fills `left_margin: 16` on every heatmap (`default.heatmap-label-room`). On Superset 6.1.0 a heatmap's longest row label lost its first letters at the card's edge, and a theme can't reach the heatmap there. Write `left_margin` yourself, or ignore the rule for a chart, to keep your own value.
 
 ### Fixed

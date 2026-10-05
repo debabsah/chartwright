@@ -329,6 +329,23 @@ running the tool against real instances of all three releases.
   the line stands upright at it: a 1.0x threshold or a 4-hour limit over a
   ranked list. Seen live on all three releases. On either orientation the
   line runs from the first category to the last, not the full plot.
+- **A mixed chart's lines take no width or dash of their own, on any
+  release.** Each query's display controls are its series type, stacking,
+  area fill and that fill's opacity, values on the marks, markers and their
+  size, and its axis (`createCustomizeSection` in
+  `MixedTimeseries/controlPanel.tsx`, 4.1.4 and 5.0.0 `:132-262`; 6.1.0
+  `:137-313` adds `only_total` and a series sort). Neither query gets a line
+  style from `transformProps` (`transformSeries` for queries A and B,
+  4.1.4 `:382,429`, 5.0.0 `:384,432`, 6.1.0 `:457,530`). The one-query
+  Timeseries chart dashes only time-comparison series
+  (`Timeseries/transformProps.ts`, 4.1.4 `:285-296`, 6.1.0 `:400-422`), and
+  the mixed chart has no such pass. 6.1.0's "ECharts Options" can't style one
+  series either: the merge replaces arrays whole
+  (`utils/mergeCustomEChartOptions.ts:70-72`), so a `series` entry would drop
+  the chart's own. The spec therefore has no line style for a mixed query.
+  Tell a ghost line from the ink line by colour: `dashboard.label_colors`
+  pins a pale grey to the ghost's series label. A fixed level can be an
+  annotation, which does take `style`, `width` and `opacity`.
 - **Options genuinely differ by release.** 6.0.0 renamed the big-number
   subtitle field (`subheader` became `subtitle`) and removed sort controls
   that older releases still have. The tool emits only options valid on all
