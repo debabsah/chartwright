@@ -11,9 +11,10 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Added
 
-- `advise` checks that each markdown block is tall enough for its text (`size.markdown-fit`). Superset cuts the rest off inside the block: macOS shows no scrollbar there, so a screenshot shows the text stopping mid-line. The check estimates the text's height from its headings, paragraphs, lists, tables, quotes, code and line breaks and the block's width, measured against what 4.1.4, 5.0.0 and 6.1.0 draw.
-  - It warns when letters are cut off on every release and says by how much ("it needs ~29.6 units at 12/12, has 10"); `--fix` raises the block to a height that shows every line on every release, Windows scrollbars included.
+- `advise` checks that each markdown block is tall enough for its text (`size.markdown-fit`). Superset cuts the rest off inside the block: macOS shows no scrollbar there, so a screenshot shows the text stopping mid-line. The check estimates the text's height from its headings, paragraphs, lists, tables, quotes, code and line breaks, the block's width and the dashboard's own CSS, in a window 1440 px wide, measured against what 4.1.4, 5.0.0 and 6.1.0 draw. A wider window wraps fewer lines, so a height that fits there fits wider too.
+  - It warns when letters are cut off on every release and says by how much ("it needs ~16 units at 12/12 in a 1440 px wide window, has 15"); `--fix` raises the block to a height that shows every line on every release, Windows scrollbars included.
   - A block whose last line or padding only reaches the edge gets an info: it scrolls a few px, and Windows draws a scrollbar in it. That covers short strips: a line of text needs 1.6 units, a `##` heading 2.2.
+  - It reads the text sizes and spacing a dashboard's CSS gives its markdown: font sizes, line heights, weights, letter and word spacing, margins, padding and borders set on `.dashboard-markdown` elements, `h4 + p` and `p:last-child` rules included, in cascade order over Superset's own. CSS that could change a block's height in a way it doesn't read (another font family, attribute selectors and pseudo-elements, `@media` rules) is named in the finding, as is a theme.
   - It checks blocks in layout rows, tabs and sub-tabs, and header and footer rows, and allows for the filter bar, which narrows the page on a dashboard with native filters. A header or footer row a standard owns is reported, never resized, and a block holding an image gets no fix, since its height is unknown.
 
 ### Fixed

@@ -30,7 +30,8 @@ from ..spec import (
     row_items,
     without_superset_defaults,
 )
-from .markdown_fit import Fit, box_px, estimate
+from ..versions import gated_fields_used, parse_version
+from .markdown_fit import VIEWPORT, Fit, box_px, estimate, read_css, releases_from
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 
 # -- size: minimum readable geometry ------------------------------------------
@@ -1222,18 +1223,24 @@ def _markdown_blocks(ctx: RuleContext):
 
 
 def _markdown_estimate(ctx: RuleContext, item) -> Fit:
-    """How the block's text fits at its width. The filter bar narrows the grid when it
-    opens by default: on the left, beside a dashboard with native filters. A horizontal
-    bar sits above the grid, but 4.1.4 and 5.0.0 draw it on the left without the
-    HORIZONTAL_FILTER_BAR flag, so that case is bounded both ways."""
+    """How the block's text fits at its width under the dashboard's CSS, on the
+    releases the spec can go to: a field only newer releases take (a theme, say)
+    leaves out the older ones. The filter bar narrows the grid when it opens by
+    default: on the left, beside a dashboard with native filters. A horizontal bar
+    sits above the grid, but 4.1.4 and 5.0.0 draw it on the left without the
+    HORIZONTAL_FILTER_BAR flag, so on them that case is bounded both ways."""
     d = ctx.spec.dashboard
-    bar = (bool(ctx.spec.filters) if d.filter_bar_orientation != "horizontal"
-           else None if ctx.spec.filters else False)
-    return estimate(item.markdown, ctx.spec.resolved_item_width(item), bar)
-
-
-_TYPE_CSS = re.compile(r"(?<![\w-])(?:font(?:-family|-size)?|line-height|letter-spacing|"
-                       r"word-spacing)\s*:", re.I)
+    floor = max((parse_version(g.since) for g, _ in gated_fields_used(ctx.spec)
+                 if g.severity == "error"), default=None)
+    releases = releases_from(floor)
+    if not ctx.spec.filters:
+        bar = False
+    elif d.filter_bar_orientation != "horizontal":
+        bar = True
+    else:
+        bar = None if any(r.flag_for_horizontal_bar for r in releases) else False
+    return estimate(item.markdown, ctx.spec.resolved_item_width(item), bar,
+                    css=read_css(d.css), releases=releases)
 
 
 @rule("layout.markdown-height", "info", "a one-line markdown header doesn't need a chart-sized block", fixable=True, since="2")
@@ -1262,31 +1269,36 @@ def markdown_height(ctx: RuleContext):
       "a markdown block must be tall enough for its text: Superset cuts off the rest, "
       "with no scrollbar on macOS", fixable=True, since="11", severities=("warn", "info"))
 def markdown_fit(ctx: RuleContext):
-    """The text's height, estimated from its markdown and its width (markdown_fit.py),
-    against the block's. Warns only when the lower bound of the estimate already cuts
-    letters off (8 px, one grid row, past the bottom edge): text Superset hides with no
-    sign in a screenshot. A block whose last line merely touches the edge, or whose
-    padding doesn't fit, gets an info: it scrolls a few px, and Windows draws a
-    scrollbar in it. That is how a one-line strip under 1.6 units, or a heading strip
-    under 2, falls short.
+    """The text's height, estimated from its markdown, its width and the dashboard's
+    CSS (markdown_fit.py) in a 1440 px wide window, against the block's. Warns only
+    when the lower bound of the estimate already cuts letters off (8 px, one grid row,
+    past the bottom edge): text Superset hides with no sign in a screenshot. A block
+    whose last line merely touches the edge, or whose padding doesn't fit, gets an
+    info: it scrolls a few px, and Windows draws a scrollbar in it. That is how a
+    one-line strip under 1.6 units, or a heading strip under 2, falls short.
 
     The fix raises the height to the upper bound, which fits on every release. None
     when the block holds an image (its height is unknown), when the text needs more
     than the 100-unit maximum, or in a header or footer row a standard owns (its
-    height is the standard's; only a cut-off text is reported there)."""
+    height is the standard's; only a cut-off text is reported there). The finding
+    names CSS that could size markdown in a way the estimate doesn't read, and a
+    theme, which can change Superset's own text sizes and spacing."""
     d = ctx.spec.dashboard
-    if d.css and _TYPE_CSS.search(d.css):
-        caveat = "; the dashboard's CSS sets its own type, so this assumes Superset's default"
-    elif d.theme:
-        caveat = f"; this assumes Superset's default type, which the theme {d.theme!r} may change"
-    else:
-        caveat = ""
+    unread = list(dict.fromkeys(sel for sel, _ in read_css(d.css).unread))
+    caveat = ""
+    if unread:
+        more = f" and {len(unread) - 1} more" if len(unread) > 1 else ""
+        caveat = (f"; the dashboard's CSS also styles markdown in a way this estimate "
+                  f"doesn't read ({unread[0]}{more}), so the height may be off")
+    if d.theme:
+        caveat += (f"; this assumes Superset's own text sizes and spacing, which the theme "
+                   f"{d.theme!r} may change")
     owned = ctx.standard_rows()
     for addr, label, ri, ii, item in _markdown_blocks(ctx):
         h = item.height or DEFAULT_HEIGHT["markdown"]
         box = box_px(h)
         fit = _markdown_estimate(ctx, item)
-        if fit.need_low <= box:
+        if not fit.short(box):
             continue
         cut = fit.text_low - box >= 8
         standard = addr in ("header", "footer") and (addr, ri) in owned
@@ -1312,7 +1324,8 @@ def markdown_fit(ctx: RuleContext):
             tail = f"; raise the height{' or widen it' if w < 12 else ''}"
         yield Finding(
             "size.markdown-fit", "warn" if cut else "info", None, f"{label} row {ri}",
-            f"{lead}; it needs {need} at {w}/12, has {h:g}{tail}{caveat}",
+            f"{lead}; it needs {need} at {w}/12 in a {VIEWPORT} px wide window, has {h:g}"
+            f"{tail}{caveat}",
             fix=({"md": [addr, ri, ii], "set": {"height": fit.units}}
                  if not (standard or fit.media or fit.units > 100) else None),
         )

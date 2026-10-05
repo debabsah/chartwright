@@ -27,8 +27,9 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # deleted), and default.stale-record: a fixable finding for a renamed or removed chart's
 # design.filled entry, which now validates. Both change what `--fix` writes.
 # "11" = size.markdown-fit, a new warn-severity rule for markdown text cut off by its
-# block, and layout.markdown-height fixes a one-line block to the height its line takes
-# (1.6 to 2.4 units) instead of 2, from the same estimate.
+# block in a 1440 px window, under the dashboard's own CSS, and layout.markdown-height
+# fixes a one-line block to the height its line takes (1.6 to 2.4 units) instead of 2,
+# from the same estimate.
 DESIGN_BRAIN_VERSION = "11"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}

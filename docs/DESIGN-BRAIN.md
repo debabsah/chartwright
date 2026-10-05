@@ -1344,10 +1344,20 @@ two dates. Superset's `Last year` spans 365 days and still takes the fill.
 
 ### Markdown blocks
 
-Measured on 2026-10-05 the same way, by `tools/record_markdown_fit.py`: 17 texts
-at 12, 8, 6, 4 and 3 twelfths on each release, the longest beside the filter bar
-too, and each at 6/12 at three heights with Windows-style scrollbars on. The
-fixture is `tests/fixtures/markdown_fit/measurements.json`.
+Measured on 2026-10-05 the same way, by `tools/record_markdown_fit.py`, in windows
+1600 and 1440 px wide, on each release:
+
+- 17 texts at 12, 8, 6, 4 and 3 twelfths, and the longest beside the filter bar too;
+- the 14 markdown blocks of a sales-review dashboard under its own CSS (`STYLED` in
+  the tool: a title, section captions with colour keys, a list, notes in sections,
+  a footer);
+- every element's computed style with no CSS, with each property the estimate reads
+  set on each element from `.dashboard-markdown <element>`, and under that
+  dashboard's CSS;
+- in the 1440 px window with Windows-style scrollbars on, each text and block at the
+  height the fix writes and at heights that cut it off.
+
+The fixture is `tests/fixtures/markdown_fit/measurements.json`.
 
 Superset draws a markdown block's text in a holder with 16 px of padding on every
 side. What doesn't fit scrolls inside the holder (`overflow-y: auto`). macOS draws
@@ -1358,36 +1368,76 @@ row wrap text exactly as wide as layout rows do.
 
 | | 4.1.4 and 5.0.0 | 6.1.0 |
 |---|---|---|
-| paragraph | 14 px Inter, 22 px lines, 8 px below | the same |
-| `#` | 28 px, 39.2 px line, 12 px above and below | the same |
+| paragraph | 14 px Inter, 22 px lines (1.5715), 8 px below | the same |
+| `#` | 28 px, 39.2 px line (1.4), 12 px above and below | the same |
 | `##` | 21 px, 29.4 px line, 12 px above, 8 below | 20 px, 28 px line |
 | `###` to `#####` | 16 px, 22.4 px line, 8 px above, 4 below | the same |
+| `######` | 12 px, 16.8 px line, 8 px above, 4 below | the same |
 | list | indented 40 px, 9.5 px below | 14 px above and below |
 | table row | 22 px | 24 px, 2 px apart |
 | block quote | 17.5 px text on 27.5 px lines, padded 19 px, 19 px below | 14 px text, inset 40 px each side, 14 px above and below |
 | code block | 18.2 px lines, padded 20 px, 9.5 px below | 22 px lines, 14 px above and below |
-| grid at 1600 px | 1536 px, 1276 px beside the filter bar | 1536 px, 1308 px beside it |
+| grid | the window less 64 px; 260 px less beside the filter bar | 228 px less beside it |
 
 So a strip pays 32 px of padding plus its line's margins before its text: a line of
 text needs 62 px (1.6 units), `###` 66 px (1.8), `##` 81.4 px (2.2; 80 px on 6.1.0)
 and `#` 95.2 px (2.4). That is the "about 60 px of chrome" that cut strips under 2
 units off, and `size.markdown-fit` counts it with everything else.
 
-`chartwright/design/markdown_fit.py` parses the markdown into blocks, wraps each
-line word by word with Inter's measured character widths, and stacks the blocks
-with CSS's collapsing margins. At each release's own styles it matched 265 of the
-270 measured heights within 1.5 px. The other five were the long text at narrow
-widths, where the shared character table (the widest of each character at any
-release) wraps a line or three more than 5.0.0 or 6.1.0 does. Two bounds come out:
+**The dashboard's CSS.** Every `.dashboard-markdown <element>` rule beat Superset's
+own styles on every release: a font size, a line height, margins and padding set on
+each element all took. The exceptions are an h6's font size and the weight of h4 to
+h6, which the markdown component sets inside its own class (`Markdown.jsx:92-104` at
+4.1.4 and 5.0.0, `Markdown/Markdown.tsx:112-124` at 6.1.0); every release kept a
+12 px h6. Superset's line heights are factors (1.4 for headings, 1.5715 for the
+body), so a font size the CSS sets brings its own line height: a 17 px `####`
+draws 23.8 px lines.
+
+The estimate reads the CSS in the spec. It applies rules on `.dashboard-markdown`
+and its elements, with descendant, child and sibling combinators (`h4 + p`) and
+`:first-child` and `:last-child`, in cascade order: `!important`, then specificity,
+then source order, over Superset's own styles. It reads font sizes, line heights,
+weights, letter and word spacing, margins, padding, borders and a table's border
+spacing, in px, em, rem or a percentage. The styles it computed matched every
+element's computed style on every release, with no CSS, with every property set
+on every element, and under the styled dashboard's CSS: 570 elements in all.
+
+What it doesn't read that could size markdown, the finding names: a font family
+other than Inter or a monospace font, attribute selectors and pseudo-elements
+(colour keys drawn by `[itemprop]::before` add 18 px each to a line in the styled
+dashboard), rules inside `@media`, a value in `var()` or `calc()`, the block's own
+padding, and a rule with no class, such as `p { margin: 0 }`, whose order against
+Superset's own element rules the spec can't show.
+
+A line is as tall as the inline text on it needs (CSS 2.1, 10.8). Chromium draws a
+line holding smaller inline text, such as an `<em>` set smaller than its paragraph,
+up to a px taller than that arithmetic gives; the low bound takes the arithmetic,
+the high one a px more.
+
+**The window.** The rule assumes a window 1440 px wide, a common 13-inch laptop's
+screen; its grid is 1376 px wide. A wider window wraps fewer lines, so a height that
+fits there fits in every wider window. The styled dashboard's notes needed 583 to
+626 px in a 1600 px window and 626 to 636 px at 1440.
+
+**The estimate.** `chartwright/design/markdown_fit.py` parses the markdown into the
+elements react-markdown draws, computes each one's style, wraps each line word by
+word with Inter's measured character widths, and stacks the blocks with CSS's
+collapsing margins. At each release's own styles it matched 582 of the 624
+measured heights within 1.5 px. The rest are long texts, where the shared character
+table (the widest of each character at any release; 4.1.4 ships Inter 3, the others
+Inter 4) wraps a line or a few more than a release does, or now and then one fewer.
+Two bounds come out:
 
 - The low bound takes the more compact release, the widest grid and characters 3%
-  narrower. It never exceeded a measured height: 80 of 90 it matched, the rest it
-  undershot by a line or two, or 3.5% (132 px) on the long text at 3/12.
+  narrower. It never exceeded a measured height: of 208 (90 texts and 14 styled
+  blocks in each window) it matched 188 within a px, and undershot the rest by a
+  line or a few, at most 3.5% on the long text at 3/12 beside the filter bar.
 - The high bound takes the taller release, characters 1% wider, and two 17 px
   scrollbars: the page's own, which narrows the grid on Windows, and one in the
-  block. It never fell short: 75 of 90 it matched, and at 6/12 and wider it allowed
-  at most 44 px, or 110 px beside the filter bar. Narrow blocks of long text cost
-  the most, up to 10% at 3/12 beside the filter bar.
+  block. It never fell short: it matched 170 of the 208 within a px, and at 6/12
+  and wider, without the filter bar, allowed at most 44 px in the 1600 px window
+  and 110 px (5.7%) in the 1440 px one. Narrow blocks of long text cost the most,
+  up to 13% at 3/12.
 
 The second scrollbar is there because of one render. A block that overflows while
 it loads (before its web font arrives, say) draws a scrollbar, and the narrower
@@ -1399,10 +1449,24 @@ scrolled on any release.
 `size.markdown-fit` warns when the low bound's text runs 8 px (a grid row) or more
 past the bottom edge, so letters are cut on every release. A block whose last line
 only touches the edge, or whose padding doesn't fit, gets an info: it scrolls a few
-px, and Windows draws a scrollbar in it. `--fix` raises the block to the high bound,
-and `layout.markdown-height` now shrinks a one-line block to the height its line
-takes on every release instead of a flat 2 units, which cut a `#` heading's
-padding off.
+px, and Windows draws a scrollbar in it. A block under half a px over doesn't
+scroll (a scroll height is whole px): the styled dashboard's footer, one 11.5 px
+`#####` line, takes 48.1 px and fits its 48. `--fix` raises the block to the high bound, and
+`layout.markdown-height` shrinks a one-line block to the height its line takes on
+every release instead of a flat 2 units, which cut a `#` heading's padding off.
+
+The estimate covers the releases the spec can go to: a field only 6.0.0 or later
+takes, such as a theme, leaves out 4.1.4 and 5.0.0. Then a horizontal filter bar
+sits across the top, as 6.1.0 draws it; on 4.1.4 and 5.0.0 it needs a feature flag
+and is drawn on the left without it, so there the bar is bounded both ways.
+
+In the 1440 px window, the styled dashboard's blocks at heights that cut them off
+scrolled on every release: the notes 26 to 36 px over at 15 units, the list 21 to
+31 px over at 13, and the captions 8 to 28 px over at 2 to 2.8 units. The rule
+reports each. It calls the notes and two three-line captions cut off, and the rest
+scrolling: only their padding or the edge of their last line is past the bottom,
+or, for the list, letters are cut on some releases only. The footer, exactly full,
+and the title fit, and it leaves them alone.
 
 ### Not measured
 
@@ -1419,11 +1483,13 @@ padding off.
 - The other thresholds this page names: axis heights, pie and heatmap
   geometry, the horizontal-bar height per bar in `size.hbar-window`, and
   `vbar_max_categories`.
-- Markdown under another font, size or spacing: a theme, dashboard CSS that sets
-  type (both named in the finding), or a browser that blocks web fonts and falls
-  back to Helvetica or Arial. Characters outside ASCII take rough widths (0.6 em,
-  1 em for East Asian wide ones). Images and embeds add a height the text can't
-  tell, so a block holding one gets no fix.
+- Markdown under a theme, which can change Superset's own text sizes and spacing
+  (the finding names it), CSS the estimate doesn't read (named too), other window
+  widths, or a browser that blocks web fonts and falls back to Helvetica or Arial.
+  Characters outside the measured tables (ASCII, Latin-1, common punctuation and
+  symbols) take a narrow width in the low bound and a wide one in the high: 0.3 and
+  0.8 em, or 0.9 and 1 em for East Asian wide ones. Images and embeds add a height
+  the text can't tell, so a block holding one gets no fix.
 
 `search_min_rows` (20) and `page_min_rows` (3) are usability judgement, not
 pixel facts, and stay so. On page sizes, Nielsen recommends that "it's usually

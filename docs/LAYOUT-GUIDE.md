@@ -210,8 +210,9 @@ Markdown heights take fifths of a unit, one Superset grid row (8 px) each, so a
 slim strip fits exactly: `1.6` is 64 px. Superset pads a text block 16 px on
 every side, so the block needs its content's height plus 32 px, or it scrolls,
 and it draws no block under 1 unit (40 px). `chartwright advise` estimates the
-height each block's text takes at its width and names a block too short for it
-(`size.markdown-fit`); `advise --fix` raises the block.
+height each block's text takes at its width, in the sizes the dashboard's CSS
+sets, and names a block too short for it (`size.markdown-fit`); `advise --fix`
+raises the block.
 
 A footer row may hold charts as well as markdown; each chart is still placed
 exactly once. Decompile reads any rows below a dashboard's tabs as its footer,

@@ -35,12 +35,12 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1689 tests, 68 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1875 tests, 68 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
 | Locked text visible | `standards verify-visible` in headless Chromium: the standards fixture's locked footer shows, and the same dashboard with near-white footer CSS is caught. Installing the browser may fail without failing the job (the check is then skipped); once installed, a failing check fails it | every PR and push to main, all 3 versions |
-| Markdown fit | 17 markdown texts at 6/12 in headless Chromium with Windows-style scrollbars: at the height `advise --fix` gives each, none scrolls; a unit less, each block `size.markdown-fit` calls cut off is, and each it reports scrolls. Skipped, like the row above, when the browser fails to install | every PR and push to main, all 3 versions |
+| Markdown fit | 17 markdown texts at 6/12, and a dashboard's own 14 blocks under its own CSS, in headless Chromium in a 1440 px window with Windows-style scrollbars: at the height `advise --fix` gives each, none scrolls; a unit less, each block `size.markdown-fit` calls cut off is, and each it reports scrolls. Skipped, like the row above, when the browser fails to install | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
 | Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every PR and push to main, all 3 versions |
 | Fault injection | A typed failure at every stage boundary; complete restore | every PR and push to main, all 3 versions |
@@ -177,15 +177,20 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   live test runs the real browser when `CHARTWRIGHT_VISIBLE_LIVE` names a
   Superset.
 - **Markdown fit** (`test_markdown_fit.py`): what 4.1.4, 5.0.0 and 6.1.0
-  drew in headless Chromium for 17 markdown texts at five widths, and beside
-  the filter bar (`fixtures/markdown_fit/measurements.json`): the estimate's low
-  bound never exceeds any of those heights and its high bound never falls short,
-  each within a set margin; at the fix's height no block scrolled with
-  Windows-style scrollbars on, a block the rule calls cut off was, and one it
-  reports at all scrolled; the grid widths it assumes are the ones drawn, in
-  rows, header, footer and sub-tabs; the parser reads each markdown shape; and
-  `size.markdown-fit` warns, informs, fixes in every container and stays
-  silent as documented, never resizing a standard's row.
+  drew in headless Chromium, in windows 1600 and 1440 px wide, for 17 markdown
+  texts at five widths, beside the filter bar, and for a dashboard's own 14
+  blocks under its own CSS (`fixtures/markdown_fit/measurements.json`): the
+  estimate's low bound never exceeds any of those heights and its high bound
+  never falls short, each within a set margin; at the fix's height no block
+  scrolled with Windows-style scrollbars on, a block the rule calls cut off
+  was, and one it reports at all scrolled; the CSS cascade it computes gives
+  every element each release drew its computed size, line height, margins,
+  padding, borders and weight, with no CSS, with every property set on every
+  element, and under the dashboard's CSS; the CSS it can't read is named; the
+  grid widths it assumes are the ones drawn, in rows, header, footer and
+  sub-tabs; the parser reads each markdown shape; and `size.markdown-fit`
+  warns, informs, fixes in every container and stays silent as documented,
+  never resizing a standard's row.
 - **Dashboard owners** (`test_dashboard_owners.py`): owners never reach
   the bundle; usernames resolve where the security API answers and emails
   everywhere, an unknown or ambiguous owner is a resolve-stage error with
