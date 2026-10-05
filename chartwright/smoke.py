@@ -61,6 +61,24 @@ def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
             f"~{math.ceil(needed)} units or cap row_limit")
 
 
+def _window_warning(chart, rows: int) -> str | None:
+    """A rolling trendline KPI whose data holds too few time buckets for its window and
+    comparison (the design brain's data.rolling-window-span, from the real row count).
+    The backend keeps the windows from bucket rolling_min_periods on (pandas_postprocessing/
+    rolling.py), and compare_lag reads that many points back from the latest."""
+    if chart.type != "big_number_trend" or chart.rolling_type in (None, "cumsum"):
+        return None
+    least = max(1, chart.rolling_periods if chart.rolling_min_periods is None
+                else chart.rolling_min_periods)
+    lag = chart.compare_lag or 0
+    points = max(0, rows - least + 1)
+    if points >= max(lag + 1, 2):
+        return None
+    return (f"a {least}-step rolling window" + (f" with compare_lag {lag}" if lag else "")
+            + f" over {rows} time buckets draws {points} trendline point(s)"
+            + (" and no change" if lag else "") + "; widen the chart's time range")
+
+
 @dataclass
 class SmokeResult:
     chart: str
@@ -208,7 +226,7 @@ def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: Supe
         return SmokeResult(chart.name, False, False, f"unparseable chart/data response: {e}")
     if rows == 0:
         return SmokeResult(chart.name, True, True, "query succeeded but returned 0 rows")
-    fit = _fit_warning(chart, spec, result)
+    fit = _fit_warning(chart, spec, result) or _window_warning(chart, rows)
     if fit:
         return SmokeResult(chart.name, True, True, f"{rows} rows; {fit}")
     return SmokeResult(chart.name, True, False, f"{rows} rows")

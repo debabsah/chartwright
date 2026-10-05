@@ -142,6 +142,21 @@ GATED_FIELDS: tuple[GatedField, ...] = (
                 "Superset {since}; {runs}, and {that} labels every segment of a stacked "
                 "mixed chart. Set only_total: false for the same labels on every release.",
     ),
+    *(GatedField(
+        # A value order is taken everywhere, but means a label's total only from 6.1.0.
+        field, "6.1.0", "warn",
+        "orders a heatmap axis by value through the query",
+        "sortAxisValues sorts each axis itself, a value order by each label's total, at "
+        "6.1.0 Heatmap/transformProps.ts:88-145; at 4.1.4, 5.0.0 and 6.0.0 the axes list "
+        "labels as the query's ORDER BY returns them (Heatmap/buildQuery.ts:39-48 at 4.1.4, "
+        ":39-52 at 5.0.0 and 6.0.0)",
+        _charts(lambda c, f=field: c.type == "heatmap"
+                and getattr(c, f) in ("value_asc", "value_desc")),
+        warning=f"{field} by value on {{where}} ranks each label by its total from Superset "
+                "{since}; {runs}, and {that} lists the labels in the order the query sorts "
+                "the cells, so a label's place follows its largest or smallest cell, and with "
+                "both axes by value the first axis's direction decides both.",
+    ) for field in ("x_order", "y_order")),
 )
 
 

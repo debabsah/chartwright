@@ -292,6 +292,17 @@ running the tool against real instances of all three releases.
   since `only_total` is on by default; `only_total: false` asks for every
   segment on every release, so it raises nothing. These come back in
   `version_warnings`, and the dashboard still builds.
+- **A field a release reads another way warns too.** Every release takes a
+  heatmap's `x_order` and `y_order`, but only 6.1.0 sorts each axis itself
+  and ranks a label by its total for a value order (`sortAxisValues`,
+  `Heatmap/transformProps.ts:88-145`). Before, the axes list labels in the
+  order the query sorts the cells (`Heatmap/buildQuery.ts:39-48` at 4.1.4,
+  `:39-52` at 5.0.0 and 6.0.0), so by value a label's place follows its
+  largest or smallest cell, and with both axes by value the first axis's
+  direction decides both. A value order warns before 6.1.0; a label order
+  means the same on every release and raises nothing. Seen live on 4.1.4:
+  `y_order: "value_desc"` with `x_order: "value_desc"` put the largest row
+  at the bottom.
 - **6.0.x is checked against its source, not tested live.** Each field's
   first release, 6.0.0 or 6.1.0, was read from the 6.0.0 tag, so `check`,
   `apply` and `plan` hold a 6.0.x instance to what that release takes. 6.0.x
@@ -353,10 +364,13 @@ running the tool against real instances of all three releases.
 - **A written Superset default draws the same chart as an omitted field.**
   Writing Superset's own value (`legend_position: "top"`, `legend_type:
   "scroll"`, a pie's `label_type: "key_percent"`, a funnel's `"key"`, a
-  treemap's `"key_value"`, `marker_size: 6`, `opacity: 0.2`, the teal
-  `trend_color` `#007A87`, a heatmap's `superset_seq_1`, or a dashboard's
-  `refresh_frequency: 0` and `filter_bar_orientation: "vertical"`) changes
-  nothing Superset draws. The spec keeps the value as written, so an author's
+  treemap's `"key_value"`, `marker_size: 6`, `opacity: 0.2` (a mixed
+  query's area too), the teal `trend_color` `#007A87`, a heatmap's
+  `superset_seq_1`, or a dashboard's `refresh_frequency: 0` and
+  `filter_bar_orientation: "vertical"`) changes nothing Superset draws. The
+  same holds for the two orders the tool always wrote, a heatmap's `x_order:
+  "a_to_z"` and `y_order: "z_to_a"`, and for a trendline's
+  `rolling_min_periods` equal to its `rolling_periods`. The spec keeps the value as written, so an author's
   choice survives validation; `compile` builds the same bundle as for the
   omitted field, and `plan` reads the two as equal. A decompiled spec leaves
   Superset's defaults out, since the stored chart can't say which one the
@@ -410,6 +424,52 @@ running the tool against real instances of all three releases.
   With `series_limit` the same control ranks the series, so the tool leaves
   it to the series limit; there a `row_limit` still keeps the largest values,
   and `advise` warns about it (`data.top-n-sort`).
+- **A trendline KPI's rolling window feeds both its number and its
+  comparison.** The panel's rolling window (`rolling_type`, `rolling_periods`,
+  `min_periods`, `BigNumberWithTrendline/controlPanel.tsx:179-228` at 4.1.4
+  and 5.0.0, `:252-301` at 6.1.0) runs in the query's post-processing
+  (`rollingWindowOperator`), so the number is the latest rolled point and
+  `compare_lag` counts rolled points back (`transformProps.ts:110-128` at
+  4.1.4 and 5.0.0, `:189-210` at 6.1.0). The backend drops the first
+  `min_periods - 1` rows (`utils/pandas_postprocessing/rolling.py:99-100`,
+  the same at all three releases), and Superset's own `min_periods` is 0,
+  which shows partial windows; the tool writes `min_periods` equal to the
+  window unless `rolling_min_periods` says otherwise, so every point is a
+  whole window. Seen live on 4.1.4 and 6.1.0 over the example sales data: a
+  trailing-12-month total of $5.20M, +30.4% against the 12 months before.
+- **A big number shows a date through its date format.** `date_format`
+  writes the panel's "Date format" and ticks "Force date format"
+  (`time_format` and `force_timestamp_formatting`,
+  `BigNumberTotal/controlPanel.ts:66` and `:80` at 4.1.4 and 5.0.0, `:57` and
+  `:71` at 6.1.0). The number is formatted with the time format when the
+  metric's type is temporal or a string, or when forced, so a number of epoch
+  milliseconds shows as a date too, and `y_axis_format` then does nothing
+  (`BigNumberTotal/transformProps.ts:87-92` at 4.1.4 and 5.0.0, `:109-114` at
+  6.1.0). Unforced, Superset's smart date shows a `MAX` of a timestamp as its
+  day alone, "Tue 31". Seen live on 4.1.4, 5.0.0 and 6.1.0: `MAX(order_date)`
+  with `%a %-d %b %Y` shows "Tue 31 May 2005". The trendline KPI declares the
+  same pair (`BigNumberWithTrendline/controlPanel.tsx:139` and `:153` at
+  4.1.4 and 5.0.0, `:212` and `:226` at 6.1.0), but there `time_format` also
+  formats the trendline's tooltip dates (and, at 6.1.0, its optional x axis),
+  so the spec offers `date_format` on the plain big number only.
+- **A mixed chart's area is a line with "Area chart" ticked.** `kind:
+  "area"` writes `seriesType` `line` and `area` (query B: `areaB`), and its
+  `opacity` (`opacityB`) scales the fill only; the edge line stays at full
+  strength (`transformSeries`, `Timeseries/transformers.ts` at all three
+  releases). At opacity 1 the edge disappears into the fill. A line draws
+  over an area whichever query holds it: seen live on 4.1.4, 5.0.0 and
+  6.1.0. Any `seriesType` other than bar, scatter, smooth or a step,
+  including the older `echarts_timeseries_line` and `echarts_timeseries_bar`
+  names, draws a straight line (`Timeseries/transformers.ts:237-243` at
+  4.1.4, `:306-312` at 6.1.0), so decompile reads it as `kind: "line"`.
+- **A heatmap's y axis runs from the bottom up.** Both axes are ECharts
+  category axes, which put the first label at the left and at the bottom
+  (`Heatmap/transformProps.ts:227-240` at 4.1.4, `:431-447` at 6.1.0). The
+  spec's `y_order` reads top to bottom, so `a_to_z` writes `sort_y_axis:
+  alpha_desc`; the omitted field writes `alpha_asc` on both axes, as the
+  tool always did, which reads Z to A from the top. Before 6.1.0 the axes
+  take the order of the query's rows, so a y label missing from the first
+  x column lands out of order, after the labels that column holds.
 - **On 4.1.4, heatmap and histogram exist twice** (a legacy plugin and a
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named

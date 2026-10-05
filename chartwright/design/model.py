@@ -26,7 +26,13 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "7" = fills keep a null record when the author edits one (an edit later deleted stays
 # deleted), and default.stale-record: a fixable finding for a renamed or removed chart's
 # design.filled entry, which now validates. Both change what `--fix` writes.
-DESIGN_BRAIN_VERSION = "7"
+# "9" = data.rolling-window-span, a new warn-severity rule for a rolling trendline KPI
+# whose time range can't hold its window and comparison; default.compare-suffix writes
+# 'vs prior 12 months' between trailing windows; chart.ordinal-order leaves a heatmap axis
+# ordered by value alone; default.date-tile fills date_format on a big number of a date
+# column (data-aware), and a big number shown as a date gets no number format from
+# narrative.big-number-format, default.count-format or a standard.
+DESIGN_BRAIN_VERSION = "9"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

@@ -148,6 +148,70 @@ def test_ordinal_order():
     assert "chart.ordinal-order" in rules_fired(mk([b]))
 
 
+def test_ordinal_order_leaves_a_heatmap_axis_ordered_by_value_alone():
+    hm = {"type": "heatmap", "name": "Busy Hours", "dataset": DS, "x_column": "hour",
+          "y_column": "weekday", "metric": "COUNT(*)", "width": 8, "height": 8}
+    hits = [f.detail for f in run(mk([hm])).findings if f.rule == "chart.ordinal-order"]
+    assert hits and "'hour'" in hits[0] and "'weekday'" in hits[0]
+    hits = [f.detail for f in run(mk([{**hm, "y_order": "value_desc"}])).findings
+            if f.rule == "chart.ordinal-order"]
+    assert hits and "'hour'" in hits[0] and "'weekday'" not in hits[0]
+    fired = rules_fired(mk([{**hm, "x_order": "value_asc", "y_order": "value_desc"}]))
+    assert "chart.ordinal-order" not in fired
+
+
+# -- data.rolling-window-span -------------------------------------------------------
+
+
+def ttm(name="TTM", **kw):
+    return {"type": "big_number_trend", "name": name, "dataset": DS, "metric": "SUM(v)",
+            "time_column": "ts", "time_grain": "P1M", "number_format": ",.0f",
+            "rolling_type": "sum", "rolling_periods": 12, "compare_lag": 12, **kw}
+
+
+def window_findings(data):
+    return [f for f in run(data).findings if f.rule == "data.rolling-window-span"]
+
+
+def test_a_trailing_window_needs_a_range_that_holds_it_and_its_comparison():
+    """'Last year' at P1M is about 13 monthly buckets: a 12-month window keeps 2 of them
+    and the comparison 12 back needs 13, so the KPI shows no change at all."""
+    (f,) = window_findings(mk([ttm(time_range="Last year")]))
+    assert f.severity == "warn" and f.chart == "TTM"
+    assert "'Last year'" in f.detail and "needs 24" in f.detail and "draws 2 point" in f.detail
+    assert "no change shows" in f.detail
+    assert window_findings(mk([ttm(time_range="Last 2 years")])) == []
+    assert window_findings(mk([ttm(time_range="Last year", compare_lag=1)])) == []
+    # without a comparison a line still needs two points
+    assert window_findings(mk([ttm(time_range="Last year", compare_lag=None)])) == []
+    assert window_findings(mk([ttm(time_range="Last 11 months", compare_lag=None)]))
+
+
+def test_the_window_counts_from_rolling_min_periods():
+    assert window_findings(mk([ttm(time_range="Last year", rolling_min_periods=0)])) == []
+    assert window_findings(mk([ttm(time_range="Last year", rolling_min_periods=6)]))
+
+
+def test_a_defaulted_time_filter_in_scope_sets_the_range_the_kpi_loads_with():
+    filters = [{"type": "time_range", "name": "Window", "default": "Last quarter"}]
+    (f,) = window_findings(mk([ttm()], filters=filters))
+    assert "the time_range filter 'Window'" in f.detail and "filter's `charts`" in f.detail
+    # the filter replaces the chart's own range on load
+    assert window_findings(mk([ttm(time_range="Last 3 years")], filters=filters))
+    other = {"type": "big_number_total", "name": "Orders", "dataset": DS,
+             "metric": "COUNT(*)", "number_format": ",.0f"}
+    scoped = [{**filters[0], "charts": ["Orders"]}]
+    assert window_findings(mk([ttm(time_range="Last 3 years"), other], filters=scoped)) == []
+
+
+def test_no_window_no_span_no_finding():
+    assert window_findings(mk([ttm()])) == []                          # all history
+    cum = ttm(time_range="Last month", rolling_type="cumsum", rolling_periods=None)
+    assert window_findings(mk([cum])) == []                            # a running total
+    plain = ttm(time_range="Last month", rolling_type=None, rolling_periods=None)
+    assert window_findings(mk([plain])) == []
+
+
 def test_format_consistency():
     k1 = {"type": "big_number_total", "name": "Sales", "dataset": DS,
           "metric": "SUM(v)", "number_format": ",.0f"}

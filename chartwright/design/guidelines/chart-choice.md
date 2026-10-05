@@ -23,10 +23,17 @@
 - Sort order is per family: bars sort by their first metric (right for
   rankings, wrong for ordinals like weekday/month) unless `category_sort`
   orders them by label; heatmap and pivot categories sort alphabetically
-  (a pivot can sort by value: `row_order`). For ordinal dimensions, chart an
-  order-encoded label column (labels prefixed with a sort index: '1-Mon')
-  if the dataset has one, and give a bar `category_sort: "asc"`. An ordered
-  axis such as hours stays vertical: add `x_label_every` so every label shows.
+  (by value: a pivot's `row_order`, a heatmap's `x_order`/`y_order`). For
+  ordinal dimensions, chart an order-encoded label column (labels prefixed
+  with a sort index: '1-Mon') if the dataset has one, and give a bar
+  `category_sort: "asc"`. An ordered axis such as hours stays vertical: add
+  `x_label_every` so every label shows. A heatmap's y axis reads Z to A from
+  the top; `y_order: "a_to_z"` puts the first label on top, as a cohort
+  triangle (oldest cohort first) or a weekday grid reads.
+- A rolling KPI (`rolling_type`) shows a trailing window, not the latest
+  period: name the window in its title or subtitle ("Revenue, trailing 12
+  months"), and give it a range that holds the window plus `compare_lag`
+  (24 months for a trailing year against the year before).
 - A paged table (`page_length`) needs room for one page and its pager, not
   for every row; a timeseries with many groups keeps the top few with
   `series_limit`.

@@ -759,7 +759,9 @@ def ordinal_order(ctx: RuleContext):
         if c.type == "bar":
             return [c.x_column]
         if c.type == "heatmap":
-            return [c.x_column, c.y_column]
+            # An axis ordered by value is ordered on purpose, not by label.
+            return [col for col, order in ((c.x_column, c.x_order), (c.y_column, c.y_order))
+                    if order not in ("value_asc", "value_desc")]
         if c.type == "pivot_table":
             return [*c.rows, *c.columns]
         return []
@@ -937,6 +939,52 @@ def grain_vs_range(ctx: RuleContext):
             )
 
 
+def _loaded_range(ctx: RuleContext, c) -> tuple[str | None, str]:
+    """The time range a chart loads with, and where it comes from: a defaulted dashboard
+    time_range filter in its scope replaces the chart's own (the filter's extra form data
+    overrides time_range), else the chart's time_range."""
+    for f in ctx.spec.filters:
+        if f.type == "time_range" and f.default and (f.charts is None or c.name in f.charts):
+            return f.default, f"the time_range filter {f.name!r} loads it with"
+    return c.time_range, "its time_range"
+
+
+@rule("data.rolling-window-span", "warn",
+      "a rolling trendline KPI's time range must hold its window and its comparison", since="9")
+def rolling_window_span(ctx: RuleContext):
+    """A trailing-12-month total over "Last year" draws one point: the backend keeps only
+    windows that hold rolling_min_periods steps, and compare_lag needs that many points
+    more. With too few, the trendline is a dot and no change shows, silently."""
+    for c in ctx.spec.charts:
+        if c.type != "big_number_trend" or c.rolling_type in (None, "cumsum"):
+            continue
+        time_range, source = _loaded_range(ctx, c)
+        span = _span_days(time_range) if time_range else None
+        eff = c.time_grain or DEFAULT_TIME_GRAIN
+        grain = _grain_days(eff)
+        if span is None or grain is None:
+            continue
+        least = max(1, c.rolling_periods if c.rolling_min_periods is None else c.rolling_min_periods)
+        lag = c.compare_lag or 0
+        # A range of N grain steps touches about N + 1 buckets. The backend keeps the
+        # windows from bucket `least` on, and the comparison needs `lag` points before the
+        # latest; without one, a line still needs two points.
+        buckets = round(span / grain) + 1
+        points = max(0, buckets - least + 1)
+        wanted = max(lag + 1, 2)
+        if points >= wanted:
+            continue
+        needs = least + wanted - 1
+        yield Finding(
+            "data.rolling-window-span", "warn", c.name, ctx.where(c.name),
+            f"{source} {time_range!r}: about {buckets} {eff} buckets, but a {least}-step "
+            f"window" + (f" with compare_lag {lag}" if lag else "") + f" needs {needs}: the "
+            f"trendline draws {points} point(s)" + (" and no change shows" if lag else "")
+            + "; widen the range"
+            + (" or leave this chart out of that filter's `charts`" if "filter" in source else ""),
+        )
+
+
 _FINE_GRAINS = (None, "PT1S", "PT1M", "PT1H", "P1D")
 
 
@@ -1041,11 +1089,13 @@ def title_style(ctx: RuleContext):
 def big_number_format(ctx: RuleContext):
     from .defaults import FILLS  # function-level: defaults imports this module
 
-    counts = FILLS["default.count-format"]
+    counts, dates = FILLS["default.count-format"], FILLS["default.date-tile"]
     for c in ctx.spec.charts:
-        if c.type in KPI_TYPES and c.number_format is None:
+        if c.type in KPI_TYPES and c.number_format is None and not getattr(c, "date_format", None):
             if counts.decide(ctx, c)[0] is not None:
                 continue  # default.count-format offers this remedy with a fix; one finding
+            if c.type == "big_number_total" and dates.decide(ctx, c)[0] is not None:
+                continue  # a date: default.date-tile formats it as one
             yield Finding(
                 "narrative.big-number-format", "info", c.name, ctx.where(c.name),
                 "no number_format: raw float precision on a hero number; ',.0f' or '.3s' read better",

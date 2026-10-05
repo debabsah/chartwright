@@ -41,7 +41,8 @@ NEW_KEYS = {
     "timeseries_limit_metric_b", "order_desc_b", "legendOrientation", "legendType",
     "compare_lag", "compare_suffix", "subtitle", "color_picker", "page_length", "show_totals",
     "include_search", "rowSubTotals", "transposePivot", "show_values", "show_percentage",
-    "number_format", "show_total", "labels_outside", "markerEnabled", "area",
+    "number_format", "show_total", "labels_outside", "markerEnabled", "area", "areaB",
+    "opacityB", "rolling_periods", "min_periods", "time_format", "force_timestamp_formatting",
 }
 
 
@@ -121,12 +122,20 @@ def _display_params() -> dict[str, dict]:
                      "metricsLayout": "ROWS"}),
     ("Line by Deal Size", {"show_values": True, "linear_color_scheme": "schemeBlues",
                            "y_axis_format": ",.0f", "show_percentage": False,
-                           "normalize_across": "y", "show_legend": False}),
+                           "normalize_across": "y", "show_legend": False,
+                           # x by value, largest first; y A to Z from the TOP (bottom-up axis)
+                           "sort_x_axis": "value_desc", "sort_y_axis": "alpha_desc"}),
+    ("Trailing Revenue", {"rolling_type": "sum", "rolling_periods": 12, "min_periods": 6,
+                          "compare_lag": 12}),
+    ("Sales and Price Areas", {"seriesType": "line", "seriesTypeB": "line", "area": True,
+                               "areaB": True, "opacity": 1, "opacityB": 0.4, "yAxisIndexB": 1}),
     ("Price Spread", {"x_axis_title": "Unit price", "y_axis_title": "Orders"}),
     ("Revenue KPI", {"compare_lag": 1, "compare_suffix": "vs last month",
                      "subtitle": "Booked revenue", "time_range": "Last year",
                      "color_picker": {"r": 0, "g": 87, "b": 184, "a": 1}}),
     ("Orders This Quarter", {"time_range": "Last quarter"}),
+    ("Latest Order", {"time_format": "%a %-d %b %Y", "force_timestamp_formatting": True,
+                      "subheader": "Data through"}),
     ("Revenue and Orders", {
         "show_value": True, "stack": True, "only_total": False, "limit": 2, "order_desc": False,
         "show_valueB": True, "limit_b": 3, "x_axis_title": "Month", "y_axis_title": "Revenue",
@@ -324,6 +333,27 @@ def _edit_params(name, **changes):
     ("Revenue KPI", {"color_picker": {"r": 0, "g": 122, "b": 135, "a": 1}}, {"trend_color": None}),
     ("Revenue KPI", {"color_picker": {"r": 0x1B, "g": 0x7F, "b": 0x3B, "a": 1}}, {"trend_color": "green"}),
     ("Revenue KPI", {"compare_lag": "2"}, {"compare_lag": 2}),
+    ("Revenue KPI", {"rolling_type": "None"}, {"rolling_type": None}),
+    # rollingWindowOperator: a missing window is 1, missing min periods 0 (ensureIsInt)
+    ("Trailing Revenue", {"min_periods": 12}, {"rolling_min_periods": None}),
+    ("Trailing Revenue", {"min_periods": None}, {"rolling_min_periods": 0}),
+    ("Trailing Revenue", {"rolling_periods": "6", "min_periods": "6"},
+     {"rolling_periods": 6, "rolling_min_periods": None}),
+    ("Trailing Revenue", {"rolling_periods": None, "min_periods": None},
+     {"rolling_periods": 1, "rolling_min_periods": 0}),
+    ("Trailing Revenue", {"rolling_type": "cumsum"},
+     {"rolling_type": "cumsum", "rolling_periods": None, "rolling_min_periods": None}),
+    ("Line by Deal Size", {"sort_x_axis": "alpha_asc", "sort_y_axis": "alpha_asc"},
+     {"x_order": None, "y_order": None}),
+    ("Line by Deal Size", {"sort_x_axis": None, "sort_y_axis": None},  # unset: 5.0.0 on
+     {"x_order": None, "y_order": None}),
+    ("Line by Deal Size", {"sort_x_axis": "alpha_desc", "sort_y_axis": "value_asc"},
+     {"x_order": "z_to_a", "y_order": "value_desc"}),
+    # forced, the number is a date whatever its type, and a number format does nothing
+    ("Latest Order", {"time_format": None}, {"date_format": "smart_date"}),
+    ("Latest Order", {"y_axis_format": ",.0f"}, {"date_format": "%a %-d %b %Y", "number_format": None}),
+    ("Orders This Quarter", {"time_format": "smart_date", "force_timestamp_formatting": False},
+     {"date_format": None}),
     ("Line by Deal Size", {"linear_color_scheme": "superset_seq_1"}, {"color_scheme": None}),
     ("Top Customers", {"page_length": None}, {"page_length": None}),
     ("Orders by Hour", {"x_axis_sort": "COUNT(*)"}, {"category_sort": None}),
@@ -345,6 +375,18 @@ def test_a_hidden_legend_drops_its_placement_and_an_inert_only_total_is_dropped(
     assert "only_total" not in back and "show_value" not in back
 
 
+def test_a_trendlines_untouched_force_date_format_is_no_loss():
+    """Superset stores force_timestamp_formatting false on every big number it saves; the
+    spec carries it on a big_number_total (date_format), not on a trendline KPI."""
+    spec = load_spec(DISPLAY)
+    edit = _edit_params("Revenue KPI", force_timestamp_formatting=False, time_format="smart_date")
+    assert _decompile(spec, edit).losses == []
+    out = _decompile(spec, _edit_params("Revenue KPI", force_timestamp_formatting=True))
+    assert [loss.what for loss in out.losses] == [
+        "settings not preserved (apply puts Superset's default back): "
+        "['force_timestamp_formatting=True']"]
+
+
 def test_the_old_echart_options_y_max_still_decompiles():
     """Bundles built before y_axis_max moved to y_axis_bounds carry it in echart_options."""
     spec = _spec({"name": "L", "type": "timeseries_line", "dataset": DS, "metrics": ["MAX(s)"],
@@ -360,6 +402,15 @@ def test_unrepresentable_values_are_named_losses():
     edit = _edit_params("Share by Line", label_type="template")
     assert any("label_type 'template'" in loss.what
                for loss in _decompile(load_spec(DISPLAY), edit).losses)
+    for chart, stored, named in (
+            ("Trailing Revenue", {"rolling_type": "quantile"}, "rolling_type 'quantile' not preserved"),
+            ("Trailing Revenue", {"min_periods": 20}, "min_periods 20 above the 12-step window"),
+            ("Line by Deal Size", {"sort_x_axis": "random"}, "heatmap sort_x_axis 'random'"),
+            ("Orders This Quarter", {"time_format": "%Y"},
+             "time_format '%Y' without Force date format not preserved")):
+        out = _decompile(load_spec(DISPLAY), _edit_params(chart, **stored))
+        assert any(named in loss.what for loss in out.losses), (named, out.losses_json())
+        load_spec(out.spec)  # still a valid spec
 
 
 # -- plan ----------------------------------------------------------------------------
@@ -396,6 +447,15 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Revenue KPI", {"compare_lag": 3}),
     ("Orders This Quarter", {"time_range": "Last month"}),
     ("Revenue and Orders", {"limit_b": 9}),
+    ("Trailing Revenue", {"rolling_periods": 6}),
+    ("Trailing Revenue", {"min_periods": 0}),
+    ("Trailing Revenue", {"rolling_type": "mean"}),
+    ("Line by Deal Size", {"sort_y_axis": "alpha_asc"}),
+    ("Line by Deal Size", {"sort_x_axis": "value_asc"}),
+    ("Sales and Price Areas", {"opacityB": 0.9}),
+    ("Sales and Price Areas", {"area": False}),
+    ("Latest Order", {"time_format": "%Y-%m-%d"}),
+    ("Latest Order", {"force_timestamp_formatting": False}),
 ])
 def test_plan_reports_a_display_change_made_in_the_ui(chart, change, monkeypatch):
     out = _plan(load_spec(DISPLAY), _edit_params(chart, **change), monkeypatch)
@@ -407,6 +467,8 @@ def test_plan_reports_a_display_change_made_in_the_ui(chart, change, monkeypatch
 
 LINE = {"name": "L", "type": "timeseries_line", "dataset": DS, "metrics": ["SUM(x)"],
         "time_column": "ts"}
+TREND = {"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
+         "time_column": "ts"}
 
 
 @pytest.mark.parametrize("chart, message", [
@@ -428,6 +490,20 @@ LINE = {"name": "L", "type": "timeseries_line", "dataset": DS, "metrics": ["SUM(
       "time_column": "ts", "compare_suffix": "vs last week"}, "compare_suffix needs compare_lag"),
     ({"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
       "time_column": "ts", "trend_color": "teal"}, "trend_color must be green, amber, red or #RRGGBB, got 'teal'"),
+    ({**TREND, "rolling_periods": 12}, "rolling_periods and rolling_min_periods need rolling_type"),
+    ({**TREND, "rolling_type": "sum"}, "rolling_type sum needs rolling_periods"),
+    ({**TREND, "rolling_type": "cumsum", "rolling_periods": 12},
+     "cumsum is a running total from the first point"),
+    ({**TREND, "rolling_type": "cumsum", "rolling_min_periods": 0},
+     "it takes no rolling_periods or rolling_min_periods"),
+    ({**TREND, "rolling_type": "mean", "rolling_periods": 3, "rolling_min_periods": 4},
+     "rolling_min_periods (4) can't pass rolling_periods (3)"),
+    ({**TREND, "rolling_type": "median", "rolling_periods": 3}, "'cumsum'"),
+    ({"name": "H", "type": "heatmap", "dataset": DS, "x_column": "a", "y_column": "b",
+      "metric": "COUNT(*)", "y_order": "top_down"}, "'value_desc'"),
+    ({"name": "D", "type": "big_number_total", "dataset": DS, "metric": "MAX(ts)",
+      "date_format": "%d %b", "number_format": ",.0f"},
+     "date_format shows the number as a date, so number_format never applies"),
     ({"name": "T", "type": "table", "dataset": DS, "columns": ["a"], "show_totals": True},
      "show_totals needs aggregate mode"),
     ({"name": "T", "type": "table", "dataset": DS, "columns": ["a"], "column_headers": {"b": "B"}},
@@ -496,8 +572,17 @@ EXPLICIT_DEFAULTS = [
     ({**PIE, "type": "treemap", "groupby": ["g"]}, "label_type", "key_value"),
     ({"name": "H", "type": "heatmap", "dataset": DS, "x_column": "a", "y_column": "b",
       "metric": "COUNT(*)"}, "color_scheme", "superset_seq_1"),
+    # the labels A to Z on both axes, the y axis from the bottom up (reads z_to_a)
+    ({"name": "H", "type": "heatmap", "dataset": DS, "x_column": "a", "y_column": "b",
+      "metric": "COUNT(*)"}, "x_order", "a_to_z"),
+    ({"name": "H", "type": "heatmap", "dataset": DS, "x_column": "a", "y_column": "b",
+      "metric": "COUNT(*)"}, "y_order", "z_to_a"),
     ({"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
       "time_column": "ts"}, "trend_color", "#007A87"),
+    # a window's min periods defaults to the window itself
+    ({"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
+      "time_column": "ts", "rolling_type": "sum", "rolling_periods": 12},
+     "rolling_min_periods", 12),
 ]
 
 

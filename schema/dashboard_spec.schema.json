@@ -788,6 +788,20 @@
           "default": null,
           "description": "d3 format string, e.g. ',.0f'",
           "title": "Number Format"
+        },
+        "date_format": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Show the number as a date, in a d3 time format, e.g. \"%a %-d %b %Y\" (Sat 3 Oct 2026): a freshness tile over MAX(<date column>). A date or timestamp metric takes it as it is, and a number is read as epoch milliseconds (Superset's Force date format); not with number_format",
+          "title": "Date Format"
         }
       },
       "required": [
@@ -995,7 +1009,7 @@
             }
           ],
           "default": null,
-          "description": "Compare the latest value with the one this many time-grain steps earlier, shown as a percentage change under the number, e.g. 1 at P1M is month over month",
+          "description": "Compare the latest value with the one this many time-grain steps earlier, shown as a percentage change under the number, e.g. 1 at P1M is month over month. With rolling_type both values are windows: lag 12 on a trailing-12 sum compares this year's 12 months with the 12 before",
           "title": "Compare Lag"
         },
         "compare_suffix": {
@@ -1008,7 +1022,7 @@
             }
           ],
           "default": null,
-          "description": "Text after the percentage change, e.g. \"vs last month\". Leave it unset unless asked: `advise --fix` fills it from the grain and compare_lag",
+          "description": "Text after the percentage change, e.g. \"vs last month\". Leave it unset unless asked: `advise --fix` fills it from the grain, compare_lag and the rolling window",
           "title": "Compare Suffix"
         },
         "subtitle": {
@@ -1045,6 +1059,53 @@
           "default": null,
           "description": "Colour of the trendline: green, amber or red (the text shades colour rules use) or any #RRGGBB; Superset's default is teal #007A87",
           "title": "Trend Color"
+        },
+        "rolling_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "sum",
+                "mean",
+                "std",
+                "cumsum"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A rolling window over the trendline, which the number and compare_lag then read: sum, mean or std over the last rolling_periods time-grain steps, or cumsum, a running total from the first point. sum at P1M with rolling_periods 12 is a trailing-12-month total, and compare_lag 12 compares it with the 12 months before. The chart's time range must hold rolling_periods + compare_lag steps, or no change shows. Say the window in the title or subtitle: the number is no longer the latest step's",
+          "title": "Rolling Type"
+        },
+        "rolling_periods": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With rolling_type sum, mean or std: the window, in time-grain steps, e.g. 12 at P1M for a trailing year",
+          "title": "Rolling Periods"
+        },
+        "rolling_min_periods": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Steps a window needs before the trendline shows it. Omitted, it is rolling_periods: the line starts at the first full window, so every point (and the number) is a whole trailing window; 0 also draws the partial windows of the first steps, as Superset's own default does",
+          "title": "Rolling Min Periods"
         }
       },
       "required": [
@@ -2214,6 +2275,44 @@
           "description": "false hides the colour scale",
           "title": "Show Legend",
           "type": "boolean"
+        },
+        "x_order": {
+          "anyOf": [
+            {
+              "enum": [
+                "a_to_z",
+                "z_to_a",
+                "value_asc",
+                "value_desc"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The x labels, left to right: a_to_z (the default) or z_to_a by label, value_asc or value_desc by the metric",
+          "title": "X Order"
+        },
+        "y_order": {
+          "anyOf": [
+            {
+              "enum": [
+                "a_to_z",
+                "z_to_a",
+                "value_asc",
+                "value_desc"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The y labels, top to bottom: a_to_z puts the first label on top, e.g. a cohort triangle's oldest cohort; value_asc or value_desc by the metric. Omitted, Superset draws the labels A to Z from the bottom up, which reads z_to_a. A value order ranks each label by its total from Superset 6.1.0; before, by its largest or smallest cell",
+          "title": "Y Order"
         }
       },
       "required": [
@@ -2748,7 +2847,7 @@
     },
     "MixedChart": {
       "additionalProperties": false,
-      "description": "Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue\nas bars with revenue per order as a line. ``x_column`` is a time column (bucketed\nby ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and\n``b`` are the two queries; the chart's own ``filters`` apply to both. The y_axis_*\nfields set the primary (left) axis; their *_secondary twins the right one.",
+      "description": "Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue\nas bars with revenue per order as a line, or a filled area under a line (``kind:\n\"area\"``). ``x_column`` is a time column (bucketed\nby ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and\n``b`` are the two queries; the chart's own ``filters`` apply to both. The y_axis_*\nfields set the primary (left) axis; their *_secondary twins the right one.",
       "properties": {
         "color_scheme": {
           "anyOf": [
@@ -3183,7 +3282,7 @@
     },
     "MixedSeries": {
       "additionalProperties": false,
-      "description": "One of a mixed chart's two queries: its metrics, drawn as bars or a line, on\nthe primary (left) or secondary (right) value axis.",
+      "description": "One of a mixed chart's two queries: its metrics, drawn as bars, a line or a\nfilled area, on the primary (left) or secondary (right) value axis.",
       "properties": {
         "metrics": {
           "items": {
@@ -3195,12 +3294,29 @@
         },
         "kind": {
           "default": "bar",
+          "description": "bar, line, or area: a line with the space under it filled. A line draws over an area whichever query holds it, so an area under a line takes either order",
           "enum": [
             "bar",
-            "line"
+            "line",
+            "area"
           ],
           "title": "Kind",
           "type": "string"
+        },
+        "opacity": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With kind area: the fill's opacity, 0-1 (Superset's default 0.2). Superset draws the area's edge as a line in the same colour at full strength; at 1 the edge disappears into the fill, a filled area with no outline (give it a light colour with dashboard label_colors)",
+          "title": "Opacity"
         },
         "axis": {
           "default": "primary",
