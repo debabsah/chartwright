@@ -7,6 +7,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Upgrading from 0.4
 
+- `apply` now keeps the newest 50 backups per profile and dashboard and deletes older ones after each new backup. Set `CHARTWRIGHT_BACKUP_KEEP` to keep more, or to 0 to keep them all, before upgrading if you rely on older backups.
+- `restore` refuses a backup taken on another instance than the profile points at (`other_instance`); pass `--to-other-instance` to restore it there on purpose. Backups taken before 0.5.0 carry no record of their instance and restore as before, with a warning.
 - A spec with `dashboard.adopted` is refused by chartwright 0.4.0 and earlier (`extra_forbidden`); upgrade CI before committing one.
 - `apply` now keeps a chart's saved query (which CSV and text reports and the chart data API read) when it writes the same options the chart already stores; before, every in-place update cleared it. `restore` puts a backup's saved queries back.
 
@@ -29,6 +31,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- `restore` (and the automatic restore after a failed apply) deletes the charts the tool created after the backup that it leaves on no dashboard, such as the new chart of a failed apply; before, they stayed behind as orphans. Charts made in Superset are never deleted.
 - A chart added to a chartwright dashboard in Superset no longer makes the next `apply` fail on Superset 4.1.4 and 5.0.0. `apply` takes it off the dashboard on every release, leaves the chart itself under Charts, and names it in a warning; on 6.1.0 the chart came off before too, but without a word. To keep such a chart on the dashboard, add it to the spec.
 - `restore` (and the automatic restore after a failed apply) now fails, naming the charts, when it can't put some charts' settings back; before, it reported success with the charts still on the newer settings.
 - `restore` now leaves the dashboard linked to exactly the backup's charts on 4.1.4 and 5.0.0. Before, a chart linked since the backup, such as one a failed apply had just added, stayed linked to the restored dashboard.
