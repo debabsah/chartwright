@@ -16,10 +16,12 @@
   so a truncated pie lies about share. Prefer a horizontal bar for top-N; a
   truncated pie's title must say "top N".
 - Table and pivot height is a DATA-DEPENDENT property, not a one-time layout
-  choice: size from expected rows (~0.75 units per row + 3 for title/header,
-  +1 for pivot column headers) and re-check whenever a row dimension is
-  expected to gain members. Rows past the fold hide behind an inner
-  scrollbar; smoke warns at apply time when they do.
+  choice: size from expected rows (a table ~0.75 units per row + 2.5, more
+  with a search box, pager or totals row; a pivot ~0.65 per distinct
+  row-dimension value + 4 to 6 for its header rows and totals row, never from
+  its row_limit, which counts records: rows x columns) and re-check whenever a
+  row dimension is expected to gain members. Rows past the fold hide behind
+  an inner scrollbar; smoke warns at apply time when they do.
 - Sort order is per family: bars sort by their first metric (right for
   rankings, wrong for ordinals like weekday/month) unless `category_sort`
   orders them by label; heatmap and pivot categories sort alphabetically

@@ -123,7 +123,8 @@ def test_grid_fit_probes_row_dimension():
     assert "~12 rendered rows" in f.detail and f.fix["set"]["height"] == 12
     rep = advise(spec, resolution=res, prober=FakeProber({"region": 5}), overlay=EMPTY)
     assert not any(f.rule == "size.grid-fit" for f in rep.findings)
-    # multi-dim pivots are out of honest scope for per-column probes
+    # a multi-dim pivot needs every dimension counted (a lower bound, tests/test_grid_rows.py):
+    # a failed probe of one sizes nothing
     pivot["rows"] = ["region", "store"]
     rep = advise(mk([pivot]), resolution=res, prober=FakeProber({"region": 50}), overlay=EMPTY)
     assert not any(f.rule == "size.grid-fit" for f in rep.findings)

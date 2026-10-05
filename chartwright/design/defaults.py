@@ -300,10 +300,12 @@ def _page_length(ctx: RuleContext, c):
     # The one grid model size.table-window reads (spec.py): a page fills the whole rows
     # that fit beside the page-size bar and the pager, so a fill can never make that
     # rule ask for more height.
-    fits = math.floor(grid_rows_visible(h, table_header_units(controls=c.search_box)))
+    fits = math.floor(grid_rows_visible(h, table_header_units(controls=c.search_box,
+                                                              totals=c.show_totals)))
     if c.row_limit <= fits:
         return None, f"all {c.row_limit} rows fit at height {h:g}"
-    page = math.floor(grid_rows_visible(h, table_header_units(controls=True, pager=True)))
+    page = math.floor(grid_rows_visible(h, table_header_units(controls=True, pager=True,
+                                                              totals=c.show_totals)))
     if page < ctx.params.page_min_rows:
         return None, f"height {h:g} fits {page} rows beside a pager, too few to page; raise the height"
     return page, (f"row_limit {c.row_limit} at height {h:g}: {fits} rows fit on one page, "

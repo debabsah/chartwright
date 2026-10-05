@@ -26,7 +26,11 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "7" = fills keep a null record when the author edits one (an edit later deleted stays
 # deleted), and default.stale-record: a fixable finding for a renamed or removed chart's
 # design.filled entry, which now validates. Both change what `--fix` writes.
-DESIGN_BRAIN_VERSION = "7"
+# "8" = one height question for tables and pivots (sec.15.42): table_visible_ratio 1 and
+# every-row targets in size.table-window, size.pivot-window reading pivot rows instead of
+# row_limit, size.grid-fit counting every pivot layout. No new rule, but a table can
+# newly warn (and block a strict gate) and `--fix` writes different heights.
+DESIGN_BRAIN_VERSION = "8"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

@@ -46,7 +46,11 @@ def pivot(name, **kw):
 
 
 def test_pivot_window_and_row_limit_intent():
-    fired = rules_fired(mk([pivot("P", row_limit=1000, height=6, columns=["month"])]))
+    # row_limit counts records, not pivot rows: one row at 6 units fits beside the
+    # header, and offline nothing says how many 'region' values there are.
+    assert "size.pivot-window" not in rules_fired(
+        mk([pivot("P", row_limit=1000, height=6, columns=["month"])]))
+    fired = rules_fired(mk([pivot("P", row_limit=1000, height=5, columns=["month"])]))
     assert "size.pivot-window" in fired
     assert "data.row-limit-intent" in rules_fired(mk([pivot("Q")]))
 

@@ -31,7 +31,9 @@ DEFAULT_TIME_GRAIN = "P1D"
 # How a rendered table or pivot spends spec height. ONE model, read by the design
 # critic (size.table-window, size.pivot-window, size.grid-fit), the page-length and
 # search-box fills, and apply-time smoke, so offline advice, data-aware advice, the
-# fills and the apply warning can never disagree about the same chart.
+# fills and the apply warning can never disagree about the same chart. Every consumer
+# asks grid_fit() what a chart drawing N body rows needs; they differ only in where N
+# comes from (the rows a query returned, a probed count, or the row_limit ceiling).
 #
 # Measured 2026-10-03 on rendered Superset 4.1.4, 5.0.0 and 6.1.0 (1600 px viewport,
 # default theme; docs/DESIGN-BRAIN.md, "Calibration"). Each constant is the largest
@@ -42,14 +44,23 @@ GRID_HEADER_UNITS = 2.5        # card title, column header and card padding: 99.
 GRID_CONTROLS_UNITS = 1.05     # the bar above the rows that search_box or any page_length
                                # adds: 41.1 px / 39.1 px (6.1.0 draws 33.1 px for a page size alone)
 GRID_PAGER_UNITS = 1.45        # the pager under a table of more than one page: 57.9 px / 42.9 px
-PIVOT_UNITS_PER_ROW = 0.65     # pivot body row: 25.8 px on average (19 rows: 490.1 px)
+GRID_TOTALS_UNITS = 0.74       # show_totals' Summary row: the table foot, which DataTable keeps
+                               # out of the scrolling body (6.1.0 plugin-chart-table DataTable/
+                               # hooks/useSticky.tsx:183,217); not measured, so one body row
+PIVOT_UNITS_PER_ROW = 0.65     # pivot body row: 25.8 px on average (19 rows: 490.1 px), as 6.1.0's
+                               # styles give it: 12 px text at line-height 1.4, 4 px padding above
+                               # and below and a 1 px rule (react-pivottable/Styles.ts:27,33,113,115)
 PIVOT_FRAME_UNITS = 2.55       # pivot card title, margins and padding: 101 px
-PIVOT_HEADER_ROW_UNITS = 0.66  # one pivot header row: 26.3 px; a pivot draws one per column
-                               # dimension plus two (the metric row and the row-dimension names)
+PIVOT_HEADER_ROW_UNITS = 0.66  # one pivot header row: 26.3 px (pivot_frame counts them)
 PIVOT_TOTALS_UNITS = 0.72      # the totals row column_totals pins over the bottom rows: 28.8 px
+                               # (sticky at the bottom, Styles.ts:55-59)
 PIVOT_HSCROLL_UNITS = 0.45     # the horizontal scrollbar under a pivot whose column dimensions
                                # outgrow the panel: 11 px in Chromium's classic scrollbars, and
-                               # Windows draws 17 px; overlay scrollbars (macOS) take none
+                               # Windows draws 17 px; overlay scrollbars (macOS) take none.
+                               # 6.1.0 styles its own at 8 px (PivotTableChart.tsx:70-73)
+# The metric names: one more attribute of a pivot's rows or columns, which Superset adds
+# even for a single metric (6.1.0 plugin-chart-pivot-table PivotTableChart.tsx:98,382-386).
+PIVOT_METRIC = "\x00metric"
 
 
 def grid_units_for_rows(rows: float, header_units: float = GRID_HEADER_UNITS,
@@ -64,34 +75,118 @@ def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS,
     return max(0.0, (height - header_units) / row_units)
 
 
-def table_header_units(*, controls: bool = False, pager: bool = False) -> float:
+def table_header_units(*, controls: bool = False, pager: bool = False,
+                       totals: bool = False) -> float:
     """Everything a table draws besides its body rows: card title, column header and
     padding, plus the bar above the rows (`controls`: a search box, or any
-    page_length, which draws a page-size picker even on one page) and the pager under
-    them (`pager`: more rows than one page holds)."""
+    page_length, which draws a page-size picker even on one page), the pager under
+    them (`pager`: more rows than one page holds) and the Summary row (`totals`:
+    show_totals)."""
     return (GRID_HEADER_UNITS + (GRID_CONTROLS_UNITS if controls else 0)
-            + (GRID_PAGER_UNITS if pager else 0))
+            + (GRID_PAGER_UNITS if pager else 0) + (GRID_TOTALS_UNITS if totals else 0))
 
 
-def pivot_header_units(column_dims: int, *, totals: bool = False) -> float:
-    """Everything a pivot draws besides its body rows: card frame, a header row per
-    column dimension plus two, room for a horizontal scrollbar when column dimensions
-    can outgrow the panel, and the pinned totals row (`column_totals`)."""
-    return (PIVOT_FRAME_UNITS + PIVOT_HEADER_ROW_UNITS * (column_dims + 2)
-            + (PIVOT_HSCROLL_UNITS if column_dims else 0)
+def pivot_axes(chart) -> tuple[list[str], list[str]]:
+    """The (row, column) attributes a pivot draws, as 6.1.0's PivotTableChart.tsx:377-386
+    builds them: transpose swaps the dimensions, and the metric names (PIVOT_METRIC) are
+    one more attribute, on the columns unless metrics_layout is rows; outermost, or
+    innermost with combine_metric."""
+    rows, cols = ((list(chart.columns), list(chart.rows)) if chart.transpose
+                  else (list(chart.rows), list(chart.columns)))
+    side = rows if chart.metrics_layout == "rows" else cols
+    side.insert(len(side) if chart.combine_metric else 0, PIVOT_METRIC)
+    return rows, cols
+
+
+def pivot_frame(chart) -> tuple[int, bool, bool]:
+    """(header rows, horizontal-scrollbar room, totals row) of a pivot as configured.
+    6.1.0's TableRenderers.tsx draws a header row per column attribute, and one naming
+    the row attributes when there are any (:1418-1423); the totals row with
+    column_totals, and always when there are no row attributes (:367, :1429). Column
+    dimensions, not metric names, are what can outgrow the panel."""
+    rows, cols = pivot_axes(chart)
+    return (len(cols) + (1 if rows else 0), any(a != PIVOT_METRIC for a in cols),
+            chart.column_totals or not rows)
+
+
+def pivot_header_units(header_rows: int, *, hscroll: bool = False,
+                       totals: bool = False) -> float:
+    """Everything a pivot draws besides its body rows: card frame, its header rows,
+    room for a horizontal scrollbar (`hscroll`) and the pinned totals row (`totals`)."""
+    return (PIVOT_FRAME_UNITS + PIVOT_HEADER_ROW_UNITS * header_rows
+            + (PIVOT_HSCROLL_UNITS if hscroll else 0)
             + (PIVOT_TOTALS_UNITS if totals else 0))
+
+
+def pivot_rows(chart, records: list[dict]) -> tuple[int, int]:
+    """(leaf rows, subtotal rows) a pivot draws for its query's records: a body row per
+    distinct row key, never per record (the query returns rows x columns records). The
+    metric names count as a row attribute when laid out as rows, and row_subtotals adds
+    a row per distinct key prefix (6.1.0 react-pivottable/utilities.ts:957-975). With no
+    row attribute there is no body row: the pivot is its totals row."""
+    rows, _ = pivot_axes(chart)
+    if not rows:
+        return 0, 0
+    labels = [metric_label(m) for m in chart.metrics] if PIVOT_METRIC in rows else [None]
+    keys = {tuple(label if a == PIVOT_METRIC else r.get(a) for a in rows)
+            for r in records for label in labels}
+    subtotals = (len({k[:i] for k in keys for i in range(1, len(rows))})
+                 if chart.row_subtotals else 0)
+    return len(keys), subtotals
+
+
+def pivot_rows_from_counts(chart, counts: dict[str, int]) -> tuple[int, int, bool]:
+    """(leaf rows, subtotal rows, exact) a pivot draws, from the distinct values of each
+    row dimension counted one column at a time (`counts`). Exact with at most one row
+    dimension; with more, the combinations number at least the largest count, so the
+    leaf rows are a lower bound and subtotals go uncounted (exact False)."""
+    rows, _ = pivot_axes(chart)
+    if not rows:
+        return 0, 0, True
+    size = {a: len(chart.metrics) if a == PIVOT_METRIC else counts[a] for a in rows}
+    dims = [a for a in rows if a != PIVOT_METRIC]
+    if len(dims) > 1:
+        per = len(chart.metrics) if PIVOT_METRIC in rows else 1
+        return max(size[a] for a in dims) * per, 0, False
+    subtotals = (sum(math.prod(size[a] for a in rows[:i]) for i in range(1, len(rows)))
+                 if chart.row_subtotals else 0)
+    return math.prod(size.values()), subtotals, True
+
+
+def table_page(chart) -> int | None:
+    """Rows on one page of a paged table (page_length > 0), never more than row_limit;
+    None when every row is on one page."""
+    if not getattr(chart, "page_length", None):
+        return None
+    return min(chart.page_length, chart.row_limit) if chart.row_limit else chart.page_length
 
 
 def grid_header(chart, rows: int | None = None) -> tuple[float, float]:
     """(header units, units per body row) of a table or pivot chart as configured,
     drawing `rows` body rows (None: unknown, so a paged table counts its pager)."""
     if chart.type == "pivot_table":
-        return (pivot_header_units(len(chart.columns), totals=chart.column_totals),
+        header_rows, hscroll, totals = pivot_frame(chart)
+        return (pivot_header_units(header_rows, hscroll=hscroll, totals=totals),
                 PIVOT_UNITS_PER_ROW)
     page = chart.page_length or 0
     return (table_header_units(controls=bool(page) or chart.search_box,
-                               pager=bool(page) and (rows is None or rows > page)),
+                               pager=bool(page) and (rows is None or rows > page),
+                               totals=chart.show_totals),
             GRID_UNITS_PER_ROW)
+
+
+def grid_fit(chart, rows: int | None) -> tuple[int | None, float, float]:
+    """(body rows the panel must hold, header units, units per body row) of a table or
+    pivot drawing `rows` body rows: the one estimate that smoke (the rows the query
+    returned), size.grid-fit (a probed count), size.pivot-window (what the spec alone
+    fixes) and size.table-window (the row_limit ceiling) each compare a height with. A
+    paged table holds one page beside its pager. None: unknown (a paged table still
+    holds one page)."""
+    header, row = grid_header(chart, rows)
+    page = table_page(chart) if chart.type == "table" else None
+    if page is not None and (rows is None or rows > page):
+        rows = page
+    return rows, header, row
 
 ADHOC_AGGREGATES = ("SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX")
 _ADHOC_RE = re.compile(r"^(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((.+?)\)(?:\s+AS\s+(.+))?$")
