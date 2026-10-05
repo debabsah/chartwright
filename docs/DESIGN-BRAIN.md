@@ -360,9 +360,9 @@ fails when it drifts.
 | `size.kpi-height` | warn | ✔ | - | 1 | big numbers read best at 2-6 units |
 | `size.min-width` | warn/error | - | - | 2 | below 3/12 width a chart is unreadable; KPIs need 2/12 |
 | `size.pie-geometry` | warn | ✔ | - | 1 | pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds |
-| `size.pivot-window` | warn | - | - | 2 | a pivot's height should show a meaningful share of its row_limit |
+| `size.pivot-window` | warn | ✔ | - | 2 | a pivot's height should show a meaningful share of its row_limit |
 | `size.row-harmony` | warn | ✔ | - | 1 | charts sharing a row should share a height (Superset sizes the row to its tallest child) |
-| `size.table-window` | warn | - | - | 1 | a table's height should show a meaningful share of its row_limit |
+| `size.table-window` | warn | ✔ | - | 1 | a table's height should show a meaningful share of its row_limit |
 | `standard.classification` | error | - | - | 6 | the dashboard's classification is one the standard lists |
 | `standard.content-locked` | error | - | - | 6 | content a standard locks is in the spec as the standard has it (standards apply writes it; a change goes through the standard's file) |
 | `standard.content-released` | info | - | - | 6 | content a standard has that the author took over (edited or removed): the author's now, and standards apply leaves it alone |

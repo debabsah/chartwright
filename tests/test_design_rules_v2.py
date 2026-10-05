@@ -211,3 +211,28 @@ def test_a_chart_in_the_footer_is_advised_not_a_crash():
     assert {f.where for f in rep.findings if f.chart == "F"} <= {"footer row 0"}
     # A footer is not a tab: it never makes a flat dashboard look tabbed.
     assert "layout.tab-balance" not in {f.rule for f in rep.findings}
+
+
+def test_every_rule_that_emits_a_fix_is_registered_fixable():
+    """Triage P: size.table-window and size.pivot-window emitted height fixes while
+    registered not fixable, so the rule table (and anything reading the registry) said
+    --fix would leave them alone. Every fixture, at every audience, must agree."""
+    import json
+    from pathlib import Path
+
+    from chartwright.design import advise
+    from chartwright.design.model import RULES
+    from chartwright.design.presets import Overlay
+    from chartwright.spec import load_spec
+
+    wrong = set()
+    for path in sorted((Path(__file__).parent / "fixtures").glob("*.json")):
+        try:
+            spec = load_spec(json.loads(path.read_text(encoding="utf-8")))
+        except Exception:  # noqa: BLE001 - not every fixture is a spec
+            continue
+        for audience in ("executive", "analytical", "operational"):
+            for f in advise(spec, audience=audience, overlay=Overlay()).findings:
+                if f.fix and not RULES[f.rule].fixable:
+                    wrong.add(f.rule)
+    assert not wrong, f"emit fixes but are registered fixable=False: {sorted(wrong)}"
