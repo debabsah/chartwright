@@ -7,6 +7,11 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- `apply`'s data check queries each chart the way the dashboard does when it loads: with the default of every native filter in the chart's scope. Before, it queried every chart unfiltered, so a table holding one set of rows per value of a required filter counted every set; the check then asked for more height on charts that fit, and could name a chart empty, or not, wrongly. As in Superset, a filter's default reaches a chart only when the chart is in the filter's scope and the chart's dataset has a column of that name.
+  - Applied: a select's default values, or with `default_to_first` its first value, which the check reads with the query Superset's filter sends (its pre-filter and the defaults of the filters it depends on included); a range's bounds; a time range, on the chart's time axis or main time column; a time grain, on the chart's time axis.
+  - Each chart's result names the defaults it ran with (`with the dashboard's filter defaults: Carrier = All carriers`), and lists them under `filter_defaults` in the apply report, present only when there are some. A default the check can't apply is named as not applied: a time column filter's, or a first value it could not read.
+  - A chart the dashboard shows empty on load, such as one under a default time range the data doesn't reach, is now named empty.
+
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 
 - `standards apply` no longer adds a header or footer row that the body already holds at its edge (the last rows for a footer, the first for a header). A dashboard built in the UI has no header or footer, so `decompile` and `adopt` read its legal line as a body row, and the standard's footer was then added below it, showing it twice. `--claim` moves such a row into the header or footer and records it; `explain` and the apply summary name it.

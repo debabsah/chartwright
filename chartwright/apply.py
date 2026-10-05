@@ -785,7 +785,7 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
 
         report.stage = "smoke"
         results: list[SmokeResult] = smoke(spec, resolution, client)
-        report.smoke_results = [asdict(s) for s in results]
+        report.smoke_results = [s.as_dict() for s in results]
         report.warnings.extend(f"{s.chart}: {s.detail}" for s in results if s.warning)
         if any(not s.ok for s in results):
             return report
