@@ -326,12 +326,17 @@ ANNOTATION_STYLES = ("solid", "dashed", "dotted")
 class Annotation(BaseModel):
     """A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal
     line at y = 80. Superset draws it as a series named ``name`` (in the legend
-    and tooltip); formula layers have no on-chart label in any release."""
+    and tooltip); formula layers have no on-chart label in any release. On a
+    horizontal bar the value axis runs across, so the line stands upright at its
+    value (transformFormulaAnnotation swaps the point to [y, x] there)."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, description="Series name in the legend and tooltip, e.g. \"Goal\"")
-    value: float | None = Field(default=None, description="A flat line at this y value, e.g. 80")
+    value: float | None = Field(
+        default=None,
+        description="A line at this value on the value axis, e.g. 80: flat across most charts, "
+                    "upright across a horizontal bar (a 1.0x threshold, a 4-hour limit)")
     formula: str | None = Field(
         default=None, min_length=1,
         description="Instead of value: a formula in x, e.g. \"2*x + 10\" (x is the "
@@ -473,7 +478,8 @@ class _AxisChart(_ChartBase):
     annotations: list[Annotation] = Field(
         default_factory=list,
         description="Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, "
-                    "\"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+                    "\"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a "
+                    "horizontal bar a value stands upright across the bars",
     )
 
     @model_validator(mode="after")

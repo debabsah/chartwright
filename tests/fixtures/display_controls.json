@@ -120,7 +120,8 @@
       "x_column": "product_line",
       "metrics": ["SUM(sales)"],
       "orientation": "horizontal",
-      "sort_by": "SUM(quantity_ordered)"
+      "sort_by": "SUM(quantity_ordered)",
+      "annotations": [{"name": "Target", "value": 1000000, "style": "dashed", "color": "#B3261E"}]
     },
     {
       "name": "Share by Line",

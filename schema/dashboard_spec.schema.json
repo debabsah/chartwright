@@ -33,7 +33,7 @@
     },
     "Annotation": {
       "additionalProperties": false,
-      "description": "A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal\nline at y = 80. Superset draws it as a series named ``name`` (in the legend\nand tooltip); formula layers have no on-chart label in any release.",
+      "description": "A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal\nline at y = 80. Superset draws it as a series named ``name`` (in the legend\nand tooltip); formula layers have no on-chart label in any release. On a\nhorizontal bar the value axis runs across, so the line stands upright at its\nvalue (transformFormulaAnnotation swaps the point to [y, x] there).",
       "properties": {
         "name": {
           "description": "Series name in the legend and tooltip, e.g. \"Goal\"",
@@ -51,7 +51,7 @@
             }
           ],
           "default": null,
-          "description": "A flat line at this y value, e.g. 80",
+          "description": "A line at this value on the value axis, e.g. 80: flat across most charts, upright across a horizontal bar (a 1.0x threshold, a 4-hour limit)",
           "title": "Value"
         },
         "formula": {
@@ -387,7 +387,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -3067,7 +3067,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -5262,7 +5262,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -5767,7 +5767,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -6236,7 +6236,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -6747,7 +6747,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },

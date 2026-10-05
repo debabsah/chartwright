@@ -323,7 +323,12 @@ running the tool against real instances of all three releases.
   (`plugin-chart-echarts/src/Timeseries/transformers.ts`, 4.1.4 `:356`,
   5.0.0 `:362`, 6.1.0 `:457`, the same body in each). Its colour, opacity,
   width and line style (solid, dashed or dotted) reach the chart; a formula
-  layer has no on-chart label, so the tool offers none.
+  layer has no on-chart label, so the tool offers none. On a horizontal bar
+  each point becomes `[y, x]` (4.1.4 `:381-383`, 5.0.0 `:387-389`, 6.1.0
+  `:482-484`), so a `value` lands on the value axis, which runs across, and
+  the line stands upright at it: a 1.0x threshold or a 4-hour limit over a
+  ranked list. Seen live on all three releases. On either orientation the
+  line runs from the first category to the last, not the full plot.
 - **Options genuinely differ by release.** 6.0.0 renamed the big-number
   subtitle field (`subheader` became `subtitle`) and removed sort controls
   that older releases still have. The tool emits only options valid on all

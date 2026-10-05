@@ -8,6 +8,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 ### Added
 
 - `sort_by` on a categorical bar ranks it by something other than its first metric, largest first, on every supported release. `"total"` ranks stacked or grouped bars by their sum. Before, Superset drew several series in name order: two stacked metrics on 4.1.4 and 5.0.0, and a grouped bar on every release. A metric (`"sort_by": "SUM(revenue)"`) ranks by its value and orders the query too, so a `row_limit` keeps the top bars by it; it need not be drawn, so two charts can share one order. `advise` warns when a `row_limit` cuts a bar ranked by `"total"`, since the query is still ordered by the first metric.
+- A threshold on a horizontal bar: `annotations` there now say what Superset draws, a line standing upright at its value (a 1.0x threshold, a 4-hour limit), seen on every supported release, and the live CI fixture builds one.
 - Heatmap axes: `x_label_every` and `y_label_every` label every Nth column or row, counted from the first, so an hour axis with `"x_label_every": 6` reads 0, 6, 12, 18 instead of Superset's uneven automatic spacing. `left_margin` leaves room, in px, left of the row labels. Every supported release takes all three; `decompile` reads them back and `plan` reports a change made in the UI.
 
 ### Changed
