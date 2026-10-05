@@ -257,3 +257,40 @@ def test_a_column_beside_markdown_stays_rows_and_says_so():
     result = decompile_bundle(blob, _stub_lookup_for(spec))
     assert "rows" in result.spec["layout"]
     assert any("COLUMN" in l.what for l in result.losses)
+
+
+@pytest.mark.parametrize("viz, key, value", [
+    ("pie", "outerRadius", 60), ("pie", "show_labels", False),
+    ("funnel", "tooltip_label_type", 2), ("funnel", "show_labels", False),
+    ("treemap_v2", "show_labels", False),
+    ("heatmap_v2", "legend_type", "piecewise"), ("heatmap_v2", "xscale_interval", 2),
+    ("histogram_v2", "normalize", True), ("big_number", "show_trend_line", False),
+    ("echarts_timeseries_line", "seriesType", "smooth"),
+    ("echarts_timeseries_line", "currency_format", {"symbol": "USD", "symbolPosition": "prefix"}),
+])
+def test_per_chart_settings_changed_in_the_ui_are_named(viz, key, value):
+    """The fact-check of the 0.5.0 docs found these dropped with no loss; each is now
+    checked against the value an untouched chart of that type stores."""
+    from chartwright.testing import edit_bundle
+
+    spec = load_spec(json.loads((FIXTURES / "kitchen_sink.json").read_text()))
+    bundle = compile_bundle(spec, stub_resolution(spec))
+
+    def change(path, doc):
+        if "/charts/" in path and doc.get("viz_type") == viz:
+            doc["params"][key] = value
+    losses = decompile_bundle(edit_bundle(bundle, change), _stub_lookup_for(spec)).losses
+    assert any(key in l.what and "settings not preserved" in l.what for l in losses), key
+
+
+def test_an_empty_currency_format_is_no_loss():
+    from chartwright.testing import edit_bundle
+
+    spec = load_spec(json.loads((FIXTURES / "kitchen_sink.json").read_text()))
+
+    def empty(path, doc):
+        if "/charts/" in path:
+            doc["params"]["currency_format"] = {"symbol": None, "symbolPosition": None}
+    blob = edit_bundle(compile_bundle(spec, stub_resolution(spec)), empty)
+    assert not [l for l in decompile_bundle(blob, _stub_lookup_for(spec)).losses
+                if "currency_format" in l.what]

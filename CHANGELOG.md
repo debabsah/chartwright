@@ -7,6 +7,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
+
 - `standards apply` no longer adds a header or footer row that the body already holds at its edge (the last rows for a footer, the first for a header). A dashboard built in the UI has no header or footer, so `decompile` and `adopt` read its legal line as a body row, and the standard's footer was then added below it, showing it twice. `--claim` moves such a row into the header or footer and records it; `explain` and the apply summary name it.
 
 ## 0.5.0 (2026-10-04)
