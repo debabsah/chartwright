@@ -17,6 +17,7 @@
     chartwright standards assign specs/ --standard NAME   write design.standard into specs
     chartwright standards apply specs/          write each standard's content into its specs
     chartwright standards verify-visible s.json --profile P   locked text visible on the dashboard
+    chartwright save-queries spec.json --profile P   save each chart's query for CSV reports
 """
 
 from __future__ import annotations
@@ -202,6 +203,20 @@ def _main(argv: list[str] | None = None) -> None:
                            help="design-brain advice: warn (report, default), strict (block), off")
             p.add_argument("--as-of", type=_date, default=None, metavar="DATE", help=_AS_OF_HELP)
         p.add_argument("--standards", default=None, metavar="DIR", help=_STANDARDS_HELP)
+        if name == "apply":
+            p.add_argument("--save-queries", action="store_true",
+                           help="after a successful apply, save each chart's query as Superset's "
+                                "Save does, for CSV and text reports; needs chartwright[visual]")
+            p.add_argument("--timeout", type=float, default=60.0,
+                           help="seconds to wait for each chart in the browser (--save-queries)")
+
+    sq = sub.add_parser("save-queries",
+                        help="save each chart's query on the live dashboard as Superset's Save "
+                             "does, so CSV and text reports work; needs chartwright[visual]")
+    sq.add_argument("spec")
+    sq.add_argument("--profile", required=True)
+    sq.add_argument("--timeout", type=float, default=60.0,
+                    help="seconds to wait for each chart in the browser")
 
     from .design.presets import AUDIENCE_NAMES
 
@@ -448,8 +463,23 @@ def _main(argv: list[str] | None = None) -> None:
             out["advice"] = advice
             # An expired waiver warns here and never blocks (the decision record's #5).
             out["warnings"] = out.get("warnings", []) + advice.get("warnings", [])
+        if args.save_queries and report.ok:
+            # The dashboard is applied either way: a chart whose query could not be saved
+            # is reported, and the apply still counts as done.
+            out["saved_queries"] = _save_queries(inst.spec, client, args.profile, args.timeout)
+            if not out["saved_queries"]["ok"]:
+                out["warnings"] = out.get("warnings", []) + [
+                    "some charts' queries were not saved (see saved_queries); CSV and text "
+                    "reports on those charts fail until it succeeds"]
         print(json.dumps(out, indent=2))
         sys.exit(0 if report.ok else 1)
+
+    if args.cmd == "save-queries":
+        spec = _load(args.spec)
+        client = _client(args.profile)
+        payload = _save_queries(spec, client, args.profile, args.timeout)
+        print(json.dumps(payload, indent=2))
+        sys.exit(0 if payload["ok"] else 1)
 
     if args.cmd in ("advise", "explain") and args.chart is not None:
         names = [c.name for c in _load(args.spec).charts]
@@ -843,6 +873,25 @@ def _standards_cmd(args) -> None:
         payload["overlay"] = {"path": overlay_path().as_posix(), "set_aside": True}
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     sys.exit(0 if payload["ok"] else 1)
+
+
+def _save_queries(spec, client, profile_name: str, timeout_s: float) -> dict:
+    """chartwright/savedqueries.py, for the spec's charts on its live dashboard."""
+    from .profiles import ProfileError, load_profile
+    from .savedqueries import save_queries
+
+    try:
+        profile = load_profile(profile_name)
+    except ProfileError as e:
+        return {"ok": False, "stage": "profile", "errors": [{"code": "profile", "detail": str(e)}]}
+    dash = client.find_dashboard_by_slug(spec.dashboard.slug)
+    if dash is None:
+        return {"ok": False, "stage": "saved_queries", "errors": [{
+            "code": "dashboard_not_found",
+            "detail": f"no dashboard at {spec.dashboard.slug!r}; apply the spec first"}]}
+    on_board = {c["slice_name"]: c["id"] for c in client.dashboard_charts(dash["id"])}
+    charts = {c.name: on_board[c.name] for c in spec.charts if c.name in on_board}
+    return save_queries(client, profile, charts, timeout_s=timeout_s)
 
 
 def _verify_visible(args) -> None:

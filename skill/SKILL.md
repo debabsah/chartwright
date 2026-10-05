@@ -124,6 +124,10 @@ approximate it with a different mechanism.
    this instance on purpose). Apply backs up the
    previous state under `~/.config/chartwright/backups/<profile>/<slug>/` (restore with
    `CW restore <zip> --profile <profile>`).
+   If the user schedules CSV or text reports on the charts, add `--save-queries`
+   to the apply (needs `chartwright[visual]`): an imported chart has no saved
+   query, and those reports run it. Report any chart under `saved_queries`
+   that failed.
 8. Modify tool-born dashboards by editing their spec and re-running 5-7.
    To manage a UI-born dashboard where it is (same address, id and chart ids),
    `CW adopt <slug-or-id> --profile <profile> -o <abs-spec-path>`: show the
