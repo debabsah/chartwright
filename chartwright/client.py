@@ -15,6 +15,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Callable
+from urllib.parse import urlsplit
 
 import requests
 
@@ -45,16 +46,20 @@ class SupersetAPIError(RuntimeError):
 
 
 _REPEATABLE = {"GET", "HEAD", "OPTIONS", "PUT"}
+# POSTs that only read: a chart query (smoke, saved-query capture) changes nothing.
+_READ_ONLY_POSTS = ("/api/v1/chart/data",)
 
 
 def _dropped_unanswered(e: requests.exceptions.ConnectionError) -> bool:
     """The server closed the connection before answering (RemoteDisconnected, a
     reset), on a request that means the same sent twice."""
-    method = getattr(getattr(e, "request", None), "method", None)
+    req = getattr(e, "request", None)
+    method = getattr(req, "method", None)
+    path = urlsplit(getattr(req, "url", "") or "").path.rstrip("/")
     text = str(e)
-    return (method in _REPEATABLE
-            and ("RemoteDisconnected" in text or "Connection aborted" in text
-                 or "Connection reset" in text))
+    repeatable = method in _REPEATABLE or (method == "POST" and path.endswith(_READ_ONLY_POSTS))
+    return repeatable and ("RemoteDisconnected" in text or "Connection aborted" in text
+                           or "Connection reset" in text)
 
 
 @dataclass
@@ -115,8 +120,8 @@ class SupersetClient:
             if tries_dropped > 0 and _dropped_unanswered(e):
                 # A pooled keep-alive connection the server had already closed (a
                 # recycled gunicorn worker, an idle timeout): no answer came back.
-                # GET, HEAD, OPTIONS and PUT are safe to send again; a POST or DELETE
-                # (an import, a login, a chart query, a delete) never is.
+                # GET, HEAD, OPTIONS, PUT and a chart query are safe to send again;
+                # any other POST (an import, a login) or a DELETE never is.
                 return self._send(fn, relogin_on_401, tries_429, tries_dropped - 1)
             raise SupersetAPIError(f"connection to {self.base_url} failed: {str(e)[:300]}") from e
         except requests.exceptions.RequestException as e:
