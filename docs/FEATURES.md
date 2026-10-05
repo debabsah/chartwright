@@ -11,7 +11,7 @@ into one. Everything below works from that one file.
     - A screenshot of a dashboard in another BI tool, pointed at the same underlying data.
 - **Reviewable Checkpoint**: The AI's output is a small spec file you can read, edit, and version like code.
 - **Open AI Contract**: `chartwright schema` prints the full JSON Schema so any LLM or tool can generate valid specs.
-- **MCP Server**: Fourteen tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
+- **MCP Server**: Fifteen tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
 - **Guardrails**: The dashboard is new; the data behind it must be real. Every dataset, column, and metric the AI references is confirmed to exist before anything is built, so a made-up column becomes a clear error message, never a broken chart. The error suggests the closest real column names and lists the dataset's columns, so the AI can correct itself in one round.
 
 ## Dashboard Design
@@ -125,7 +125,10 @@ into one. Everything below works from that one file.
 
 ## Dashboards as Code
 - **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, CSS, dashboard settings, layout.
-- **Start From Existing Dashboards**: Turn any dashboard built in the UI into a spec with `chartwright decompile`, then build it as a copy at a new slug. Most of what it can't carry over is listed; a few settings (such as tab-scoped filters and some legend and tooltip options) are dropped without a note, so compare before you retire the original.
+- **Start From Existing Dashboards**: Take over a dashboard built in the UI where it is, or build a copy of it.
+    - `chartwright adopt` writes a spec that updates that same dashboard, keeping its address, id and chart ids, so links and embeds keep pointing at it.
+    - Before anything changes, adopt lists what the first apply resets because a spec can't hold it, and refuses until you pass `--accept-reset`; `plan` then names each chart whose stored options the first apply rewrites. Charts a spec can't hold come off the dashboard and stay under Charts.
+    - `chartwright decompile` turns any dashboard into a spec you build as a copy at a new slug. Most of what it can't carry over is listed; a few settings (such as tab-scoped filters and some legend and tooltip options) are dropped without a note, so compare before you retire the original.
 - **Lossless Round-Trips**: Tool-built dashboards with `rows` or `tabs` layouts decompile back with nothing lost; a `sketch` comes back as rows.
 - **Targeted Edits**: Replace, rename, resize, or remove one chart and re-apply; old charts are cleaned up, never orphaned.
 - **Stable Identity**: Chart ids never change across re-applies, so links, scopes, and open browser tabs stay valid.
@@ -144,7 +147,7 @@ into one. Everything below works from that one file.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once: an error fails the apply, and a chart that returns no rows is named. Any failure says what went wrong and where.
     - Your spec is held to the instance's Superset release too: a setting the release can't take (tags or a theme on 4.1.4 or 5.0.0, chart timestamps before 6.1) stops the apply before anything is written and names the field to remove; one it would ignore, such as a trendline subtitle before 6.0, comes back as a warning. Offline, `chartwright compile --superset-version 5.0.0` runs the same check.
-- **Ownership Guard**: The tool only ever overwrites dashboards it created. To manage a hand-built dashboard, decompile it into a spec and build it at a new slug; the original stays untouched.
+- **Ownership Guard**: The tool overwrites only dashboards it created or that you adopted with `chartwright adopt`; to manage any other dashboard, adopt it first.
 
 ## Enterprise Ready
 - **Multiple Instances**: Sandbox, staging, and production as profiles in one file.
@@ -178,6 +181,7 @@ into one. Everything below works from that one file.
 | `chartwright apply` | Build, import, and verify the dashboard end to end |
 | `chartwright plan` | Show what differs between the spec and the live dashboard |
 | `chartwright decompile` | Turn a live dashboard into a spec |
+| `chartwright adopt` | Take over a dashboard built in the UI where it is: write a spec that updates the same dashboard |
 | `chartwright redesign` | Decompile a live dashboard, audit it, and write the repaired spec |
 | `chartwright absorb` | Pull height polish made in the UI back into the spec |
 | `chartwright calibrate` | Propose recommended heights from your absorb history |

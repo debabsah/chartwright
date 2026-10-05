@@ -577,6 +577,29 @@ def decompile_dashboard(dashboard: str, profile: str) -> str:
 
 @mcp.tool()
 @_typed_errors
+def adopt_dashboard(dashboard: str, profile: str, accept_reset: bool = False,
+                    allow_shared: bool = False) -> str:
+    """Take over an existing dashboard (slug or numeric id) in place: returns a spec
+    that names that dashboard and its charts by their own ids, so applying it
+    updates the same dashboard (same address and id). Changes nothing in Superset
+    itself; run plan_dashboard on the spec before build_dashboard. Lists under
+    `resets` what the first apply resets because a spec can't hold it, and refuses
+    while there are any unless accept_reset is true; refuses when some charts also
+    sit on other dashboards (applying would change them there too) unless
+    allow_shared is true. Show the user the resets and ask before setting either."""
+    from .adopt import adopt_live
+
+    try:
+        result = adopt_live(dashboard, _client(profile), accept_reset=accept_reset,
+                            allow_shared=allow_shared)
+    except ValueError as e:
+        return json.dumps({"ok": False, "stage": "adopt",
+                           "errors": [{"code": "decompile", "detail": str(e)}]})
+    return json.dumps({**result.payload(), "spec": result.spec})
+
+
+@mcp.tool()
+@_typed_errors
 def redesign_dashboard(dashboard: str, profile: str, audience: str = "") -> str:
     """One-shot redesign of a live dashboard (slug or numeric id): decompile,
     design-audit with data-aware rules, apply safe geometry fixes. Returns the

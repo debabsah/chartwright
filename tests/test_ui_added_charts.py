@@ -141,7 +141,7 @@ def test_restore_matches_the_backups_chart_links(monkeypatch):
     c = Client(merge=True)
     monkeypatch.setattr(ap, "bundle_dataset_ids", lambda data, client: {})
     monkeypatch.setattr(ap, "chart_payloads_from_bundle",
-                        lambda data, ids: {"u1": {"slice_name": "Orders", "params": "{}"}})
+                        lambda data, ids, **k: {"u1": {"slice_name": "Orders", "params": "{}"}})
     import chartwright.decompile as dec
     monkeypatch.setattr(dec, "decompile_bundle", lambda data, lookup: type("D", (), {"spec": SPEC})())
     monkeypatch.setattr(dec, "live_dataset_lookup", lambda client: None)

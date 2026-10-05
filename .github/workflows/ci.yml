@@ -62,6 +62,11 @@ jobs:
       - name: UI-added chart taken off on re-apply
         if: ${{ !cancelled() }}
         run: python tools/ci_live_ui_chart.py --base-url http://localhost:8098
+      # Adopt a dashboard that looks built in the UI: refused without accepting its
+      # resets, then applied in place with the same dashboard and chart ids.
+      - name: Adopt a hand-built dashboard in place
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_adopt.py --base-url http://localhost:8098
       # Standards content: standards apply writes an org footer, a team header and CSS
       # blocks, the spec applies, plan stays clean and decompile reads the markers back.
       - name: Standards content apply + round trip

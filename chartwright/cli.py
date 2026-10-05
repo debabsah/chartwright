@@ -9,6 +9,8 @@
     chartwright advise spec.json                design review (add --profile for data-aware rules)
     chartwright explain spec.json               where each design-default field comes from, and why
     chartwright redesign <slug> --profile P     decompile + audit + safe fixes -> redesigned spec
+    chartwright decompile <slug> --profile P    a live dashboard -> spec (losses listed)
+    chartwright adopt <slug> --profile P        take over an existing dashboard in place -> spec
     chartwright calibrate                       learn recommended heights from absorb history
     chartwright standards check specs/          check specs against the repository's standards
     chartwright standards show [NAME]           a standard after extends, each key's layer and lock
@@ -323,10 +325,23 @@ def _main(argv: list[str] | None = None) -> None:
     cal.add_argument("--since", default=None, metavar="90d",
                      help="only consider absorb events newer than this (decay knob)")
 
-    dec = sub.add_parser("decompile")
+    dec = sub.add_parser("decompile", help="turn a live dashboard into a spec; lists what it can't carry over")
     dec.add_argument("dashboard", help="slug or numeric id of a live dashboard")
     dec.add_argument("--profile", required=True)
     dec.add_argument("-o", "--output", default=None, help="write spec JSON here; losses go to stdout")
+
+    ado = sub.add_parser(
+        "adopt",
+        help="take over an existing dashboard in place: writes a spec that updates the same dashboard")
+    ado.add_argument("dashboard", help="slug or numeric id of a live dashboard")
+    ado.add_argument("--profile", required=True)
+    ado.add_argument("-o", "--output", default=None, help="write spec JSON here; the report goes to stdout")
+    ado.add_argument("--accept-reset", action="store_true",
+                     help="adopt even though the first apply resets what a spec can't hold (listed "
+                          "under resets; charts the spec can't hold are taken off, never deleted)")
+    ado.add_argument("--allow-shared", action="store_true",
+                     help="adopt even if some charts also sit on other dashboards (apply updates "
+                          "those charts everywhere they appear)")
 
     ab = sub.add_parser("absorb", help="patch LIVE UI height polish back into the spec (heights only)")
     ab.add_argument("spec")
@@ -631,6 +646,28 @@ def _main(argv: list[str] | None = None) -> None:
             print(json.dumps({"spec": result.spec, "losses": result.losses_json()}, indent=2))
         return
 
+    if args.cmd == "adopt":
+        client = _client(args.profile)
+        from .adopt import adopt_live
+        from .client import SupersetAPIError
+
+        try:
+            result = adopt_live(args.dashboard, client, accept_reset=args.accept_reset,
+                                allow_shared=args.allow_shared)
+        except (ValueError, SupersetAPIError) as e:
+            _die({"stage": "adopt", "errors": [{"code": "decompile", "detail": str(e)}]})
+        if not result.ok:
+            _die(result.payload())
+        if args.output:
+            out = Path(args.output)
+            out.write_text(json.dumps(result.spec, indent=2) + "\n", encoding="utf-8")
+            print(json.dumps({**result.payload(), "output": out.as_posix(),
+                              "next": f"chartwright plan {out.as_posix()} --profile {args.profile}"},
+                             indent=2))
+        else:
+            print(json.dumps({**result.payload(), "spec": result.spec}, indent=2))
+        return
+
     if args.cmd == "restore":
         try:
             blob = Path(args.bundle).read_bytes()
@@ -650,9 +687,23 @@ def _main(argv: list[str] | None = None) -> None:
             _die({"stage": "restore", "errors": [{"code": "bad_bundle", "detail": "no dashboard yaml in bundle"}]})
         dash = yaml.safe_load(zf.read(dash_files[0]))
         slug, u = dash.get("slug"), str(dash.get("uuid"))
-        if not slug or u != str(ids.dashboard_uuid(slug)):
+        import re
+
+        from .apply import backup_dir_for
+        from .spec import SLUG_PATTERN
+
+        # Also restorable: a backup this tool took itself (its own backup folder for
+        # this profile and slug), which covers the first backup of an adopted
+        # dashboard, taken while it still had its original, hand-built identity. The
+        # slug comes from inside the bundle: check its shape before building a path
+        # from it ("..", "/" or anything else would widen the folder matched).
+        own_backup = (bool(slug) and bool(re.fullmatch(SLUG_PATTERN, str(slug)))
+                      and Path(args.bundle).resolve().is_relative_to(
+                          backup_dir_for(args.profile, slug).resolve()))
+        if not slug or (u != str(ids.dashboard_uuid(slug)) and not own_backup):
             _die({"stage": "restore", "errors": [{"code": "not_owned",
-                  "detail": f"bundle dashboard (slug={slug!r}) is not owned by this tool; refusing to import"}]})
+                  "detail": f"bundle dashboard (slug={slug!r}) is not owned by this tool and is not "
+                            f"one of its own backups; refusing to import"}]})
         client = _client(args.profile)
         from .apply import restore_bundle
 
