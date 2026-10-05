@@ -145,6 +145,7 @@ into one. Everything below works from that one file.
     - Each backup records the instance it came from, and `chartwright restore` refuses one from another instance unless you pass `--to-other-instance`.
     - The newest 50 backups per dashboard are kept; set `CHARTWRIGHT_BACKUP_KEEP` to keep more, or 0 to keep them all.
 - **Complete Restore**: `chartwright restore` brings back the dashboard, chart settings, and filter scopes.
+- **Charts Ready for Reports**: Superset's CSV and text chart reports run a chart's saved query, which an imported chart lacks. `chartwright save-queries` (or `apply --save-queries`) opens each chart once in a headless browser and saves the query Superset's own frontend builds, as Superset's Save does; a later apply keeps it while the chart's options stay the same. Needs `pip install 'chartwright[visual]'` and `playwright install chromium`.
 - **Self-Healing Applies**: When an apply fails while preparing, importing or updating charts, the previous state is restored automatically, whatever the error. A failure after that (linkage, filter scopes, chart queries) leaves the new version live, and the report gives the backup to restore.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once: an error fails the apply, and a chart that returns no rows is named. Any failure says what went wrong and where.
@@ -192,6 +193,7 @@ into one. Everything below works from that one file.
 | `chartwright standards assign` | Write `design.standard` into every spec in a folder or glob |
 | `chartwright standards apply` | Write each standard's content into its specs, with a summary grouped by item; `--check` fails on missing locked content, `--locked` restores it, `--claim` records content already there |
 | `chartwright standards verify-visible` | Check in a headless browser that a deployed dashboard's locked header and footer text is readable; needs `chartwright[visual]` |
+| `chartwright save-queries` | Save each chart's query as Superset's Save does, so CSV and text reports on the charts work; needs `chartwright[visual]` |
 | `chartwright restore` | Bring back a backed-up dashboard, completely |
 
 ## Testing and Evidence

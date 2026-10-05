@@ -86,6 +86,10 @@ jobs:
       - name: Locked text visible on the rendered dashboard
         if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
         run: python tools/ci_live_visible.py --base-url http://localhost:8098
+      # Saved queries captured from Superset's own frontend, so CSV reports work.
+      - name: Chart queries saved for reports
+        if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
+        run: python tools/ci_live_saved_queries.py --base-url http://localhost:8098
       - name: Lifecycle soak (25 cycles)
         run: python tools/soak.py --base-url http://localhost:8098 --cycles 25 --seed 7
       - name: Second-writer adversary
