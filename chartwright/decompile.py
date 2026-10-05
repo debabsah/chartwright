@@ -83,7 +83,25 @@ _STORED_DEFAULTS: dict[str, tuple] = {
     "sort_by_metric": (True,), "start_y_axis_at_zero": (True,),
     "time_format": ("smart_date",), "date_format": ("smart_date",),
     "table_timestamp_format": ("smart_date",),
+    # Per chart type (plugin-chart-echarts at the three tags): BigNumber controls and
+    # trendline toggle; Timeseries/constants.ts DEFAULT_FORM_DATA (seriesType line,
+    # orientation vertical); Pie/types.ts (radii 30 and 70, labels shown); Funnel/types.ts
+    # and controlPanel.tsx (labels shown, tooltip label KeyValuePercent = 5, percentages
+    # from the first step); Treemap/types.ts (labels shown); Heatmap/controlPanel.tsx
+    # (axis sort alpha_asc at 4.1.4, unset at 5.0.0 and 6.1.0; margins auto; label
+    # intervals -1; unbounded values; continuous legend); Histogram (normalize off).
+    "header_font_size": (0.4,), "subheader_font_size": (0.15,), "show_trend_line": (True,),
+    "seriesType": ("line", "echarts_timeseries_line"), "orientation": ("vertical",),
+    "innerRadius": (30,), "outerRadius": (70,), "show_labels": (True,),
+    "show_tooltip_labels": (True,), "tooltip_label_type": (5,),
+    "percent_calculation_type": ("first_step",), "sort_x_axis": (None, "alpha_asc"),
+    "sort_y_axis": (None, "alpha_asc"), "legend_type": ("continuous",),
+    "bottom_margin": ("auto",), "left_margin": ("auto",), "xscale_interval": (-1,),
+    "yscale_interval": (-1,), "value_bounds": ([None, None], [], None),
+    "normalize": (False,),
 }
+# A currency format has no default: unset reads as {} or every part empty.
+_UNSET_WHEN_EMPTY = {"currency_format"}
 # Keys that matter only when another is set: a changed value with no effect is no loss.
 _STORED_DEFAULT_WHEN = {
     "only_total": lambda p: bool(p.get("show_value")) and bool(p.get("stack")),
@@ -91,6 +109,7 @@ _STORED_DEFAULT_WHEN = {
     "x_axis_title_margin": lambda p: bool(p.get("x_axis_title")),
     "y_axis_title_margin": lambda p: bool(p.get("y_axis_title")),
     "y_axis_title_position": lambda p: bool(p.get("y_axis_title")),
+    "innerRadius": lambda p: bool(p.get("donut")),
 }
 
 # Spec chart types with a color_scheme field (spec._ColorSchemeMixin).
@@ -949,9 +968,10 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
     if unmapped:
         losses.append(Loss(name, f"params not preserved: {unmapped}"))
     changed = {k: p[k] for k in sorted(p)
-               if k in _STORED_DEFAULTS and k not in mapped_here
-               and p[k] not in _STORED_DEFAULTS[k]
-               and _STORED_DEFAULT_WHEN.get(k, lambda _: True)(p)}
+               if k not in mapped_here and _STORED_DEFAULT_WHEN.get(k, lambda _: True)(p)
+               and ((k in _STORED_DEFAULTS and p[k] not in _STORED_DEFAULTS[k])
+                    or (k in _UNSET_WHEN_EMPTY and p[k]
+                        and not (isinstance(p[k], dict) and not any(p[k].values()))))}
     if changed:
         if changed_defaults is None:
             losses.append(_defaults_loss(name, changed))
