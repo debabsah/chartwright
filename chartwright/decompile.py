@@ -20,10 +20,11 @@ import yaml
 from .compiler import (
     BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
     LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
-    parse_steps_order_sql,
+    bridge_totals_sql, parse_steps_order_sql,
 )
 from .spec import (
-    ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES,
+    ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX,
+    FUNNEL_LABEL_TYPES,
     HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, TICK_LAYOUTS, TREND_DEFAULT_HEX,
     WATERFALL_DEFAULT_HEX, FilterOp, LabelType, PivotAggregate, SequentialScheme, metric_label,
     row_items,
@@ -325,12 +326,20 @@ def _waterfall_to_spec(p: dict, out: dict, losses: list, name: str, metric_one) 
             "increase_label", "decrease_label", "total_label", "show_legend", "x_ticks_layout"}
     bridge = parse_steps_order_sql(x.get("sqlExpression")) if isinstance(x, dict) else None
     if bridge is not None:
-        column, steps, closing = bridge
-        if groupby != [column] or p.get("show_total") is not False or p.get("total_label") != closing:
+        column, steps, closing, opening = bridge
+        raw = p.get("groupby") or []
+        if opening is None:
+            ours = groupby == [column] and p.get("total_label") == closing
+        else:
+            ours = (len(raw) == 1 and isinstance(raw[0], dict) and p.get("total_label") == BRIDGE_TOTAL
+                    and raw[0].get("sqlExpression") == bridge_totals_sql(column, opening, closing))
+        if not ours or p.get("show_total") is not False:
             losses.append(Loss(name, "waterfall bridge order changed outside the spec (breakdown, "
                                      "show_total or total_label); chart skipped"))
             return None
         out.update({"x_column": column, "steps": steps, "closing": closing})
+        if opening is not None:
+            out["opening"] = opening
         read.add("show_total")
     elif isinstance(x, str):
         out["x_column"] = x

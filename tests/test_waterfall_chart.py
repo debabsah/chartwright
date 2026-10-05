@@ -5,7 +5,8 @@ show_total are 6.1.0's). A bridge in its own order (steps + closing) is drawn by
 axis the compiler writes, a CASE giving each step a key, with the step column as the
 breakdown and show_total off (compiler.steps_order_sql): seen rendering on 6.1.0 in
 order, its closing grey under its own name; 4.1.4 drew a running total after every
-step, so the field is refused before 6.1.0."""
+step, so the field is refused before 6.1.0. With an opening, both ends are totals, on
+a theme that keeps zero on the value axis (seen rendering on 6.1.0)."""
 
 import io
 import json
@@ -116,10 +117,86 @@ def test_the_order_sql_quotes_what_it_must_and_reads_back():
     sql = steps_order_sql("Step Name", ["O'Hare", "b"], "Z end")
     assert sql == ("CASE \"Step Name\" WHEN 'O''Hare' THEN '0000' WHEN 'b' THEN '0001' "
                    "WHEN 'Z end' THEN 'Z end' ELSE '0zzz' END")
-    assert parse_steps_order_sql(sql) == ("Step Name", ["O'Hare", "b"], "Z end")
+    assert parse_steps_order_sql(sql) == ("Step Name", ["O'Hare", "b"], "Z end", None)
+    opened = steps_order_sql("step", ["Solar", "Wind"], "FY2026", "FY2025")
+    assert opened == ("CASE step WHEN 'FY2025' THEN 'FY2025' WHEN 'Solar' THEN 'FY2025 000' "
+                      "WHEN 'Wind' THEN 'FY2025 001' WHEN 'FY2026' THEN 'FY2026' "
+                      "ELSE 'FY2025 9999' END")
+    assert parse_steps_order_sql(opened) == ("step", ["Solar", "Wind"], "FY2026", "FY2025")
     for other in ("CASE step WHEN 'a' THEN 'x' ELSE '0zzz' END", "step", "",
-                  "CASE step WHEN 'a' THEN '0001' WHEN 'Z' THEN 'Z' ELSE '0zzz' END"):
+                  "CASE step WHEN 'a' THEN '0001' WHEN 'Z' THEN 'Z' ELSE '0zzz' END",
+                  "CASE step WHEN 'O' THEN 'O' WHEN 'a' THEN 'O 001' WHEN 'Z' THEN 'Z' "
+                  "ELSE 'O 9999' END"):
         assert parse_steps_order_sql(other) is None, other
+
+
+OPENED = {**BRIDGE, "opening": "FY2025", "steps": ["Solar", "Demand", "Wind", "Hydro"]}
+
+
+def test_an_opened_bridge_draws_both_ends_as_totals():
+    _, p = _params(_spec(OPENED, theme="Bridges"))["Energy bridge"]
+    assert p["x_axis"]["sqlExpression"].startswith(
+        "CASE step WHEN 'FY2025' THEN 'FY2025' WHEN 'Solar' THEN 'FY2025 000' ")
+    # Both ends carry the total's name in the breakdown; each step its own.
+    assert p["groupby"] == [{
+        "expressionType": "SQL", "label": "Bridge step",
+        "sqlExpression": "CASE WHEN step IN ('FY2025', 'FY2026') THEN 'Total' ELSE step END"}]
+    assert (p["total_label"], p["show_total"]) == ("Total", False)
+
+
+@pytest.mark.parametrize("change, message", [
+    ({"opening": "FY2026"}, "opening and closing are the same row"),
+    ({"opening": "Solar"}, "is also a step"),
+    ({"opening": "Plan", "closing": "Actual"}, "must sort before closing"),
+    ({"opening": "fy2027"}, "must sort before closing"),
+    ({"steps": ["Solar", "Total"]}, "no step can be named 'Total'"),
+    ({"steps": None, "closing": None}, "opening needs steps"),
+])
+def test_an_opened_bridge_is_validated(change, message):
+    chart = {k: v for k, v in {**OPENED, **change}.items() if v is not None}
+    with pytest.raises(ValidationError, match=message):
+        _spec(chart, theme="Bridges")
+
+
+def test_an_opened_bridge_needs_a_theme_and_one_step_will_do():
+    with pytest.raises(ValidationError, match="needs dashboard.theme"):
+        _spec(OPENED)
+    assert _spec({**OPENED, "steps": ["Solar"]}, theme="Bridges").charts[0].steps == ["Solar"]
+    # Names that sort in order the same way byte by byte and letter by letter.
+    for opening, closing in (("2025", "2026"), ("Q1 2026", "Q2 2026"), ("Last year", "This year"),
+                             ("2025", "2025 actual")):
+        assert _spec({**OPENED, "opening": opening, "closing": closing}, theme="Bridges")
+
+
+class _Themes:
+    def __init__(self, json_data):
+        self.json_data = json_data
+
+    def themes(self):
+        return [{"id": 7, "uuid": "u", "theme_name": "Bridges"}]
+
+    def get(self, path, **_):
+        assert path == "/api/v1/theme/7"
+        return {"result": {"json_data": self.json_data}}
+
+
+@pytest.mark.parametrize("json_data, ok", [
+    ({"echartsOptionsOverridesByChartType": {"waterfall": {"yAxis": {"scale": False}}}}, True),
+    ({"echartsOptionsOverrides": {"yAxis": {"scale": False}}}, True),
+    ({"echartsOptionsOverridesByChartType": {"waterfall": {"yAxis": [{"scale": False}]}}}, False),
+    ({"token": {"colorPrimary": "#1F6FB2"}}, False),
+    ("not json", False),
+])
+def test_resolve_holds_an_opened_bridge_to_its_theme(json_data, ok):
+    from chartwright.resolver import _check_opening_axis, _resolve_theme
+
+    spec = _spec(OPENED, theme="Bridges")
+    client = _Themes(json.dumps(json_data) if not isinstance(json_data, str) else json_data)
+    res = Resolution()
+    _resolve_theme("Bridges", client, res)
+    _check_opening_axis(spec, client, res)
+    assert [(e.code, e.chart) for e in res.errors] == (
+        [] if ok else [("waterfall_opening_axis", "Energy bridge")])
 
 
 def test_a_written_stock_colour_builds_like_an_omitted_one():
@@ -158,7 +235,7 @@ def test_a_time_axis_takes_the_time_range_and_a_category_the_dataset_time():
     ({"total_label": "End"}, "total_label does not go with steps"),
     ({"time_grain": "P1M"}, "time_grain does not go with steps"),
     ({"groupby": "region"}, "groupby does not go with steps"),
-    ({"steps": ["FY2025"]}, "at least 2"),
+    ({"steps": ["FY2025"]}, "at least 2 values"),
     ({"increase_color": "teal"}, "increase_color must be green, amber, red or #RRGGBB"),
     ({"x_label_rotation": 30}, "x_label_rotation"),
 ])
@@ -187,6 +264,29 @@ def test_decompile_round_trips_both_forms(chart):
     bundle = compile_bundle(spec, stub_resolution(spec))
     result = decompile_bundle(bundle, _lookup(spec))
     assert result.losses == [], result.losses_json()
+    assert _normalize(load_spec(result.spec)) == _normalize(spec)
+
+
+def test_an_opened_bridge_round_trips_from_an_export():
+    """A 6.x export names the dashboard's theme by uuid and ships it under themes/."""
+    spec = _spec(OPENED, theme="Bridges")
+    theme_uuid = "8b0d0c1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f"
+
+    def edit(path, doc):
+        if "/dashboards/" in path:
+            doc.pop("theme_id", None)
+            doc["theme_uuid"] = theme_uuid
+
+    blob = compile_bundle(spec, stub_resolution(spec))
+    root = zipfile.ZipFile(io.BytesIO(blob)).namelist()[0].split("/")[0]
+    exported = edit_bundle(blob, edit, {f"{root}/themes/Bridges.yaml": {
+        "theme_name": "Bridges", "uuid": theme_uuid, "version": "1.0.0",
+        "json_data": {"echartsOptionsOverridesByChartType": {"waterfall": {"yAxis": {"scale": False}}}}}})
+    result = decompile_bundle(exported, _lookup(spec))
+    assert result.losses == [], result.losses_json()
+    chart = result.spec["charts"][0]
+    assert (chart["opening"], chart["steps"], chart["closing"]) == (
+        "FY2025", ["Solar", "Demand", "Wind", "Hydro"], "FY2026")
     assert _normalize(load_spec(result.spec)) == _normalize(spec)
 
 
@@ -302,6 +402,10 @@ def test_smoke_says_when_a_bridge_doesnt_reconcile():
     assert "no rows for steps ['Demand', 'Wind', 'Hydro']" in gaps
     assert "no row for closing 'FY2026'" in gaps and "['Coal'] are not in steps" in gaps
     assert _bridge_warning(_spec(PLAIN).charts[0], good) is None
+    opened = _spec(OPENED, theme="Bridges").charts[0]
+    assert _bridge_warning(opened, good) is None  # the opening's row is no stray value
+    assert "no row for opening 'FY2025'" in _bridge_warning(
+        opened, _rows(Solar=120, Demand=80, Wind=-150, Hydro=-30, FY2026=20))
 
 
 # -- design brain -----------------------------------------------------------------------

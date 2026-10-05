@@ -76,12 +76,14 @@ def _bridge_warning(chart, result: list) -> str | None:
             value = row.get(label)
             values[key] = value if isinstance(value, (int, float)) else None
     out = []
+    if chart.opening is not None and chart.opening not in values:
+        out.append(f"no row for opening {chart.opening!r}, so the bridge starts at zero")
     missing = [s for s in chart.steps if s not in values]
     if missing:
         out.append(f"no rows for steps {missing}")
     if chart.closing not in values:
         out.append(f"no row for closing {chart.closing!r}, so Superset draws no closing total")
-    extra = sorted(v for v in values if v not in chart.steps and v != chart.closing)
+    extra = sorted(v for v in values if v not in chart.steps and v not in (chart.closing, chart.opening))
     if extra:
         out.append(f"{extra} are not in steps: Superset draws them after the listed steps, A to Z")
     closing = values.get(chart.closing)

@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1612 tests, 69 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1626 tests, 69 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -233,13 +233,15 @@ stale browser tab into a writer that corrupts filter scopes.
 
 A waterfall bridge needs rows for its opening, steps and closing, which no
 example dataset has, so `tools/ci_live_waterfall.py` makes one, a virtual
-dataset on the examples database, and applies
-`tests/fixtures/live_waterfall.json`. On 6.1.0 the bridge applies, the data
-check passes it (a row for every step and the closing, and a closing that
-equals the steps added up), `plan` is clean, decompile reads its steps back
-and a re-apply keeps every chart id. On 4.1.4 and 5.0.0 resolve must refuse
-the bridge's `steps` with `superset_version_too_old` and warn for its 6.1.0
-labels, and the plain waterfalls apply with `plan` clean.
+dataset on the examples database, and on 6.0.0 or later the theme an opening
+total needs; then it applies `tests/fixtures/live_waterfall.json`. On 6.1.0 two
+bridges apply, one opening with a total and one with a rising first step; the
+data check passes them (a row for the opening, every step and the closing, and
+a closing that equals the steps added up), `plan` is clean, decompile reads
+each bridge's opening, steps and closing back, and a re-apply keeps every
+chart id. On 4.1.4 and 5.0.0 resolve must refuse the bridges' `steps` and the
+theme with `superset_version_too_old` and warn for the 6.1.0 labels, and the
+plain waterfalls apply with `plan` clean.
 
 ## 4. Lifecycle soak (`tools/soak.py`)
 

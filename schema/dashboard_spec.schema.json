@@ -7147,7 +7147,7 @@
     },
     "WaterfallChart": {
       "additionalProperties": false,
-      "description": "Steps that add up to a running total (Superset's Waterfall), e.g. a bridge from\nlast year's revenue through each driver to this year's. Each value of ``x_column``\nis a bar rising or falling by ``metric``; Superset adds the closing total.\n\nSuperset draws the steps in the x_column's own order (labels A to Z). For a bridge\nin its own order, ``steps`` lists them, opening first, and ``closing`` names the\ndataset row that closes it (Superset 6.1.0 or later). The first step always rises\nfrom zero, in the increase colour: the plugin keeps zero on its value axis only\nwhile the first bar is a step (it has no axis bounds).",
+      "description": "Steps that add up to a running total (Superset's Waterfall), e.g. a bridge from\nlast year's revenue through each driver to this year's. Each value of ``x_column``\nis a bar rising or falling by ``metric``; Superset adds the closing total.\n\nSuperset draws the steps in the x_column's own order (labels A to Z). For a bridge\nin its own order, ``steps`` lists them and ``closing`` names the dataset row that\ncloses it (Superset 6.1.0 or later). The first step rises from zero in the increase\ncolour; ``opening`` draws the opening row as a total instead, on a dashboard whose\ntheme keeps zero on the value axis, which the plugin otherwise lets float up.",
       "properties": {
         "name": {
           "description": "Chart title; unique within the dashboard (uuid seed input)",
@@ -7342,7 +7342,7 @@
                 "type": "string"
               },
               "maxItems": 1000,
-              "minItems": 2,
+              "minItems": 1,
               "type": "array"
             },
             {
@@ -7350,7 +7350,7 @@
             }
           ],
           "default": null,
-          "description": "The x_column's values in the order to draw them, opening first, e.g. [\"FY2025\", \"Price\", \"Volume\", \"Mix\"]; values not listed are drawn after them, A to Z. Needs closing. Superset 6.1.0 or later: older releases draw a running total after every step, so check, apply and plan refuse it there",
+          "description": "The x_column's values in the order to draw them, e.g. [\"FY2025\", \"Price\", \"Volume\", \"Mix\"]: the opening first, or after opening when that is set; values not listed are drawn after them, A to Z. Needs closing. Superset 6.1.0 or later: older releases draw a running total after every step, so check, apply and plan refuse it there",
           "title": "Steps"
         },
         "closing": {
@@ -7364,8 +7364,22 @@
             }
           ],
           "default": null,
-          "description": "With steps: the x_column value of the row that closes the bridge, e.g. \"FY2026\". Superset draws it last, as the running total in total_color, and names it so in the legend and tooltip; the row's own value is not drawn, so a closing that doesn't reconcile with the steps shows their sum (apply's data check says so). It must start with a letter or a digit 1-9",
+          "description": "With steps: the x_column value of the row that closes the bridge, e.g. \"FY2026\". Superset draws it last, as the running total in total_color, under its own name; the row's own value is not drawn, so a closing that doesn't reconcile with the steps shows their sum (apply's data check says so). Without opening, it must start with a letter or a digit 1-9",
           "title": "Closing"
+        },
+        "opening": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With steps and closing: the x_column value of the row that opens the bridge, e.g. \"FY2025\", drawn first as a total in total_color under its own name, instead of the first step rising in the increase colour. It must sort before closing (FY2025 before FY2026). The dashboard needs a theme (dashboard.theme, Superset 6.0.0 or later) whose JSON keeps zero on the value axis, {\"echartsOptionsOverridesByChartType\": {\"waterfall\": {\"yAxis\": {\"scale\": false}}}}: without it the axis floats up and cuts the opening away, so check and apply refuse it",
+          "title": "Opening"
         },
         "total_label": {
           "anyOf": [

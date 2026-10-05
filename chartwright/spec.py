@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 import uuid as _uuid
 from typing import Annotated, Any, ClassVar, Literal, Union
 
@@ -1054,6 +1055,24 @@ TICK_LAYOUTS = {0: "flat", 45: "45°", 90: "90°"}
 # every step's key sorts before it: keys are '0' and three digits, so the name must
 # start with a letter or a digit 1-9, which every common collation sorts after '0'.
 CLOSING_NAME_RE = re.compile(r"^(?:[^\W\d_]|[1-9])")
+# With an opening total, the opening is named by its own key too, and the steps' keys
+# are the opening's name and a number (OPENING_KEY_GAP, then three digits), so the
+# opening must sort first and the closing after the last key.
+OPENING_KEY_GAP = " "
+OPENING_OTHER_KEY = " 9999"   # after every step's key: a value steps doesn't list
+BRIDGE_TOTAL = "Total"        # the breakdown both totals of an opened bridge carry
+
+
+def _letters(text: str) -> str:
+    """The letters and digits of a name, case and accents folded: what the linguistic
+    collations (en_US.UTF-8 and the like) compare first, skipping spaces and punctuation."""
+    folded = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(ch for ch in folded if ch.isalnum())
+
+
+def sorts_before(a: str, b: str) -> bool:
+    """a sorts before b in a byte-order (C, binary) collation and in a linguistic one."""
+    return a < b and _letters(a) < _letters(b)
 
 
 def _named_colour(field: str, v):
@@ -1087,10 +1106,10 @@ class WaterfallChart(_ChartBase):
     is a bar rising or falling by ``metric``; Superset adds the closing total.
 
     Superset draws the steps in the x_column's own order (labels A to Z). For a bridge
-    in its own order, ``steps`` lists them, opening first, and ``closing`` names the
-    dataset row that closes it (Superset 6.1.0 or later). The first step always rises
-    from zero, in the increase colour: the plugin keeps zero on its value axis only
-    while the first bar is a step (it has no axis bounds)."""
+    in its own order, ``steps`` lists them and ``closing`` names the dataset row that
+    closes it (Superset 6.1.0 or later). The first step rises from zero in the increase
+    colour; ``opening`` draws the opening row as a total instead, on a dashboard whose
+    theme keeps zero on the value axis, which the plugin otherwise lets float up."""
 
     type: Literal["waterfall"]
     x_column: str = Field(
@@ -1108,20 +1127,30 @@ class WaterfallChart(_ChartBase):
         description="Break each x value down by this column (Superset's Breakdowns): its "
                     "values as steps, then that x value's running total")
     steps: list[str] | None = Field(
-        default=None, min_length=2, max_length=1000,
-        description="The x_column's values in the order to draw them, opening first, e.g. "
-                    "[\"FY2025\", \"Price\", \"Volume\", \"Mix\"]; values not listed are "
-                    "drawn after them, A to Z. Needs closing. Superset 6.1.0 or later: "
-                    "older releases draw a running total after every step, so check, "
-                    "apply and plan refuse it there")
+        default=None, min_length=1, max_length=1000,
+        description="The x_column's values in the order to draw them, e.g. [\"FY2025\", "
+                    "\"Price\", \"Volume\", \"Mix\"]: the opening first, or after opening when "
+                    "that is set; values not listed are drawn after them, A to Z. Needs "
+                    "closing. Superset 6.1.0 or later: older releases draw a running total "
+                    "after every step, so check, apply and plan refuse it there")
     closing: str | None = Field(
         default=None, min_length=1,
         description="With steps: the x_column value of the row that closes the bridge, "
                     "e.g. \"FY2026\". Superset draws it last, as the running total in "
-                    "total_color, and names it so in the legend and tooltip; the row's own "
-                    "value is not drawn, so a closing that doesn't reconcile with the steps "
-                    "shows their sum (apply's data check says so). It must start with a "
-                    "letter or a digit 1-9")
+                    "total_color, under its own name; the row's own value is not drawn, so a "
+                    "closing that doesn't reconcile with the steps shows their sum (apply's "
+                    "data check says so). Without opening, it must start with a letter or a "
+                    "digit 1-9")
+    opening: str | None = Field(
+        default=None, min_length=1,
+        description="With steps and closing: the x_column value of the row that opens the "
+                    "bridge, e.g. \"FY2025\", drawn first as a total in total_color under its "
+                    "own name, instead of the first step rising in the increase colour. It "
+                    "must sort before closing (FY2025 before FY2026). The dashboard needs a "
+                    "theme (dashboard.theme, Superset 6.0.0 or later) whose JSON keeps zero on "
+                    "the value axis, {\"echartsOptionsOverridesByChartType\": {\"waterfall\": "
+                    "{\"yAxis\": {\"scale\": false}}}}: without it the axis floats up and cuts "
+                    "the opening away, so check and apply refuse it")
     total_label: str | None = Field(
         default=None, min_length=1,
         description="Without steps: the name of the closing total Superset adds, e.g. "
@@ -1159,25 +1188,44 @@ class WaterfallChart(_ChartBase):
 
     @model_validator(mode="after")
     def _bridge(self) -> "WaterfallChart":
+        name = self.name
         if self.steps is None:
-            if self.closing is not None:
-                raise ValueError(f"chart {self.name!r}: closing needs steps (the bridge's order)")
+            for field in ("closing", "opening"):
+                if getattr(self, field) is not None:
+                    raise ValueError(f"chart {name!r}: {field} needs steps (the bridge's order)")
             return self
         dupes = sorted({s for s in self.steps if self.steps.count(s) > 1})
         if dupes:
-            raise ValueError(f"chart {self.name!r}: steps lists {dupes} more than once")
+            raise ValueError(f"chart {name!r}: steps lists {dupes} more than once")
         if any(not s for s in self.steps):
-            raise ValueError(f"chart {self.name!r}: steps must be non-empty values of {self.x_column!r}")
+            raise ValueError(f"chart {name!r}: steps must be non-empty values of {self.x_column!r}")
         if self.closing is None:
-            raise ValueError(f"chart {self.name!r}: steps needs closing: the x_column value of "
+            raise ValueError(f"chart {name!r}: steps needs closing: the x_column value of "
                              "the row that closes the bridge, drawn as its total")
-        if self.closing in self.steps:
-            raise ValueError(f"chart {self.name!r}: closing {self.closing!r} is also a step; "
-                             "list the opening and the steps, and name the closing row apart")
-        if not CLOSING_NAME_RE.match(self.closing):
-            raise ValueError(f"chart {self.name!r}: closing {self.closing!r} must start with a "
-                             "letter or a digit 1-9 (Superset sorts the bars by keys that "
-                             "must come before the closing's name)")
+        for field in ("closing", "opening"):
+            if getattr(self, field) in self.steps:
+                raise ValueError(f"chart {name!r}: {field} {getattr(self, field)!r} is also a "
+                                 "step; name the opening and closing rows apart from steps")
+        if self.opening is None:
+            if len(self.steps) < 2:
+                raise ValueError(f"chart {name!r}: steps needs at least 2 values, the opening "
+                                 "and a step (or set opening)")
+            if not CLOSING_NAME_RE.match(self.closing):
+                raise ValueError(f"chart {name!r}: closing {self.closing!r} must start with a "
+                                 "letter or a digit 1-9 (Superset sorts the bars by keys that "
+                                 "must come before the closing's name)")
+        else:
+            if self.opening == self.closing:
+                raise ValueError(f"chart {name!r}: opening and closing are the same row")
+            if not sorts_before(self.opening + OPENING_OTHER_KEY, self.closing):
+                raise ValueError(
+                    f"chart {name!r}: opening {self.opening!r} must sort before closing "
+                    f"{self.closing!r}, as FY2025 does before FY2026: Superset orders the bars "
+                    f"by keys made from the opening's name. Without opening, the first step "
+                    f"rises from zero and the names have no such limit")
+            if BRIDGE_TOTAL in self.steps:
+                raise ValueError(f"chart {name!r}: with opening, no step can be named "
+                                 f"{BRIDGE_TOTAL!r}: Superset marks the two totals with it")
         for field in ("time_grain", "groupby", "total_label"):
             if getattr(self, field) is not None:
                 why = ("the closing row names the total" if field == "total_label"
@@ -2126,6 +2174,20 @@ class DashboardSpec(BaseModel):
             found = cycle(name, ())
             if found:
                 raise ValueError(f"filter dependencies form a cycle: {' -> '.join(found)}")
+        return self
+
+    @model_validator(mode="after")
+    def _opened_bridges_have_a_theme(self) -> "DashboardSpec":
+        # The plugin's value axis floats (scale: true) and has no bounds: only a theme's
+        # ECharts override keeps zero on it, so an opening total shows (check verifies
+        # the theme's JSON on the instance).
+        opened = [c.name for c in self.charts if getattr(c, "opening", None)]
+        if opened and self.dashboard.theme is None:
+            raise ValueError(
+                f"charts {opened} open with a total, which needs dashboard.theme: a theme "
+                f"whose JSON keeps zero on a waterfall's value axis, {{\"echartsOptionsOverrides"
+                f"ByChartType\": {{\"waterfall\": {{\"yAxis\": {{\"scale\": false}}}}}}}}; "
+                f"without it, drop opening and the first step rises from zero")
         return self
 
     @model_validator(mode="after")

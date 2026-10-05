@@ -379,7 +379,7 @@ def _value_labels(ctx: RuleContext, c):
         if c.groupby:
             return None, "a breakdown per x value, so the number of bars is unknown"
         if c.steps is not None:
-            n = len(c.steps) + 1
+            n = len(c.steps) + 1 + (c.opening is not None)
         elif ctx.written(c, "row_limit"):
             n = c.row_limit + 1
         else:

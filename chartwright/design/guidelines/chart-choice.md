@@ -35,9 +35,10 @@
   plan to actual) through steps that ADD UP: one SUM or COUNT of the change,
   never an average or a distinct count. Not for shares (a bar) or trends (a
   line). Put the opening, each step and the closing in the dataset as rows of
-  one step column; list the opening and steps in `steps`, the closing row in
-  `closing` (6.1.0+). Superset draws the opening as a rising bar from zero:
-  name it by its period. Set the three colours and `show_value`.
+  one step column; name the ends in `opening` and `closing`, the steps between
+  in `steps` (6.1.0+). An opening total needs a dashboard theme that keeps zero
+  on the axis (see `opening` in the schema); without `opening`, the first step
+  rises from zero. Set the three colours and `show_value`.
 - One dominant category flattening its siblings is the data talking: note it
   or filter it, don't hide it.
 - Every chart with a time axis should tolerate the dashboard time filter;

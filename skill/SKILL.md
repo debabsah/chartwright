@@ -38,8 +38,8 @@ approximate it with a different mechanism.
 1. `CW schema`: read the contract. Surface: 16 chart types (big numbers,
    timeseries line/bar/area/scatter, categorical bar, pie/donut, table,
    pivot_table, heatmap, histogram, funnel, treemap, mixed: bars + a line on
-   two axes, waterfall: a bridge whose `steps` and `closing` keep its order
-   on 6.1+), metrics as saved names, `AGG(col) [AS Label]` or
+   two axes, waterfall: a bridge whose `opening`, `steps` and `closing` keep
+   its order on 6.1+), metrics as saved names, `AGG(col) [AS Label]` or
    `SQL(expression) AS Label`, per-chart `filters` (WHERE: column/op/value
    or `sql`), goal lines (`annotations`) on line/bar/area/scatter/mixed,
    dashboard-level `filters` (select, time_range, numeric range, time_grain

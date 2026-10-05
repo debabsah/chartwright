@@ -43,6 +43,7 @@ class ResolutionError:
     #                    | superset_version_too_old | superset_version_unknown (chartwright.versions)
     #                    | owner_not_found | owner_ambiguous | owner_account_unknown (chartwright.owners)
     #                    | theme_not_found | theme_ambiguous | theme_lookup_failed (dashboard.theme)
+    #                    | waterfall_opening_axis (a bridge's opening, on a theme without the axis fix)
     chart: str | None
     ref: str
     detail: str
@@ -131,6 +132,8 @@ def resolve(spec: DashboardSpec, client: SupersetClient,
             _check_column(f.default, where, ds, res, "time_column default")
     if spec.dashboard.theme is not None and not any(e.ref == "theme" for e in res.errors):
         _resolve_theme(spec.dashboard.theme, client, res)
+        if res.theme_id is not None:
+            _check_opening_axis(spec, client, res)
     if spec.dashboard.owners is not None:
         from .owners import resolve_owners
 
@@ -190,6 +193,54 @@ def _resolve_theme(name: str, client: SupersetClient, res: Resolution) -> None:
         "theme_not_found", None, "theme",
         f"no theme named {name!r} on this instance{hint} Themes: "
         f"{', '.join(names) if names else 'none'}", near))
+
+
+def keeps_zero_on_waterfalls(theme_json) -> bool:
+    """A theme's JSON sets the waterfall's value axis to keep zero (ECharts yAxis.scale
+    false), for waterfalls or every chart. Superset 6.x merges these over each chart's
+    own options (plugin-chart-echarts components/Echart.tsx, mergeEchartsThemeOverrides
+    at 6.1.0, from SupersetTheme echartsOptionsOverrides and ...ByChartType)."""
+    import json
+
+    try:
+        config = json.loads(theme_json) if isinstance(theme_json, str) else (theme_json or {})
+    except ValueError:
+        return False
+    for overrides in ((config.get("echartsOptionsOverridesByChartType") or {}).get("waterfall"),
+                      config.get("echartsOptionsOverrides")):
+        y_axis = (overrides or {}).get("yAxis") if isinstance(overrides, dict) else None
+        if isinstance(y_axis, dict) and y_axis.get("scale") is False:
+            return True
+    return False
+
+
+def _check_opening_axis(spec: DashboardSpec, client: SupersetClient, res: Resolution) -> None:
+    """A bridge drawn with an opening total needs a theme that keeps zero on the value
+    axis: the plugin's own axis floats up to the smallest total (defaultYAxis scale: true)
+    and cuts the opening away (seen on 6.1.0)."""
+    opened = [c.name for c in spec.charts if getattr(c, "opening", None)]
+    if not opened:
+        return
+    from .client import SupersetAPIError
+
+    try:
+        theme_json = client.get(f"/api/v1/theme/{res.theme_id}")["result"].get("json_data")
+    except SupersetAPIError as e:
+        theme_json, failed = None, str(e)
+    else:
+        failed = None
+    if keeps_zero_on_waterfalls(theme_json):
+        return
+    why = (f"its JSON could not be read ({failed})" if failed else
+           "its JSON doesn't keep zero on a waterfall's value axis")
+    for name in opened:
+        res.errors.append(ResolutionError(
+            "waterfall_opening_axis", name, "opening",
+            f"opening draws the bridge's first bar as a total, which needs zero on the value "
+            f"axis, and dashboard.theme {spec.dashboard.theme!r} can't give it: {why}. Add "
+            f"{{\"echartsOptionsOverridesByChartType\": {{\"waterfall\": {{\"yAxis\": "
+            f"{{\"scale\": false}}}}}}}} to the theme's JSON in Superset (Settings > Themes), "
+            f"or drop opening and the first step rises from zero"))
 
 
 def _check_where(filters, where: str, ds: "ResolvedDataset", res: "Resolution", what: str) -> None:

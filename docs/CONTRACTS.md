@@ -442,12 +442,26 @@ running the tool against real instances of all three releases.
   character. The column goes into the SQL as it is when it is a lowercase
   identifier, and double-quoted (ANSI) otherwise. Verified live on 6.1.0: the
   bars drew in order, the closing grey under its name, and `plan` was clean.
-- **The opening rises from zero in the increase colour.** The value axis
-  doesn't keep zero on it (`defaultYAxis` `scale: true`, `defaults.ts:25-28`,
-  all three releases) and the panel has no axis bounds; the first bar, a step,
-  is what keeps zero there. Drawn as a total, the opening floats the axis up to
-  the smallest total and disappears (seen on 6.1.0), so a spec can't make it
-  one.
+- **Without `opening`, the opening rises from zero in the increase colour.**
+  The value axis doesn't keep zero on it (`defaultYAxis` `scale: true`,
+  `defaults.ts:25-28`, all three releases) and the panel has no axis bounds;
+  the first bar, a step, is what keeps zero there. Drawn as a total, the opening
+  floats the axis up to the smallest total and disappears (seen on 6.1.0).
+- **`opening` draws it as a total, under a theme that keeps zero.** A 6.x
+  theme's JSON can set ECharts options per chart type
+  (`echartsOptionsOverridesByChartType`, `superset-core/src/theme/types.ts:161`
+  at 6.1.0), which the chart merges over its own
+  (`plugin-chart-echarts/src/components/Echart.tsx`, `mergeEchartsThemeOverrides`),
+  so `{"waterfall": {"yAxis": {"scale": false}}}` keeps zero on the axis. With
+  `opening`, both ends are total rows: the breakdown is a CASE marking them
+  Total (`total_label`), a total at the first index adds to the running total
+  and a later one shows it (`transformProps.ts:241-250` at 6.1.0), and the x
+  axis keys each step after the opening's name (`FY2025 000`, ...), so the spec
+  holds the opening to sort before the closing, byte by byte and letter by
+  letter. `check` and `apply` read the dashboard theme's JSON on the instance
+  and refuse `opening` when it doesn't keep zero (`waterfall_opening_axis`).
+  Verified live on 6.1.0: both ends grey under their own names, the steps in
+  order, and `plan` clean.
 - **A waterfall's time grain is written as the spec says.** The backend
   buckets a temporal x axis and leaves a categorical one as it is (seen on
   4.1.4 and 6.1.0), so `time_grain` round-trips whatever the column's type.

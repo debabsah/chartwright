@@ -404,12 +404,13 @@ does (`docs/CONTRACTS.md`, "A waterfall"):
   such as `$3.00M`, and rotated step labels hang over an x title (both seen on
   4.1.4 and 6.1.0). The unit belongs in the chart's title or number format.
 
-Superset draws the opening as the first step, rising from zero in the
-increase colour, and no spec can make it a grey total: the plugin's value axis
-does not hold zero (ECharts `scale: true`, no bounds control), and the first
-bar is what keeps zero on it. Drawn as a total row, the opening floats the axis
-up to the smallest total and is cut away (seen on 6.1.0). The guideline tells
-an author to name the opening by its period instead.
+Without `opening`, Superset draws the opening as the first step, rising from
+zero in the increase colour: the plugin's value axis does not hold zero
+(ECharts `scale: true`, no bounds control), and the first bar is what keeps zero
+on it. Drawn as a total row, the opening floats the axis up to the smallest
+total and is cut away (seen on 6.1.0). `opening` draws it as a total anyway,
+on a dashboard whose theme keeps zero on the axis, which `check` verifies on
+the instance; the guideline tells an author both ways.
 
 Anything fuzzier than this (reading order beyond KPI-first, grouping
 related metrics, matched granularity across a row, insight-stating titles)
