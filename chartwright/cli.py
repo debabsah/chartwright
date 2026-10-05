@@ -351,6 +351,9 @@ def _main(argv: list[str] | None = None) -> None:
     rst = sub.add_parser("restore", help="re-import a backup bundle written by a prior apply")
     rst.add_argument("bundle", help="path to a bundle zip written by a prior apply")
     rst.add_argument("--profile", required=True)
+    rst.add_argument("--to-other-instance", action="store_true",
+                     help="restore even though the backup records another instance than the "
+                          "profile's (a deliberate move, such as recovery onto a rebuilt instance)")
 
     args = ap.parse_args(argv)
 
@@ -704,10 +707,27 @@ def _main(argv: list[str] | None = None) -> None:
             _die({"stage": "restore", "errors": [{"code": "not_owned",
                   "detail": f"bundle dashboard (slug={slug!r}) is not owned by this tool and is not "
                             f"one of its own backups; refusing to import"}]})
-        client = _client(args.profile)
+        # A slug's derived ids are the same on every instance, so the zip can't say where
+        # it came from; the record apply wrote beside it can (triage L).
+        from .apply import backup_record, same_instance
+
+        client = _client(args.profile)  # signs in; nothing is written before the check
+        base_url = getattr(client, "base_url", "")
+        record = backup_record(Path(args.bundle))
+        if (record and record.get("base_url") and base_url
+                and not same_instance(record["base_url"], base_url)
+                and not args.to_other_instance):
+            _die({"stage": "restore", "errors": [{"code": "other_instance",
+                  "detail": f"this backup was taken on {record['base_url']}, but profile "
+                            f"{args.profile!r} points at {base_url}; nothing was changed. Pass "
+                            f"--to-other-instance to restore it there anyway"}]})
         from .apply import restore_bundle
 
         report = restore_bundle(blob, slug, client)
+        if record is None:
+            report.warnings.append(
+                f"this backup records no instance (taken before chartwright 0.5.0, or copied from "
+                f"elsewhere), so restore could not check it came from {base_url}")
         print(report.to_json())
         sys.exit(0 if report.ok else 1)
 

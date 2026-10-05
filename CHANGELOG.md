@@ -7,6 +7,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Upgrading from 0.4
 
+- `apply` now keeps the newest 50 backups per profile and dashboard and deletes older ones after each new backup. Set `CHARTWRIGHT_BACKUP_KEEP` to keep more, or to 0 to keep them all, before upgrading if you rely on older backups.
+- `restore` refuses a backup taken on another instance than the profile points at (`other_instance`); pass `--to-other-instance` to restore it there on purpose. Backups taken before 0.5.0 carry no record of their instance and restore as before, with a warning.
 - A spec with `dashboard.adopted` is refused by chartwright 0.4.0 and earlier (`extra_forbidden`); upgrade CI before committing one.
 - `apply` now keeps a chart's saved query (which CSV and text reports and the chart data API read) when it writes the same options the chart already stores; before, every in-place update cleared it. `restore` puts a backup's saved queries back.
 
@@ -29,6 +31,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- `restore` (and the automatic restore after a failed apply) deletes the charts the tool created after the backup that it leaves on no dashboard, such as the new chart of a failed apply; before, they stayed behind as orphans. Charts made in Superset are never deleted.
 - A GET or PUT the server drops without answering (a pooled connection it had already closed, as a recycled gunicorn worker or an idle timeout does) is sent once more instead of failing the run. POSTs and DELETEs are never repeated.
 - `decompile` (and so `redesign`, `plan` and `adopt`) names chart settings it can't carry when they differ from what an untouched Superset chart stores (a rolling sum, a forecast, a legend margin, a series sort, among others); before, it dropped them without a note. Superset's own defaults stay unreported, and so does any setting the spec writes back with the same value.
 - `decompile` names a filter scoped to some tabs, which the spec scopes to the whole dashboard.

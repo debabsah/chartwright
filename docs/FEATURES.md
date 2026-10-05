@@ -142,6 +142,8 @@ into one. Everything below works from that one file.
 
 ## Safety and Recovery
 - **Automatic Backups**: Every apply to an existing dashboard saves the live state first, no flag needed; backups are named to the microsecond and never overwritten.
+    - Each backup records the instance it came from, and `chartwright restore` refuses one from another instance unless you pass `--to-other-instance`.
+    - The newest 50 backups per dashboard are kept; set `CHARTWRIGHT_BACKUP_KEEP` to keep more, or 0 to keep them all.
 - **Complete Restore**: `chartwright restore` brings back the dashboard, chart settings, and filter scopes.
 - **Self-Healing Applies**: When an apply fails while preparing, importing or updating charts, the previous state is restored automatically, whatever the error. A failure after that (linkage, filter scopes, chart queries) leaves the new version live, and the report gives the backup to restore.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
