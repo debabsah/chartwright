@@ -3,7 +3,9 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
-## Unreleased
+## 0.5.0 (2026-10-04)
+
+Take over a dashboard built in the UI where it is, with everything the first apply resets listed up front. Save each chart's query so Superset's CSV reports work on the charts the tool builds. Decompile names the settings it can't carry and keeps stacked charts; backups record their instance, prune themselves and clean up after a restore.
 
 ### Upgrading from 0.4
 
@@ -15,7 +17,6 @@ while the major version is 0, minor bumps may include breaking changes and say s
 ### Added
 
 - `chartwright save-queries <spec> --profile P`, `apply --save-queries` and MCP `build_dashboard(save_queries=true)`: save each chart's query, so Superset's CSV and text chart reports and its chart data endpoint work on the charts the tool builds. A headless browser opens each chart once in Explore and saves the query Superset's own frontend builds for it, exactly as Explore's Save does, on every chart type and release; each saved query is then run through the endpoint reports use. A later apply keeps it while the chart's options stay the same, and clears it when they change, so it never goes stale. Needs the optional extra `pip install 'chartwright[visual]'` and `playwright install chromium`.
-
 - `chartwright adopt <dashboard> --profile P -o spec.json` takes over a dashboard built in the UI where it is. The spec names that dashboard and its charts by their own ids (`dashboard.adopted`), so `apply` updates the same dashboard: same id, same address, same chart ids, so links and embeds keep pointing at it. Adopt changes nothing in Superset.
   - It lists under `resets` what the first apply resets because a spec can't hold it, and refuses while there are any, unless you pass `--accept-reset`:
     - everything decompile can't carry;
