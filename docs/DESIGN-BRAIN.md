@@ -1751,6 +1751,7 @@ that item and nothing else:
 | nothing, where the record has a value | deleted: the record is marked released, and the item is never written again until the author deletes that entry | a violation, as above |
 | nothing, and no record | the standard's value is written | the same |
 | the standard's value, with no record (a decompiled or adopted dashboard) | left as it is, never written twice; `--claim` records it | the same, except CSS: locked CSS found unmarked conforms only once `--claim` marks it, and is otherwise written as a block |
+| a header or footer row found at the body's edge instead (the last rows for a footer, the first for a header: a dashboard built in the UI has neither, so decompile and `adopt` read its legal line as a body row) | left where it is, never added a second time; `--claim` moves it into the header or footer and records it | the same: present, so it conforms |
 | a CSS block with no record whose marker hash still matches its text (the standard's own earlier version, as after a decompile) | left as it is; `--claim` takes it over and brings it up to date | a violation; `--claim` brings it up to date |
 | a value of the author's, with no record | the author's | a violation |
 
