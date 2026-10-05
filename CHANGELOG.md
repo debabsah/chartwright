@@ -29,6 +29,9 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- `decompile` (and so `redesign`, `plan` and `adopt`) names chart settings it can't carry when they differ from what an untouched Superset chart stores (a rolling sum, a forecast, a legend margin, a series sort, among others); before, it dropped them without a note. Superset's own defaults stay unreported, and so does any setting the spec writes back with the same value.
+- `decompile` names a filter scoped to some tabs, which the spec scopes to the whole dashboard.
+- `decompile` reads a big-number total's subtitle on Superset 6.0 and later, which stores it as `subtitle` rather than `subheader`.
 - A chart added to a chartwright dashboard in Superset no longer makes the next `apply` fail on Superset 4.1.4 and 5.0.0. `apply` takes it off the dashboard on every release, leaves the chart itself under Charts, and names it in a warning; on 6.1.0 the chart came off before too, but without a word. To keep such a chart on the dashboard, add it to the spec.
 - `restore` (and the automatic restore after a failed apply) now fails, naming the charts, when it can't put some charts' settings back; before, it reported success with the charts still on the newer settings.
 - `restore` now leaves the dashboard linked to exactly the backup's charts on 4.1.4 and 5.0.0. Before, a chart linked since the backup, such as one a failed apply had just added, stayed linked to the restored dashboard.

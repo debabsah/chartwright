@@ -93,3 +93,93 @@ def test_labeled_star_metric_round_trips():
     result = decompile_bundle(bundle, _stub_lookup_for(spec))
     assert result.losses == []
     assert result.spec["charts"][0]["metric"] == "COUNT(*) AS Trips"
+
+
+# -- triage I: settings decompile used to drop without a note ------------------------------
+
+
+def _ui_bundle(edit) -> tuple[bytes, object]:
+    """The sales overview fixture, compiled, with chart params edited as the UI would
+    store them."""
+    from chartwright.testing import edit_bundle
+
+    spec = load_spec(json.loads((FIXTURES / "sales_overview.json").read_text()))
+    return edit_bundle(compile_bundle(spec, stub_resolution(spec)), edit), spec
+
+
+def _settings_losses(blob, spec) -> dict[str, str]:
+    result = decompile_bundle(blob, _stub_lookup_for(spec))
+    return {l.where: l.what for l in result.losses if "settings not preserved" in l.what}
+
+
+def test_a_changed_setting_the_spec_cannot_hold_is_named():
+    """A rolling sum or a forecast changes the numbers a chart shows; decompile dropped
+    both silently, so a copy built from the spec drew different numbers unannounced."""
+    def analytics(path, doc):
+        if "/charts/" in path and doc["slice_name"] == "Sales Over Time":
+            doc["params"].update(rolling_type="cumsum", forecastEnabled=True, legendMargin=50)
+    blob, spec = _ui_bundle(analytics)
+    what = _settings_losses(blob, spec)["Sales Over Time"]
+    assert "rolling_type='cumsum'" in what and "forecastEnabled=True" in what
+    assert "legendMargin=50" in what
+
+
+def test_superset_defaults_are_no_loss():
+    """An untouched chart stores these defaults; dropping them changes nothing drawn."""
+    def defaults(path, doc):
+        if "/charts/" in path:
+            doc["params"].update(rolling_type="None", forecastEnabled=False, forecastPeriods=10,
+                                 forecastInterval=0.8, rich_tooltip=True, truncateXAxis=True,
+                                 tooltipTimeFormat="smart_date", sort_series_type="sum",
+                                 y_axis_bounds=[None, None], comparison_type="values",
+                                 legendMargin=None)
+    blob, spec = _ui_bundle(defaults)
+    assert _settings_losses(blob, spec) == {}
+
+
+def test_a_setting_that_only_matters_with_another_is_named_only_then():
+    def comparison(compare):
+        def edit(path, doc):
+            if "/charts/" in path and doc["slice_name"] == "Sales Over Time":
+                doc["params"].update(comparison_type="difference", time_compare=compare)
+        return edit
+    blob, spec = _ui_bundle(comparison([]))
+    assert "Sales Over Time" not in _settings_losses(blob, spec)
+    blob, spec = _ui_bundle(comparison(["1 year ago"]))
+    assert "comparison_type='difference'" in _settings_losses(blob, spec).get("Sales Over Time", "")
+
+
+def test_a_value_the_spec_writes_back_is_no_loss():
+    """Decompile carries some of these keys under spec fields; the check compiles the
+    spec it read, so a key apply writes back with the same value is never reported."""
+    blob, spec = _ui_bundle(lambda path, doc: None)
+    assert _settings_losses(blob, spec) == {}
+
+
+def test_a_tab_scoped_filter_is_named():
+    data = json.loads((FIXTURES / "sales_overview.json").read_text())
+    data["filters"] = [{"type": "select", "name": "Deal", "column": "deal_size",
+                        "dataset": data["charts"][0]["dataset"]}]
+    spec = load_spec(data)
+    from chartwright.testing import edit_bundle
+
+    def tab_scope(path, doc):
+        if "/dashboards/" in path:
+            doc["metadata"]["native_filter_configuration"][0]["scope"]["rootPath"] = ["TAB-1"]
+    blob = edit_bundle(compile_bundle(spec, stub_resolution(spec)), tab_scope)
+    losses = [l for l in decompile_bundle(blob, _stub_lookup_for(spec)).losses
+              if l.where == "filter:Deal"]
+    assert any("scoped to tabs" in l.what for l in losses)
+
+
+def test_a_6_1_big_number_subtitle_is_read():
+    """6.0+ stores a big-number total's subtitle as `subtitle`, not `subheader` (K)."""
+    def subtitle(path, doc):
+        if "/charts/" in path and doc.get("viz_type") == "big_number_total":
+            doc["params"].pop("subheader", None)
+            doc["params"]["subtitle"] = "all regions"
+    blob, spec = _ui_bundle(subtitle)
+    result = decompile_bundle(blob, _stub_lookup_for(spec))
+    totals = [c for c in result.spec["charts"] if c["type"] == "big_number_total"]
+    assert totals and all(c.get("subtitle") == "all regions" for c in totals)
+    assert not any("subtitle" in l.what for l in result.losses)
