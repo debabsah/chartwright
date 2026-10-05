@@ -2490,7 +2490,17 @@
           "anyOf": [
             {
               "additionalProperties": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "$ref": "#/$defs/MarkdownBlock"
+                  },
+                  {
+                    "$ref": "#/$defs/HeaderBlock"
+                  }
+                ]
               },
               "type": "object"
             },
@@ -2499,7 +2509,7 @@
             }
           ],
           "default": null,
-          "description": "Sketch symbol -> chart name",
+          "description": "Sketch symbol -> chart name, or a block drawn like a chart: {\"markdown\": \"...\"} (its height in fifths, optional, wins over the drawn one; the drawing sets its width) or {\"header\": \"...\", \"size\": ..., \"background\": ...} (one line; across the whole sketch it is a section title, elsewhere it sits above or below the charts it shares a column with)",
           "title": "Legend"
         },
         "line": {
@@ -4294,7 +4304,17 @@
           "anyOf": [
             {
               "additionalProperties": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "$ref": "#/$defs/MarkdownBlock"
+                  },
+                  {
+                    "$ref": "#/$defs/HeaderBlock"
+                  }
+                ]
               },
               "type": "object"
             },
@@ -4303,7 +4323,7 @@
             }
           ],
           "default": null,
-          "description": "Sketch symbol -> chart name",
+          "description": "Sketch symbol -> chart name, or a block drawn like a chart: {\"markdown\": \"...\"} (its height in fifths, optional, wins over the drawn one; the drawing sets its width) or {\"header\": \"...\", \"size\": ..., \"background\": ...} (one line; across the whole sketch it is a section title, elsewhere it sits above or below the charts it shares a column with)",
           "title": "Legend"
         },
         "line": {

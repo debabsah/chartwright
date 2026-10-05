@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1564 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1584 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -120,6 +120,13 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   back as its header; the critic advises header rows in place, spends the
   header in every tab's fold budget, and fixes header markdown by its own
   address.
+- **Sketch blocks** (`test_sketch.py`): header and markdown legend entries
+  parse like charts, a header one line; a header across the sketch compiles
+  to a HEADER between rows and any other to one in a COLUMN; each placement
+  round-trips through decompile to the same layout tree and plans clean; a
+  header, note or column width changed live is layout drift; a chart-only
+  sketch compiles to the bytes it always did; every example in the layout
+  guide compiles (`test_docs.py`).
 - **Standards** (`test_standards.py`): `extends` merges each key as
   documented and records the layer behind it; cycles, unknown parents, a
   fourth file, unknown rule ids and parameters, and every way a lower file

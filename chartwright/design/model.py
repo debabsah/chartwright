@@ -414,15 +414,24 @@ def _bands_from_rows(spec: DashboardSpec, rows) -> list[Band]:
 
 
 def _bands_from_sketch(spec: DashboardSpec, holder) -> list[Band]:
+    from ..sketch import SketchBlock, SketchColumn
+
+    def height(sc) -> float:
+        # A header counts nothing, as a header row does in rows mode.
+        if isinstance(sc, SketchBlock):
+            return holder.sketch_block_height(sc) if sc.kind == "markdown" else 0.0
+        return spec.resolved_height(sc.name)
+
     bands = []
     for srow in holder.parsed_sketch():
+        if srow.header_band is not None:
+            continue  # a section title between bands holds no charts, as in rows
         items = []
         for child in srow.children:
-            if hasattr(child, "children"):  # SketchColumn: a stack of charts
-                names = [sc.name for sc in child.children]
-                total = sum(spec.resolved_height(n) for n in names)
-                items.append(BandItem(child.width, total, names))
-            else:
-                items.append(BandItem(child.width, spec.resolved_height(child.name), [child.name]))
+            stack = child.children if isinstance(child, SketchColumn) else [child]
+            names = [sc.name for sc in stack if not isinstance(sc, SketchBlock)]
+            # A slot of blocks only (a note, a header) reads as markdown does in rows.
+            items.append(BandItem(child.width, sum(height(sc) for sc in stack), names,
+                                  is_markdown=not names))
         bands.append(Band(items))
     return bands

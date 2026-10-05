@@ -1328,10 +1328,12 @@ def item_rows(rows) -> list[list]:
 class _SketchHolder(BaseModel):
     """Shared surface for ASCII layout sketches (see chartwright/sketch.py).
 
-    A sketch draws the layout as text: legend symbols map to chart names,
-    character runs become twelfths of the 12-column grid, each line adds
-    `line` height units (1 unit = 40 px; repeat lines for taller), and
-    vertically stacked symbols compile to Superset COLUMN containers.
+    A sketch draws the layout as text: legend symbols map to chart names (or
+    stand for a markdown or header block), character runs become twelfths of
+    the 12-column grid, each line adds `line` height units (1 unit = 40 px;
+    repeat lines for taller), and vertically stacked symbols compile to
+    Superset COLUMN containers. A header is one line: across the whole sketch
+    it is a section title between bands, anywhere else it sits in a column.
     '.' is a reserved EMPTY cell, legal trailing-right (a row narrower than
     the page) or at the BOTTOM of a slice/stack (a short chart beside a tall
     one); anywhere else is a named error (Superset packs left and upward)."""
@@ -1339,19 +1341,48 @@ class _SketchHolder(BaseModel):
     sketch: list[str] | None = Field(
         default=None, description="ASCII layout: one string per grid line; spaces are cosmetic"
     )
-    legend: dict[str, str] | None = Field(
-        default=None, description="Sketch symbol -> chart name"
+    legend: dict[str, str | MarkdownBlock | HeaderBlock] | None = Field(
+        default=None,
+        description="Sketch symbol -> chart name, or a block drawn like a chart: "
+                    "{\"markdown\": \"...\"} (its height in fifths, optional, wins over the "
+                    "drawn one; the drawing sets its width) or {\"header\": \"...\", \"size\": "
+                    "..., \"background\": ...} (one line; across the whole sketch it is a "
+                    "section title, elsewhere it sits above or below the charts it shares a "
+                    "column with)",
     )
     line: int = Field(
         default=2, ge=1, le=20,
         description="Height units per sketch line (1 unit = 40 px)",
     )
 
-    def parsed_sketch(self):
-        from .sketch import parse_sketch_cached
+    @field_validator("legend")
+    @classmethod
+    def _blocks_take_drawn_widths(cls, legend):
+        for symbol, entry in (legend or {}).items():
+            if isinstance(entry, MarkdownBlock) and entry.width is not None:
+                raise ValueError(f"legend {symbol!r}: a sketch draws its markdown blocks' "
+                                 "widths; drop width and draw the block as wide as it should be")
+        return legend
 
-        return parse_sketch_cached(
-            tuple(self.sketch or ()), tuple(sorted((self.legend or {}).items())), self.line)
+    def parsed_sketch(self):
+        from .sketch import BlockRef, parse_sketch_cached
+
+        legend = tuple(sorted(
+            (symbol, entry if isinstance(entry, str)
+             else BlockRef("markdown" if isinstance(entry, MarkdownBlock) else "header"))
+            for symbol, entry in (self.legend or {}).items()))
+        return parse_sketch_cached(tuple(self.sketch or ()), legend, self.line)
+
+    def sketch_block(self, block) -> "MarkdownBlock | HeaderBlock":
+        """The legend's block for a parsed SketchBlock."""
+        return self.legend[block.symbol]
+
+    def sketch_block_height(self, block) -> float:
+        """A parsed block's height: a markdown block's own height wins over the drawn
+        one, as a chart's does; a header's is what the drawing gives it."""
+        entry = self.sketch_block(block)
+        return (entry.height if isinstance(entry, MarkdownBlock) and entry.height is not None
+                else block.height)
 
 
 class Tab(_SketchHolder):
@@ -1992,6 +2023,8 @@ class DashboardSpec(BaseModel):
 
     @model_validator(mode="after")
     def _layout_consistent(self) -> "DashboardSpec":
+        from .sketch import SketchBlock, sketch_items
+
         by_name = {c.name: c for c in self.charts}
         placed: set[str] = set()
         for i, row in enumerate(self.layout.all_rows()):
@@ -2028,8 +2061,9 @@ class DashboardSpec(BaseModel):
                 raise ValueError(f"{where}: {e}") from e
             for row in parsed:
                 for child in row.children:
-                    charts = child.children if hasattr(child, "children") else [child]
-                    for sc in charts:
+                    for sc in sketch_items(child):
+                        if isinstance(sc, SketchBlock):
+                            continue  # a markdown or header block: no chart to place
                         if sc.name not in by_name:
                             raise ValueError(f"{where}: legend maps to unknown chart {sc.name!r}")
                         if sc.name in placed:
@@ -2057,13 +2091,15 @@ class DashboardSpec(BaseModel):
     def _sketch_charts(self) -> dict[str, object]:
         """Chart name -> SketchChart for every chart placed via a sketch.
         Sketch geometry is authoritative: widths and heights are drawn."""
+        from .sketch import SketchBlock, sketch_items
+
         out: dict[str, object] = {}
         for holder in self.layout.sketch_holders():
             for row in holder.parsed_sketch():
                 for child in row.children:
-                    charts = child.children if hasattr(child, "children") else [child]
-                    for sc in charts:
-                        out[sc.name] = sc
+                    for sc in sketch_items(child):
+                        if not isinstance(sc, SketchBlock):
+                            out[sc.name] = sc
         return out
 
     def resolved_item_width(self, item: RowItem) -> int:

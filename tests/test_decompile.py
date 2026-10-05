@@ -238,9 +238,9 @@ def test_a_column_beside_a_tall_chart_round_trips_as_a_sketch(tabs):
     assert _normalize(spec)["layout"] == _normalize(again)["layout"]
 
 
-def test_a_column_beside_markdown_stays_rows_and_says_so():
-    """A sketch holds charts only: with a text block in the section, the COLUMN is
-    flattened as before and named."""
+def test_a_column_beside_markdown_reads_back_as_a_sketch_with_the_block():
+    """A sketch holds markdown and headers too: a text row and a header in a section
+    with a COLUMN read back as legend blocks, where they used to flatten the COLUMN."""
     data = _stacked_spec()
     spec = load_spec(data)
     from chartwright.testing import edit_bundle
@@ -249,11 +249,47 @@ def test_a_column_beside_markdown_stays_rows_and_says_so():
         if "/dashboards/" in path:
             pos = doc["position"]
             pos["MARKDOWN-x"] = {"type": "MARKDOWN", "id": "MARKDOWN-x", "children": [],
-                                 "meta": {"code": "Notes", "width": 12, "height": 50}}
+                                 "meta": {"code": "Notes", "width": 12, "height": 8}}
             pos["ROW-x"] = {"type": "ROW", "id": "ROW-x", "children": ["MARKDOWN-x"],
                             "meta": {"background": "BACKGROUND_TRANSPARENT"}}
-            pos["GRID_ID"]["children"].append("ROW-x")
+            pos["HEADER-x"] = {"type": "HEADER", "id": "HEADER-x", "children": [],
+                               "meta": {"text": "Detail", "headerSize": "MEDIUM_HEADER",
+                                        "background": "BACKGROUND_TRANSPARENT"}}
+            pos["GRID_ID"]["children"] += ["HEADER-x", "ROW-x"]
     blob = edit_bundle(compile_bundle(spec, stub_resolution(spec)), text_row)
+    result = decompile_bundle(blob, _stub_lookup_for(spec))
+    assert result.losses == [], result.losses_json()
+    layout = result.spec["layout"]
+    assert "sketch" in layout and "rows" not in layout
+    blocks = [v for v in layout["legend"].values() if isinstance(v, dict)]
+    assert blocks == [{"header": "Detail"}, {"markdown": "Notes", "height": 1.6}]
+    assert layout["sketch"][-2:] == [layout["sketch"][-2][0] * 12, layout["sketch"][-1][0] * 12]
+    again = load_spec(result.spec)
+    # The same tree, node for node (the edited nodes' ids were not the compiler's own).
+    assert _tree(_position_of(compile_bundle(again, stub_resolution(again)))) == \
+        _tree(_position_of(blob))
+
+
+def _tree(pos: dict, node_id: str = "GRID_ID"):
+    """A layout as nested (type, meta, children), ids aside."""
+    node = pos[node_id]
+    meta = {k: v for k, v in (node.get("meta") or {}).items() if k != "chartId"}
+    return (node["type"], meta, [_tree(pos, c) for c in node.get("children", [])])
+
+
+def test_a_column_beside_a_divider_stays_rows_and_says_so():
+    """A sketch holds no divider: with one in the section, the COLUMN is flattened as
+    before and named."""
+    data = _stacked_spec()
+    spec = load_spec(data)
+    from chartwright.testing import edit_bundle
+
+    def divider(path, doc):
+        if "/dashboards/" in path:
+            pos = doc["position"]
+            pos["DIVIDER-x"] = {"type": "DIVIDER", "id": "DIVIDER-x", "children": [], "meta": {}}
+            pos["GRID_ID"]["children"].append("DIVIDER-x")
+    blob = edit_bundle(compile_bundle(spec, stub_resolution(spec)), divider)
     result = decompile_bundle(blob, _stub_lookup_for(spec))
     assert "rows" in result.spec["layout"]
     assert any("COLUMN" in l.what for l in result.losses)

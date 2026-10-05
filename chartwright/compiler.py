@@ -777,9 +777,7 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
             # ROW (dashboard/util/isValidChild.ts, all three releases).
             kind = "HEADER" if isinstance(entry, HeaderBlock) else "DIVIDER"
             node_id = f"{kind}-{prefix}{i + 1}"
-            meta = ({"text": entry.header, "headerSize": HEADER_SIZE[entry.size],
-                     "background": BACKGROUND[entry.background]}
-                    if kind == "HEADER" else {})
+            meta = _header_meta(entry) if kind == "HEADER" else {}
             pos[node_id] = {"type": kind, "id": node_id, "children": [], "parents": parents, "meta": meta}
             row_ids.append(node_id)
             continue
@@ -842,20 +840,59 @@ def _sketch_chart_node(pos, spec, sc, width, parents, counter) -> str:
     return chart_id
 
 
-def _sketch_into(pos, parsed_rows, spec, parents: list[str], prefix: str, counter: list[int]) -> list[str]:
-    """Emit ROW / COLUMN / CHART nodes from a parsed sketch (chartwright/sketch.py)."""
-    from .sketch import SketchColumn
+def _header_meta(entry: HeaderBlock) -> dict:
+    return {"text": entry.header, "headerSize": HEADER_SIZE[entry.size],
+            "background": BACKGROUND[entry.background]}
+
+
+def _sketch_block_node(pos, holder, sb, width, node_id, parents) -> str:
+    """Emit one MARKDOWN or HEADER node from a sketch block; a markdown block's own
+    height wins over the drawn one, as a chart's does."""
+    entry = holder.sketch_block(sb)
+    if sb.kind == "header":
+        meta = _header_meta(entry)
+        node_id = f"HEADER-{node_id}"
+    else:
+        meta = {"code": entry.markdown, "width": width,
+                "height": int(round(holder.sketch_block_height(sb) * ROW_UNITS_PER_SPEC_UNIT))}
+        node_id = f"MARKDOWN-{node_id}"
+    pos[node_id] = {"type": "HEADER" if sb.kind == "header" else "MARKDOWN", "id": node_id,
+                    "children": [], "parents": parents, "meta": meta}
+    return node_id
+
+
+def _sketch_into(pos, holder, spec, parents: list[str], prefix: str, counter: list[int]) -> list[str]:
+    """Emit ROW / COLUMN / CHART nodes from a parsed sketch (chartwright/sketch.py), and the
+    MARKDOWN and HEADER nodes of its blocks. A header across the whole sketch is a HEADER
+    between rows, as in rows; any other header sits in a COLUMN, the one place beside a
+    ROW's other children Superset takes a header (dashboard/util/isValidChild.ts :75 and
+    :97 at 4.1.4, 5.0.0 and 6.1.0): its stack's, or one of its own."""
+    from .sketch import SketchBlock, SketchColumn
 
     row_ids: list[str] = []
-    for i, srow in enumerate(parsed_rows):
+    for i, srow in enumerate(holder.parsed_sketch()):
+        band = srow.header_band
+        if band is not None:
+            node_id = f"HEADER-{prefix}{i + 1}"
+            pos[node_id] = {"type": "HEADER", "id": node_id, "children": [], "parents": parents,
+                            "meta": _header_meta(holder.sketch_block(band))}
+            row_ids.append(node_id)
+            continue
         row_id = f"ROW-{prefix}{i + 1}"
         child_ids: list[str] = []
         for j, child in enumerate(srow.children):
-            if isinstance(child, SketchColumn):
-                col_id = f"COLUMN-{prefix}{i + 1}-{j + 1}"
+            slot = f"{prefix}{i + 1}-{j + 1}"
+            if isinstance(child, SketchColumn) or (
+                    isinstance(child, SketchBlock) and child.kind == "header"):
+                col_id = f"COLUMN-{slot}"
+                items = child.children if isinstance(child, SketchColumn) else [child]
+                # A list of its own per node: a shared one is a YAML alias in the bundle.
                 col_children = [
+                    _sketch_block_node(pos, holder, sc, child.width, f"{slot}-{k + 1}",
+                                       [*parents, row_id, col_id])
+                    if isinstance(sc, SketchBlock) else
                     _sketch_chart_node(pos, spec, sc, child.width, [*parents, row_id, col_id], counter)
-                    for sc in child.children
+                    for k, sc in enumerate(items)
                 ]
                 pos[col_id] = {
                     "type": "COLUMN",
@@ -865,6 +902,9 @@ def _sketch_into(pos, parsed_rows, spec, parents: list[str], prefix: str, counte
                     "meta": {"background": "BACKGROUND_TRANSPARENT", "width": child.width},
                 }
                 child_ids.append(col_id)
+            elif isinstance(child, SketchBlock):
+                child_ids.append(
+                    _sketch_block_node(pos, holder, child, child.width, slot, [*parents, row_id]))
             else:
                 child_ids.append(
                     _sketch_chart_node(pos, spec, child, child.width, [*parents, row_id], counter)
@@ -892,9 +932,7 @@ def _position(spec: DashboardSpec) -> dict:
     if spec.layout.rows:
         grid_children = _rows_into(pos, spec.layout.rows, spec, ["ROOT_ID", "GRID_ID"], "sdc-", counter)
     elif spec.layout.sketch:
-        grid_children = _sketch_into(
-            pos, spec.layout.parsed_sketch(), spec, ["ROOT_ID", "GRID_ID"], "sdc-", counter
-        )
+        grid_children = _sketch_into(pos, spec.layout, spec, ["ROOT_ID", "GRID_ID"], "sdc-", counter)
     else:
         tabs_id = "TABS-sdc-1"
         tab_ids: list[str] = []
@@ -909,7 +947,7 @@ def _position(spec: DashboardSpec) -> dict:
 
         def content_into(tab, parents: list[str], prefix: str) -> list[str]:
             into = _sketch_into if tab.sketch else _rows_into
-            return into(pos, tab.parsed_sketch() if tab.sketch else tab.rows, spec, parents, prefix, counter)
+            return into(pos, tab if tab.sketch else tab.rows, spec, parents, prefix, counter)
 
         for k, tab in enumerate(spec.layout.tabs or []):
             tab_id = f"TAB-sdc-{k + 1}"
