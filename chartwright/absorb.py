@@ -22,7 +22,6 @@ import copy
 import json
 from dataclasses import asdict, dataclass, field
 
-from . import ids
 from .compiler import ROW_UNITS_PER_SPEC_UNIT, _position
 from .spec import DashboardSpec
 
@@ -49,7 +48,6 @@ def absorb_heights(spec: DashboardSpec, spec_data: dict, live_position: dict) ->
     """Pure core: returns (patched copy of spec_data, report). spec_data is the
     raw JSON the spec file holds; only charts[*].height values are touched."""
     report = AbsorbReport(ok=True)
-    slug = spec.dashboard.slug
 
     compiled = {
         v["meta"]["uuid"]: v["meta"]
@@ -69,7 +67,7 @@ def absorb_heights(spec: DashboardSpec, spec_data: dict, live_position: dict) ->
     charts_by_name = {c["name"]: c for c in out.get("charts", [])}
 
     for chart in spec.charts:
-        u = str(ids.chart_uuid(slug, chart.name))
+        u = str(spec.chart_uuid(chart.name))
         live_meta = live.get(u)
         if live_meta is None:
             continue  # chart not on the live board (e.g. never applied); nothing to absorb

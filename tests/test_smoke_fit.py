@@ -21,18 +21,38 @@ def result_rows(rows):
 
 
 def test_pivot_overflow_warns_with_leaf_rows():
-    # The issue's exact scenario: height 8 sized for 5 leaf rows; data grew to 9.
+    # The issue's scenario: a pivot sized for 5 leaf rows; data grew to 9.
     chart = {"type": "pivot_table", "name": "P", "dataset": DS, "rows": ["region"],
-             "columns": ["month"], "metrics": ["COUNT(*)"], "height": 8, "row_limit": 100}
+             "columns": ["month"], "metrics": ["COUNT(*)"], "height": 9, "row_limit": 100}
     spec = spec_with(chart)
     # 9 regions x 2 months = 18 result rows but 9 leaf rows
     data = [{"region": f"r{i}", "month": m, "count": 1}
             for i in range(9) for m in ("Jan", "Feb")]
     warning = _fit_warning(spec.charts[0], spec, result_rows(data))
     assert warning and "~9 leaf rows" in warning and "inner scrollbar" in warning
-    # 5 leaf rows fit exactly the way the author sized it
+    # 5 leaf rows fit at 9 units
     data = [{"region": f"r{i}", "month": "Jan", "count": 1} for i in range(5)]
     assert _fit_warning(spec.charts[0], spec, result_rows(data)) is None
+
+
+def test_a_five_row_pivot_by_month_does_not_fit_at_eight_units():
+    """The calibration's known finding: smoke called a 5-row cause x month pivot fine
+    at height 8, and its last row was hidden. Measured on 4.1.4, 5.0.0 and 6.1.0: three
+    header rows (26.3 px each) and a 101 px frame leave 5 rows 11.6 px to spare, which
+    a horizontal scrollbar (11 px in Chromium, 17 px on Windows) or a totals row
+    (28.8 px, pinned over the last row) takes. The grid model counts both."""
+    chart = {"type": "pivot_table", "name": "P", "dataset": DS, "rows": ["cause"],
+             "columns": ["month"], "metrics": ["COUNT(*)"], "height": 8}
+    data = [{"cause": f"c{i}", "month": m, "count": 1} for i in range(5) for m in range(12)]
+    for extra in ({}, {"column_totals": True}):
+        spec = spec_with({**chart, **extra})
+        assert _fit_warning(spec.charts[0], spec, result_rows(data)), extra
+    spec = spec_with({**chart, "height": 9, "column_totals": True})
+    assert _fit_warning(spec.charts[0], spec, result_rows(data)) is None
+    warning = _fit_warning(spec_with({**chart, "column_totals": True}).charts[0],
+                           spec_with({**chart, "column_totals": True}),
+                           result_rows(data))
+    assert "and its totals row" in warning
 
 
 def test_table_overflow_and_fit():

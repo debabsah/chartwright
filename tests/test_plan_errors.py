@@ -31,7 +31,7 @@ class Client:
 def test_missing_references_come_back_as_a_typed_list(monkeypatch):
     err = ResolutionError("column_not_found", "Revenue by Region", "Region",
                           "x_column 'Region' not on dataset 'orders'", ["region"])
-    monkeypatch.setattr(resolver, "resolve", lambda spec, client: Resolution(errors=[err]))
+    monkeypatch.setattr(resolver, "resolve", lambda spec, client, *_: Resolution(errors=[err]))
     p = plan(SPEC, Client(str(ids.dashboard_uuid("orders"))))
     out = json.loads(p.to_json())
     assert out["dashboard"] == "blocked" and out["clean"] is False

@@ -10,14 +10,23 @@ from dataclasses import asdict, dataclass, field
 from typing import Callable, Iterator
 
 from ..resolver import ResolvedDataset, Resolution
-from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock
+from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 
 # "3" = the post-review batch: the reconciled grid model and stricter
 # table_visible_ratio, `polished` provenance in the payload, and the
 # data.unwindowed-history rule. Bumped because all three change what a spec
 # is told -- a new warn-severity rule can newly block a `--design strict`
 # pipeline, so consumers keying on this get an honest signal.
-DESIGN_BRAIN_VERSION = "3"
+# "4" = narrative.color-scheme, a new warn-severity rule (same reason).
+# "5" = the default.* family: info-severity fills that `advise --fix` writes into
+# the spec, tracked in design.filled (sec.16). New fixable findings change what
+# `--fix` writes, so consumers keying on this get the signal.
+# "6" = the standard.* family (sec.18, "Content"): an error and two warn rules that
+# fire when a standard with content applies, so a strict gate can newly block.
+# "7" = fills keep a null record when the author edits one (an edit later deleted stays
+# deleted), and default.stale-record: a fixable finding for a renamed or removed chart's
+# design.filled entry, which now validates. Both change what `--fix` writes.
+DESIGN_BRAIN_VERSION = "7"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
@@ -43,6 +52,28 @@ class Finding:
     # human-polished (fractional, absorb-written) height. Width and data
     # complaints survive polish -- absorb can never write widths.
     height_driven: bool = False
+    # Why the fix is right, one line, carried into the `fixed` record. A fill sets it;
+    # a repair's reason is its detail.
+    why: str | None = None
+    # A default.* finding that hands a field to the author (an edit or a deletion of a
+    # fill) is a 'release', not a fill.
+    release: bool = False
+    # Set only when a standard is in play (design/standards.py): the layer that set this
+    # finding's severity (a standard's name, "overlay", or "rulebook" for the rule's own
+    # level), and whether a standard locks the rule.
+    layer: str | None = None
+    locked: bool | None = None
+    # A standard.content-locked finding: the layer whose lock it reports, so a waiver
+    # scoped to one layer (design/waivers.py) can tell. Never in the payload.
+    lock_layer: str | None = None
+
+    @property
+    def kind(self) -> str:
+        """'fill' for a design default (the default.* family), 'release' when one hands a
+        filled field to the author, 'repair' otherwise."""
+        if self.release:
+            return "release"
+        return "fill" if self.rule.startswith("default.") else "repair"
 
     @property
     def key(self) -> str:
@@ -60,6 +91,13 @@ class Finding:
         d = asdict(self)
         d.pop("fix")
         d.pop("height_driven")
+        d.pop("why")
+        d.pop("release")
+        d.pop("lock_layer")
+        if self.layer is None:
+            d.pop("layer")
+        if self.locked is None:
+            d.pop("locked")
         d["fixable"] = self.fix is not None
         return d
 
@@ -69,7 +107,7 @@ class AdviceReport:
     ok: bool                 # False iff any error-severity finding
     audience: str
     findings: list[Finding] = field(default_factory=list)
-    fixed: list[str] = field(default_factory=list)
+    fixed: list[dict] = field(default_factory=list)
     ignored: list[str] = field(default_factory=list)
 
     @property
@@ -89,6 +127,16 @@ class AdviceReport:
     # height. Reported, never silent: a rule that stands down on an INFERRED
     # signal has to say so, or the user reads the silence as approval.
     polished: list[str] = field(default_factory=list)
+    # The per-machine design.yaml this run read and what it changed (design/__init__.py
+    # _overlay_report); None when no overlay is in play.
+    overlay: dict | None = None
+    # The standard this run applied (design/standards.py report_block); None without one.
+    standard: dict | None = None
+    # Locked findings a waiver let pass (design/waivers.py), each with the waiver's owner,
+    # reason, expiry and status; and the warnings an expired waiver that still applied
+    # (outside standards check and advise) left. Empty without a standards waivers file.
+    waived: list[dict] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def payload(self) -> dict:
         out = {
@@ -105,6 +153,14 @@ class AdviceReport:
             out["unmatched_ignores"] = self.unmatched_ignores
         if self.polished:
             out["polished"] = self.polished
+        if self.overlay is not None:
+            out["overlay"] = self.overlay
+        if self.standard is not None:
+            out["standard"] = self.standard
+        if self.waived:
+            out["waived"] = self.waived
+        if self.warnings:
+            out["warnings"] = self.warnings
         return out
 
 
@@ -138,11 +194,14 @@ class Section:
     mode: str                # "rows" | "sketch"
     bands: list[Band]
     footer: bool = False     # layout.footer: below every tab, not a tab of its own
+    header: bool = False     # layout.header: above every tab, not a tab of its own
 
     @property
     def label(self) -> str:
         if self.footer:
             return "footer"
+        if self.header:
+            return "header"
         return f"tab {self.title!r}" if self.title else "layout"
 
 
@@ -156,9 +215,12 @@ class Geo:
 
 class RuleContext:
     def __init__(self, spec: DashboardSpec, params, resolution: Resolution | None = None,
-                 prober=None):
+                 prober=None, standard=None):
         self.spec = spec
         self.params = params
+        # The spec's resolved standard (design/standards.py), or None: the standard.*
+        # rules read its content.
+        self.standard = standard
         self.resolution = resolution
         self.prober = prober
         self.charts = {c.name: c for c in spec.charts}
@@ -191,8 +253,8 @@ class RuleContext:
 
     @property
     def body_sections(self) -> list[Section]:
-        """The rows / sketch / tabs, without the footer."""
-        return [s for s in self.sections if not s.footer]
+        """The rows / sketch / tabs, without the header and the footer."""
+        return [s for s in self.sections if not (s.footer or s.header)]
 
     def is_sketch(self, name: str) -> bool:
         return self.sections[self.geo[name].section].mode == "sketch"
@@ -202,6 +264,44 @@ class RuleContext:
         chart to taste in the UI. Sizing rules stay silent on it."""
         h = self.charts[name].height
         return isinstance(h, float) and not float(h).is_integer()
+
+    def written(self, chart, field: str) -> bool:
+        """The spec holds a value for this field (validation's model_fields_set: an
+        omitted field is unset even where Superset's own default fills it in, and a
+        written default counts as written). An explicit null is unset, as compile
+        reads it."""
+        return field in chart.model_fields_set and getattr(chart, field) is not None
+
+    def filled(self, name: str) -> dict:
+        """design.filled for this chart: field -> the value the brain wrote, or None
+        for a fill the author edited or deleted (the brain fills that field no more)."""
+        design = self.spec.design
+        return dict(design.filled.get(name, {})) if design else {}
+
+    def standard_holds(self, chart, field: str) -> bool:
+        """design.standard_written has an entry for this chart field: a standard's write,
+        or the author's after a release. Either way never the brain's to fill: a field
+        has one owner."""
+        from .content import standard_holds
+
+        return standard_holds(self.spec, chart.name, field)
+
+    def standard_rows(self) -> set[tuple[str, int]]:
+        """(slot, index) of the header and footer rows a standard owns, which no repair
+        edits."""
+        cached = getattr(self, "_standard_rows", None)
+        if cached is None:
+            from .content import owned_rows
+
+            cached = self._standard_rows = owned_rows(self.spec)
+        return cached
+
+    def brain_owns(self, chart, field: str) -> bool:
+        """The chart still holds exactly the value the brain wrote: its fill, which
+        --fix keeps up to date. Any other value is the author's."""
+        rec = self.filled(chart.name)
+        return (rec.get(field) is not None and self.written(chart, field)
+                and getattr(chart, field) == rec[field])
 
     def dataset_for(self, chart) -> ResolvedDataset | None:
         if self.resolution is None:
@@ -292,6 +392,8 @@ def _normalize(spec: DashboardSpec) -> list[Section]:
                     sections.append(Section(title, "rows", _bands_from_rows(spec, leaf.rows)))
                 else:
                     sections.append(Section(title, "sketch", _bands_from_sketch(spec, leaf)))
+    if lay.header:
+        sections.insert(0, Section(None, "rows", _bands_from_rows(spec, lay.header), header=True))
     if lay.footer:
         sections.append(Section(None, "rows", _bands_from_rows(spec, lay.footer), footer=True))
     return sections
@@ -299,7 +401,7 @@ def _normalize(spec: DashboardSpec) -> list[Section]:
 
 def _bands_from_rows(spec: DashboardSpec, rows) -> list[Band]:
     bands = []
-    for row in rows:
+    for row in item_rows(rows):  # headers and dividers hold no charts
         items = []
         for item in row:
             w = spec.resolved_item_width(item)

@@ -38,12 +38,20 @@ approximate it with a different mechanism.
 1. `CW schema`: read the contract. Surface: 15 chart types (big numbers,
    timeseries line/bar/area/scatter, categorical bar, pie/donut, table,
    pivot_table, heatmap, histogram, funnel, treemap, mixed: bars + a line on
-   two axes), per-chart `filters`
-   (WHERE), dashboard-level `filters` (select, time_range and numeric range native
-   filter bar, time_range with an optional `default`), layout as `rows`, `tabs`, or an
-   ASCII `sketch` with a `legend`, markdown blocks in rows, an optional
-   `layout.footer` (rows below everything, shown under every tab), an optional
-   `design` block (audience + rule suppressions).
+   two axes), metrics as saved names, `AGG(col) [AS Label]` or
+   `SQL(expression) AS Label`, per-chart `filters` (WHERE: column/op/value
+   or `sql`), goal lines (`annotations`) on line/bar/area/scatter/mixed,
+   dashboard-level `filters` (select, time_range, numeric range, time_grain
+   and time_column native filter bar; `dependencies` for cascading; `charts`
+   to scope any of them), dashboard settings (colour scheme, description,
+   certification, draft, refresh, `owners` by username or email, the
+   email on 4.1.4 and 5.0.0), layout as `rows`, `tabs`, or an
+   ASCII `sketch` with a `legend`, markdown blocks in rows, `{"header": ...}`
+   and `{"divider": true}` entries between rows, an optional
+   `layout.header` and `layout.footer` (rows above and below everything,
+   shown on every tab), an optional
+   `design` block (audience, rule suppressions, `standard`; `design.filled`
+   is written by `--fix`, never by you).
 2. Design brain, ON by default: run `CW brief --audience <a>` and follow it
    while authoring. Infer the audience from the request: executive
    scorecard/leadership review -> `executive`; ops monitor/wall display ->
@@ -52,25 +60,81 @@ approximate it with a different mechanism.
    "exactly as I specify"): skip the brief, skip step 6, and pass
    `--design off` to check and apply.
 3. Write the spec to the specs dir (absolute path). Slug lowercase-kebab;
-   chart names unique.
+   chart names unique. When the user names the team the dashboard is for and
+   the repo has a `standards/` folder, write that team's standard in
+   `design.standard`; `CW standards show --for <abs-spec-path>` then shows
+   what it sets, and an unknown name is an error naming the standards that
+   exist. Never create or edit a file in `standards/`
+   unless the user asks you to: those are the team's shared rules, reviewed
+   by their owners. A standard can carry content (header and footer rows,
+   CSS blocks marked `/* cw:std ... */`, colours, certification, number
+   formats): run `CW standards apply <abs-spec-path>` after writing the spec
+   and after every edit (MCP: `standards_apply`, keep the spec it returns).
+   Never write, edit or delete that content yourself, and never edit
+   `design.standard_written`: an unlocked item you change becomes the
+   author's for good and stops following the standard, and a locked one you
+   change is an error. Set `dashboard.lifecycle` or `dashboard.classification`
+   only when the user states them; apply then brings in the rows the
+   standard keys off them. Leave the design-default fields unset unless the user
+   asked for a value (the brief lists them: time-axis label format, compare
+   suffix, count number formats, table cell bars, page size and search box,
+   a single series' legend, values on few bars); step 6 fills them.
 4. `CW validate <abs-spec-path>`: fix schema errors (max 3 attempts).
 5. `CW check <abs-spec-path> --profile <profile>`: fix referential errors
    (max 3 attempts total across 4+5; errors name the exact dataset/column/
    metric at fault). The payload carries an `advice` block (design findings);
-   act on it in step 6.
+   act on it in step 6. `superset_version_too_old` names a field the
+   instance's Superset release can't take: remove it and tell the user.
+   `superset_version_unknown` means the instance didn't report its release:
+   ask the user for it and pass `--superset-version <release>` to check,
+   apply and plan. Pass `version_warnings` (fields that release ignores) on
+   to the user verbatim.
 6. `CW advise <abs-spec-path> --profile <profile>`: the design critic, with
    data-aware rules (column types, cardinality). Apply what it suggests:
-   `CW advise <abs-spec-path> --fix` applies the safe geometry subset in
-   place; the rest you edit in the spec. A finding that is a deliberate
-   exception goes in the spec's `design.ignore` as `"rule.id@Chart Name"`,
-   and you tell the user. At most 2 design iterations, then surface the
-   remaining findings verbatim.
+   run `CW advise <abs-spec-path> --fix` before any hand edit and before
+   apply (MCP: `fix_spec`). It rewrites the file in place: safe geometry
+   repairs, plus the design defaults it fills into unset fields, recorded in
+   the spec's `design.filled` with the value written. Each `fixed` entry says
+   `kind: "fill"`, `"repair"` or `"release"` and why; keep the fills unless
+   the user asked otherwise. Make the rest of your changes by editing THAT
+   file; never regenerate the spec from your own copy, or the fills are lost.
+   A filled value you change or delete is yours from then on: the next
+   `--fix` releases it and never refills it. Never edit `design.filled`.
+   `CW explain <abs-spec-path> [--chart NAME]` says where each value came
+   from. A finding that is a deliberate exception goes in the spec's
+   `design.ignore` as `"rule.id@Chart Name"`, and you tell the user. A
+   finding with `"locked": true` belongs to a rule the spec's standard locks:
+   `design.ignore` can't silence it (the advice lists it under
+   `refused_ignores`), so fix the spec or tell the user the lock blocks it.
+   A `standard.content-locked` error is fixed, never ignored: run
+   `CW standards apply <abs-spec-path>` (it adds or refreshes the standard's
+   content); when the error says the content was changed by hand, show the
+   user the finding and ask before running `--locked`, which puts the
+   standard's version back over theirs. The only exception to a lock is an
+   entry in `standards/waivers.yaml`, and it is the user's to grant: write one
+   only when the user gives you the owner (who approved it), the reason and
+   the expiry date, all three in their own words, and remind them the file
+   needs the platform team's review (CODEOWNERS). A finding listed under
+   `waived` passed under such an entry; a `standard.waiver-expired` error
+   means the entry ran out: tell the user, never move the date yourself.
+   At most 2 design iterations, then surface the remaining findings verbatim.
 7. `CW apply <abs-spec-path> --profile <profile>`: on success give the user
-   the dashboard_url and any smoke warnings verbatim. Apply backs up the
+   the dashboard_url and any smoke warnings verbatim, and any `held` items
+   (standard content this instance's Superset release can't take, left off
+   this instance on purpose). Apply backs up the
    previous state under `~/.config/chartwright/backups/<profile>/<slug>/` (restore with
    `CW restore <zip> --profile <profile>`).
+   If the user schedules CSV or text reports on the charts, add `--save-queries`
+   to the apply (needs `chartwright[visual]`): an imported chart has no saved
+   query, and those reports run it. Report any chart under `saved_queries`
+   that failed.
 8. Modify tool-born dashboards by editing their spec and re-running 5-7.
-   Modify UI-born dashboards via
+   To manage a UI-born dashboard where it is (same address, id and chart ids),
+   `CW adopt <slug-or-id> --profile <profile> -o <abs-spec-path>`: show the
+   user every entry under `resets` (what the first apply resets because a spec
+   can't hold it) and pass `--accept-reset` only after they agree; never pass
+   `--allow-shared` without asking. Then `CW plan` before the first apply.
+   To build a copy instead, use
    `CW decompile <slug-or-id> --profile <profile> -o <abs-spec-path>`;
    show the user the lossiness report before editing. `CW advise` on a
    decompiled spec is a design audit of a legacy dashboard. To redesign one
@@ -106,5 +170,11 @@ learns from them over time (`CW calibrate`).
 | User wants a chart type outside the 15 | Say it's out of surface; offer the nearest supported type |
 | Retry apply a 4th time with random changes | Stop; surface all errors verbatim |
 | Advice finding seems wrong; hand-tune to dodge it | Record it in the spec's `design.ignore` and tell the user, or report a rule bug |
+| A locked finding blocks; edit `standards/` to loosen the lock, or add the rule to `design.ignore` | Never touch `standards/` unasked; fix the spec, or show the user the finding and the layer that locks it |
+| A standard's footer, header, CSS block or colour is in the way; edit or delete it, or regenerate the spec without it | Leave the content `design.standard_written` records alone; tell the user which standard file sets it. Regenerated specs lose it: edit the file `standards apply` wrote, and run it again after each change |
+| A `standard.content-locked` error; add it to `design.ignore` or hand-copy text until it passes | Run `CW standards apply`; if the content was changed by hand, ask the user before `--locked` |
+| A lock blocks; write a waiver into `standards/waivers.yaml` yourself, or push an expiry date out | Only with the owner, reason and expiry the user gives you; never invent or extend one |
+| `theme_not_found`; pick a theme name that resolves | Show the user the error's list of themes and let them choose |
+| A design default you'd rather not have; rewrite the spec without it | Delete the field from the file `--fix` wrote (a deleted fill stays deleted), or add `"default.rule@Chart Name"` to `design.ignore`; tell the user |
 | "Quick" dashboard via POST /api/v1/dashboard/ | Never; the guarantee only exists through chartwright |
 | Auth fails; hunt for password variables or files | Show the ProfileError; the user names their env var or password_cmd |

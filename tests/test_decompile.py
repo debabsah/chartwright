@@ -1,6 +1,8 @@
 """Round-trip and lossy-decompile tests (offline)."""
 
 import json
+
+import pytest
 from pathlib import Path
 
 from chartwright.compiler import compile_bundle
@@ -93,3 +95,165 @@ def test_labeled_star_metric_round_trips():
     result = decompile_bundle(bundle, _stub_lookup_for(spec))
     assert result.losses == []
     assert result.spec["charts"][0]["metric"] == "COUNT(*) AS Trips"
+
+
+# -- triage I: settings decompile used to drop without a note ------------------------------
+
+
+def _ui_bundle(edit) -> tuple[bytes, object]:
+    """The sales overview fixture, compiled, with chart params edited as the UI would
+    store them."""
+    from chartwright.testing import edit_bundle
+
+    spec = load_spec(json.loads((FIXTURES / "sales_overview.json").read_text()))
+    return edit_bundle(compile_bundle(spec, stub_resolution(spec)), edit), spec
+
+
+def _settings_losses(blob, spec) -> dict[str, str]:
+    result = decompile_bundle(blob, _stub_lookup_for(spec))
+    return {l.where: l.what for l in result.losses if "settings not preserved" in l.what}
+
+
+def test_a_changed_setting_the_spec_cannot_hold_is_named():
+    """A rolling sum or a forecast changes the numbers a chart shows; decompile dropped
+    both silently, so a copy built from the spec drew different numbers unannounced."""
+    def analytics(path, doc):
+        if "/charts/" in path and doc["slice_name"] == "Sales Over Time":
+            doc["params"].update(rolling_type="cumsum", forecastEnabled=True, legendMargin=50)
+    blob, spec = _ui_bundle(analytics)
+    what = _settings_losses(blob, spec)["Sales Over Time"]
+    assert "rolling_type='cumsum'" in what and "forecastEnabled=True" in what
+    assert "legendMargin=50" in what
+
+
+def test_superset_defaults_are_no_loss():
+    """An untouched chart stores these defaults; dropping them changes nothing drawn."""
+    def defaults(path, doc):
+        if "/charts/" in path:
+            doc["params"].update(rolling_type="None", forecastEnabled=False, forecastPeriods=10,
+                                 forecastInterval=0.8, rich_tooltip=True, truncateXAxis=True,
+                                 tooltipTimeFormat="smart_date", sort_series_type="sum",
+                                 y_axis_bounds=[None, None], comparison_type="values",
+                                 legendMargin=None)
+    blob, spec = _ui_bundle(defaults)
+    assert _settings_losses(blob, spec) == {}
+
+
+def test_a_setting_that_only_matters_with_another_is_named_only_then():
+    def comparison(compare):
+        def edit(path, doc):
+            if "/charts/" in path and doc["slice_name"] == "Sales Over Time":
+                doc["params"].update(comparison_type="difference", time_compare=compare)
+        return edit
+    blob, spec = _ui_bundle(comparison([]))
+    assert "Sales Over Time" not in _settings_losses(blob, spec)
+    blob, spec = _ui_bundle(comparison(["1 year ago"]))
+    assert "comparison_type='difference'" in _settings_losses(blob, spec).get("Sales Over Time", "")
+
+
+def test_a_value_the_spec_writes_back_is_no_loss():
+    """Decompile carries some of these keys under spec fields; the check compiles the
+    spec it read, so a key apply writes back with the same value is never reported."""
+    blob, spec = _ui_bundle(lambda path, doc: None)
+    assert _settings_losses(blob, spec) == {}
+
+
+def test_a_tab_scoped_filter_is_named():
+    data = json.loads((FIXTURES / "sales_overview.json").read_text())
+    data["filters"] = [{"type": "select", "name": "Deal", "column": "deal_size",
+                        "dataset": data["charts"][0]["dataset"]}]
+    spec = load_spec(data)
+    from chartwright.testing import edit_bundle
+
+    def tab_scope(path, doc):
+        if "/dashboards/" in path:
+            doc["metadata"]["native_filter_configuration"][0]["scope"]["rootPath"] = ["TAB-1"]
+    blob = edit_bundle(compile_bundle(spec, stub_resolution(spec)), tab_scope)
+    losses = [l for l in decompile_bundle(blob, _stub_lookup_for(spec)).losses
+              if l.where == "filter:Deal"]
+    assert any("scoped to tabs" in l.what for l in losses)
+
+
+def test_a_6_1_big_number_subtitle_is_read():
+    """6.0+ stores a big-number total's subtitle as `subtitle`, not `subheader` (K)."""
+    def subtitle(path, doc):
+        if "/charts/" in path and doc.get("viz_type") == "big_number_total":
+            doc["params"].pop("subheader", None)
+            doc["params"]["subtitle"] = "all regions"
+    blob, spec = _ui_bundle(subtitle)
+    result = decompile_bundle(blob, _stub_lookup_for(spec))
+    totals = [c for c in result.spec["charts"] if c["type"] == "big_number_total"]
+    assert totals and all(c.get("subtitle") == "all regions" for c in totals)
+    assert not any("subtitle" in l.what for l in result.losses)
+
+
+# -- triage J: charts stacked in a COLUMN beside a taller one ----------------------------------
+
+
+def _position_of(bundle: bytes) -> dict:
+    import io
+    import zipfile
+
+    import yaml
+
+    zf = zipfile.ZipFile(io.BytesIO(bundle))
+    dash = next(yaml.safe_load(zf.read(n)) for n in zf.namelist() if "/dashboards/" in n)
+    return dash["position"]
+
+
+def _stacked_spec(tabs: bool = False) -> dict:
+    data = json.loads((FIXTURES / "sales_overview.json").read_text())
+    names = [c["name"] for c in data["charts"]]
+    a, b, c, d = names[:4]
+    sketch = {"sketch": ["AAAABBBBCCCC", "AAAABBBBDDDD"],
+              "legend": {"A": a, "B": b, "C": c, "D": d}, "line": 3}
+    rest = [[n] for n in names[4:]]
+    if tabs:
+        data["layout"] = {"tabs": [{"title": "Stacked", **sketch},
+                                   {"title": "Rest", "rows": rest or [[a]]}]}
+        if not rest:
+            data["layout"]["tabs"] = [{"title": "Stacked", **sketch}]
+    else:
+        data["layout"] = sketch
+        data["charts"] = data["charts"][:4]
+    return data
+
+
+@pytest.mark.parametrize("tabs", [False, True])
+def test_a_column_beside_a_tall_chart_round_trips_as_a_sketch(tabs):
+    """Decompile flattened a COLUMN (two charts stacked beside a taller one) into one
+    row and reported a loss; a copy then drew them side by side. A sketch holds it, and
+    the decompiled spec compiles to the same layout."""
+    data = _stacked_spec(tabs)
+    spec = load_spec(data)
+    bundle = compile_bundle(spec, stub_resolution(spec))
+    result = decompile_bundle(bundle, _stub_lookup_for(spec))
+    assert not [l for l in result.losses if "COLUMN" in l.what], result.losses
+    layout = result.spec["layout"]
+    section = layout["tabs"][0] if tabs else layout
+    assert "sketch" in section and "rows" not in section
+    again = load_spec(result.spec)
+    assert _position_of(compile_bundle(again, stub_resolution(again))) == _position_of(bundle)
+    # plan compares normalized layouts: the spec and its live state read the same.
+    assert _normalize(spec)["layout"] == _normalize(again)["layout"]
+
+
+def test_a_column_beside_markdown_stays_rows_and_says_so():
+    """A sketch holds charts only: with a text block in the section, the COLUMN is
+    flattened as before and named."""
+    data = _stacked_spec()
+    spec = load_spec(data)
+    from chartwright.testing import edit_bundle
+
+    def text_row(path, doc):
+        if "/dashboards/" in path:
+            pos = doc["position"]
+            pos["MARKDOWN-x"] = {"type": "MARKDOWN", "id": "MARKDOWN-x", "children": [],
+                                 "meta": {"code": "Notes", "width": 12, "height": 50}}
+            pos["ROW-x"] = {"type": "ROW", "id": "ROW-x", "children": ["MARKDOWN-x"],
+                            "meta": {"background": "BACKGROUND_TRANSPARENT"}}
+            pos["GRID_ID"]["children"].append("ROW-x")
+    blob = edit_bundle(compile_bundle(spec, stub_resolution(spec)), text_row)
+    result = decompile_bundle(blob, _stub_lookup_for(spec))
+    assert "rows" in result.spec["layout"]
+    assert any("COLUMN" in l.what for l in result.losses)

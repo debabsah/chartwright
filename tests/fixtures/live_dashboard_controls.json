@@ -1,0 +1,112 @@
+{
+  "spec_version": "1",
+  "dashboard": {
+    "title": "Airline Operations",
+    "slug": "cw-live-dashboard-controls",
+    "color_scheme": "supersetColors",
+    "description": "On-time performance and delay causes, refreshed hourly.",
+    "certified_by": "Data Platform",
+    "certification_details": "Reconciled with the finance close",
+    "published": false,
+    "refresh_frequency": 300,
+    "filter_bar_orientation": "horizontal",
+    "owners": ["admin@localhost"]
+  },
+  "charts": [
+    {"name": "Flights", "type": "big_number_total", "metric": "COUNT(*)",
+     "description": "Scheduled departures, including cancelled ones.",
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "On-Time Rate", "type": "timeseries_line", "time_column": "ds",
+     "metrics": ["SQL(100.0 * SUM(CASE WHEN ARRIVAL_DELAY < 15 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) AS On-time %"],
+     "time_grain": "P1M", "color_scheme": "bnbColors",
+     "annotations": [
+       {"name": "Goal", "value": 80, "style": "dashed", "color": "#1A7F37", "width": 2},
+       {"name": "Trend", "formula": "0.001*x + 60", "style": "dotted", "opacity": "medium"}
+     ],
+     "display_name": "On-time %",
+     "certified_by": "Ops Analytics", "certification_details": "Matches the DOT definition",
+     "cache_timeout": 3600,
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Delays by Cause", "type": "bar", "x_column": "CANCELLATION_REASON",
+     "metrics": ["SUM(ARRIVAL_DELAY) AS Minutes"], "color_scheme": "googleCategory10c",
+     "annotations": [{"name": "Budget", "value": 5000}],
+     "filters": [{"sql": "ARRIVAL_DELAY > 0 OR cancelled = 1"}],
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Delays over Time", "type": "timeseries_bar", "time_column": "ds",
+     "metrics": ["SUM(ARRIVAL_DELAY)"], "color_scheme": "echarts5Colors",
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Load Factor", "type": "timeseries_area", "time_column": "ds",
+     "metrics": ["AVG(DISTANCE)"], "color_scheme": "d3Category10",
+     "annotations": [{"name": "Break-even", "value": 0.72}],
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Distance vs Delay", "type": "timeseries_scatter", "time_column": "ds",
+     "metrics": ["AVG(ARRIVAL_DELAY)"], "color_scheme": "lyftColors",
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Carrier Share", "type": "pie", "metric": "COUNT(*)", "groupby": "AIRLINE",
+     "color_scheme": "presetColors",
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Delay Distribution", "type": "histogram", "column": "ARRIVAL_DELAY",
+     "color_scheme": "colorsOfRainbow",
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Booking Funnel", "type": "funnel", "metric": "COUNT(*)", "groupby": "DAY_OF_WEEK",
+     "color_scheme": "blueToGreen",
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Routes", "type": "treemap", "metric": "COUNT(*)", "groupby": ["ORIGIN_AIRPORT", "DESTINATION_AIRPORT"],
+     "color_scheme": "wavesOfBlue",
+     "dataset": {"database": "examples", "table": "flights"}},
+    {"name": "Flights and Delay", "type": "mixed", "x_column": "ds", "time_grain": "P1M",
+     "a": {"metrics": ["COUNT(*)"], "kind": "bar"},
+     "b": {"metrics": ["AVG(ARRIVAL_DELAY)"], "kind": "line", "axis": "secondary"},
+     "color_scheme": "modernSunset",
+     "annotations": [{"name": "Target delay", "value": 15, "style": "dashed"}],
+     "dataset": {"database": "examples", "table": "flights"}}
+  ],
+  "filters": [
+    {"type": "select", "name": "Region", "column": "STATE",
+     "dataset": {"database": "examples", "table": "flights"},
+     "description": "The departure airport's STATE",
+     "pre_filter": [{"column": "CANCELLED", "value": 0}],
+     "time_range": "Last year", "time_column": "ds",
+     "sort_metric": "count", "sort_descending": true},
+    {"type": "select", "name": "City", "column": "CITY",
+     "dataset": {"database": "examples", "table": "flights"},
+     "dependencies": ["Region"], "search_all_options": true},
+    {"type": "select", "name": "Exclude Carrier", "column": "AIRLINE",
+     "dataset": {"database": "examples", "table": "flights"},
+     "inverse_selection": true, "charts": ["Carrier Share", "Delays by Cause"]},
+    {"type": "range", "name": "Delay", "column": "ARRIVAL_DELAY",
+     "dataset": {"database": "examples", "table": "flights"},
+     "dependencies": ["Region"], "pre_filter": [{"sql": "ARRIVAL_DELAY >= 0"}]},
+    {"type": "time_range", "name": "Period", "default": "Last quarter",
+     "charts": ["On-Time Rate", "Delays over Time"]},
+    {"type": "time_grain", "name": "Grain", "default": "P1W",
+     "dataset": {"database": "examples", "table": "flights"},
+     "charts": ["On-Time Rate", "Delays over Time", "Load Factor"]},
+    {"type": "time_column", "name": "Date Basis", "default": "ds",
+     "dataset": {"database": "examples", "table": "flights"}, "required": true}
+  ],
+  "layout": {
+    "header": [
+      [{"markdown": "Draft: delay figures reconcile with the finance close each month", "height": 1}]
+    ],
+    "tabs": [
+      {"title": "Overview", "rows": [
+        {"header": "Performance", "size": "large", "background": "white"},
+        {"row": ["Flights", "On-Time Rate"], "background": "white"},
+        {"divider": true},
+        ["Delays by Cause", "Delays over Time"],
+        {"header": "Capacity", "size": "small"},
+        ["Load Factor", "Distance vs Delay"]
+      ]},
+      {"title": "Mix", "rows": [
+        ["Carrier Share", "Delay Distribution"],
+        ["Booking Funnel", "Routes"],
+        ["Flights and Delay"]
+      ]}
+    ],
+    "footer": [
+      {"divider": true},
+      [{"markdown": "Source: DOT on-time data", "height": 1}]
+    ]
+  }
+}

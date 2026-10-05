@@ -12,13 +12,13 @@ import yaml
 
 from . import ids
 from .resolver import ResolvedDataset, Resolution
-from .spec import DashboardSpec
+from .spec import DATASET_FILTER_TYPES, DashboardSpec
 
 
 def stub_resolution(spec: DashboardSpec) -> Resolution:
     res = Resolution()
     refs = [c.dataset for c in spec.charts]
-    refs += [f.dataset for f in spec.filters if f.type in ("select", "range")]
+    refs += [f.dataset for f in spec.filters if f.type in DATASET_FILTER_TYPES]
     for ref in refs:
         key = ref.key()
         if key in res.datasets:
@@ -33,6 +33,10 @@ def stub_resolution(spec: DashboardSpec) -> Resolution:
             metrics=[],
             main_dttm_col=None,
         )
+    if spec.dashboard.theme is not None:
+        # A fake theme, as the datasets are: a real apply resolves it by name.
+        res.theme_id = 1000
+        res.theme_uuid = str(uuid.uuid5(ids.NAMESPACE, f"stub-theme/{spec.dashboard.theme}"))
     return res
 
 

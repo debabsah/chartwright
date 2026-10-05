@@ -33,12 +33,19 @@ from chartwright.spec import load_spec
 from chartwright.testing import stub_resolution
 
 CONTRACT = REPO / "tools" / "contracts" / "params-contract.json"
-# Two fixtures: kitchen-sink covers every chart type; the demo spec exercises
+# Four fixtures: kitchen-sink covers every chart type; the demo spec exercises
 # the conditional keys kitchen-sink leaves unset (big-number subtitle and
-# number_format), which once hid an off-contract key from this checker.
+# number_format), which once hid an off-contract key from this checker; the
+# display-controls spec sets every optional display field (legends, axis titles
+# and bounds, stacking, labels, table and pivot options), and the
+# dashboard-controls spec sets color_scheme and annotation_layers on every
+# chart type that takes them, so each key those fields emit is held to the
+# contract too.
 FIXTURES = [
     REPO / "tests" / "fixtures" / "kitchen_sink.json",
     REPO / "examples" / "nyc_taxi_operations.json",
+    REPO / "tests" / "fixtures" / "display_controls.json",
+    REPO / "tests" / "fixtures" / "dashboard_controls.json",
 ]
 
 # Stored-in-params keys that are NOT plugin controlPanel controls, so they are
@@ -65,13 +72,27 @@ ALLOWED = {
 }
 
 # Keys a later release added, emitted only by opt-in spec fields documented with
-# that release (x_label_every: "Superset 6.1.0+"). An older plugin never reads
-# them, so an older Superset ignores them; they must still be declared from the
-# named release on, and every other key is held to every release.
+# that release (x_label_every: "Superset 6.1.0 or later"). An older plugin never
+# reads them, so an older Superset ignores them; they must still be declared from
+# the named release on, and every other key is held to every release. A key written
+# "viz_type:key" is excused for that chart type only. The contracts cover 4.1.4,
+# 5.0.0 and 6.1.0, so a key new in 6.0.0 is held to 6.1.0 and excused before it.
 SINCE = {
     "force_max_interval": "6.1.0",  # Timeseries + MixedTimeseries controlPanel.tsx at 6.1.0
-    "xAxisLabelInterval": "6.1.0",  # (absent at 4.1.4 and 5.0.0)
-    "echart_options": "6.1.0",  # the panels' "ECharts Options" (x_label_every edges, y_axis_max)
+    "xAxisLabelInterval": "6.0.0",  # controls.tsx:305 at 6.0.0 (absent at 4.1.4 and 5.0.0)
+    "echart_options": "6.1.0",  # the panels' "ECharts Options" (x_label_every edges)
+    "big_number:subtitle": "6.0.0",  # BigNumberWithTrendline controlPanel.tsx:33 subtitleControl
+    "mixed_timeseries:only_total": "6.0.0",  # MixedTimeseries controlPanel.tsx:204 at 6.0.0
+    "mixed_timeseries:only_totalB": "6.0.0",
+}
+
+# The reverse: keys a later release dropped, still written for the releases before
+# it. A newer plugin never reads them, so a newer Superset ignores them.
+UNTIL = {
+    # A categorical bar's category sort with several series (category_sort): 4.1.4 and
+    # 5.0.0 read the series sort controls; 6.0.0 folded them into x_axis_sort.
+    "echarts_timeseries_bar:x_axis_sort_series": "6.0.0",
+    "echarts_timeseries_bar:x_axis_sort_series_ascending": "6.0.0",
 }
 
 
@@ -104,8 +125,11 @@ def check(version: str, contract: dict, emitted: dict[str, set[str]]) -> list[st
         if known == "ABSENT":
             problems.append(f"{vt}: viz_type ABSENT in Superset {version}")
             continue
-        later = {k for k, since in SINCE.items() if _release(version) < _release(since)}
-        drift = keys - set(known) - ALLOWED - later
+        later = {k.rpartition(":")[2] for k, since in SINCE.items()
+                 if _release(version) < _release(since) and k.rpartition(":")[0] in ("", vt)}
+        gone = {k.rpartition(":")[2] for k, until in UNTIL.items()
+                if _release(version) >= _release(until) and k.rpartition(":")[0] in ("", vt)}
+        drift = keys - set(known) - ALLOWED - later - gone
         if drift:
             problems.append(f"{vt}: keys unknown to {version}: {sorted(drift)}")
     return problems

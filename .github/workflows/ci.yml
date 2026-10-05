@@ -48,7 +48,48 @@ jobs:
       - name: Boot Superset ${{ matrix.superset }} sandbox
         run: bash sandbox/up.sh --tag "${{ matrix.superset }}" 8098
       - name: Kitchen-sink apply + slice-id stability
-        run: python tools/ci_live_check.py --base-url http://localhost:8098
+        run: python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/kitchen_sink.json
+      # The display and dashboard controls fixtures, pointed at Superset's
+      # example data, so every chart and filter control applies for real.
+      - name: Display-controls apply + slice-id stability
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_display_controls.json
+      - name: Dashboard-controls apply + slice-id stability
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
+      # A chart added in Superset: re-apply takes it off the dashboard (4.1.4 and 5.0.0
+      # merge chart links on import), never deletes it, and restores match their backups.
+      - name: UI-added chart taken off on re-apply
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_ui_chart.py --base-url http://localhost:8098
+      # Adopt a dashboard that looks built in the UI: refused without accepting its
+      # resets, then applied in place with the same dashboard and chart ids.
+      - name: Adopt a hand-built dashboard in place
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_adopt.py --base-url http://localhost:8098
+      # Standards content: standards apply writes an org footer, a team header and CSS
+      # blocks, the spec applies, plan stays clean and decompile reads the markers back.
+      - name: Standards content apply + round trip
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_standards.py --base-url http://localhost:8098
+      # standards verify-visible in a headless Chromium: the locked footer shows, and
+      # CSS that turns it near-white is caught. Installing the browser is the optional
+      # part: if the install fails the check is skipped; once it is installed, a
+      # verify-visible regression fails the job.
+      - name: Install the visual extra (optional)
+        id: visual
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          pip install -e ".[visual]"
+          python -m playwright install --with-deps chromium
+      - name: Locked text visible on the rendered dashboard
+        if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
+        run: python tools/ci_live_visible.py --base-url http://localhost:8098
+      # Saved queries captured from Superset's own frontend, so CSV reports work.
+      - name: Chart queries saved for reports
+        if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
+        run: python tools/ci_live_saved_queries.py --base-url http://localhost:8098
       - name: Lifecycle soak (25 cycles)
         run: python tools/soak.py --base-url http://localhost:8098 --cycles 25 --seed 7
       - name: Second-writer adversary

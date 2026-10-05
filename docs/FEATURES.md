@@ -17,19 +17,44 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - A screenshot of a dashboard in another BI tool, pointed at the same underlying data.
 - **Reviewable Checkpoint**: The AI's output is a small spec file you can read, edit, and version like code.
 - **Open AI Contract**: `chartwright schema` prints the full JSON Schema so any LLM or tool can generate valid specs.
-- **MCP Server**: Ten tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
+- **MCP Server**: Fifteen tools covering the whole lifecycle, usable from any MCP client. Failures come back as the same typed JSON errors the CLI prints.
 - **Guardrails**: The dashboard is new; the data behind it must be real. Every dataset, column, and metric the AI references is confirmed to exist before anything is built, so a made-up column becomes a clear error message, never a broken chart. The error suggests the closest real column names and lists the dataset's columns, so the AI can correct itself in one round.
 
 ## Dashboard Design
 - **Deterministic Dashboards**: The same spec always produces the identical dashboard. Diff it in git, review it in a PR.
 - **15 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, and mixed (bars and a line on two value axes, over time or over categories).
-- **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`).
-- **Filters and Formatting**: Per-chart WHERE conditions, a native filter bar, and formatting for table and pivot cells.
-    - Filter bar: value pickers, a time range with an optional starting range, and numeric sliders.
-    - Scope value pickers and sliders to specific charts; the time range applies to the whole dashboard.
-    - Solid green/amber/red colour rules on pivot and table cells.
+- **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`), and custom SQL for ratios the dataset doesn't define: `SQL(100.0 * SUM(on_time) / NULLIF(COUNT(*), 0)) AS On-time %`. `chartwright check` lists custom SQL as unchecked, and apply's data check runs it.
+- **Filters and Formatting**: Per-chart WHERE conditions (a column test, or custom SQL such as `{"sql": "amount > 0 OR refunded"}`), a native filter bar, and formatting for table and pivot cells.
+    - Filter bar: value pickers, a time range with an optional starting range, numeric sliders, and time grain and time column pickers.
+    - Scope any filter to specific charts, the time range included.
+    - Cascading filters: a city picker lists only the cities of the region picked (`"dependencies": ["Region"]`).
+    - Value pickers can pre-filter their list, sort it by a saved metric, search every value in the database, or exclude what is picked; every filter takes a description, shown as its tooltip.
+    - Solid colour rules on pivot and table cells: green, amber or red (Superset's own picker colours), or any hex colour such as `#0057B8`.
     - On Superset 6.1+, a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it.
-    - Hidden table columns, a fixed ascending table sort, d3 number and date formats.
+    - A fixed ascending table sort, d3 number and date formats, and on Superset 6.0+ hidden table columns.
+- **Chart Options**: Set the common options of Superset's chart panels in the spec; an option changed in the UI shows up in `plan`.
+    - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own.
+    - Values written on bars and points, stacked series, 100% stacks, and the top N series of a breakdown.
+    - Legends hidden, or placed at the bottom, left or right.
+    - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value.
+    - A time range per chart, such as a "Last 30 days" KPI on a dashboard that shows all time.
+    - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
+    - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
+    - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
+    - Heatmap values and colour scheme; what pie, funnel and treemap labels show, and their number format.
+- **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend.
+- **Dashboard and Chart Settings**: Set the dashboard's own settings and each chart's in the spec, so a change made in the UI shows up in `plan`.
+    - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).
+    - Chart: colour scheme, description (viewers open it from the chart menu), certification badge, cache timeout, and a shorter title shown on the dashboard.
+    - Tags on Superset 6.0+ (with Superset's `TAGGING_SYSTEM` flag on), and chart timestamps on every card on Superset 6.1+.
+    - A Superset theme on 6.0+, by the name Superset lists it under (`"theme": "Acme Brand"`). `check` confirms the name on each instance before anything is written, `plan` reports a dashboard showing another theme, and `decompile` reads it back. Leave it out and the theme chosen in Superset stays.
+    - Record where a dashboard is in its life (`"lifecycle": {"state": "deprecated", "successor": "sales-v2"}`) and how sensitive it is (`"classification": "confidential"`). Both are kept in the spec, since Superset has a field for neither; a standard shows them on the dashboard as a banner or a footer row, and can assign the classification and lock it (below).
+- **Named Owners**: List the dashboard's owners in the spec (`"owners": ["jdoe", "ana@example.com"]`), so a dashboard applied from CI belongs to the people responsible for it, and its drafts stay visible to them.
+    - Each owner is checked against the instance before anything is written; a misspelt one comes back with the closest accounts.
+    - Name owners by email on 4.1.4 and 5.0.0, whose API returns usernames only with `FAB_ADD_SECURITY_API` on; usernames work on 6.1.0.
+    - The account that applies stays an owner alongside them: Superset adds it on every import, and a non-admin account needs it to import the next version.
+    - `plan` reports owners changed in the UI, and `decompile` reads them back.
+- **Dashboard CSS**: `"css"` on the dashboard block holds what you would type into Superset's Edit CSS, so the styling is reviewed and versioned with the rest of the dashboard. CSS changed in the UI is drift that `plan` reports and `apply` replaces.
 - **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs.
 - **No Empty First Load**: New charts open on your full data range, so a narrow default time window never hides everything on the first paint. On a large dataset that full range is a lot to draw, so give the filter bar a time range with a default; `chartwright advise` tells you when a dashboard has nothing bounding its dates.
 
@@ -40,23 +65,77 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - An unclear sketch gets a message saying exactly what to fix, never a guess.
     - Every rule drawn and compiled: [the layout guide](LAYOUT-GUIDE.md).
 - **Precise Sizing**: Set exact widths and heights per chart (markdown blocks down to one 8 px grid row: `"height": 1.6` is 64 px), or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
-- **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs (with one level of sub-tabs, e.g. a sub-tab per row of a scorecard), and markdown blocks for headers and notes.
-- **Footer**: `layout.footer` rows sit below everything, outside any tab, so a tabbed dashboard shows them under every tab: a branding strip, a data note, a contact line.
+- **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs (with one level of sub-tabs, e.g. a sub-tab per row of a scorecard), section headers and dividers between rows (`{"header": "Revenue", "size": "large"}`, `{"divider": true}`), a white card behind a row, and markdown blocks for notes.
+- **Header and Footer**: `layout.header` rows sit above everything and `layout.footer` rows below it, outside any tab, so a tabbed dashboard shows them above and under every tab: a banner, a data note, a branding strip, a contact line.
+    - Adding a header to a dashboard already in use moves nothing else in it.
 
 ## The Design Brain
 - **Codified BI/UX Practice**: An optional layer holding what Few, Tufte and IBCS teach about reading a dashboard, plus the Superset rendering quirks that break it, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).
 - **The Brief**: `chartwright brief` prints design guidance for the AI (or you) to read before writing a spec: budgets, chart choice, and composition, tuned to an audience preset (`executive`, `analytical`, or `operational`).
-- **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices).
+- **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices); `--chart` looks at one chart.
+- **Design Defaults in the Spec**: Leave the small display choices unset and `advise --fix` writes sensible values into the spec, where the diff shows them; `chartwright explain` says where each value came from and how to change it.
+    - Monthly time axes labelled `Sep 2026`, counts shown as `12,345`, "vs previous month" after a trendline KPI's change.
+    - Tables that page by what fits their panel, a search box on long raw tables, no cell bars behind id, code, year or zip columns.
+    - No legend on a single series the title already names, values written on a few bars.
+    - A field you write is never touched. A filled value is kept up to date as the chart changes until you edit or delete it; then it is yours, and a deleted one stays deleted. To keep Superset's default from the start, add the rule to `design.ignore`.
+    - The bundle depends on the spec alone: compile, `plan` and decompile never add a value of their own.
 - **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
-- **House Style**: A `design.yaml` overlay tunes thresholds, disables rules, and appends org guidance to the brief, so a deployment can set its own standards without forking the rulebook.
+- **House Style**: A `design.yaml` overlay on your machine tunes thresholds, disables rules, and appends your guidance to the brief, without forking the rulebook.
+    - Strict gates (`advise --strict`, `--design strict`) set it aside, so a gate passes or fails the same on every machine.
+    - Every review names the overlay: each finding it changed, or, in a strict gate, what was set aside.
+    - For settings a whole team shares, use the repository's standards (below); what a standard locks, the overlay leaves alone.
 - **Heights Calibrated From Your Own Dashboards**: Heights you polish in the UI flow back via `absorb`; `chartwright calibrate` mines them and updates the recommended heights the brief and autofixes use.
 - **Design Audits of Legacy Dashboards**: `decompile` + `advise` grades any UI-built dashboard against the rulebook.
 - **One-Shot Redesign**: `chartwright redesign <dashboard>` decompiles a live dashboard, audits it, applies the safe geometry fixes, and writes the redesigned spec. A tool-built dashboard is redesigned in place; anything else comes back under a new slug and applies side by side, leaving the original untouched.
 
+## Standards
+- **Design Rules in the Repository**: Keep the design review's settings for many dashboards in a `standards/` folder of YAML files: thresholds, severities, rules turned off. They are reviewed in a pull request, and every machine and every CI run reads the same files ([reference](DESIGN-BRAIN.md#18-standards)).
+    - An org file sets the baseline; a unit file `extends` it, and a team file extends the unit's (or the org's directly), each adjusting what the layers above leave open.
+    - Keep the folder at or above your specs inside the git repository and every command finds it; `--standards DIR` names another.
+    - A spec names its team's standard in `design.standard`; specs that name none follow the file marked `default: true`, if there is one.
+    - `chartwright standards assign specs/finance --standard finance` writes that field into every spec in a folder, so moving a dashboard to another team is a one-line diff.
+    - `advise`, `explain`, `check` and `apply` review each spec under its standard, and `explain` names the chain it used.
+    - `chartwright standards show finance` lists every setting with the file that set it and whether it is locked.
+- **Locked Rules**: Lock a rule, or a threshold together with its value, in a standard, and every dashboard that follows it, or a standard extending it, keeps it: no team file, `design.ignore` entry, `--ignore` flag or personal `design.yaml` can turn the rule off, lower its severity, or change the threshold.
+    - Give a locked threshold one value, or one value per audience; with per-audience values, a spec's `design.audience` picks among the values the standard set.
+    - A team can still raise a locked rule's severity.
+    - A finding of a locked rule is fixed in the spec; to change the lock itself, edit the file that sets it in a pull request, and to exempt one dashboard, record an exception (below).
+- **Shared Headers, Footers and Branding**: Put content every dashboard of a team carries in its standard, and `chartwright standards apply specs/` writes it into each spec as ordinary fields you review in the diff ([reference](DESIGN-BRAIN.md#content)).
+    - Header and footer rows, a CSS block per standard, the colour scheme, label colours, certification, number formats per metric label, a Superset theme, and the dashboard's classification.
+    - An org's legal footer, a unit's CSS and a team's header stack up, and a dashboard keeps its own rows and CSS beside them.
+    - Banner rows per `dashboard.lifecycle` state (a "deprecated" notice naming the successor) and footer rows per `dashboard.classification`.
+    - When the standard changes, run `standards apply` again: it updates what it wrote, prints one summary line per item (`dashboard.css[org]: same change × 412 (refresh …); 3 released by authors, skipped: …; 85 already current`), and rewrites only the files that change. `--standard finance` limits the run to one team, for one pull request per team.
+- **Your Edits Stay Yours**: Edit or delete an unlocked item a standard wrote and the dashboard keeps your version; every other item keeps following the standard. `design.standard_written` records what the standard wrote, item by item, and `chartwright explain` shows each item's source and how to change it.
+- **Locked Content**: Lock content in a standard, such as a legal footer, and an edited or missing copy is an error in `standards check` that names the locking file. `standards apply --locked` puts the standard's version back, showing what it replaces.
+    - `standards apply --check` fails CI when a spec lacks locked content as the standard has it now; unlocked changes are listed and reach each team in its own pull request. Add `--strict` to fail on any change at all.
+    - A warning names CSS that could hide locked rows; `standards verify-visible` then checks the rendered dashboard (below).
+    - Lock the classification a standard assigns, and a dashboard reclassified away from it, or with the field removed, is an error; its locked confidential footer stays expected while the error stands.
+    - `--claim` records content a decompiled or adopted dashboard already carries, and apply never adds it a second time.
+- **Recorded, Expiring Exceptions**: When one dashboard must deviate from a lock, add it to `standards/waivers.yaml` with an owner, a reason and an expiry date; nothing in the spec itself can lift a lock ([reference](DESIGN-BRAIN.md#waivers)).
+    - Name the dashboard by its spec file's path (a slug alone is the spec author's to edit, and every run says so), and the locked rule or content item: `layout.footer[org][0]`, `dashboard.classification`, `size.min-width`.
+    - The finding passes, listed as waived with its owner, reason and expiry; `standards apply` leaves that item as the dashboard has it.
+    - An expired waiver fails `standards check` and `advise` for the dashboards being checked, so a pull request fails only for the dashboards it touches; run `standards check` on the changed specs in CI. `check`, `apply` and `plan` keep the waiver with a warning, so an expiry never blocks a deploy or a rollback, and `restore` never reads the file.
+    - `standards check --report` lists every expired waiver, every one expiring within 30 days (`--expiring-within` changes it) and those that name no dashboard; `--as-of 2026-12-01` repeats any run exactly.
+    - Guard the file with a CODEOWNERS line such as `/standards/waivers.yaml @acme/data-platform`. Chartwright can't tell who approved a change to the file; your code host's required reviews do that.
+- **Mixed Superset Releases**: Deploy one spec to instances on different releases. `check`, `apply` and `plan` hold back, for each instance, the standard's content its release can't take, and list it as held, so a theme in a standard never blocks a deploy to 5.0.
+    - A standards file declares `min_superset: "6.0"` when its content is for that release or later; content that sets a newer field, such as a theme, holds itself back on older releases.
+    - Only the standard's own content is held: a field you wrote yourself still meets the release check.
+    - `standards check --superset-version 5.0.0` shows offline what a 5.0 instance would get.
+- **Checking What Readers See**: `chartwright standards verify-visible spec.json --profile prod` opens the dashboard in a headless browser after deploy and checks that every locked header and footer line is on the page and readable. It catches a line hidden by display or visibility, transparency, blur, clipping, a container cutting it off, a position or indent off the page, an element drawn over it, a tiny or scaled-down font, or a colour close to its background.
+    - It exits 1 and names each hidden line and why, ready as a post-deploy step.
+    - It needs a browser, installed only on request: `pip install 'chartwright[visual]'`, then `playwright install chromium`.
+- **One Check for the Whole Folder**: `chartwright standards check specs/` reviews every spec under its standard and exits 1 on any error finding, or on warnings too with `--strict`, ready as a CI gate. It sets `design.yaml` aside, so it gives the same result on every machine.
+    - `--report` sums up the folder as JSON: per dashboard its standard, pass or fail, findings by rule and severity, the locks it hit and what was waived; then totals per rule and per standard, and the waivers file's expired and expiring entries.
+- Through MCP, start the server inside the repository, or point `CHARTWRIGHT_STANDARDS_DIR` at the folder: the advice tools then apply each spec's standard and its waivers (matched by slug), `standards_apply` writes a standard's content into a spec, `standards_check` and `standards_show` answer as the CLI does, and `check_spec`, `build_dashboard` and `plan_dashboard` hold content back per release.
+- Compile reads only the spec: a standard's content reaches a dashboard as the fields `standards apply` wrote, so `plan` and decompile see what you reviewed. Without a `standards/` folder, none of this applies.
+
 ## Dashboards as Code
-- **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, layout.
-- **Start From Existing Dashboards**: Turn any dashboard built in the UI into a spec with `chartwright decompile`, then build it as a copy at a new slug. Most of what it can't carry over is listed; a few settings (such as dashboard CSS, annotations and tab-scoped filters) are dropped without a note, so compare before you retire the original.
-- **Lossless Round-Trips**: Tool-built dashboards with `rows` or `tabs` layouts decompile back with nothing lost; a `sketch` comes back as rows.
+- **Drift Detection**: `chartwright plan` diffs the spec against the live dashboard: charts, filters, scopes, title, CSS, dashboard settings, layout.
+- **Start From Existing Dashboards**: Take over a dashboard built in the UI where it is, or build a copy of it.
+    - `chartwright adopt` writes a spec that updates that same dashboard, keeping its address, id and chart ids, so links and embeds keep pointing at it.
+    - Before anything changes, adopt lists what the first apply resets because a spec can't hold it, and refuses until you pass `--accept-reset`; `plan` then names each chart whose stored options the first apply rewrites. Charts a spec can't hold come off the dashboard and stay under Charts.
+    - `chartwright decompile` turns any dashboard into a spec you build as a copy at a new slug. What it can't carry over is listed, including chart settings changed from Superset's defaults (a rolling sum, a forecast, a legend margin) and filters scoped to some tabs; compare before you retire the original.
+- **Lossless Round-Trips**: Tool-built dashboards with `rows` or `tabs` layouts decompile back with nothing lost; a `sketch` comes back as rows, or as a sketch when it stacks charts beside a taller one, and so does a dashboard built in the UI with stacked charts.
 - **Targeted Edits**: Replace, rename, resize, or remove one chart and re-apply; old charts are cleaned up, never orphaned.
 - **Stable Identity**: Chart ids never change across re-applies, so links, scopes, and open browser tabs stay valid.
 
@@ -64,16 +143,20 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
 - **Environment Promotion**: Specs name their data (connection, schema, table), never instance ids, so the same file applies to dev, staging, and production when they share connection names; where names differ, generate one copy per instance.
 - **PR-Gated Dashboard Changes**: Specs live in git; `chartwright plan` passes when the live dashboard matches the spec and fails when it drifted, ready as a merge gate; read-only `chartwright check` runs safely on any schedule.
 - **Offline Compilation**: Build the import bundle with `chartwright compile`, no server needed; the output is reproducible byte-for-byte.
-- **Instance Migration**: Decompile from one Superset, apply the spec to another; it applies to 4.1.4 and 5.0.0 even when it came from 6.1.0, whose exports those releases reject.
+- **Instance Migration**: Decompile from one Superset, apply the spec to another; it applies to 4.1.4 and 5.0.0 even when it came from 6.1.0, whose exports those releases reject. `chartwright check` names any setting the target release can't take, such as tags or a theme before 6.0, for you to remove first.
 - **Git as the Source of Truth**: A lost or mangled dashboard is one re-apply away from its spec.
 
 ## Safety and Recovery
 - **Automatic Backups**: Every apply to an existing dashboard saves the live state first, no flag needed; backups are named to the microsecond and never overwritten.
+    - Each backup records the instance it came from, and `chartwright restore` refuses one from another instance unless you pass `--to-other-instance`.
+    - The newest 50 backups per dashboard are kept; set `CHARTWRIGHT_BACKUP_KEEP` to keep more, or 0 to keep them all.
 - **Complete Restore**: `chartwright restore` brings back the dashboard, chart settings, and filter scopes.
+- **Charts Ready for Reports**: Superset's CSV and text chart reports run a chart's saved query, which an imported chart lacks. `chartwright save-queries` (or `apply --save-queries`) opens each chart once in a headless browser and saves the query Superset's own frontend builds, as Superset's Save does; a later apply keeps it while the chart's options stay the same. Needs `pip install 'chartwright[visual]'` and `playwright install chromium`.
 - **Self-Healing Applies**: When an apply fails while preparing, importing or updating charts, the previous state is restored automatically, whatever the error. A failure after that (linkage, filter scopes, chart queries) leaves the new version live, and the report gives the backup to restore.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once: an error fails the apply, and a chart that returns no rows is named. Any failure says what went wrong and where.
-- **Ownership Guard**: The tool only ever overwrites dashboards it created. To manage a hand-built dashboard, decompile it into a spec and build it at a new slug; the original stays untouched.
+    - Your spec is held to the instance's Superset release too: a setting the release can't take (tags or a theme on 4.1.4 or 5.0.0, chart timestamps before 6.1) stops the apply before anything is written and names the field to remove; one it would ignore, such as a trendline subtitle before 6.0, comes back as a warning. Offline, `chartwright compile --superset-version 5.0.0` runs the same check.
+- **Ownership Guard**: The tool overwrites only dashboards it created or that you adopted with `chartwright adopt`; to manage any other dashboard, adopt it first.
 
 ## Enterprise Ready
 - **Multiple Instances**: Sandbox, staging, and production as profiles in one file.
@@ -82,6 +165,7 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - Preset-hosted workspaces (preset.io) sign in with an API token and secret: take them from env vars, or reuse the credentials preset-cli already stored.
 - **What the AI Can See**: The AI proposes; the tool verifies, using your own Superset login. Verification reads names (datasets, columns, metrics), not rows; the AI never queries your warehouse.
     - The post-apply data check keeps a row count and discards the rows.
+    - Custom SQL in a spec runs with the profile's rights during apply's data check; `check` lists it under `unchecked_sql` so you can review it before it runs, and the apply report lists it too.
 - **Corporate Networks**: Custom CA bundles, proxies, LDAP auth, internal pip mirrors (only 3 dependencies).
 - **Works Where You Work**: Windows, macOS, Linux; PowerShell and git bash; run from any directory; the Claude Code skill installs by copy, no admin rights.
 
@@ -99,15 +183,23 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
 | `chartwright schema` | Print the spec's JSON Schema, the contract for people and AIs |
 | `chartwright validate` | Check a spec against the schema, offline |
 | `chartwright brief` | Print the design guidance to read before writing a spec |
-| `chartwright advise` | Review a spec against the design rulebook; `--fix` applies the safe geometry repairs |
+| `chartwright advise` | Review a spec against the design rulebook; `--fix` applies the safe repairs and fills design defaults into the spec; `--chart` looks at one chart |
+| `chartwright explain` | Show, per chart, where each design-default field's value comes from (the spec, a fill, or Superset) and how to change it; `--json` for agents |
 | `chartwright compile` | Build the import bundle, no server needed |
 | `chartwright check` | Verify every dataset, column, and metric against a live instance, read-only |
 | `chartwright apply` | Build, import, and verify the dashboard end to end |
 | `chartwright plan` | Show what differs between the spec and the live dashboard |
 | `chartwright decompile` | Turn a live dashboard into a spec |
+| `chartwright adopt` | Take over a dashboard built in the UI where it is: write a spec that updates the same dashboard |
 | `chartwright redesign` | Decompile a live dashboard, audit it, and write the repaired spec |
 | `chartwright absorb` | Pull height polish made in the UI back into the spec |
 | `chartwright calibrate` | Propose recommended heights from your absorb history |
+| `chartwright standards check` | Review every spec in a folder under its standard, without `design.yaml`; `--strict` fails on warnings, `--report` sums up the folder |
+| `chartwright standards show` | Show a standard after `extends`: each setting, the file that set it, and whether it is locked |
+| `chartwright standards assign` | Write `design.standard` into every spec in a folder or glob |
+| `chartwright standards apply` | Write each standard's content into its specs, with a summary grouped by item; `--check` fails on missing locked content, `--locked` restores it, `--claim` records content already there |
+| `chartwright standards verify-visible` | Check in a headless browser that a deployed dashboard's locked header and footer text is readable; needs `chartwright[visual]` |
+| `chartwright save-queries` | Save each chart's query as Superset's Save does, so CSV and text reports on the charts work; needs `chartwright[visual]` |
 | `chartwright restore` | Bring back a backed-up dashboard, completely |
 
 ## Testing and Evidence

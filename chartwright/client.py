@@ -9,10 +9,13 @@ token triggers exactly one re-login + retry (long applies on big estates).
 
 from __future__ import annotations
 
+import html
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Callable
+from urllib.parse import urlsplit
 
 import requests
 
@@ -31,11 +34,32 @@ def _json_q(obj) -> str:
             .replace("+", r"\u002b"))
 
 
+# "version_string": "5.0.0" inside a page's (unescaped) bootstrap JSON.
+_BOOTSTRAP_VERSION = re.compile(r'"version_string"\s*:\s*"([^"]*)"')
+
+
 class SupersetAPIError(RuntimeError):
     def __init__(self, message: str, status: int | None = None, body: str | None = None):
         super().__init__(message)
         self.status = status
         self.body = body
+
+
+_REPEATABLE = {"GET", "HEAD", "OPTIONS", "PUT"}
+# POSTs that only read: a chart query (smoke, saved-query capture) changes nothing.
+_READ_ONLY_POSTS = ("/api/v1/chart/data",)
+
+
+def _dropped_unanswered(e: requests.exceptions.ConnectionError) -> bool:
+    """The server closed the connection before answering (RemoteDisconnected, a
+    reset), on a request that means the same sent twice."""
+    req = getattr(e, "request", None)
+    method = getattr(req, "method", None)
+    path = urlsplit(getattr(req, "url", "") or "").path.rstrip("/")
+    text = str(e)
+    repeatable = method in _REPEATABLE or (method == "POST" and path.endswith(_READ_ONLY_POSTS))
+    return repeatable and ("RemoteDisconnected" in text or "Connection aborted" in text
+                           or "Connection reset" in text)
 
 
 @dataclass
@@ -53,6 +77,8 @@ class SupersetClient:
     session: requests.Session = field(default_factory=requests.Session)
     _csrf: str | None = None
     _logged_in: bool = False
+    _version: str | None = None
+    _version_probed: bool = False
 
     @classmethod
     def from_profile(cls, p: Profile) -> "SupersetClient":
@@ -71,10 +97,11 @@ class SupersetClient:
     # -- transport ------------------------------------------------------------
 
     def _send(self, fn: Callable[[], requests.Response], relogin_on_401: bool = True,
-              tries_429: int = 3) -> requests.Response:
-        """Run one request with typed network errors, a single 401 retry, and
-        polite 429 backoff (Superset ships a rate limiter; corporate gateways
-        add their own)."""
+              tries_429: int = 3, tries_dropped: int = 1) -> requests.Response:
+        """Run one request with typed network errors, a single 401 retry, polite
+        429 backoff (Superset ships a rate limiter; corporate gateways add their
+        own), and one retry of a request the server dropped unanswered, when
+        sending it twice means the same as once."""
         try:
             r = fn()
         except requests.exceptions.SSLError as e:
@@ -89,6 +116,14 @@ class SupersetClient:
             ) from e
         except requests.exceptions.Timeout as e:
             raise SupersetAPIError(f"request timed out against {self.base_url}: {str(e)[:200]}") from e
+        except requests.exceptions.ConnectionError as e:
+            if tries_dropped > 0 and _dropped_unanswered(e):
+                # A pooled keep-alive connection the server had already closed (a
+                # recycled gunicorn worker, an idle timeout): no answer came back.
+                # GET, HEAD, OPTIONS, PUT and a chart query are safe to send again;
+                # any other POST (an import, a login) or a DELETE never is.
+                return self._send(fn, relogin_on_401, tries_429, tries_dropped - 1)
+            raise SupersetAPIError(f"connection to {self.base_url} failed: {str(e)[:300]}") from e
         except requests.exceptions.RequestException as e:
             raise SupersetAPIError(f"connection to {self.base_url} failed: {str(e)[:300]}") from e
         if r.status_code == 401 and relogin_on_401 and self._logged_in:
@@ -240,6 +275,26 @@ class SupersetClient:
         r = self._send(lambda: self.session.delete(f"{self.base_url}/api/v1/chart/{chart_id}", timeout=60))
         self._raise_for(r, f"delete chart {chart_id} failed")
 
+    # -- themes (6.0.0+) ----------------------------------------------------
+
+    def themes(self) -> list[dict]:
+        """Every theme on the instance: id, uuid and theme_name, from the theme list API
+        (ThemeRestApi, resource "theme", superset/themes/api.py at 6.0.0 and 6.1.0).
+        Themes are few, so all pages are read and names matched here: theme_name has no
+        unique constraint (models/core.py class Theme), and the API's only name search is
+        a substring match over name and JSON alike (themes/filters.py ThemeAllTextFilter)."""
+        out: list[dict] = []
+        page = 0
+        while page < 100:   # 10,000 themes: a runaway guard, not an expected ceiling
+            rows = self.get("/api/v1/theme/", q={
+                "columns": ["id", "uuid", "theme_name"], "page": page, "page_size": 100,
+            })["result"]
+            out += rows
+            if len(rows) < 100:
+                break
+            page += 1
+        return out
+
     # -- import / export ----------------------------------------------------
 
     def import_dashboard_bundle(self, zip_bytes: bytes, overwrite: bool = True) -> requests.Response:
@@ -275,6 +330,54 @@ class SupersetClient:
 
     def chart_data(self, query_context: dict) -> requests.Response:
         return self.post_json("/api/v1/chart/data", query_context)
+
+    # -- version -------------------------------------------------------------
+
+    def superset_version(self) -> str | None:
+        """The instance's Superset release, e.g. "5.0.0", or None when it doesn't say.
+        Asked once per client.
+
+        6.1.0 answers GET /version with JSON (superset/views/health.py:36-45, the
+        health blueprint, no login). 4.1.4 and 5.0.0 have no such route; their
+        sign-in page carries the version in its bootstrap data instead: FAB's
+        login_db.html extends appbuilder/base.html, whose base_template is
+        superset/base.html (superset/initialization/__init__.py:564 at 4.1.4, :559
+        at 5.0.0), which extends appbuilder/baselayout.html, whose data-bootstrap
+        (:45) holds common.menu_data.navbar_right.version_string
+        (superset/views/base.py:282 at 4.1.4, :274 at 5.0.0). Both requests go out
+        signed out, so the sign-in page renders instead of redirecting."""
+        if not self._version_probed:
+            self._version_probed = True
+            self._version = self._probe_version()
+        return self._version
+
+    def _probe_version(self) -> str | None:
+        from .versions import format_version, parse_version
+
+        anon = requests.Session()
+        anon.verify = self.session.verify
+
+        def fetch(path: str, **headers) -> requests.Response | None:
+            try:
+                return self._send(lambda: anon.get(f"{self.base_url}{path}", headers=headers, timeout=30),
+                                  relogin_on_401=False)
+            except SupersetAPIError:
+                return None
+
+        r = fetch("/version", Accept="application/json")
+        if r is not None and r.status_code == 200:
+            try:
+                release = parse_version((r.json() or {}).get("version_string"))
+            except (ValueError, AttributeError):
+                release = None
+            if release:
+                return format_version(release)
+        r = fetch("/login/")
+        if r is None or r.status_code != 200:
+            return None
+        m = _BOOTSTRAP_VERSION.search(html.unescape(r.text))
+        release = parse_version(m.group(1)) if m else None
+        return format_version(release) if release else None
 
     # -- helpers --------------------------------------------------------------
 
