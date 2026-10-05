@@ -161,6 +161,18 @@ _SEQUENTIAL_SCHEMES = set(get_args(SequentialScheme))
 _COLUMN_CONFIG_SPEC = {v: k for k, v in COLUMN_CONFIG_KEYS.items()}  # d3NumberFormat -> number_formats
 
 
+# SortSeriesType (superset-ui-chart-controls types.ts, 4.1.4 :503, 6.1.0 :549): what a bar
+# with several series sorts its categories by.
+_SERIES_SORTS = ("name", "sum", "min", "max", "avg")
+
+
+def _stored_label(m) -> str | None:
+    """A stored metric's label, as getMetricLabel reads it: a saved metric is its name."""
+    if isinstance(m, str):
+        return m
+    return m.get("label") if isinstance(m, dict) else None
+
+
 def _number(v) -> float | int | None:
     """A stored bound or size as a number; None for null, "" or junk."""
     if isinstance(v, bool) or v in (None, ""):
@@ -655,12 +667,37 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         # series: x_axis_sort from 6.0.0, x_axis_sort_series at 4.1.4 and 5.0.0).
         several = bool(p.get("groupby")) or len(ms) > 1
         sort, stored_asc = p.get("x_axis_sort"), p.get("x_axis_sort_asc")
-        if several and sort in (None, "") and p.get("x_axis_sort_series") == "name":
-            sort, stored_asc = "name", p.get("x_axis_sort_series_ascending", True)
+        if several and sort in (None, "") and p.get("x_axis_sort_series") in _SERIES_SORTS:
+            sort = p["x_axis_sort_series"]
+            stored_asc = p.get("x_axis_sort_series_ascending", True)
         if sort == x or (several and sort == "name"):
             # In reading order (the horizontal axis runs bottom-up).
             ascending = bool(stored_asc) != (p.get("orientation") == "horizontal")
             out["category_sort"] = "asc" if ascending else "desc"
+        elif sort not in (None, ""):
+            # A ranking by a measure, largest first (on top of a horizontal bar): the
+            # series' sum ("total"), or a metric, which compile also makes the query's
+            # "Sort query by" (timeseries_limit_metric), drawn or not.
+            ranked = p.get("timeseries_limit_metric")
+            first = metric_label(ms[0])
+            if several and sort == "sum":
+                out["sort_by"] = "total"
+            elif several and sort in _SERIES_SORTS:
+                losses.append(Loss(name, f"bars ranked by the series' {sort!r} value not "
+                                         "preserved (the first metric on re-apply)"))
+            elif ranked and _stored_label(ranked) == sort and not p.get("groupby"):
+                m = metric_one(ranked)
+                if m:
+                    out["sort_by"] = m
+            elif sort != first and not p.get("groupby"):
+                m = next((m for m in ms if metric_label(m) == sort), None)
+                if m:
+                    out["sort_by"] = m
+            largest_first = p.get("orientation") == "horizontal"
+            if stored_asc is not None and bool(stored_asc) != largest_first and (
+                    "sort_by" in out or sort == first):
+                losses.append(Loss(name, "bars ranked smallest first not preserved "
+                                         "(largest first on re-apply)"))
         if p.get("y_axis_format") not in (None, "SMART_NUMBER"):
             out["number_format"] = p["y_axis_format"]
         gb = _groupby_one(p, losses, name)

@@ -111,6 +111,10 @@ def _display_params() -> dict[str, dict]:
                         "stack": "Stack",
                         "contributionMode": "column", "limit": 3, "legendOrientation": "right",
                         "time_range": "Last year", "xAxisLabelInterval": "0"}),
+    ("Countries by Deal Size", {"x_axis_sort": "sum", "x_axis_sort_asc": True,
+                                "x_axis_sort_series": "sum",
+                                "x_axis_sort_series_ascending": True}),
+    ("Lines by Quantity", {"x_axis_sort": "SUM(quantity_ordered)", "x_axis_sort_asc": True}),
     ("Share by Line", {"label_type": "value_percent", "number_format": ",.0f",
                        "show_total": True, "labels_outside": False,
                        "legendOrientation": "left", "legendType": "plain"}),
@@ -236,6 +240,86 @@ def test_a_grouped_bar_sorted_by_name_on_4_1_decompiles_as_category_sort():
     assert _decompile(spec, edit).spec["charts"][0]["category_sort"] == "desc"
     edit = _edit_params("B", x_axis_sort=None, x_axis_sort_series="sum")
     assert "category_sort" not in _decompile(spec, edit).spec["charts"][0]
+
+
+def test_sort_by_total_ranks_several_series_by_their_sum_on_every_release():
+    """SortSeriesType.Sum: read from x_axis_sort from 6.0.0 and x_axis_sort_series at
+    4.1.4 and 5.0.0, largest first (on top of the bottom-up horizontal axis). "sum" is
+    no label, so sortOperator adds no sort and the query keeps its own order."""
+    bar = {"name": "B", "type": "bar", "dataset": DS, "x_column": "zone",
+           "metrics": ["SUM(first_4h)", "SUM(beyond_4h)"], "stack": True, "sort_by": "total"}
+    for orientation, asc in (("vertical", False), ("horizontal", True)):
+        for extra in ({}, {"metrics": ["SUM(x)"], "groupby": "region"}):
+            p = _params(_spec({**bar, **extra, "orientation": orientation}))["B"]
+            assert (p["x_axis_sort"], p["x_axis_sort_asc"]) == ("sum", asc)
+            assert (p["x_axis_sort_series"], p["x_axis_sort_series_ascending"]) == ("sum", asc)
+            assert "timeseries_limit_metric" not in p and "order_desc" not in p
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"echarts_timeseries_bar": set(p)}) == [], version
+
+
+def test_sort_by_a_metric_sorts_and_orders_the_query_by_it_drawn_or_not():
+    """sortOperator sorts the rows by x_axis_sort; as "Sort query by" the metric orders
+    the query (a row limit keeps the top bars by it), and one not drawn is queried as an
+    extra metric because its label is x_axis_sort (extractExtraMetrics.ts:35)."""
+    bar = {"name": "B", "type": "bar", "dataset": DS, "x_column": "zone",
+           "metrics": ["COUNT(*)"], "orientation": "horizontal", "row_limit": 10}
+    p = _params(_spec({**bar, "sort_by": "SUM(revenue)"}))["B"]
+    assert (p["x_axis_sort"], p["x_axis_sort_asc"]) == ("SUM(revenue)", True)
+    assert p["timeseries_limit_metric"]["label"] == "SUM(revenue)"
+    assert p["timeseries_limit_metric"]["column"] == {"column_name": "revenue"}
+    assert "order_desc" not in p and "x_axis_sort_series" not in p  # descending: the top bars
+    # A drawn metric of several: at 4.1.4 and 5.0.0 the plugin would re-sort the rows by
+    # its x_axis_sort_series default (the name); null leaves sortOperator's order.
+    two = {**bar, "metrics": ["SUM(a)", "SUM(b)"], "sort_by": "SUM(b)", "orientation": "vertical"}
+    p = _params(_spec(two))["B"]
+    assert (p["x_axis_sort"], p["x_axis_sort_asc"]) == ("SUM(b)", False)
+    assert p["timeseries_limit_metric"] == p["metrics"][1]
+    assert "x_axis_sort_series" in p and p["x_axis_sort_series"] is None
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"echarts_timeseries_bar": set(p)}) == [], version
+
+
+@pytest.mark.parametrize("spec_fields", [
+    {"sort_by": "total", "metrics": ["SUM(a)", "SUM(b)"]},
+    {"sort_by": "total", "groupby": "region", "series_limit": 3},
+    {"sort_by": "SUM(hidden)"},
+    {"sort_by": "SUM(b)", "metrics": ["SUM(a)", "SUM(b)"], "stack": True},
+    {"sort_by": "COUNT(*)"},
+])
+def test_sort_by_round_trips_without_a_loss(spec_fields, monkeypatch):
+    bar = {"name": "B", "type": "bar", "dataset": DS, "x_column": "zone", "metrics": ["COUNT(*)"],
+           "orientation": "horizontal", **spec_fields}
+    spec = _spec(bar)
+    out = _decompile(spec)
+    assert out.losses == [], out.losses_json()
+    assert out.spec["charts"][0]["sort_by"] == spec_fields["sort_by"]
+    assert _normalize(load_spec(out.spec)) == _normalize(spec)
+    assert _plan(spec, None, monkeypatch)["clean"] is True
+
+
+def test_a_bar_ranked_in_the_ui_decompiles_as_sort_by_or_a_named_loss():
+    """4.1.4 and 5.0.0 store a several-series sort in x_axis_sort_series; Superset's
+    'Total value' is sort_by "total", its minimum, maximum and average are no spec value,
+    and a ranking reversed to smallest first is named too."""
+    spec = _spec({"name": "B", "type": "bar", "dataset": DS, "x_column": "zone",
+                  "metrics": ["COUNT(*)"], "groupby": "region"})
+    out = _decompile(spec, _edit_params("B", x_axis_sort=None, x_axis_sort_series="sum",
+                                        x_axis_sort_series_ascending=False))
+    assert out.spec["charts"][0]["sort_by"] == "total" and out.losses == []
+    out = _decompile(spec, _edit_params("B", x_axis_sort="max"))
+    assert "sort_by" not in out.spec["charts"][0]
+    assert any("'max'" in l.what for l in out.losses)
+    out = _decompile(spec, _edit_params("B", x_axis_sort="sum", x_axis_sort_asc=True))
+    assert any("smallest first" in l.what for l in out.losses)
+    one = _spec({"name": "B", "type": "bar", "dataset": DS, "x_column": "zone",
+                 "metrics": ["COUNT(*)"]})
+    out = _decompile(one, _edit_params("B", x_axis_sort_asc=True))  # vertical: largest left
+    assert "sort_by" not in out.spec["charts"][0]
+    assert any("smallest first" in l.what for l in out.losses)
+    assert _decompile(one).losses == []
 
 
 def test_y_axis_max_is_a_bound_on_every_release_not_echart_options():
@@ -445,6 +529,8 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Top Customers", {"column_config": {}}),
     ("Sales Pivot", {"transposePivot": False}),
     ("Line by Deal Size", {"show_percentage": True}),
+    ("Countries by Deal Size", {"x_axis_sort": "name"}),
+    ("Lines by Quantity", {"x_axis_sort": "SUM(sales)"}),
     ("Line by Deal Size", {"xscale_interval": -1}),
     ("Line by Deal Size", {"left_margin": "auto"}),
     ("Revenue KPI", {"compare_lag": 3}),
@@ -461,6 +547,7 @@ def test_plan_reports_a_display_change_made_in_the_ui(chart, change, monkeypatch
 
 LINE = {"name": "L", "type": "timeseries_line", "dataset": DS, "metrics": ["SUM(x)"],
         "time_column": "ts"}
+BAR = {"name": "B", "type": "bar", "dataset": DS, "x_column": "c", "metrics": ["SUM(x)"]}
 
 
 @pytest.mark.parametrize("chart, message", [
@@ -496,6 +583,11 @@ LINE = {"name": "L", "type": "timeseries_line", "dataset": DS, "metrics": ["SUM(
     ({"name": "M", "type": "mixed", "dataset": DS, "x_column": "ts", "y_axis_min_secondary": 3,
       "y_axis_max_secondary": 2, "a": {"metrics": ["SUM(x)"]}, "b": {"metrics": ["SUM(y)"]}},
      "y_axis_min_secondary (3) must be below y_axis_max_secondary (2)"),
+    ({**BAR, "sort_by": "SUM(y)", "category_sort": "asc"}, "set category_sort or sort_by, not both"),
+    ({**BAR, "sort_by": "total"}, "one series already ranks by its metric"),
+    ({**BAR, "sort_by": "SUM(y)", "groupby": "g"}, "Superset ranks grouped bars by their series only"),
+    ({**BAR, "sort_by": "total", "groupby": "g", "contribution": "row"},
+     "sort_by ranks by values, and contribution plots shares"),
 ])
 def test_wrong_combinations_are_named(chart, message):
     with pytest.raises(ValidationError) as err:
@@ -533,6 +625,25 @@ def test_series_limit_metric_is_resolved_like_any_metric():
         res = Resolution()
         _check_chart_fields(_spec(chart).charts[0], ds, res)
         assert [(e.code, e.ref) for e in res.errors] == [("metric_not_found", "no_such_metric")]
+
+
+def test_a_bars_sort_metric_is_resolved_and_queried_by_smoke():
+    """A sort metric the bar doesn't draw is still in its query, so check names it and
+    the smoke query carries it (a bad one fails the chart, not just its order)."""
+    from chartwright.smoke import _query_for
+
+    ds = ResolvedDataset(id=1, uuid="u", table="t", schema=None, database_name="examples",
+                         columns=["c", "x"], metrics=["revenue"])
+    res = Resolution()
+    _check_chart_fields(_spec({**BAR, "sort_by": "SUM(no_such_column)"}).charts[0], ds, res)
+    assert [(e.code, e.ref) for e in res.errors] == [("column_not_found", "no_such_column")]
+    res = Resolution()
+    _check_chart_fields(_spec({**BAR, "sort_by": "revenue"}).charts[0], ds, res)
+    assert res.errors == []
+    spec = _spec({**BAR, "sort_by": "revenue"})
+    assert _query_for(spec.charts[0], spec)["metrics"][1] == "revenue"
+    spec = _spec({**BAR, "metrics": ["SUM(x)", "COUNT(*)"], "sort_by": "total"})
+    assert len(_query_for(spec.charts[0], spec)["metrics"]) == 2
 
 
 # -- a written Superset default --------------------------------------------------------

@@ -22,7 +22,10 @@
   scrollbar; smoke warns at apply time when they do.
 - Sort order is per family: bars sort by their first metric (right for
   rankings, wrong for ordinals like weekday/month) unless `category_sort`
-  orders them by label; heatmap and pivot categories sort alphabetically
+  orders them by label. Stacked or grouped bars need `sort_by: "total"` to
+  rank: Superset puts several series in name order (4.1.4/5.0.0 always, a
+  groupby everywhere). `sort_by` a metric ranks by one the chart needn't draw,
+  so two charts share an order. Heatmap and pivot categories sort alphabetically
   (a pivot can sort by value: `row_order`). For ordinal dimensions, chart an
   order-encoded label column (labels prefixed with a sort index: '1-Mon')
   if the dataset has one, and give a bar `category_sort: "asc"`. An ordered

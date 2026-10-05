@@ -301,6 +301,36 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
                     "hasCustomLabel": False,
                 }
                 p["order_desc"] = chart.category_sort == "desc"
+        elif chart.sort_by:
+            # Largest first, as the default ranking: on top of the bottom-up horizontal axis.
+            ascending = chart.orientation == "horizontal"
+            sort_metric = chart.sort_metric()
+            if sort_metric is None:
+                # "total": the plugin sorts the categories by the sum of their series
+                # (SortSeriesType.Sum, utils/series.ts sortRows: 4.1.4 :200-208, 6.1.0
+                # :564-572), reading x_axis_sort from 6.0.0 (Timeseries/transformProps.ts
+                # 6.1.0 :335-336) and x_axis_sort_series at 4.1.4 and 5.0.0 (:243-246,
+                # :246-249). "sum" is no label, so sortOperator.ts adds no sort of its own.
+                p["x_axis_sort"] = "sum"
+                p["x_axis_sort_series"] = "sum"
+                p["x_axis_sort_series_ascending"] = ascending
+            else:
+                # A metric: sortOperator.ts sorts the rows by it (no groupby, all three
+                # releases). As the "Sort query by" metric it also orders the query, so a
+                # row limit keeps the top bars by it (normalizeOrderBy, descending), and
+                # one that is not drawn is queried but never drawn: extractExtraMetrics.ts:35
+                # adds it because its label is x_axis_sort, and extractSeries skips it.
+                payload = metric(sort_metric)
+                p["x_axis_sort"] = payload["label"] if isinstance(payload, dict) else payload
+                p["timeseries_limit_metric"] = payload
+                if chart.several_series():
+                    # Several series at 4.1.4 and 5.0.0: the plugin re-sorts the rows by
+                    # x_axis_sort_series, whose panel default is the category name, unless
+                    # it is unset (isDefined, utils/series.ts extractSeries, 4.1.4
+                    # :296-307, 5.0.0 :302-313). Null keeps sortOperator's order there;
+                    # 6.0.0 dropped the control.
+                    p["x_axis_sort_series"] = None
+            p["x_axis_sort_asc"] = ascending
         else:
             # Rankings read sorted by their measure, not by label order. The
             # horizontal axis renders bottom-up, so ascending puts the largest

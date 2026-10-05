@@ -595,6 +595,20 @@
           "default": null,
           "description": "Order the bars by their category (x_column) instead of by the first metric: \"asc\" reads A to Z or 0 to 9 (hours, ranks, '1-Mon'), left to right or top to bottom on a horizontal bar; \"desc\" reverses it. The query is ordered by the category too, so a row_limit keeps the first categories in that order, not the largest values. With series_limit the query stays ordered by the series ranking (Superset has one \"Sort query by\" control for both), so there a row_limit keeps the largest values",
           "title": "Category Sort"
+        },
+        "sort_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rank the bars by something other than the first metric, largest first (on the left, or on top of a horizontal bar). \"total\" ranks stacked or grouped bars by their sum; a metric, written like any metric, ranks them by its value and orders the query by it, so a row_limit keeps the top bars by it. The metric need not be drawn: two charts sorted by the same one share an order. A metric needs no groupby; with \"total\" a row_limit keeps the rows with the largest first metric, so for a top N by total write the total as a metric, e.g. \"SQL(SUM(a) + SUM(b)) AS Total\"",
+          "title": "Sort By"
         }
       },
       "required": [

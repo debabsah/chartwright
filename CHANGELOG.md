@@ -7,6 +7,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Added
 
+- `sort_by` on a categorical bar ranks it by something other than its first metric, largest first, on every supported release. `"total"` ranks stacked or grouped bars by their sum. Before, Superset drew several series in name order: two stacked metrics on 4.1.4 and 5.0.0, and a grouped bar on every release. A metric (`"sort_by": "SUM(revenue)"`) ranks by its value and orders the query too, so a `row_limit` keeps the top bars by it; it need not be drawn, so two charts can share one order. `advise` warns when a `row_limit` cuts a bar ranked by `"total"`, since the query is still ordered by the first metric.
 - Heatmap axes: `x_label_every` and `y_label_every` label every Nth column or row, counted from the first, so an hour axis with `"x_label_every": 6` reads 0, 6, 12, 18 instead of Superset's uneven automatic spacing. `left_margin` leaves room, in px, left of the row labels. Every supported release takes all three; `decompile` reads them back and `plan` reports a change made in the UI.
 
 ### Changed
@@ -15,6 +16,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- `decompile` names a bar ranked by its series' minimum, maximum or average, or ranked smallest first; before, apply quietly put the largest-first ranking back.
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 
 - `standards apply` no longer adds a header or footer row that the body already holds at its edge (the last rows for a footer, the first for a header). A dashboard built in the UI has no header or footer, so `decompile` and `adopt` read its legal line as a body row, and the standard's footer was then added below it, showing it twice. `--claim` moves such a row into the header or footer and records it; `explain` and the apply summary name it.

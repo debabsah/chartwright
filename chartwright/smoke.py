@@ -144,6 +144,9 @@ def _query_for(chart, spec: DashboardSpec) -> dict:
     elif t == "bar":
         q["metrics"] = [metric(m) for m in chart.metrics]
         q["columns"] = [chart.x_column] + ([chart.groupby] if chart.groupby else [])
+        if chart.sort_metric() and chart.sort_metric() not in chart.metrics:
+            # The chart queries a sort metric it doesn't draw (extractExtraMetrics.ts).
+            q["metrics"].append(metric(chart.sort_metric()))
     elif t == "pie":
         q["metrics"] = [metric(chart.metric)]
         q["columns"] = [chart.groupby]

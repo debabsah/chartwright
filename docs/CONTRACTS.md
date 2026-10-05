@@ -387,6 +387,40 @@ running the tool against real instances of all three releases.
   6.1.0 `:335`) and
   `x_axis_sort_series` at 4.1.4 and 5.0.0 (`:243` at 4.1.4, `:246` at 5.0.0).
   `category_sort` writes whichever applies.
+- **A bar ranks by a measure two ways, and its default ranking holds for one
+  series only.** Unsorted by category, a bar writes its first metric as
+  `x_axis_sort`. With one series, or several metrics and no groupby on 6.0.0
+  and later, that ranks the bars by it. With several series the plugin
+  re-sorts the rows itself (`sortRows`, `utils/series.ts`): at 4.1.4 and
+  5.0.0 by `x_axis_sort_series`, whose panel default is the category name
+  (`DEFAULT_XAXIS_SORT_SERIES_DATA`, `constants.ts:77-80`), which a dashboard
+  fills in for an unset key; with a groupby, `sortOperator.ts` adds no sort
+  on any release and the categories keep the order the pivot gives them
+  (pandas `pivot_table`, which sorts its index:
+  `superset/utils/pandas_postprocessing/pivot.py:92` at 6.1.0). Seen
+  live: two stacked metrics read A to Z on 4.1.4, and a grouped bar A to Z
+  on all three releases. `sort_by` ranks them on purpose:
+  - `"total"` is Superset's "Total value" (`SortSeriesType.Sum`), the sum of
+    each category's series (`sortRows`, 4.1.4 `:200-208`, 6.1.0 `:564-572`),
+    read from `x_axis_sort` from 6.0.0 (`Timeseries/transformProps.ts:335-336`
+    at 6.1.0) and `x_axis_sort_series` at 4.1.4 and 5.0.0 (`:243-246`,
+    `:246-249`); the tool writes both. The query stays ordered by the first
+    metric, so a row limit cuts by it before the bars are ranked, and
+    `advise` warns (`data.top-n-sort`).
+  - A metric is the post-processing sort (`sortOperator.ts`, which needs no
+    groupby) and the query's "Sort query by" (`timeseries_limit_metric`), so
+    a row limit keeps the top bars by it. A metric the chart doesn't draw is
+    queried but not drawn: `extractExtraMetrics.ts:35` adds it because its
+    label is `x_axis_sort`, and `extractSeries` leaves it out of the series.
+    With several metrics, 4.1.4 and 5.0.0 would then re-sort by the name
+    default, so the tool writes `x_axis_sort_series: null`, which
+    `extractSeries` reads as no sort (`isDefined`, 4.1.4 `:296-307`, 5.0.0
+    `:302-313`); 6.0.0 dropped the control.
+  Verified live on 4.1.4, 5.0.0 and 6.1.0, with `plan` clean after each
+  apply. A grouped bar can't rank by one metric (the plugin sorts by name,
+  sum, minimum, maximum or mean of the series), so `sort_by` refuses a
+  metric there; Superset's minimum, maximum and average have no spec value,
+  and `decompile` names them, and a ranking reversed to smallest first.
 - **Which rows a bar's row limit keeps is set by the query's ORDER BY, not by
   that sort.** The bar's query takes its ORDER BY from `normalizeOrderBy`
   (`Timeseries/buildQuery.ts:93` at all three releases): the "Sort query by"

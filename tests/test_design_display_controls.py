@@ -64,6 +64,29 @@ def test_a_row_limit_on_a_category_sorted_bar_with_a_series_limit_warns():
     assert not _fired("data.top-n-sort", [no_limit])
 
 
+def test_a_row_limit_on_a_bar_ranked_by_total_warns_and_a_total_metric_does_not():
+    """sort_by "total" ranks the rows the query returned (SortSeriesType.Sum); the query
+    is still ordered by the first metric, so the limit cuts by it. A total written as a
+    metric orders the query too."""
+    bar = {"name": "Zones", "type": "bar", "dataset": DS, "x_column": "zone",
+           "metrics": ["SUM(first_4h)", "SUM(beyond_4h)"], "stack": True,
+           "orientation": "horizontal", "row_limit": 10, "height": 9, "sort_by": "total"}
+    (f,) = _fired("data.top-n-sort", [bar])
+    assert "largest SUM(first_4h)" in f.detail and "sort_by it" in f.detail
+    grouped = {**bar, "metrics": ["SUM(x)"], "groupby": "duration"}
+    (f,) = _fired("data.top-n-sort", [grouped])
+    assert "segments, not bars" in f.detail
+    assert not _fired("data.top-n-sort", [{**bar, "row_limit": None}])
+    total = {**bar, "sort_by": "SQL(SUM(first_4h) + SUM(beyond_4h)) AS Total"}
+    assert not _fired("data.top-n-sort", [total])
+
+
+def test_a_bar_ranked_by_sort_by_is_no_ordinal_finding():
+    bar = {**HOURS, "name": "By Weekday", "x_column": "weekday", "row_limit": 7,
+           "metrics": ["COUNT(*)", "SUM(x)"], "sort_by": "total"}
+    assert not _fired("chart.ordinal-order", [bar])
+
+
 def test_a_paged_table_needs_room_for_one_page_not_every_row():
     # Measured: at 12 units a paged table shows 9 rows on 6.1.0 (10 on 4.1.4 and 5.0.0),
     # so a 9-row page fits and a 10-row page hides its last row on 6.1.0.

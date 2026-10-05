@@ -766,6 +766,8 @@ def ordinal_order(ctx: RuleContext):
 
     for c in ctx.spec.charts:
         hits = [d for d in dims(c) if d and _ORDINAL_RE.search(d)]
+        if c.type == "bar" and c.sort_by:
+            continue  # ranked by a measure the author chose: the order is deliberate
         if hits and c.type == "bar" and not c.category_sort:
             # A bar sorts by its first metric unless category_sort is set, so an
             # order-encoded label alone changes nothing.
@@ -862,6 +864,21 @@ def top_n_sort(ctx: RuleContext):
                 f"{c.row_limit} largest values, not the first categories: Superset orders "
                 "the query by the series ranking, so the axis shows gaps; drop row_limit, "
                 "or drop series_limit so the query is ordered by the category",
+            )
+        elif (c.type == "bar" and c.sort_by == "total" and c.row_limit is not None
+                and c.row_limit < DEFAULT_ROW_LIMIT["bar"]):
+            # "total" is the plugin's sort of the rows it gets (SortSeriesType.Sum); the
+            # query is still ordered by the first metric (normalizeOrderBy.ts), so the
+            # row limit cuts by that metric before the bars are ranked by their sum.
+            remedy = ("write the total as a metric (e.g. \"SQL(SUM(a) + SUM(b)) AS Total\") "
+                      "and sort_by it, which orders the query too" if not c.groupby else
+                      "with a groupby the limit also counts each bar's segments, not bars: "
+                      "drop row_limit, or filter the categories")
+            yield Finding(
+                "data.top-n-sort", "warn", c.name, ctx.where(c.name),
+                f"row_limit {c.row_limit} with sort_by \"total\" keeps the rows with the "
+                f"largest {c.metrics[0]} and then ranks them by their total, so a bar with "
+                f"a large total but a small {c.metrics[0]} can be left out; {remedy}",
             )
 
 

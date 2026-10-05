@@ -636,13 +636,56 @@ class BarChart(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
                     "stays ordered by the series ranking (Superset has one \"Sort query by\" "
                     "control for both), so there a row_limit keeps the largest values",
     )
+    sort_by: str | None = Field(
+        default=None, min_length=1,
+        description="Rank the bars by something other than the first metric, largest first "
+                    "(on the left, or on top of a horizontal bar). \"total\" ranks stacked or "
+                    "grouped bars by their sum; a metric, written like any metric, ranks them "
+                    "by its value and orders the query by it, so a row_limit keeps the top "
+                    "bars by it. The metric need not be drawn: two charts sorted by the same "
+                    "one share an order. A metric needs no groupby; with \"total\" a row_limit "
+                    "keeps the rows with the largest first metric, so for a top N by total "
+                    "write the total as a metric, e.g. \"SQL(SUM(a) + SUM(b)) AS Total\"",
+    )
+
+    TOTAL: ClassVar[str] = "total"
 
     @model_validator(mode="after")
     def _display(self) -> "BarChart":
         self._check_legend()
         self._check_y_axis()
         self._check_series_display((False, True))
+        self._check_sort_by()
         return self
+
+    def several_series(self) -> bool:
+        return bool(self.groupby) or len(self.metrics) > 1
+
+    def sort_metric(self) -> str | None:
+        """The metric sort_by ranks by, or None (unset, or "total")."""
+        return self.sort_by if self.sort_by not in (None, self.TOTAL) else None
+
+    def _check_sort_by(self) -> None:
+        if self.sort_by is None:
+            return
+        name = self.name
+        if self.category_sort:
+            raise ValueError(f"chart {name!r}: set category_sort or sort_by, not both "
+                             "(one orders the bars by label, the other by a measure)")
+        if self.contribution:
+            raise ValueError(f"chart {name!r}: sort_by ranks by values, and contribution plots "
+                             "shares (a sort metric would count in each bar's share)")
+        if self.sort_by == self.TOTAL:
+            if not self.several_series():
+                raise ValueError(f"chart {name!r}: sort_by \"total\" ranks several series by "
+                                 "their sum; one series already ranks by its metric")
+        elif self.groupby:
+            # sortOperator.ts skips a chart with a groupby (4.1.4 and 5.0.0 :46, 6.1.0 :45):
+            # the plugin then sorts the categories by name or by a sum, min, max or mean
+            # of the series (SortSeriesType), never by one metric.
+            raise ValueError(f"chart {name!r}: Superset ranks grouped bars by their series "
+                             f"only; use sort_by \"total\", or drop the groupby to rank by "
+                             f"{self.sort_by!r}")
 
 
 class PieChart(_Legend, _ChartBase, _ColorSchemeMixin):
@@ -2141,7 +2184,8 @@ class DashboardSpec(BaseModel):
 
 def chart_metrics(chart) -> list[str]:
     """Every metric string a chart names: its metric(s), a mixed chart's two
-    queries, an aggregate table's sort metric and the metric ranking a series limit."""
+    queries, an aggregate table's or a bar's sort metric and the metric ranking a
+    series limit."""
     out: list[str] = []
     if getattr(chart, "metric", None):
         out.append(chart.metric)
@@ -2153,6 +2197,8 @@ def chart_metrics(chart) -> list[str]:
         out += [s.series_limit_metric for s in (chart.a, chart.b) if s.series_limit_metric]
     if chart.type == "table" and chart.sort_by and not chart.columns:
         out.append(chart.sort_by)
+    if chart.type == "bar" and chart.sort_metric():
+        out.append(chart.sort_metric())
     return out
 
 

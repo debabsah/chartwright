@@ -30,7 +30,7 @@ into one. Everything below works from that one file.
     - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own.
     - Values written on bars and points, stacked series, 100% stacks, and the top N series of a breakdown.
     - Legends hidden, or placed at the bottom, left or right.
-    - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value.
+    - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value; stacked or grouped bars ranked by their total; or bars ranked by another metric, drawn or not, so two charts share one order.
     - A time range per chart, such as a "Last 30 days" KPI on a dashboard that shows all time.
     - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
