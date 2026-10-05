@@ -248,7 +248,7 @@ def check_spec(spec_json: str, profile: str, superset_version: str = "",
 @mcp.tool()
 @_typed_errors
 def build_dashboard(spec_json: str, profile: str, superset_version: str = "",
-                    design: str = "warn", as_of: str = "") -> str:
+                    design: str = "warn", as_of: str = "", save_queries: bool = False) -> str:
     """Compile the spec and apply it to the live Superset instance
     (resolve -> import -> linkage -> data smoke). Returns the full apply report
     including the dashboard URL. A field the instance's release can't take
@@ -258,7 +258,9 @@ def build_dashboard(spec_json: str, profile: str, superset_version: str = "",
     stop the build before anything is written; the per-machine design.yaml is set
     aside), off. Standard content the release can't take is held back and listed under
     held. as_of (YYYY-MM-DD) reads waiver expiry as of that day; an expired waiver warns
-    here, never blocks."""
+    here, never blocks. save_queries saves each chart's query as Superset's Save does,
+    after a successful build, so CSV and text reports on the charts work (needs the
+    chartwright[visual] extra); the result is under saved_queries."""
     bad = _bad_design(design)
     if bad:
         return bad
@@ -291,6 +293,10 @@ def build_dashboard(spec_json: str, profile: str, superset_version: str = "",
     if advice is not None:
         out["advice"] = advice
         out["warnings"] = out.get("warnings", []) + advice.get("warnings", [])
+    if save_queries and out.get("ok"):
+        from .cli import _save_queries
+
+        out["saved_queries"] = _save_queries(inst.spec, client, profile, 60.0)
     return json.dumps(out, indent=2)
 
 
