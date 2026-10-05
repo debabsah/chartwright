@@ -11,8 +11,9 @@ Each backup is saved at:
 ```
 
 - The timestamp is the local time of the apply, to the microsecond, such as `20261003T141502.123456.zip`, so the newest backup sorts last and no backup is ever overwritten.
+- Beside each ZIP, a `<timestamp>.json` record names the instance it came from (its address), the profile, the slug and the dashboard id. Keep the two together: `restore` reads the record to check the instance.
+- `apply` keeps the newest 50 backups of each dashboard per profile and deletes older ones, each ZIP with its record. Set `CHARTWRIGHT_BACKUP_KEEP` to keep more, or to 0 to keep them all.
 - Set `CHARTWRIGHT_BACKUP_DIR` to keep backups somewhere else; the `<profile>/<slug>/` folders are added under it.
-- The folders are named after the profile, not the instance: keep one profile name per instance, and take a backup from the folder of the profile you restore to.
 - The JSON report from `apply` gives the file's path in its `backup` field.
 - On macOS and Linux the default folder is readable only by you. If you set `CHARTWRIGHT_BACKUP_DIR`, protect that folder yourself: the ZIPs hold dashboard, chart and dataset definitions.
 
@@ -20,17 +21,17 @@ Each backup is saved at:
 
 ## 2. Know when apply restores it for you
 
-`apply` runs in steps: resolve, ownership, prepare, import, linkage, scope and smoke. When a step fails, `apply` exits 1 and its report's `stage` names the step. Whether the backup goes back on its own depends on the step:
+`apply` runs in steps: resolve, ownership, prepare, import, linkage, scope, owners and smoke. When a step fails, `apply` exits 1 and its report's `stage` names the step. Whether the backup goes back on its own depends on the step:
 
 | What fails | What's live afterwards |
 |---|---|
 | Superset refuses the import | The backup, restored automatically |
 | Anything fails while charts that left the spec are deleted, while datasets are read, or during the import, whether Superset rejects a request, the connection drops or Chartwright hits a bug | The backup, restored automatically |
 | Superset rejects an update to a chart that already existed, or the connection drops during it | The backup, restored automatically |
-| The linkage step finds charts missing from the dashboard, or charts the spec doesn't name | The new state; restore the backup by hand |
-| Filter scopes can't be set, or a chart's query fails in the smoke step | The new state; restore the backup by hand |
+| The linkage step finds charts missing from the dashboard, or can't take off a chart the spec doesn't name (one added in the UI) | The new state; restore the backup by hand |
+| Filter scopes or the spec's owners can't be set, or a chart's query fails in the smoke step | The new state; restore the backup by hand |
 
-An automatic restore is noted in the report's `warnings`. If the automatic restore fails too, the warning names the backup to pass to `chartwright restore`.
+An automatic restore is noted in the report's `warnings`; it also deletes any chart the failed apply had just created. If the automatic restore fails too, the warning names the backup to pass to `chartwright restore`.
 
 ## 3. Restore a backup by hand
 
@@ -41,11 +42,13 @@ chartwright restore ~/.config/chartwright/backups/prod/orders/20261003T141502.12
 
 `restore` does more than re-import the ZIP:
 
-- Before it signs in, it confirms the backup holds a dashboard Chartwright built, and refuses any other ZIP. It can't tell which instance a backup came from, so pass a backup from the folder named for the profile you restore to.
-- It imports the dashboard: its title, layout and filters as they were.
-- It writes each chart's settings back from the backup and points the chart at its backed-up dataset. Superset 6.1.0's importer leaves charts that already exist unchanged ([CONTRACTS.md](CONTRACTS.md), "When a bundle is imported"; [#34879](https://github.com/apache/superset/issues/34879), fixed after 6.1.0, not yet released), so a plain re-import brings back the dashboard but not its charts' settings.
+- It confirms the backup holds a dashboard Chartwright built, or is one of its own backups in that profile's backup folder (which covers a dashboard you adopted), and refuses any other ZIP.
+- It reads the record beside the ZIP and refuses a backup taken on another instance than the profile points at, naming both. Pass `--to-other-instance` to restore it there on purpose, for example onto a rebuilt instance at a new address. A backup with no record (from before 0.5.0) restores with a warning that the instance couldn't be checked.
+- It imports the dashboard: its title, layout and filters as they were, linked to exactly the backup's charts.
+- It writes each chart's settings and saved query back from the backup and points the chart at its backed-up dataset. Superset 6.1.0's importer leaves charts that already exist unchanged ([CONTRACTS.md](CONTRACTS.md), "When a bundle is imported"; [#34879](https://github.com/apache/superset/issues/34879), fixed after 6.1.0, not yet released), so a plain re-import brings back the dashboard but not its charts' settings.
+- It deletes the charts Chartwright created after the backup that end up on no dashboard, and names any other chart it took off.
 - It puts filters that apply to named charts back onto those charts.
-- It prints a JSON report listing the charts it restored, and exits 0 on success and 1 on failure.
+- It prints a JSON report listing the charts it restored, and exits 0 on success and 1 on failure, naming any chart whose settings it couldn't put back.
 
 The [fault-injection tests](VERIFICATION.md) alter charts' settings and filter scopes, restore the backup, then require `plan` against the old spec to come back clean.
 
@@ -79,13 +82,12 @@ Backups are taken only when `apply` runs, so no backup holds the state from befo
 
 ## Limits
 
-- Backups are never deleted; each apply adds one. Prune old ones yourself, for example: `find ~/.config/chartwright/backups -name '*.zip' -mtime +90 -delete`.
 - A backup covers one dashboard and its charts. To back up a whole instance, back up Superset's metadata database.
 - The first apply at a slug saves no backup, since there was nothing to save; to undo it, delete the dashboard and its charts in Superset.
-- `restore` doesn't delete charts that a later apply created; find any you don't want in Superset's chart list and delete them there.
+- `restore` deletes only the charts Chartwright created that it leaves on no dashboard. A chart made in Superset, or one that also sits on another dashboard, stays; the report names it, and you can delete it in Superset's chart list.
 - `restore` saves no backup of the state it replaces; to return to the spec's version, apply the spec.
 - A backup taken on Superset 6.1.0 doesn't import on 4.1.4 or 5.0.0 ([CONTRACTS.md](CONTRACTS.md)); after a downgrade, apply the spec instead.
-- A backup written on a CI runner disappears with the runner; upload it as an artifact, as the [deploy workflow](DEPLOY-FROM-GIT.md) does, and fetch it with `gh run download <run-id> -n backups-prod -D backups`.
+- A backup written on a CI runner disappears with the runner; upload it as an artifact with its record, as the [deploy workflow](DEPLOY-FROM-GIT.md) does, and fetch it with `gh run download <run-id> -n backups-prod -D backups`. For a dashboard you adopted, restore it with `CHARTWRIGHT_BACKUP_DIR=backups` set, so the downloaded ZIP counts as one of Chartwright's own backups.
 - The MCP server has no restore tool; run `chartwright restore` from the command line.
 
 ## Related

@@ -57,9 +57,10 @@ A spec carries the dashboard. The data it reads stays in Superset, so each insta
 
 | Moves with the spec | Must already exist on the target |
 |---|---|
-| Title, slug, layout, tabs and markdown text | The database connection, under the name the spec uses |
+| Title, slug, layout, tabs, header and footer rows, and markdown text | The database connection, under the name the spec uses |
 | Every chart and its settings | Each dataset, matched by connection name, table and, when the spec gives one, schema |
 | The filter bar with its defaults and chart scopes, the cross-filter setting, series colours | The columns and saved metrics the spec names |
+| Dashboard CSS, colour scheme, description, certification, draft status, refresh interval and tags | The owners the spec names, as accounts on the target, and the theme it names (Superset 6.0 and later) |
 
 Chartwright reads datasets and connections and never creates them. Create them in Superset, or with the tooling you already use for them, before you apply. When a spec leaves out `schema`, a table found in two schemas of the same connection is reported as ambiguous; add the schema to the spec.
 
@@ -76,7 +77,7 @@ chartwright plan  orders.json --profile prod
 - a missing saved metric comes with the metrics the dataset does have;
 - a missing column comes with up to three close matches, such as `region` for `Region`, and the dataset's columns.
 
-`plan` shows what an apply would change on that instance: `create` when the dashboard isn't there yet, `blocked` when the slug belongs to a dashboard Chartwright didn't build, and otherwise the charts and filters added, changed and removed, plus title, layout, cross-filter and series-colour changes, including edits someone made in the UI there. It exits 0 when there's nothing to change and 1 otherwise. For a dashboard that doesn't exist yet, `plan` skips the reference lookup, so run `check` first.
+`plan` shows what an apply would change on that instance: `create` when the dashboard isn't there yet, `blocked` when the slug belongs to a dashboard Chartwright didn't build or the spec names something the instance doesn't have or can't take, and otherwise the charts and filters added, changed and removed, plus title, layout, cross-filter, series-colour, CSS and dashboard-setting changes, including edits someone made in the UI there. It exits 0 when there's nothing to change and 1 otherwise. For a dashboard that doesn't exist yet, `plan` skips the reference lookup, so run `check` first.
 
 ## 4. When connection names differ between instances
 
@@ -101,29 +102,37 @@ The first apply on an instance creates the dashboard; each later apply of a spec
 
 | Stage | What happens |
 |---|---|
-| resolve | Each dataset, column and saved metric the spec names is looked up on this instance. If any are missing, all of them are listed and nothing is written |
-| ownership | The apply stops if the slug belongs to a dashboard Chartwright didn't build ("Pick a different slug") |
+| resolve | Each dataset, column and saved metric the spec names is looked up on this instance, with its owners and theme, and every field is checked against the instance's Superset release. If anything is missing or can't be taken, all of it is listed and nothing is written |
+| ownership | The apply stops if the slug belongs to a dashboard Chartwright didn't build or you didn't adopt |
 | prepare | If the dashboard exists, it's exported to a backup file first, including any edits made in the UI. Charts Chartwright built that have left the spec are deleted, even if someone also added them to another dashboard |
 | import | New charts are created. Charts Chartwright built before are updated in place and keep their ids |
-| linkage | The charts on the dashboard are compared with the spec, because Superset's import can report success with charts missing |
+| linkage | A chart the spec doesn't name, such as one added in the UI, is taken off the dashboard; then the charts on it are compared with the spec, because Superset's import can report success with charts missing |
 | scope | Filters limited to named charts are pointed at those charts' ids on this instance |
+| owners | The owners the spec names are set, when it names any |
 | smoke | Every chart's query runs. An error fails the apply; a chart that returns no rows is a warning naming it |
 
 - If anything fails during the prepare or import stage, including the in-place chart updates, the backup is restored automatically, whatever the error.
-- If linkage, scope or smoke fails, the new version stays live. Run `chartwright restore <backup.zip> --profile prod` to put the backup back, chart settings and filter scopes included.
-- Backups are saved at `~/.config/chartwright/backups/<profile>/<slug>/<timestamp>.zip`, or under the folder `CHARTWRIGHT_BACKUP_DIR` names.
+- If linkage, scope, owners or smoke fails, the new version stays live. Run `chartwright restore <backup.zip> --profile prod` to put the backup back, chart settings and filter scopes included.
+- Backups are saved at `~/.config/chartwright/backups/<profile>/<slug>/<timestamp>.zip`, or under the folder `CHARTWRIGHT_BACKUP_DIR` names, each with a record of its instance beside it; the newest 50 of each dashboard are kept ([HISTORY-AND-ROLLBACK.md](HISTORY-AND-ROLLBACK.md)).
 
-Ownership comes from the slug alone: the dashboard's uuid is derived from its slug, and each chart's from the slug and the chart's name. Two specs with the same slug manage the same dashboard, so give each team its own slug prefix.
+Ownership comes from the slug: the dashboard's uuid is derived from its slug, and each chart's from the slug and the chart's name, unless the spec adopted a dashboard (below). Two specs with the same slug manage the same dashboard, so give each team its own slug prefix.
 
-## Move a dashboard made in the UI
+## Take over a dashboard made in the UI
 
-1. Generate its spec on the instance where it lives: `chartwright decompile regional-sales --profile dev -o regional-sales.json` (the slug or numeric id). Read the `losses` list it prints.
-2. Change `dashboard.slug` in the spec, for example to `regional-sales-v2`. Applying at the original slug is refused, because Chartwright didn't build that dashboard. Use the new slug on every instance.
-3. Run `chartwright validate regional-sales.json`, then `check` against each target. If connection names differ, generate a copy per instance as in step 4.
-4. Apply it to each instance: `--profile dev`, then `staging`, then `prod`.
-5. On dev, compare the new dashboard with the original. Then point bookmarks, links and scheduled reports at the new one, and delete the original in Superset.
+Adopt it on the instance where it lives. The spec `adopt` writes names that dashboard and its charts by their own ids, so applying it updates the same dashboard: its address, id and chart ids stay, and links and embeds keep pointing at it.
 
-What `decompile` carries over, what it lists as lost, and the settings it drops without a note: [CLONE-A-DASHBOARD.md](CLONE-A-DASHBOARD.md#start-from-a-dashboard-you-already-have).
+1. Run `chartwright adopt regional-sales --profile dev -o regional-sales.json` (the slug or numeric id). It changes nothing in Superset. If the first apply would reset settings a spec can't hold, such as a forecast on a chart or per-chart cross-filter scopes, it lists each under `resets` and refuses; change any you need in Superset, then run it again with `--accept-reset`. It also refuses while some charts sit on other dashboards too, since applying changes them there as well; copy those charts in Superset first, or pass `--allow-shared`.
+2. Run `chartwright plan regional-sales.json --profile dev`. It names each chart whose stored settings the first apply rewrites, under `chart_option_changes`.
+3. Run `chartwright apply regional-sales.json --profile dev`. It backs the dashboard up first, as always.
+
+The adopted spec names dev's ids, so it applies only on dev. For the other instances, write a copy without the `dashboard.adopted` block and apply that copy there, as in step 5; each instance gets a dashboard of its own at the same slug:
+
+```bash
+jq 'del(.dashboard.adopted)' regional-sales.json > regional-sales.copy.json
+chartwright apply regional-sales.copy.json --profile staging
+```
+
+To build a separate copy beside the original instead, decompile it ([CLONE-A-DASHBOARD.md](CLONE-A-DASHBOARD.md#start-from-a-dashboard-you-already-have)), which also lists what `decompile` carries over and what it can't.
 
 ## Compared with re-importing ZIP exports
 
@@ -131,7 +140,7 @@ The first three Superset facts are cited to source in [CONTRACTS.md](CONTRACTS.m
 
 - **Chart changes arrive.** Up to Superset 6.1.0, re-importing a dashboard export updates the dashboard but leaves charts that already exist on the target unchanged ([#34879](https://github.com/apache/superset/issues/34879), fixed after 6.1.0 and not yet released). Chartwright updates the charts it built through Superset's chart API, so new settings land and chart ids stay the same.
 - **Missing charts are caught.** Superset 6.1.0 skips a chart whose dataset isn't in the bundle and still reports success. Chartwright adds the target's own dataset records to every import, then checks that every chart in the spec is on the dashboard.
-- **Older releases are reachable.** A Superset 6.1.0 export doesn't import into 4.1.4 or 5.0.0. Chartwright builds from the spec and the target's own dataset records, and CI applies the same specs to all three releases ([SUPERSET-VERSIONS.md](SUPERSET-VERSIONS.md)).
+- **Older releases are reachable.** A Superset 6.1.0 export doesn't import into 4.1.4 or 5.0.0. Chartwright builds from the spec and the target's own dataset records, and CI applies the same specs to all three releases; a field an older release can't take, such as tags or a theme before 6.0, is refused before anything is written ([SUPERSET-VERSIONS.md](SUPERSET-VERSIONS.md)).
 - **There's a copy to go back to.** Superset 6.1.0 has no version history for dashboards (it's on Superset's master branch, not yet released). Chartwright saves a backup before every apply.
 
 ## Limits
@@ -142,11 +151,11 @@ The first three Superset facts are cited to source in [CONTRACTS.md](CONTRACTS.m
 | CI's live runs sign in with a database login; LDAP and Preset sign-in aren't part of them | Run `chartwright check` against the instance first: it signs in and only reads |
 | Datasets and connections must already exist on the target | Create them in Superset, or with your existing tooling, before the first apply |
 | Connection and schema names are matched exactly, with no per-instance mapping | Generate a copy of the spec per instance, as in step 4 |
-| A dashboard Chartwright didn't build, whether made in the UI or imported from an export of one, can't be updated at its current slug | Decompile it and build it at a new slug, as above |
-| Every apply overwrites edits made in the UI on that instance, and resets dashboard CSS, colour scheme and refresh interval | Run `plan` first to see the edits, then copy the ones to keep into the spec; `chartwright absorb` copies chart heights set in the UI (heights only) |
-| A chart added in the UI to a dashboard Chartwright manages makes `apply` fail at linkage on 4.1.4 and 5.0.0; on 6.1.0 the chart is taken off the dashboard | Add new charts to the spec |
-| One dashboard per spec and per command | Loop over a folder of specs ([DEPLOY-FROM-GIT.md](DEPLOY-FROM-GIT.md)) |
-| Backups are kept per profile name, not per instance | Keep one profile name per instance, and restore with the profile that made the backup |
+| The first apply of an adopted dashboard resets what a spec can't hold | `chartwright adopt` lists every such reset first and refuses until you pass `--accept-reset`, as above |
+| Every apply overwrites edits made in the UI on that instance, dashboard CSS and settings included | Run `plan` first to see the edits, then copy the ones to keep into the spec; `chartwright absorb` copies chart heights set in the UI (heights only) |
+| A chart added in the UI to a dashboard Chartwright manages is taken off it by the next apply (the chart stays under Charts) | Add new charts to the spec |
+| One dashboard per spec, and one spec per command (the `standards` commands take a folder) | Loop over a folder of specs ([DEPLOY-FROM-GIT.md](DEPLOY-FROM-GIT.md)) |
+| A backup restores only onto the instance it came from | Pass `--to-other-instance` to `restore` to put it onto another one on purpose |
 
 ## Related
 

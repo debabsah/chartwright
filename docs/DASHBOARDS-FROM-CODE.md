@@ -13,16 +13,16 @@ chartwright schema > spec.schema.json
 The main fields:
 
 - `spec_version`: always `"1"`.
-- `dashboard`: `title` and `slug` (lowercase kebab-case). The slug is the dashboard's identity: building a spec with the same slug updates the same dashboard. Optional: `cross_filters`, `label_colors`.
+- `dashboard`: `title` and `slug` (lowercase kebab-case). The slug is the dashboard's identity: building a spec with the same slug updates the same dashboard. Optional settings include `cross_filters`, `label_colors`, `css`, `color_scheme`, `description`, `owners`, `tags` and `refresh_frequency` (`chartwright schema` lists them all).
 - `charts`: each chart has
   - `name`, unique in the dashboard and part of the chart's identity;
   - `type`, one of 15: `big_number_total`, `big_number_trend`, `timeseries_line`, `timeseries_bar`, `timeseries_area`, `timeseries_scatter`, `bar`, `pie`, `table`, `pivot_table`, `heatmap`, `histogram`, `funnel`, `treemap`, `mixed`;
   - `dataset`: the `database` connection name and `table`, plus `schema` where the table name alone is ambiguous;
-  - metrics written as an aggregate, `SUM`, `AVG`, `COUNT`, `COUNT_DISTINCT`, `MIN` or `MAX` of a column (`SUM(amount)`, optionally `SUM(amount) AS Revenue`), or the name of a saved metric;
-  - optional `filters` (WHERE conditions on that chart), `width` in twelfths of the page, and `height` in 40 px units.
-- `filters`: the dashboard's filter bar, with `select`, `time_range` and `range` filters.
-- `layout`: exactly one of `rows`, `tabs` or `sketch`, plus an optional `footer`. In `rows`, charts without a `width` share the row equally.
-- `design`: optional; the review's `audience` and the rule ids to `ignore`.
+  - metrics written as an aggregate, `SUM`, `AVG`, `COUNT`, `COUNT_DISTINCT`, `MIN` or `MAX` of a column (`SUM(amount)`, optionally `SUM(amount) AS Revenue`), a custom SQL expression (`SQL(amount * 1.1) AS Gross`), or the name of a saved metric;
+  - optional `filters` (WHERE conditions on that chart, or custom SQL), `width` in twelfths of the page, and `height` in 40 px units.
+- `filters`: the dashboard's filter bar, with `select`, `time_range`, `range`, `time_grain` and `time_column` filters.
+- `layout`: exactly one of `rows`, `tabs` or `sketch`, plus an optional `header` and `footer`. In `rows`, charts without a `width` share the row equally.
+- `design`: optional; the review's `audience`, the rule ids to `ignore`, and the `standard` the spec follows.
 
 A small spec, two numbers above a bar chart, with a region filter:
 
@@ -70,14 +70,14 @@ chartwright compile orders-by-region.json -o orders-by-region.zip
 
 ## Read the results
 
-Every command except `brief` prints JSON on stdout; `brief` prints the design brief as Markdown. A failed command names the `stage` where it stopped, and lists what it found. Exit codes:
+Every command prints JSON on stdout, except `brief`, which prints the design brief as Markdown, and `explain`, `standards show` and `standards apply`, which print text unless you pass `--json`. A failed command names the `stage` where it stopped, and lists what it found. Exit codes:
 
 | Command | Exit 0 | Exit 1 |
 |---|---|---|
 | `validate` | The spec is well formed | Unreadable file, or field and layout errors |
 | `compile` | ZIP written | Unreadable file, or field and layout errors |
-| `check` | Each dataset, column and metric was found | Missing references, all listed; or design findings with `--design strict` |
-| `plan` | No differences between spec and live dashboard | Any difference; no dashboard at the slug yet; missing references; or a dashboard Chartwright didn't build at the slug |
+| `check` | Each dataset, column and metric was found | Missing references, all listed; a field the instance's Superset release can't take; or design findings with `--design strict` |
+| `plan` | No differences between spec and live dashboard | Any difference; no dashboard at the slug yet; missing references; or a dashboard Chartwright didn't build at the slug (take it over with `chartwright adopt`) |
 | `apply` | Built, and every chart's query ran (charts returning no rows are named in `warnings`) | Stopped at the step named in `stage` |
 | `advise` | No error findings (with `--strict`, no warnings either) | Findings that block |
 
@@ -87,7 +87,7 @@ Every command except `brief` prints JSON on stdout; `brief` prints the design br
 
 ## Build many dashboards
 
-Each spec holds one dashboard, and each command takes one spec. Loop over a folder to build several:
+Each spec holds one dashboard, and each command except the `standards` ones takes one spec. Loop over a folder to build several:
 
 ```bash
 for spec in specs/*.json; do
@@ -113,11 +113,11 @@ result = json.loads(run.stdout)
 print(run.returncode, result.get("errors", "ok"))
 ```
 
-To drive it from an AI agent or another MCP client, use the server's 10 tools, which run the same code as the CLI commands and return JSON reports ([AI-AGENTS.md](AI-AGENTS.md)).
+To drive it from an AI agent or another MCP client, use the server's 15 tools, which run the same code as the CLI commands and return JSON reports ([AI-AGENTS.md](AI-AGENTS.md)).
 
 ## Limits
 
-- One dashboard per spec and per command; loop over a folder of specs, as above.
+- One dashboard per spec, and one spec per command (the `standards` commands take a folder); loop over a folder of specs, as above.
 - A spec names each dataset by its database connection name, table and schema exactly as they are on the instance; where names differ between instances, generate one copy of the spec per instance.
 - Datasets and database connections aren't created from the spec; create them in Superset first, and `check` confirms they're there.
 - `compile` output carries stand-in dataset ids; build with `apply`.

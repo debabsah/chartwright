@@ -6,14 +6,14 @@ Copy a spec, give the copy its own slug and point it at other datasets, and Char
 
 1. Copy the spec to a new file.
 2. Change `dashboard.slug`, and the title if you like.
-3. Change the `dataset` block on each chart, and on each value-picker or range filter. A dataset is named by its database connection, schema and table.
+3. Change the `dataset` block on each chart, and on each filter that has one (every type but time range). A dataset is named by its database connection, schema and table. If the spec has a `dashboard.adopted` block (written by `chartwright adopt`), delete it: it ties the spec to the original dashboard, and a new slug is refused while it's there.
 4. Run `chartwright check copy.json --profile prod`, then `chartwright apply copy.json --profile prod`.
 
 | Change in the copy | Effect |
 |---|---|
 | `dashboard.slug` | A separate dashboard. Chart ids come from the slug and the chart name, so the copy gets charts of its own and the original is left as it is |
 | `dashboard.title` | The name people see in Superset |
-| `database`, `schema` or `table` in a `dataset` block | That chart or filter reads the new dataset. `check` confirms the dataset has every column and saved metric the spec names |
+| `database`, `schema` or `table` in a `dataset` block | That chart or filter reads the new dataset. `check` confirms the dataset has every column and saved metric the spec names, and lists the columns inside custom SQL, which it can't check, under `unchecked_sql` |
 
 Two specs with the same slug manage the same dashboard, so give every copy a slug of its own, such as a team or tenant suffix.
 
@@ -55,30 +55,25 @@ A spec holds literal values only: every slug, title and dataset name is written 
 
 ## Start from a dashboard you already have
 
-Use this for any dashboard on your instance, including one built in the UI.
+Use this for any dashboard on your instance, including one built in the UI. To manage the original itself where it is, keeping its address and chart ids, use `chartwright adopt` instead ([MOVE-BETWEEN-INSTANCES.md](MOVE-BETWEEN-INSTANCES.md#take-over-a-dashboard-made-in-the-ui)); the steps below build a copy.
 
 1. Generate its spec: `chartwright decompile regional-sales --profile prod -o regional-sales.json`, using the slug or the numeric id. The spec goes to the file and the `losses` list to the terminal.
 2. Read `losses` (below), then check the settings it doesn't mention.
-3. Change `dashboard.slug`, for example to `regional-sales-v2`. Applying at the original slug is refused ("Pick a different slug"), because Chartwright didn't build that dashboard.
+3. Change `dashboard.slug`, for example to `regional-sales-v2`. Applying at the original slug is refused, because Chartwright didn't build that dashboard.
 4. To clone it onto other data at the same time, change the `dataset` blocks as above.
 5. Run `chartwright validate regional-sales.json`, then `check` and `apply` with your profile.
 6. Compare the new dashboard with the original. Then point bookmarks, embedded links and scheduled reports at the new one, and delete the original in Superset.
 
-For a dashboard Chartwright built, edit the spec it was built from. If that spec is lost, `decompile` works there too, and applying the result at the same slug updates the dashboard; read `losses` first, since charts stacked beside a tall one in a `sketch` come back as separate rows.
+For a dashboard Chartwright built, edit the spec it was built from. If that spec is lost, `decompile` works there too, and applying the result at the same slug updates the dashboard; read `losses` first.
 
 `losses` lists what the spec can't carry, one entry per item, naming the chart, filter or layout part:
 
 - charts of a type outside the 15 Chartwright builds, or whose dataset can't be found, which are skipped;
-- chart settings, filter defaults and filter chart scopes that weren't preserved, by name;
-- layout changes: columns flattened into rows, nested tabs flattened, sizes rounded.
+- chart settings, filter defaults and filter chart scopes that weren't preserved, by name, including any chart setting changed from Superset's default that the spec can't hold, such as a rolling average or a forecast;
+- filters scoped to some tabs, which the spec scopes to the whole dashboard;
+- layout changes: nested tabs flattened, sizes rounded, and charts stacked beside a taller one flattened into a row when that part of the layout also holds text, a header or a divider (otherwise they come back as a `sketch`).
 
-These settings are dropped without a note, so check them on the original before you retire it:
-
-- on the dashboard: CSS, colour scheme and refresh interval;
-- on charts: annotations, forecasts, y-axis bounds, a time range set on a chart with no time axis (a big number set to "Last 30 days" becomes all-time), rolling windows, time comparison, currency format, cache timeout, start-y-axis-at-zero, truncate metric, percentage calculation and colour scheme;
-- on filters: scoping to one tab (the filter then applies to the whole dashboard), exclude mode, dependent filters, pre-filters and descriptions.
-
-None of these is a spec field (the nearest is `y_axis_max` on line charts; `chartwright schema` lists every field). Where one matters, keep the original dashboard for it, or rework the chart with the fields the spec has. Once a spec manages the dashboard, make changes in the spec and apply them, since each apply overwrites edits made in the UI. To move the copy to other instances, see [MOVE-BETWEEN-INSTANCES.md](MOVE-BETWEEN-INSTANCES.md).
+A few settings are dropped without a note ([listed in LIMITS.md](LIMITS.md#settings-decompile-drops-without-a-note)), so check them on the original before you retire it. Where one matters, keep the original dashboard for it, or rework the chart with the fields the spec has (`chartwright schema` lists every field). Once a spec manages the dashboard, make changes in the spec and apply them, since each apply overwrites edits made in the UI. To move the copy to other instances, see [MOVE-BETWEEN-INSTANCES.md](MOVE-BETWEEN-INSTANCES.md).
 
 ## Embedding and row-level security
 
@@ -92,13 +87,13 @@ Both are untested with Chartwright, and neither is in the spec. Confirm them on 
 | What's true today | What to do instead |
 |---|---|
 | A spec has no template variables | Generate the copies from one template with a script, as in the loop above |
-| One dashboard per spec and per command | Loop over the copies, as above |
+| One dashboard per spec, and one spec per command (the `standards` commands take a folder) | Loop over the copies, as above |
 | Each copy's datasets must already exist on the instance | Register them in Superset first; `check` lists the missing ones |
-| A dashboard Chartwright didn't build can't be updated at its current slug | Decompile it and build the copy at a new slug |
+| A copy at a new slug gets new chart ids, so links to the original's charts don't follow it | To keep the original's address and ids, adopt it with `chartwright adopt` instead of copying it |
 | `decompile` reads a dashboard from a live instance, not from a ZIP export | Import the ZIP into your test instance and decompile it there |
-| Some settings are dropped by `decompile` without a note (listed above) | Check them on the original before you retire it, and keep the original where one matters |
+| A few settings are dropped by `decompile` without a note ([listed in LIMITS.md](LIMITS.md#settings-decompile-drops-without-a-note)) | Check them on the original before you retire it, and keep the original where one matters |
 | A chart Chartwright built that leaves the spec is deleted, even if someone also added it to another dashboard | To show a chart on two dashboards, put it in both specs; each builds a chart of its own |
-| A chart added in the UI to a copy makes `apply` fail at linkage on 4.1.4 and 5.0.0; on 6.1.0 the chart is taken off the dashboard | Add charts to the template and run the loop |
+| A chart added in the UI to a copy is taken off it by the next apply (the chart stays under Charts) | Add charts to the template and run the loop |
 | Embedding and row-level security are untested | Confirm them on your test instance, as above |
 
 ## Related

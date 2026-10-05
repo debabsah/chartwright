@@ -22,6 +22,8 @@ Each Superset dashboard is defined by a spec file listing its charts, filters, l
 ```bash
 pip install chartwright            # Python 3.11 or newer
 pip install "chartwright[mcp]"     # adds the MCP server for AI clients, chartwright-mcp
+pip install "chartwright[visual]"  # adds a headless browser for save-queries and verify-visible;
+                                   # then run: playwright install chromium
 ```
 
 ## Try it on your Superset
@@ -68,15 +70,15 @@ The `sketch` draws the layout: a run of the same letter is one chart, and its le
 
 - **Sign-in:** a Superset user with database or LDAP login, or Preset API tokens; Chartwright doesn't sign in through SSO or OAuth. On an instance that uses SSO, ask your admin for an account that has a Superset password. All testing uses the Admin role.
 - **Datasets:** datasets and database connections stay in Superset; create them on each instance first. A spec names each dataset by its database connection and table, so where connection names differ between instances, keep one copy of the spec per instance.
-- **Ownership:** Chartwright changes only dashboards at slugs it built, so give each team its own slug prefix. To bring a UI-made dashboard under Chartwright, generate its spec and build it at a new slug.
-- **Edits:** each `apply` writes the spec over the dashboard and undoes edits made in the UI; make lasting changes, and add new charts, in the spec, never the UI (on 4.1.4 and 5.0.0 a chart added in the UI makes `apply` fail). To keep chart heights you set by dragging in Superset, run `chartwright absorb` first; it copies them into the spec.
-- **Status:** version 0.2.0, beta. CI builds on real Superset 4.1.4, 5.0.0 and 6.1.0 on every pull request ([how it's tested](docs/VERIFICATION.md)).
+- **Ownership:** Chartwright changes only dashboards it built or that you adopted, so give each team its own slug prefix. To manage a UI-made dashboard without moving it, run `chartwright adopt`, which names every setting its first apply will reset before you commit to it.
+- **Edits:** each `apply` writes the spec over the dashboard and undoes edits made in the UI, and takes a chart added there off the dashboard (the chart itself stays under Charts); make lasting changes, and add new charts, in the spec. To keep chart heights you set by dragging in Superset, run `chartwright absorb` first; it copies them into the spec.
+- **Status:** version 0.5.0, beta. CI builds on real Superset 4.1.4, 5.0.0 and 6.1.0 on every pull request ([how it's tested](docs/VERIFICATION.md)).
 
 Every limit, with what to do instead: [Limits](docs/LIMITS.md).
 
 Every capability and command: [FEATURES.md](docs/FEATURES.md) · How it's tested: [VERIFICATION.md](docs/VERIFICATION.md) · Superset's behaviour, cited to source: [CONTRACTS.md](docs/CONTRACTS.md) · Compared with preset-cli, sup and Terraform: [COMPARISON.md](docs/COMPARISON.md) · Design rules: [DESIGN-BRAIN.md](docs/DESIGN-BRAIN.md)
 
-[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · Apache-2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE))
+[Changelog](CHANGELOG.md) · [Stability](docs/STABILITY.md) · [Contributing](CONTRIBUTING.md) · Apache-2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE))
 
 ---
 

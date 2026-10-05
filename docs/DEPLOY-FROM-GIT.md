@@ -7,7 +7,7 @@ Keep one spec file per dashboard in your repository and review each dashboard ch
 A spec diff is short enough to read in a pull request:
 
 - You write only what you chose: the charts, filters, layout and datasets. Chartwright fills in the rest of Superset's settings when it builds.
-- The file holds no ids. Chartwright derives the dashboard's id from its slug and each chart's id from the slug and the chart's name, so the same spec gets the same ids on every run and on every instance.
+- The file holds no ids. Chartwright derives the dashboard's id from its slug and each chart's id from the slug and the chart's name, so the same spec gets the same ids on every run and on every instance. The exception is a spec `chartwright adopt` wrote for a dashboard made in the UI: it names that dashboard and its charts by their own ids, in its `dashboard.adopted` block.
 - Compiling a spec gives a byte-identical result each time: `chartwright compile spec.json -o out.zip` writes the import ZIP offline, and the same spec always writes the same bytes ([tested](VERIFICATION.md)). Its dataset ids are placeholders, so you deploy with `apply`.
 
 Changing a number format, a filter default and adding a filter reads like this:
@@ -27,7 +27,7 @@ Changing a number format, a filter default and adding a filter reads like this:
    ],
 ```
 
-If prod matches the old spec, `chartwright plan` in the pull request reports Revenue under changed charts, Order date under changed filters and Region under added filters. Renaming a chart gives it a new id, so `plan` shows the old name removed and the new one added, and `apply` deletes the old chart.
+If prod matches the old spec, `chartwright plan` in the pull request reports Revenue under changed charts, Order date under changed filters and Region under added filters. Renaming a chart gives it a new id, so `plan` shows the old name removed and the new one added, and `apply` deletes the old chart. In an adopted spec, a renamed chart keeps its id and is renamed in Superset.
 
 ## 2. Add the workflow
 
@@ -54,10 +54,10 @@ Put the specs in `dashboards/` and add this workflow:
 name: dashboards
 on:
   pull_request:
-    paths: ["dashboards/**", "ci/profiles.toml"]
+    paths: ["dashboards/**", "standards/**", "ci/profiles.toml"]
   push:
     branches: [main]
-    paths: ["dashboards/**", "ci/profiles.toml"]
+    paths: ["dashboards/**", "standards/**", "ci/profiles.toml"]
   schedule:
     - cron: "0 5 * * *"        # nightly comparison with prod
   workflow_dispatch:
@@ -75,7 +75,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install "chartwright>=0.2"
+      - run: pip install "chartwright>=0.5"
       - name: Validate and review each spec (offline)
         run: |
           for spec in dashboards/*.json; do
@@ -106,7 +106,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install "chartwright>=0.2"
+      - run: pip install "chartwright>=0.5"
       - run: for spec in dashboards/*.json; do chartwright apply "$spec" --profile staging --design strict; done
       - uses: actions/upload-artifact@v4
         if: always()
@@ -124,7 +124,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install "chartwright>=0.2"
+      - run: pip install "chartwright>=0.5"
       - run: for spec in dashboards/*.json; do chartwright apply "$spec" --profile prod --design strict; done
       - uses: actions/upload-artifact@v4
         if: always()
@@ -139,7 +139,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install "chartwright>=0.2"
+      - run: pip install "chartwright>=0.5"
       - name: Compare prod with each spec
         run: |
           status=0
@@ -183,6 +183,7 @@ Because `plan` exits 1 both when the dashboard would change and when it couldn't
 - `chartwright advise --strict spec.json` runs the design review offline and exits 1 on any error or warning; without `--strict`, only errors fail it.
 - `chartwright apply --design strict` applies the same threshold and stops before it changes anything on the instance. `check --design strict` adds the gate to `check`.
 - To keep a finding you chose deliberately, add its rule id to the spec's `design.ignore` list. The rules are in [DESIGN-BRAIN.md](DESIGN-BRAIN.md).
+- Where your organisation keeps shared rules in a `standards/` folder, a rule a standard locks can't be ignored that way: record the exception in `standards/waivers.yaml`, with an owner, a reason and an expiry ([DESIGN-BRAIN.md](DESIGN-BRAIN.md), §18).
 
 ## 5. Catch edits made in the Superset UI
 
@@ -190,16 +191,17 @@ Run the drift job nightly. `plan` exits 1 when prod no longer matches a spec, so
 
 - charts and filters added, changed or removed in the UI;
 - title, layout, cross-filtering and series-colour changes;
+- dashboard CSS and the dashboard's settings: colour scheme, description, certification, draft status, refresh interval, filter bar, owners, tags and theme;
 - filters and filter scopes overwritten by a browser tab left open on an older copy of the dashboard ([tested on all three versions](VERIFICATION.md)).
 
 To undo those edits, re-run the deploy job or merge the next change: `apply` writes the spec back over them and keeps each chart's id. To keep an edit, copy it into the spec first; `chartwright absorb` does that for chart heights.
 
-Each apply to an existing dashboard backs it up first. On a CI runner that backup would vanish with the runner, so the deploy jobs set `CHARTWRIGHT_BACKUP_DIR` and upload it as an artifact. To restore one, see [HISTORY-AND-ROLLBACK.md](HISTORY-AND-ROLLBACK.md).
+Each apply to an existing dashboard backs it up first. On a CI runner that backup would vanish with the runner, so the deploy jobs set `CHARTWRIGHT_BACKUP_DIR` and upload it as an artifact, together with the record beside each ZIP that names its instance. To restore one, see [HISTORY-AND-ROLLBACK.md](HISTORY-AND-ROLLBACK.md).
 
 ## Limits
 
-- `plan` compares the settings a spec can hold. A UI edit to anything else, such as dashboard CSS or chart annotations, isn't reported and the next apply resets it, so make lasting changes in the spec.
-- A chart added to a managed dashboard in the UI shows in `plan` as removed. On Superset 4.1.4 and 5.0.0 the next apply then fails at its linkage step, and on 6.1.0 apply takes the chart off the dashboard: add charts in the spec, and remove UI-added ones from the dashboard in Superset.
+- `plan` compares the settings a spec can hold. A UI edit to anything else, such as a rolling average or a forecast added to a chart, isn't reported and the next apply resets it, so make lasting changes in the spec.
+- A chart added to a managed dashboard in the UI shows in `plan` as removed, and the next apply takes it off the dashboard, names it in a warning and leaves the chart itself under Charts: add charts in the spec.
 - A spec names each dataset by its database connection, schema and table, so staging must use prod's names for the same workflow to deploy to both. Where names differ, keep a copy of the specs per instance and point each deploy job at its own folder.
 - The backup artifacts hold dashboard, chart and dataset definitions, and anyone who can read the repository's workflow runs can download them; keep the repository private, or drop the upload steps and run deploys from a machine you control.
 - Chartwright signs in with a Superset account's own password (database or LDAP login) or with Preset API tokens, never through SSO or OAuth. On an instance where people sign in through SSO, ask your admin for a deploy account that has a Superset password.
