@@ -1256,7 +1256,8 @@ class MarkdownBlock(BaseModel):
     width: int | None = Field(default=None, ge=1, le=GRID_WIDTH)
     height: int | float | None = Field(
         default=None, ge=0.2, le=100,
-        description="Height units (1 = 40 px) in fifths: 0.2 = 8 px, one Superset grid row (1.6 = 64 px)")
+        description="Height units (1 = 40 px) in fifths: 0.2 = 8 px, one Superset grid row (1.6 = 64 px). "
+                    "Superset draws a block at least 1 unit tall")
 
     @field_validator("height")
     @classmethod

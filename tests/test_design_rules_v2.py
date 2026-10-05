@@ -2,6 +2,8 @@
 ranking sort, ordinal order, format consistency, color bands, and the
 markdown-height fix."""
 
+import pytest
+
 from chartwright.design import advise, advise_and_fix
 from chartwright.design.presets import Overlay
 from chartwright.spec import load_spec
@@ -181,13 +183,30 @@ def test_treemap_vs_bar():
 
 
 def test_markdown_height_fix():
+    # A level-2 heading takes 81.4 px on 4.1.4 and 5.0.0 (80 on 6.1.0): 2.2 units.
     data = mk([line("L")],
               layout={"rows": [[{"markdown": "## Section", "height": 6}], ["L"]]})
     fixed, rep = advise_and_fix(data, overlay=EMPTY)
     entry = next(e for e in rep.fixed if e["rule"] == "layout.markdown-height")
-    assert entry["set"] == {"height": 2} and entry["was"] == {"height": 6}
-    assert fixed["layout"]["rows"][0][0]["height"] == 2
+    assert entry["set"] == {"height": 2.2} and entry["was"] == {"height": 6}
+    assert fixed["layout"]["rows"][0][0]["height"] == 2.2
     load_spec(fixed)
+
+
+@pytest.mark.parametrize("markdown,fits", [
+    ("# Network performance", 2.4), ("## Section", 2.2), ("### Delay causes", 1.8),
+    ("Figures refresh nightly at 02:00 UTC.", 1.6),
+])
+def test_markdown_height_fits_the_line_it_holds(markdown, fits):
+    """The fix is the height the line takes on every release (tests/fixtures/markdown_fit),
+    and a block already that short, or shorter than 3 units, is left alone."""
+    for height, fired in ((6, True), (3, True), (fits, False), (2.8, False)):
+        data = mk([line("L")], layout={"rows": [[{"markdown": markdown, "height": height}], ["L"]]})
+        found = [f for f in run(data).findings if f.rule == "layout.markdown-height"]
+        assert bool(found) is fired, (markdown, height)
+        if fired:
+            assert found[0].fix["set"] == {"height": fits}
+            assert found[0].detail == f"one-line markdown block at {height} units; {fits:g} fits it"
 
 
 def test_markdown_height_fix_reaches_sub_tabs_and_footer():
@@ -200,8 +219,8 @@ def test_markdown_height_fix_reaches_sub_tabs_and_footer():
     where = sorted(e["md"][0] if e["md"][0] == "footer" else "sub" for e in rep.fixed
                    if e["rule"] == "layout.markdown-height")
     assert where == ["footer", "sub"]
-    assert fixed["layout"]["tabs"][0]["tabs"][0]["rows"][0][0]["height"] == 2
-    assert fixed["layout"]["footer"][0][0]["height"] == 2
+    assert fixed["layout"]["tabs"][0]["tabs"][0]["rows"][0][0]["height"] == 2.2
+    assert fixed["layout"]["footer"][0][0]["height"] == 2.2
     load_spec(fixed)
 
 
