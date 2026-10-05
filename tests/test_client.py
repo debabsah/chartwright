@@ -1,8 +1,12 @@
 """Client resilience: rate-limited requests back off and retry instead of
 dying (found by live CI: Superset 4.1.4 returned 429 under the adversary's
-burst of decompile lookups)."""
+burst of decompile lookups), and a repeatable request the server dropped
+unanswered is sent once more (found by live CI on 6.1.0)."""
 
-from chartwright.client import SupersetClient
+import pytest
+import requests
+
+from chartwright.client import SupersetAPIError, SupersetClient
 
 
 class _Resp:
@@ -41,3 +45,59 @@ def test_json_q_survives_fab_parse_qs_fallback():
     q = {"filters": [{"col": "slice_name", "opr": "eq", "value": "Sales & Marketing + 5% — x"}]}
     value = _json_q(q)
     assert json.loads(urllib.parse.parse_qs(f"q={value}")["q"][0]) == q
+
+
+# -- a connection the server dropped before answering --------------------------------------
+
+
+def _dropped(method: str) -> requests.exceptions.ConnectionError:
+    req = requests.Request(method, "http://superset.test/api/v1/x").prepare()
+    return requests.exceptions.ConnectionError(
+        "('Connection aborted.', RemoteDisconnected('Remote end closed connection without "
+        "response'))", request=req)
+
+
+class _Ok:
+    status_code = 200
+    headers: dict = {}
+
+
+@pytest.mark.parametrize("method", ["GET", "PUT"])
+def test_a_dropped_repeatable_request_is_sent_once_more(method):
+    """A pooled keep-alive connection the server had already closed fails a request
+    with no answer (seen on the 6.1.0 CI sandbox). Sending a GET or PUT again means the
+    same, so it is retried once."""
+    c = SupersetClient("http://superset.test", "u", "p")
+    calls = []
+
+    def fn():
+        calls.append(1)
+        if len(calls) == 1:
+            raise _dropped(method)
+        return _Ok()
+    assert c._send(fn).status_code == 200 and len(calls) == 2
+
+
+@pytest.mark.parametrize("method", ["POST", "DELETE"])
+def test_a_dropped_post_or_delete_is_never_repeated(method):
+    c = SupersetClient("http://superset.test", "u", "p")
+    calls = []
+
+    def fn():
+        calls.append(1)
+        raise _dropped(method)
+    with pytest.raises(SupersetAPIError, match="connection to http://superset.test failed"):
+        c._send(fn)
+    assert len(calls) == 1
+
+
+def test_a_request_dropped_twice_fails():
+    c = SupersetClient("http://superset.test", "u", "p")
+    calls = []
+
+    def fn():
+        calls.append(1)
+        raise _dropped("GET")
+    with pytest.raises(SupersetAPIError):
+        c._send(fn)
+    assert len(calls) == 2
