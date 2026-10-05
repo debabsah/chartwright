@@ -176,6 +176,10 @@ def _normalize(spec: DashboardSpec) -> dict:
             for key in ("metrics", "groupby"):
                 if chart.get(key) == []:
                     del chart[key]
+        if chart.get("hidden"):
+            # A set: each label's column_config says only whether it shows, so decompile
+            # reads them back in column_config's order, not the spec's.
+            chart["hidden"] = sorted(chart["hidden"])
         _canonical_metrics(chart)
         _canonical_colours(chart)
         _normalize_tags(chart)
