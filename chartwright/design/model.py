@@ -26,7 +26,10 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "7" = fills keep a null record when the author edits one (an edit later deleted stays
 # deleted), and default.stale-record: a fixable finding for a renamed or removed chart's
 # design.filled entry, which now validates. Both change what `--fix` writes.
-DESIGN_BRAIN_VERSION = "7"
+# "12" = default.heatmap-label-room, a fill (left_margin on every heatmap, which 6.1.0
+# otherwise draws with its longest y label cut off); it changes what `--fix` writes.
+# ("8" to "11" are other branches'.)
+DESIGN_BRAIN_VERSION = "12"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

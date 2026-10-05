@@ -112,7 +112,9 @@ GATED_FIELDS: tuple[GatedField, ...] = (
         "force_max_interval is a 6.1.0 control (controls.tsx:389, Timeseries and "
         "MixedTimeseries controlPanel.tsx); xAxisLabelInterval is at 6.0.0 controls.tsx:305; "
         "neither at 4.1.4 or 5.0.0",
-        _charts(lambda c: getattr(c, "x_label_every", False)),
+        # A heatmap's x_label_every is its own xscale_interval, which every release reads
+        # (Heatmap/controlPanel.tsx 4.1.4 :130, 5.0.0 :128, 6.1.0 :155).
+        _charts(lambda c: c.type != "heatmap" and getattr(c, "x_label_every", False)),
     ),
     GatedField(
         "subtitle", "6.0.0", "warn",

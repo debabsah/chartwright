@@ -179,7 +179,10 @@
       "number_format": ",.0f",
       "show_percentage": false,
       "normalize_across": "y",
-      "show_legend": false
+      "show_legend": false,
+      "x_label_every": 2,
+      "y_label_every": 1,
+      "left_margin": 16
     },
     {
       "name": "Price Spread",

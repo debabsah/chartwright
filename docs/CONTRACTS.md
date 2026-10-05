@@ -410,6 +410,24 @@ running the tool against real instances of all three releases.
   With `series_limit` the same control ranks the series, so the tool leaves
   it to the series limit; there a `row_limit` still keeps the largest values,
   and `advise` warns about it (`data.top-n-sort`).
+- **A heatmap's axes take the same three controls on every release.**
+  `xscale_interval` and `yscale_interval` (-1 for automatic, 1 to 50) and the
+  free-form `left_margin` (`Heatmap/controlPanel.tsx`, 4.1.4 `:130,148,166`,
+  5.0.0 `:128,146,164`, 6.1.0 `:155,173,191`). The plugin hands interval
+  N - 1 to the category axis, so N labels every Nth value from the first
+  (`Heatmap/transformProps.ts`, 4.1.4 `:231,238`, 5.0.0 `:234,241`, 6.1.0
+  `:436,445`); `x_label_every` and `y_label_every` write them, with no
+  release gate. The grid holds its labels (`containLabel`) and its left
+  edge is `left_margin`, `auto` being the card's edge (4.1.4 `:166-169`,
+  6.1.0 `:354-357`). On 6.1.0 the longest y label is drawn wider than that
+  room and loses its first letters at the edge; seen live, 8 px cleared a
+  95 px label and 16 px a 150 px one, while 4.1.4 and 5.0.0 drew them whole.
+  A theme can't reach it: 6.1.0's `Heatmap.tsx:25` renders `<Echart>`
+  without `vizType`, so `echartsOptionsOverridesByChartType` never applies
+  (`components/Echart.tsx:255-257`). `left_margin` is the spec's field for
+  it, and `advise --fix` fills 16 (`default.heatmap-label-room`).
+  `bottom_margin` is declared too but nothing was seen to need it, so the
+  spec leaves it to Superset, and `decompile` names a changed one.
 - **On 4.1.4, heatmap and histogram exist twice** (a legacy plugin and a
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named

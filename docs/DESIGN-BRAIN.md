@@ -327,6 +327,7 @@ fails when it drifts.
 | `default.cell-bars` | info | ✔ | - | 5 | a raw table with id, code, year or zip columns draws no cell bars (a bar behind an identifier reads as an amount) |
 | `default.compare-suffix` | info | ✔ | - | 5 | a trendline KPI's change says what it compares against ('vs previous month') |
 | `default.count-format` | info | ✔ | - | 5 | counts read as whole numbers with thousands separators (',.0f') |
+| `default.heatmap-label-room` | info | ✔ | - | 12 | a heatmap keeps 16 px left of its y labels, where Superset 6.1.0 cuts off the longest one's first letters |
 | `default.page-length` | info | ✔ | - | 5 | a table whose row_limit outgrows its panel pages by the rows that fit beside its page controls |
 | `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows gets a search box, when its rows still fit beside it (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
@@ -1077,6 +1078,7 @@ thresholds; those marked judgement are usability choices, not pixel facts.
 | `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, judgement), when the bar the box sits in hides no row: a paged table already draws it, and a table on one page must still fit every row beside it |
 | `default.single-series-legend` | `show_legend` | `false` | a timeseries chart or categorical bar with one metric, no groupby, no series limit, no goal lines and no legend placement written, whose shown title or `y_axis_title` contains the metric's label, and that label is at least 3 characters long. Never a heatmap, whose legend is the colour scale |
 | `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17) |
+| `default.heatmap-label-room` | `left_margin` | `16` | every heatmap (brain 12). With no margin, a heatmap's grid starts at the card's edge, and Superset 6.1.0 draws the longest y label wider than the room the grid gave it, cutting off its first letters: seen live on `Trucks and Buses` (95 px) and `Australian Gift Network, Co` (150 px). 8 px cleared the first and 16 px both; 4.1.4 and 5.0.0 drew them whole and only gain 16 px of space. A theme can't fix it, since 6.1.0 renders the heatmap without its chart type and no per-type override reaches it |
 
 `narrative.big-number-format` stands down where `default.count-format`
 offers the same remedy with a fix: one remedy, one finding.

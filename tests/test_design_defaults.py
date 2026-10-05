@@ -90,7 +90,7 @@ def test_every_fill_is_info_fixable_and_governs_a_fillable_field():
     for rid, fill in FILLS.items():
         r = RULES[rid]
         assert rid.startswith("default.") and r.severity == "info" and r.fixable
-        assert r.since == "5"
+        assert r.since == ("12" if rid == "default.heatmap-label-room" else "5")
 
 
 @pytest.mark.parametrize("path", FIXTURES, ids=lambda p: p.name)
@@ -412,6 +412,39 @@ def test_vertical_value_labels_stand_down_below_six_twelfths():
              "number_format": ",.0f", "width": 8}
     data = mk([bar(row_limit=12, width=4), other], layout={"rows": [["B", "K"]]})
     assert filled_value(data, "default.value-labels", "B") is None
+
+
+# -- default.heatmap-label-room ----------------------------------------------------------
+
+
+def heatmap(name="H", **kw):
+    return {"type": "heatmap", "name": name, "dataset": DS, "x_column": "hour",
+            "y_column": "zone", "metric": "SUM(x)", "number_format": ",.0f", **kw}
+
+
+def test_heatmap_label_room_fills_16_px_and_leaves_the_authors_value():
+    """Seen on 6.1.0: the longest y label lost its first letters at the card's edge with
+    no margin (a 95 px label at 8 px clear, a 150 px one at 16 px)."""
+    assert filled_value(mk([heatmap()]), "default.heatmap-label-room", "H") == 16
+    assert fills(mk([heatmap(left_margin=0)]), "default.heatmap-label-room") == {}
+    assert fills(mk([bar()]), "default.heatmap-label-room") == {}
+    fixed, rep = fix(mk([heatmap()]))
+    assert fixed["charts"][0]["left_margin"] == 16
+    assert fixed["design"] == {"filled": {"H": {"left_margin": 16}}}
+    params = next(p for p in _compiled_params(fixed).values())
+    assert params["left_margin"] == 16
+
+
+def _compiled_params(data) -> dict[str, dict]:
+    import io
+    import zipfile
+
+    import yaml
+
+    spec = load_spec(data)
+    zf = zipfile.ZipFile(io.BytesIO(compile_bundle(spec, stub_resolution(spec))))
+    return {cy["slice_name"]: cy["params"] for cy in
+            (yaml.safe_load(zf.read(n)) for n in zf.namelist() if "/charts/" in n)}
 
 
 # -- provenance: design.filled -------------------------------------------------------------
@@ -755,7 +788,7 @@ def test_explain_shows_every_governed_field_and_its_source(monkeypatch, tmp_path
     code, out = _cli(["explain", str(spec), "--json", "--chart", "A"], monkeypatch, tmp_path, capsys)
     assert code == 0 and json.loads(out)["charts"][0]["chart"] == "A"
     code, out = _cli(["explain", str(spec)], monkeypatch, tmp_path, capsys)
-    assert code == 0 and out.startswith("Design defaults (design brain 7")
+    assert code == 0 and out.startswith("Design defaults (design brain 12")
     code, out = _cli(["explain", str(spec), "--chart", "Z"], monkeypatch, tmp_path, capsys)
     assert code == 1 and "unknown_chart" in out
 

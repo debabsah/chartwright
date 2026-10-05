@@ -35,7 +35,7 @@ into one. Everything below works from that one file.
     - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
-    - Heatmap values and colour scheme; what pie, funnel and treemap labels show, and their number format.
+    - Heatmap values and colour scheme, a label on every Nth row or column (hours read 0, 6, 12, 18), and room left of the row labels, which Superset 6.1 otherwise cuts off; what pie, funnel and treemap labels show, and their number format.
 - **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend.
 - **Dashboard and Chart Settings**: Set the dashboard's own settings and each chart's in the spec, so a change made in the UI shows up in `plan`.
     - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).

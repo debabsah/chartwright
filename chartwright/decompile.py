@@ -832,6 +832,20 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             out["number_format"] = p["y_axis_format"]
         if p.get("show_legend") is False:
             out["show_legend"] = False
+        # Superset's own values (-1 = automatic spacing, 'auto' = no margin) map to nothing.
+        for key, spec_field in (("xscale_interval", "x_label_every"),
+                                ("yscale_interval", "y_label_every")):
+            every = _number(p.get(key))
+            if isinstance(every, int) and 1 <= every <= 50:
+                out[spec_field] = every
+            elif every not in (None, -1):
+                losses.append(Loss(name, f"heatmap {key} {p[key]!r} not preserved (automatic on re-apply)"))
+        margin = _number(p.get("left_margin"))
+        if isinstance(margin, int) and 0 <= margin <= 200:
+            out["left_margin"] = margin
+        elif p.get("left_margin") not in (None, "", "auto"):
+            losses.append(Loss(name, f"heatmap left_margin {p['left_margin']!r} not preserved "
+                                     "(none on re-apply)"))
         keep_row_limit()
     elif spec_type == "histogram":
         col = p.get("column")
@@ -958,6 +972,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         mapped_here = mapped_here | {"x_axis_title", "y_axis_title"}
     if spec_type == "pie":
         mapped_here = mapped_here | {"show_total"}
+    if spec_type == "heatmap":
+        mapped_here = mapped_here | {"xscale_interval", "yscale_interval", "left_margin"}
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
         mapped_here = mapped_here | _axis_to_spec(p, out, losses, name, spec_type)

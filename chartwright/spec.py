@@ -920,6 +920,30 @@ class HeatmapChart(_ChartBase):
                     "whole heatmap (default), its x value's column, or its y value's row",
     )
     show_legend: bool = Field(default=True, description="false hides the colour scale")
+    # Heatmap controlPanel.tsx xscale_interval / yscale_interval (-1 auto, 1-50) and
+    # left_margin ('auto' or px, free-form) at 4.1.4, 5.0.0 and 6.1.0.
+    x_label_every: int | None = Field(
+        default=None, ge=1, le=50,
+        description="A label every N x values, counted from the first: 6 on an hour axis "
+                    "reads 0, 6, 12, 18, and 1 (or true) labels every value. Omit for "
+                    "Superset's automatic spacing, which drops labels that would collide",
+    )
+    y_label_every: int | None = Field(
+        default=None, ge=1, le=50, description="As x_label_every, down the y axis")
+    left_margin: int | None = Field(
+        default=None, ge=0, le=200,
+        description="Room, in px, left of the y-axis labels. Superset 6.1.0 draws them wider "
+                    "than it measures them and cuts the longest label's first letters off "
+                    "at the card's edge; 16 clears them. Omit for none. Leave it unset unless "
+                    "asked: `advise --fix` fills it",
+    )
+
+    @field_validator("x_label_every", "y_label_every", mode="before")
+    @classmethod
+    def _label_every(cls, v):
+        # A bar's x_label_every is true or false; here true is 1 (every value) and
+        # false is Superset's automatic spacing, so both spellings read the same.
+        return None if v is False else v
 
 
 class HistogramChart(_ChartBase, _ColorSchemeMixin):
@@ -1638,8 +1662,9 @@ class DashboardMeta(BaseModel):
 
 # The chart fields the design brain may fill with a design default (`advise --fix`,
 # docs/DESIGN-BRAIN.md section 16). design.filled may list only these.
-BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "number_format", "page_length",
-                         "search_box", "show_legend", "show_value", "x_label_format")
+BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "left_margin", "number_format",
+                         "page_length", "search_box", "show_legend", "show_value",
+                         "x_label_format")
 
 
 # design.standard_written: one entry per item of spec content a standard wrote

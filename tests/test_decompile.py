@@ -263,7 +263,7 @@ def test_a_column_beside_markdown_stays_rows_and_says_so():
     ("pie", "outerRadius", 60), ("pie", "show_labels", False),
     ("funnel", "tooltip_label_type", 2), ("funnel", "show_labels", False),
     ("treemap_v2", "show_labels", False),
-    ("heatmap_v2", "legend_type", "piecewise"), ("heatmap_v2", "xscale_interval", 2),
+    ("heatmap_v2", "legend_type", "piecewise"), ("heatmap_v2", "bottom_margin", 50),
     ("histogram_v2", "normalize", True), ("big_number", "show_trend_line", False),
     ("echarts_timeseries_line", "seriesType", "smooth"),
     ("echarts_timeseries_line", "currency_format", {"symbol": "USD", "symbolPosition": "prefix"}),

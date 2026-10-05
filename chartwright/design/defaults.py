@@ -135,7 +135,7 @@ def _findings(ctx: RuleContext, fill: Fill):
 
 
 def _fill(rule_id: str, field: str, types, doc: str, *, superset, superset_text: str,
-          override: str):
+          override: str, since: str = "5"):
     def deco(decide):
         f = Fill(rule_id, field, frozenset(types), decide, superset, superset_text, override)
         FILLS[rule_id] = f
@@ -143,7 +143,7 @@ def _fill(rule_id: str, field: str, types, doc: str, *, superset, superset_text:
         def fn(ctx: RuleContext):
             yield from _findings(ctx, f)
 
-        rule(rule_id, "info", doc, fixable=True, since="5")(fn)
+        rule(rule_id, "info", doc, fixable=True, since=since)(fn)
         return decide
     return deco
 
@@ -394,3 +394,25 @@ def _value_labels(ctx: RuleContext, c):
     if w < min_w:
         return None, f"{w}/12 wide, narrower than {min_w}/12"
     return True, f"at most {n} bars at {w}/12 wide: each value reads without the axis"
+
+
+# -- heatmaps -----------------------------------------------------------------------
+
+# A heatmap's y labels sit inside its grid (containLabel), whose left edge is the card's
+# edge while left_margin is Superset's 'auto' (Heatmap/transformProps.ts 6.1.0 :354-357).
+# Seen on 6.1.0: the longest label is drawn wider than the room the grid gave it and
+# loses its first letters there ('rucks and Buses', a 95 px label; 'ustralian Gift
+# Network, Co', 150 px). 8 px cleared the first and 16 px both; 4.1.4 and 5.0.0 drew
+# them whole. Its own spec field is the only way: on 6.1.0 Heatmap.tsx:25 renders
+# <Echart> without vizType, so a theme's per-chart-type overrides never reach it.
+HEATMAP_LABEL_ROOM = 16
+
+
+@_fill("default.heatmap-label-room", "left_margin", {"heatmap"},
+       "a heatmap keeps 16 px left of its y labels, where Superset 6.1.0 cuts off the "
+       "longest one's first letters",
+       superset=None, superset_text="no margin (Superset's 'auto')",
+       override="write left_margin yourself (0 for none)", since="12")
+def _heatmap_label_room(ctx: RuleContext, c):
+    return HEATMAP_LABEL_ROOM, ("Superset 6.1.0 cuts the first letters off the longest y "
+                                "label at the card's edge; 16 px keeps labels up to ~300 px whole")

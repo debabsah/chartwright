@@ -2214,6 +2214,51 @@
           "description": "false hides the colour scale",
           "title": "Show Legend",
           "type": "boolean"
+        },
+        "x_label_every": {
+          "anyOf": [
+            {
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A label every N x values, counted from the first: 6 on an hour axis reads 0, 6, 12, 18, and 1 (or true) labels every value. Omit for Superset's automatic spacing, which drops labels that would collide",
+          "title": "X Label Every"
+        },
+        "y_label_every": {
+          "anyOf": [
+            {
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "As x_label_every, down the y axis",
+          "title": "Y Label Every"
+        },
+        "left_margin": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Room, in px, left of the y-axis labels. Superset 6.1.0 draws them wider than it measures them and cuts the longest label's first letters off at the card's edge; 16 clears them. Omit for none. Leave it unset unless asked: `advise --fix` fills it",
+          "title": "Left Margin"
         }
       },
       "required": [

@@ -5,6 +5,14 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ## Unreleased
 
+### Added
+
+- Heatmap axes: `x_label_every` and `y_label_every` label every Nth column or row, counted from the first, so an hour axis with `"x_label_every": 6` reads 0, 6, 12, 18 instead of Superset's uneven automatic spacing. `left_margin` leaves room, in px, left of the row labels. Every supported release takes all three; `decompile` reads them back and `plan` reports a change made in the UI.
+
+### Changed
+
+- Design brain 12: `advise --fix` fills `left_margin: 16` on every heatmap (`default.heatmap-label-room`). On Superset 6.1.0 a heatmap's longest row label lost its first letters at the card's edge, and a theme can't reach the heatmap there. Write `left_margin` yourself, or ignore the rule for a chart, to keep your own value.
+
 ### Fixed
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.

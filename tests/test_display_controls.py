@@ -42,6 +42,7 @@ NEW_KEYS = {
     "compare_lag", "compare_suffix", "subtitle", "color_picker", "page_length", "show_totals",
     "include_search", "rowSubTotals", "transposePivot", "show_values", "show_percentage",
     "number_format", "show_total", "labels_outside", "markerEnabled", "area",
+    "xscale_interval", "yscale_interval", "left_margin",
 }
 
 
@@ -121,7 +122,8 @@ def _display_params() -> dict[str, dict]:
                      "metricsLayout": "ROWS"}),
     ("Line by Deal Size", {"show_values": True, "linear_color_scheme": "schemeBlues",
                            "y_axis_format": ",.0f", "show_percentage": False,
-                           "normalize_across": "y", "show_legend": False}),
+                           "normalize_across": "y", "show_legend": False,
+                           "xscale_interval": 2, "yscale_interval": 1, "left_margin": 16}),
     ("Price Spread", {"x_axis_title": "Unit price", "y_axis_title": "Orders"}),
     ("Revenue KPI", {"compare_lag": 1, "compare_suffix": "vs last month",
                      "subtitle": "Booked revenue", "time_range": "Last year",
@@ -252,6 +254,56 @@ def test_heatmap_scheme_and_defaults_are_unchanged_when_omitted():
     p = _params(_spec(hm))["H"]
     assert p["linear_color_scheme"] == "superset_seq_1" and p["normalize_across"] == "heatmap"
     assert "show_percentage" not in p and "show_values" not in p
+    assert not {"xscale_interval", "yscale_interval", "left_margin"} & set(p)
+
+
+def test_heatmap_label_steps_and_left_margin():
+    """xscale_interval / yscale_interval N label every Nth category from the first
+    (transformProps hands ECharts interval N - 1); left_margin is the grid's left edge.
+    The same controls at 4.1.4, 5.0.0 and 6.1.0 (Heatmap/controlPanel.tsx)."""
+    hm = {"name": "H", "type": "heatmap", "dataset": DS, "x_column": "hour",
+          "y_column": "weekday", "metric": "COUNT(*)"}
+    p = _params(_spec({**hm, "x_label_every": 6, "y_label_every": 1, "left_margin": 16}))["H"]
+    assert (p["xscale_interval"], p["yscale_interval"], p["left_margin"]) == (6, 1, 16)
+    # true labels every value, as on a bar; false is Superset's automatic spacing
+    spec = _spec({**hm, "x_label_every": True, "y_label_every": False})
+    assert (spec.charts[0].x_label_every, spec.charts[0].y_label_every) == (1, None)
+    p = _params(spec)["H"]
+    assert p["xscale_interval"] == 1 and "yscale_interval" not in p
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"heatmap_v2": set(p)}) == [], version
+
+
+@pytest.mark.parametrize("field, value, needle", [
+    ("x_label_every", 0, "greater than or equal to 1"),
+    ("y_label_every", 51, "less than or equal to 50"),  # the control's range, 1-50
+    ("left_margin", -1, "greater than or equal to 0"),
+    ("left_margin", 201, "less than or equal to 200"),
+])
+def test_heatmap_label_fields_hold_to_the_controls_range(field, value, needle):
+    hm = {"name": "H", "type": "heatmap", "dataset": DS, "x_column": "a", "y_column": "b",
+          "metric": "COUNT(*)", field: value}
+    with pytest.raises(ValidationError, match=needle):
+        _spec(hm)
+
+
+def test_heatmap_label_fields_decompile_from_what_superset_stores():
+    """The UI stores the interval as a number and a typed margin as text ('30');
+    Superset's own -1 and 'auto' read as omitted, anything else is a named loss."""
+    hm = {"name": "H", "type": "heatmap", "dataset": DS, "x_column": "a", "y_column": "b",
+          "metric": "COUNT(*)"}
+    spec = _spec(hm)
+    out = _decompile(spec, _edit_params("H", xscale_interval=3, yscale_interval=-1,
+                                        left_margin="30"))
+    chart = out.spec["charts"][0]
+    assert (chart["x_label_every"], chart["left_margin"]) == (3, 30) and "y_label_every" not in chart
+    assert out.losses == []
+    out = _decompile(spec, _edit_params("H", xscale_interval=-1, left_margin="auto"))
+    assert not {"x_label_every", "left_margin"} & set(out.spec["charts"][0]) and out.losses == []
+    out = _decompile(spec, _edit_params("H", xscale_interval=80, left_margin="5%"))
+    text = " ".join(l.what for l in out.losses)
+    assert "xscale_interval 80" in text and "left_margin '5%'" in text
 
 
 # -- version gating ------------------------------------------------------------------
@@ -393,6 +445,8 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Top Customers", {"column_config": {}}),
     ("Sales Pivot", {"transposePivot": False}),
     ("Line by Deal Size", {"show_percentage": True}),
+    ("Line by Deal Size", {"xscale_interval": -1}),
+    ("Line by Deal Size", {"left_margin": "auto"}),
     ("Revenue KPI", {"compare_lag": 3}),
     ("Orders This Quarter", {"time_range": "Last month"}),
     ("Revenue and Orders", {"limit_b": 9}),

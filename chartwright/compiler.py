@@ -461,6 +461,18 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["show_percentage"] = False  # the control's default is true
         if chart.number_format:
             p["y_axis_format"] = chart.number_format  # the cell values' format
+        # xscale_interval / yscale_interval: transformProps hands interval N - 1 to the
+        # category axis, so N labels every Nth value from the first (Heatmap/transformProps.ts
+        # 4.1.4 :231,238, 5.0.0 :234,241, 6.1.0 :436,445). left_margin is the grid's left
+        # edge, labels inside it (containLabel, :166-169, :168-171, :354-357); 'auto' is 0.
+        # On 6.1.0 Heatmap.tsx:25 renders <Echart> without vizType, so a theme's per-type
+        # overrides never reach it and these are the only way to set the axes.
+        if chart.x_label_every is not None:
+            p["xscale_interval"] = chart.x_label_every
+        if chart.y_label_every is not None:
+            p["yscale_interval"] = chart.y_label_every
+        if chart.left_margin is not None:
+            p["left_margin"] = chart.left_margin
     elif t == "histogram":
         p["column"] = chart.column
         p["bins"] = chart.bins

@@ -27,6 +27,7 @@
   order-encoded label column (labels prefixed with a sort index: '1-Mon')
   if the dataset has one, and give a bar `category_sort: "asc"`. An ordered
   axis such as hours stays vertical: add `x_label_every` so every label shows.
+  A heatmap's `x_label_every`/`y_label_every` is a step: 6 on hours reads 0, 6, 12, 18.
 - A paged table (`page_length`) needs room for one page and its pager, not
   for every row; a timeseries with many groups keeps the top few with
   `series_limit`.
