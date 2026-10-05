@@ -22,7 +22,7 @@ The main fields:
   - optional `filters` (WHERE conditions on that chart, or custom SQL), `width` in twelfths of the page, and `height` in 40 px units.
 - `filters`: the dashboard's filter bar, with `select`, `time_range`, `range`, `time_grain` and `time_column` filters.
 - `layout`: exactly one of `rows`, `tabs` or `sketch`, plus an optional `header` and `footer`. In `rows`, charts without a `width` share the row equally.
-- `design`: optional; the review's `audience`, the rule ids to `ignore`, and the `standard` the spec follows.
+- `design`: optional; the review's `audience`, the rule ids to `ignore`, and the `standard` the spec follows ([standards](DESIGN-BRAIN.md)).
 
 A small spec, two numbers above a bar chart, with a region filter:
 

@@ -8,7 +8,10 @@ Superset's backend doesn't define the settings a chart can have. Each chart type
 
 - It writes the chart settings each release's plugins declare. The lists come from each plugin's source at 4.1.4, 5.0.0 and 6.1.0 (`tools/contracts/params-contract.json`). A setting only a newer release has is written only where an older release ignores it, and each such case is a named exception in the check below.
 - CI compiles four example specs, which between them use all 15 chart types and the display and dashboard settings, and fails if any setting they produce is missing from a release's list without a named exception (`tools/params_drift.py`).
-- `check`, `apply` and `plan` ask the instance for its release and refuse, before writing anything, a field it can't take: `tags` and `theme` before 6.0, `show_chart_timestamps` before 6.1. A field an older release ignores comes back as a warning: `x_label_every` before 6.1; a trendline's `subtitle`, a table's `column_headers` and `show_value` on a stacked mixed chart before 6.0. `--superset-version` states the release when the instance doesn't report it, and `chartwright compile --superset-version 5.0.0` runs the same check offline.
+- `check`, `apply` and `plan` ask the instance for its release, then:
+    - refuse, before writing anything, a field it can't take: `tags` and `theme` before 6.0, `show_chart_timestamps` before 6.1;
+    - warn about a field it ignores: `x_label_every` before 6.1; a trendline's `subtitle`, a table's `column_headers` and `show_value` on a stacked mixed chart before 6.0.
+- `--superset-version` states the release when the instance doesn't report it, and `chartwright compile --superset-version 5.0.0` runs the same check offline.
 - Each `apply` exports the dataset records from the instance it targets, so the bundle matches that instance.
 
 The Superset source behind each of these points is cited in [CONTRACTS.md](CONTRACTS.md) ("What chart options mean").
@@ -35,7 +38,7 @@ done
 | Step | What Chartwright checks or does |
 |---|---|
 | `plan` | Compares the live dashboard with the spec without changing anything. It names each changed chart, not the setting that changed, and it sees only settings a spec can express |
-| `check` | Confirms that every dataset, column and saved metric the spec names still exists on the upgraded instance, with its owners and theme, and that the release can take every field; lists every problem at once. Columns inside custom SQL, which it can't look up, are listed under `unchecked_sql` |
+| `check` | Confirms that every dataset, column and saved metric the spec names, and the owners and theme it names, still exist on the upgraded instance, and that the release can take every field; lists every problem at once. Columns inside custom SQL, which it can't look up, are listed under `unchecked_sql` |
 | `apply` | Saves a backup of the live dashboard. Updates each chart in place, so chart ids and links stay the same, writing every setting from the spec. Confirms every chart is linked to the dashboard, sets filter scopes, and queries every chart: a query error fails the run, and a chart with no rows is reported as a warning |
 
 When `apply` fails after the import and the chart updates, the new version stays live. The report gives the backup's path, and `chartwright restore <backup.zip> --profile prod` puts the backup back.
@@ -45,7 +48,7 @@ When `apply` fails after the import and the chart updates, the new version stays
 On every pull request and every push to main, CI starts a real container of each release (4.1.4, 5.0.0 and 6.1.0) and runs these against it (`.github/workflows/ci.yml`, [VERIFICATION.md](VERIFICATION.md)):
 
 - **Builds of three specs**: a 16-chart spec with all 15 chart types, two tabs, a text block, WHERE filters on charts, two value pickers and a time range; a spec that sets the charts' display options; and one that sets the dashboard's settings, a header and a footer. Each checks that every chart is linked and queries every chart, then applies the spec again to confirm chart ids don't change.
-- **Takeovers and restores**: a chart added in the UI taken off on the next apply, a dashboard adopted in place, standards content written and read back, and each chart's query saved for reports.
+- **Other live checks**: a chart added in the UI taken off on the next apply, with restores matching their backups; a dashboard adopted in place; standards content written and read back; and, when the browser for them installs, locked text checked on the rendered page and each chart's query saved for reports.
 - **25 cycles of random edits**: charts added, removed and renamed, filters added and removed, layouts switched between rows and tabs. After each cycle, `plan` must come back clean.
 - **Stale-tab overwrites and injected faults**: these use a numeric range filter scoped to named charts.
 
@@ -64,6 +67,7 @@ These spec fields have offline tests, but no live CI build uses them on any rele
 | `show_chart_timestamps` | Applied | Refused before anything is written |
 | `x_label_every` | A label at every step | No effect, with a warning; Superset spaces the labels itself |
 | A trendline's `subtitle`, a table's `column_headers` | Shown | No effect, with a warning |
+| `show_value` on a stacked query of a mixed chart | Labels each stack's total | Labels every segment, with a warning; set `only_total: false` for the same labels on every release |
 | `filter_bar_orientation: "horizontal"` | A filter bar across the top | Needs Superset's `HORIZONTAL_FILTER_BAR` feature flag |
 | `owners` given as usernames | Found by username | Found by username only with Superset's `FAB_ADD_SECURITY_API` setting on; emails work on every release |
 | Table `hidden` | The column is queried but not shown | The column is shown |

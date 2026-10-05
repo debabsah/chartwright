@@ -87,7 +87,7 @@ Backups are taken only when `apply` runs, so no backup holds the state from befo
 - `restore` deletes only the charts Chartwright created that it leaves on no dashboard. A chart made in Superset, or one that also sits on another dashboard, stays; the report names it, and you can delete it in Superset's chart list.
 - `restore` saves no backup of the state it replaces; to return to the spec's version, apply the spec.
 - A backup taken on Superset 6.1.0 doesn't import on 4.1.4 or 5.0.0 ([CONTRACTS.md](CONTRACTS.md)); after a downgrade, apply the spec instead.
-- A backup written on a CI runner disappears with the runner; upload it as an artifact with its record, as the [deploy workflow](DEPLOY-FROM-GIT.md) does, and fetch it with `gh run download <run-id> -n backups-prod -D backups`. For a dashboard you adopted, restore it with `CHARTWRIGHT_BACKUP_DIR=backups` set, so the downloaded ZIP counts as one of Chartwright's own backups.
+- A backup written on a CI runner disappears with the runner; upload it as an artifact with its record, as the [deploy workflow](DEPLOY-FROM-GIT.md) does, and fetch it with `gh run download <run-id> -n backups-prod -D backups`. The download keeps the `<profile>/<slug>/` folders, so with `CHARTWRIGHT_BACKUP_DIR=backups` set the ZIP sits in that profile's backup folder and `restore` accepts it, which a dashboard you adopted needs.
 - The MCP server has no restore tool; run `chartwright restore` from the command line.
 
 ## Related

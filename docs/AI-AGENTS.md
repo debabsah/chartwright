@@ -64,11 +64,11 @@ Each tool runs the same code as its CLI command and returns a JSON report.
 | `decompile_dashboard` | `chartwright decompile` | A spec of a live dashboard, with what it couldn't carry |
 | `adopt_dashboard` | `chartwright adopt` | A spec that takes over a dashboard made in the UI where it is, with what the first build resets |
 | `redesign_dashboard` | `chartwright redesign` | A decompiled spec with the safe fixes applied and the remaining findings |
-| `standards_check` | `chartwright standards check` | The spec reviewed under your organisation's standard, offline |
+| `standards_check` | `chartwright standards check` | The spec reviewed under your organisation's standard ([standards](DESIGN-BRAIN.md)), offline |
 | `standards_show` | `chartwright standards show` | A standard after its inheritance: each setting, where it was set and whether it is locked |
 | `standards_apply` | `chartwright standards apply` | The spec with its standard's header, footer, CSS and settings written in |
 
-The agent passes the spec as JSON text and a profile name. `fix_spec` and `redesign_dashboard` hand back a spec; the agent saves it and builds it.
+The agent passes the spec as JSON text and a profile name. `fix_spec`, `redesign_dashboard`, `adopt_dashboard` and `standards_apply` hand back a spec; the agent saves it and builds it. `build_dashboard` with `save_queries` needs the `chartwright[visual]` extra and `playwright install chromium` where the server runs.
 
 When something fails, a tool returns the same JSON error the CLI prints, so the agent can tell the kind of failure apart: `"stage": "profile"` for a missing profile or an unset password variable, code `api` for a failed sign-in or a Superset error, and code `unexpected` for anything else.
 
@@ -93,7 +93,7 @@ When the dashboard already exists, a backup is taken first. If anything fails be
 
 A dashboard's id comes from its `slug`, and each chart's from the slug plus the chart's name. Building the spec again, or retrying a failed build, reaches the same dashboard and the same charts, and charts keep their Superset ids, so links to them keep working.
 
-- Renaming a chart shows in `plan_dashboard` as one chart removed and one added; the build deletes the old chart and creates a new one. In a spec from `adopt_dashboard`, which names the dashboard and its charts by their own ids, a renamed chart keeps its id.
+- Renaming a chart shows in `plan_dashboard` as one chart removed and one added; the build deletes the old chart and creates a new one. In a spec from `adopt_dashboard`, which names the dashboard and its charts by their own ids, a chart renamed together with its key in `dashboard.adopted.charts` keeps its id.
 - Changing the slug builds a new dashboard and leaves the old one as it was; retire the old one in Superset.
 - Builds stop at a slug that holds a dashboard Chartwright didn't build. To manage that dashboard where it is, have the agent run `adopt_dashboard` and show you what it lists under `resets` before the first build; otherwise choose another slug.
 - Two specs with the same slug manage the same dashboard, so give the agent its own slug prefix.
@@ -106,7 +106,7 @@ Ask for the change in words, such as "show only the top 5 regions in Revenue by 
 2. `plan_dashboard` lists it under `charts_changed`. It also lists anything edited in the Superset UI since the last build, which the build would overwrite.
 3. `build_dashboard` updates the charts in place and keeps their ids.
 
-Every build rewrites the dashboard from the spec, so edits made in the UI are undone; owners, tags and a theme the spec leaves out stay as they are. Make lasting changes, and add charts, in the spec; a chart added to the dashboard in the UI is taken off it on the next build and stays under Charts.
+Every build rewrites the dashboard from the spec, so edits made in the UI are undone; tags and a theme the spec leaves out stay as they are, and so do owners, apart from the account that builds, which each build adds. Make lasting changes, and add charts, in the spec; a chart added to the dashboard in the UI is taken off it on the next build and stays in Superset's Charts list.
 
 ## What the agent sees
 

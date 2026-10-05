@@ -27,7 +27,7 @@ Changing a number format, a filter default and adding a filter reads like this:
    ],
 ```
 
-If prod matches the old spec, `chartwright plan` in the pull request reports Revenue under changed charts, Order date under changed filters and Region under added filters. Renaming a chart gives it a new id, so `plan` shows the old name removed and the new one added, and `apply` deletes the old chart. In an adopted spec, a renamed chart keeps its id and is renamed in Superset.
+If prod matches the old spec, `chartwright plan` in the pull request reports Revenue under changed charts, Order date under changed filters and Region under added filters. Renaming a chart gives it a new id, so `plan` shows the old name removed and the new one added, and `apply` deletes the old chart. In an adopted spec, a chart renamed together with its key in `dashboard.adopted.charts` keeps its id and is renamed in Superset.
 
 ## 2. Add the workflow
 
@@ -191,7 +191,7 @@ Run the drift job nightly. `plan` exits 1 when prod no longer matches a spec, so
 
 - charts and filters added, changed or removed in the UI;
 - title, layout, cross-filtering and series-colour changes;
-- dashboard CSS and the dashboard's settings: colour scheme, description, certification, draft status, refresh interval, filter bar, owners, tags and theme;
+- dashboard CSS and the dashboard's settings: colour scheme, description, certification, published or draft, refresh interval, filter bar and chart timestamps, and owners, tags and theme when the spec sets them;
 - filters and filter scopes overwritten by a browser tab left open on an older copy of the dashboard ([tested on all three versions](VERIFICATION.md)).
 
 To undo those edits, re-run the deploy job or merge the next change: `apply` writes the spec back over them and keeps each chart's id. To keep an edit, copy it into the spec first; `chartwright absorb` does that for chart heights.
@@ -201,7 +201,7 @@ Each apply to an existing dashboard backs it up first. On a CI runner that backu
 ## Limits
 
 - `plan` compares the settings a spec can hold. A UI edit to anything else, such as a rolling average or a forecast added to a chart, isn't reported and the next apply resets it, so make lasting changes in the spec.
-- A chart added to a managed dashboard in the UI shows in `plan` as removed, and the next apply takes it off the dashboard, names it in a warning and leaves the chart itself under Charts: add charts in the spec.
+- A chart added to a managed dashboard in the UI shows in `plan` as removed, and the next apply takes it off the dashboard, names it in a warning and leaves the chart itself in Superset's Charts list: add charts in the spec.
 - A spec names each dataset by its database connection, schema and table, so staging must use prod's names for the same workflow to deploy to both. Where names differ, keep a copy of the specs per instance and point each deploy job at its own folder.
 - The backup artifacts hold dashboard, chart and dataset definitions, and anyone who can read the repository's workflow runs can download them; keep the repository private, or drop the upload steps and run deploys from a machine you control.
 - Chartwright signs in with a Superset account's own password (database or LDAP login) or with Preset API tokens, never through SSO or OAuth. On an instance where people sign in through SSO, ask your admin for a deploy account that has a Superset password.
