@@ -160,7 +160,8 @@ def _brain_page(ctx: RuleContext, c) -> bool:
     return ctx.brain_owns(c, "page_length")
 
 
-@rule("size.table-window", "warn", "a table's height should show a meaningful share of its row_limit")
+@rule("size.table-window", "warn", "a table's height should show a meaningful share of its row_limit",
+      fixable=True)
 def table_window(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type != "table" or (c.row_limit is None and not c.page_length):
@@ -218,7 +219,8 @@ def hbar_window(ctx: RuleContext):
         )
 
 
-@rule("size.pivot-window", "warn", "a pivot's height should show a meaningful share of its row_limit", since="2")
+@rule("size.pivot-window", "warn", "a pivot's height should show a meaningful share of its row_limit",
+      fixable=True, since="2")
 def pivot_window(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type != "pivot_table" or c.row_limit is None:
