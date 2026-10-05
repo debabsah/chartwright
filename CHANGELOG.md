@@ -29,6 +29,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- A GET or PUT the server drops without answering (a pooled connection it had already closed, as a recycled gunicorn worker or an idle timeout does) is sent once more instead of failing the run. POSTs and DELETEs are never repeated.
 - A chart added to a chartwright dashboard in Superset no longer makes the next `apply` fail on Superset 4.1.4 and 5.0.0. `apply` takes it off the dashboard on every release, leaves the chart itself under Charts, and names it in a warning; on 6.1.0 the chart came off before too, but without a word. To keep such a chart on the dashboard, add it to the spec.
 - `restore` (and the automatic restore after a failed apply) now fails, naming the charts, when it can't put some charts' settings back; before, it reported success with the charts still on the newer settings.
 - `restore` now leaves the dashboard linked to exactly the backup's charts on 4.1.4 and 5.0.0. Before, a chart linked since the backup, such as one a failed apply had just added, stayed linked to the restored dashboard.

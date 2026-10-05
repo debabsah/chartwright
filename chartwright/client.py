@@ -44,6 +44,19 @@ class SupersetAPIError(RuntimeError):
         self.body = body
 
 
+_REPEATABLE = {"GET", "HEAD", "OPTIONS", "PUT"}
+
+
+def _dropped_unanswered(e: requests.exceptions.ConnectionError) -> bool:
+    """The server closed the connection before answering (RemoteDisconnected, a
+    reset), on a request that means the same sent twice."""
+    method = getattr(getattr(e, "request", None), "method", None)
+    text = str(e)
+    return (method in _REPEATABLE
+            and ("RemoteDisconnected" in text or "Connection aborted" in text
+                 or "Connection reset" in text))
+
+
 @dataclass
 class SupersetClient:
     base_url: str
@@ -79,10 +92,11 @@ class SupersetClient:
     # -- transport ------------------------------------------------------------
 
     def _send(self, fn: Callable[[], requests.Response], relogin_on_401: bool = True,
-              tries_429: int = 3) -> requests.Response:
-        """Run one request with typed network errors, a single 401 retry, and
-        polite 429 backoff (Superset ships a rate limiter; corporate gateways
-        add their own)."""
+              tries_429: int = 3, tries_dropped: int = 1) -> requests.Response:
+        """Run one request with typed network errors, a single 401 retry, polite
+        429 backoff (Superset ships a rate limiter; corporate gateways add their
+        own), and one retry of a request the server dropped unanswered, when
+        sending it twice means the same as once."""
         try:
             r = fn()
         except requests.exceptions.SSLError as e:
@@ -97,6 +111,14 @@ class SupersetClient:
             ) from e
         except requests.exceptions.Timeout as e:
             raise SupersetAPIError(f"request timed out against {self.base_url}: {str(e)[:200]}") from e
+        except requests.exceptions.ConnectionError as e:
+            if tries_dropped > 0 and _dropped_unanswered(e):
+                # A pooled keep-alive connection the server had already closed (a
+                # recycled gunicorn worker, an idle timeout): no answer came back.
+                # GET, HEAD, OPTIONS and PUT are safe to send again; a POST or DELETE
+                # (an import, a login, a chart query, a delete) never is.
+                return self._send(fn, relogin_on_401, tries_429, tries_dropped - 1)
+            raise SupersetAPIError(f"connection to {self.base_url} failed: {str(e)[:300]}") from e
         except requests.exceptions.RequestException as e:
             raise SupersetAPIError(f"connection to {self.base_url} failed: {str(e)[:300]}") from e
         if r.status_code == 401 and relogin_on_401 and self._logged_in:
