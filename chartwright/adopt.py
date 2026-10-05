@@ -35,7 +35,7 @@ import yaml
 from pydantic import ValidationError
 
 from .apply import charts_on_other_dashboards
-from .decompile import DecompileResult, decompile_bundle, live_dataset_lookup
+from .decompile import DecompileResult, _read_owners, decompile_bundle, live_dataset_lookup
 from .spec import SLUG_PATTERN, load_spec
 
 
@@ -76,9 +76,15 @@ def _export_parts(export: bytes) -> tuple[dict, list[dict]]:
     return dash, charts
 
 
-def first_apply_resets(result: DecompileResult, export: bytes) -> list[dict]:
+def first_apply_resets(result: DecompileResult, export: bytes,
+                       option_changes: dict[str, list[str]] | None = None) -> list[dict]:
     """What the first apply of the adopted spec resets, as {where, what}: every loss
-    decompile reported, plus what it reads past without one."""
+    decompile reported, plus what it reads past without one. `option_changes` (chart
+    -> option keys apply rewrites, from compiling the spec against the instance) names
+    each chart whose stored options change; without it, saved queries are listed for
+    every kept chart that has one."""
+    from .dashdiff import adopted_metadata_resets
+
     resets = [{"where": loss["where"], "what": loss["what"]} for loss in result.losses_json()]
     dash, charts = _export_parts(export)
     meta = dash.get("metadata") or {}
@@ -88,20 +94,29 @@ def first_apply_resets(result: DecompileResult, export: bytes) -> list[dict]:
             resets.append({"where": f"filter:{nf.get('name') or nf.get('id')}",
                            "what": "scoped to some tabs; the first apply scopes it to the whole "
                                    "dashboard (or the charts the spec names)"})
-    if meta.get("chart_configuration"):
-        resets.append({"where": "dashboard",
-                       "what": "per-chart cross-filter scopes are cleared; cross-filters, when on, "
-                               "reach every chart"})
-    if meta.get("timed_refresh_immune_slices"):
-        resets.append({"where": "dashboard",
-                       "what": "charts exempt from auto-refresh are refreshed with the rest"})
-    saved = sorted(c.get("slice_name") or "Unnamed" for c in charts if c.get("query_context"))
-    if saved:
-        resets.append({"where": "charts",
-                       "what": f"saved queries of {saved} are cleared for each chart whose options "
-                               f"the first apply changes (`plan` lists them under "
-                               f"chart_option_changes). CSV and text reports and the chart data API "
-                               f"read them; saving a chart in Explore rebuilds its saved query"})
+    resets += [{"where": "dashboard", "what": what} for _, what in adopted_metadata_resets(meta)]
+    kept = set(result.chart_uuids)
+    if option_changes is not None:
+        for name, keys in sorted(option_changes.items()):
+            resets.append({"where": name,
+                           "what": f"stored options the spec can't hold are rewritten: {keys}"})
+        saved = sorted(c.get("slice_name") for c in charts
+                       if c.get("query_context") and c.get("slice_name") in option_changes)
+        if saved:
+            resets.append({"where": "charts",
+                           "what": f"saved queries of {saved} are cleared, since their options "
+                                   f"change. CSV and text reports and the chart data API read "
+                                   f"them; saving a chart in Explore rebuilds its saved query"})
+    else:
+        saved = sorted(c.get("slice_name") for c in charts
+                       if c.get("query_context") and c.get("slice_name") in kept)
+        if saved:
+            resets.append({"where": "charts",
+                           "what": f"saved queries of {saved} are cleared for each chart whose "
+                                   f"options the first apply changes (`plan` lists them under "
+                                   f"chart_option_changes). CSV and text reports and the chart "
+                                   f"data API read them; saving a chart in Explore rebuilds its "
+                                   f"saved query"})
     position = dash.get("position") or {}
     if any(isinstance(v, dict) and v.get("type") == "TAB" for v in position.values()):
         resets.append({"where": "layout",
@@ -114,10 +129,30 @@ def first_apply_resets(result: DecompileResult, export: bytes) -> list[dict]:
     return resets
 
 
+def option_changes_for(spec_data: dict, resolution, export: bytes) -> dict[str, list[str]]:
+    """Chart name -> the stored option keys the first apply rewrites: the adopted spec
+    compiled against the instance, compared with each chart's stored params."""
+    from .compiler import compile_bundle
+    from .dashdiff import _bundle_charts, option_changes
+
+    spec = load_spec(spec_data)
+    compiled = _bundle_charts(compile_bundle(spec, resolution))
+    live = _bundle_charts(export)
+    out = {}
+    for chart in spec.charts:
+        u = str(spec.chart_uuid(chart.name))
+        if u in compiled and u in live:
+            keys = option_changes(compiled[u], live[u])
+            if keys:
+                out[chart.name] = keys
+    return out
+
+
 def adopted_spec(result: DecompileResult, export: bytes = b"", accept_reset: bool = False,
-                 shared_charts: list[str] | None = None, allow_shared: bool = False) -> AdoptResult:
+                 shared_charts: list[str] | None = None, allow_shared: bool = False,
+                 option_changes: dict[str, list[str]] | None = None) -> AdoptResult:
     """Pure core: a decompiled dashboard and its export -> an adopting spec (or a refusal)."""
-    resets = first_apply_resets(result, export) if export else \
+    resets = first_apply_resets(result, export, option_changes) if export else \
         [{"where": loss["where"], "what": loss["what"]} for loss in result.losses_json()]
     shared = sorted(shared_charts or [])
 
@@ -179,10 +214,28 @@ def adopt_live(slug_or_id: str, client, accept_reset: bool = False,
         raise ValueError(f"no dashboard with slug {slug_or_id!r}")
     export = client.export_dashboard(dashboard_id)
     result = decompile_bundle(export, live_dataset_lookup(client))
+    # The owners go into the spec too, so apply keeps them (the import alone would only
+    # add the account that applies; docs/CONTRACTS.md, "Dashboard owners").
+    _read_owners(result, client, dashboard_id)
     # Only charts the spec keeps: a skipped chart is taken off, never updated.
     kept = set(result.chart_uuids)
     on_board = [c for c in client.dashboard_charts(dashboard_id) if c["slice_name"] in kept]
     shared = charts_on_other_dashboards(client, dashboard_id, on_board)
+    # Compile the would-be spec against this instance to name every chart whose stored
+    # options the first apply rewrites: decompile reads past some options with no loss.
+    draft = adopted_spec(result, export, accept_reset=True, allow_shared=True)
+    changes = None
+    if draft.ok:
+        from .resolver import resolve
+
+        resolution = resolve(load_spec(draft.spec), client)
+        if not resolution.ok:
+            return AdoptResult(False, resets=draft.resets, skipped_charts=result.skipped_charts,
+                               shared_charts=shared,
+                               detail=f"the spec read from this dashboard names things this instance "
+                                      f"can't resolve, so it can't be applied: "
+                                      f"{[e.as_dict() for e in resolution.errors]}")
+        changes = option_changes_for(draft.spec, resolution, export)
     return adopted_spec(result, export, accept_reset=accept_reset, shared_charts=shared,
-                        allow_shared=allow_shared)
+                        allow_shared=allow_shared, option_changes=changes)
 

@@ -460,11 +460,14 @@ def test_adopted_uuids_are_normalised():
 
 
 def test_a_failed_chart_update_after_the_import_restores(live):
+    """The restore can't put chart params back either (the same PUTs are refused), so
+    the report must say the auto-restore failed, never that it succeeded."""
     fake, data = live()
     fake.refuse_chart_puts = True
     report = apply_mod.apply(load_spec(data), fake, "prod")
     assert not report.ok and "HTTP 403" in report.import_detail
-    assert any("restore" in w.lower() for w in report.warnings)
+    assert any("auto-restore also failed" in w for w in report.warnings)
+    assert not any("AUTO-RESTORED" in w for w in report.warnings)
 
 
 def test_a_tool_chart_used_elsewhere_is_taken_off_not_deleted(live):
@@ -572,3 +575,61 @@ def test_restore_accepts_only_the_tools_own_backup_of_that_dashboard(tmp_path, m
         cli.main(["restore", str(own / "20261002T120000.zip"), "--profile", "prod"])
     out = capsys.readouterr().out
     assert "Reached" in out and "not_owned" not in out
+
+
+# -- review fixes: a real UI export, metadata, partial restores ------------------------
+
+
+def test_a_real_ui_export_lists_the_options_decompile_reads_past():
+    """Decompile drops some options with no loss (rolling, forecasts, sorts...). The
+    first apply rewrites them, so adopt must list them; a chartwright-compiled
+    "hand-built" bundle can't show this, a genuine UI export does."""
+    from chartwright.adopt import option_changes_for
+    from chartwright.decompile import _IGNORABLE
+
+    def slugged(path, doc):
+        if "/dashboards/" in path:
+            doc["slug"] = "featured-charts"
+    blob = edit_bundle((FIXTURES / "featured_charts_export.zip").read_bytes(), slugged)
+    result = decompile_bundle(blob, lambda u: {"database": "examples", "schema": None, "table": "t"})
+    draft = adopted_spec(result, blob, accept_reset=True, allow_shared=True)
+    assert draft.ok, draft.detail
+    spec = load_spec(draft.spec)
+    changes = option_changes_for(draft.spec, stub_resolution(spec), blob)
+    silent = {k for keys in changes.values() for k in keys} & set(_IGNORABLE)
+    assert silent, changes
+    refused = adopted_spec(result, blob, option_changes=changes)
+    assert not refused.ok and "--accept-reset" in refused.detail
+    rewritten = {r["where"] for r in refused.resets if "rewritten" in r["what"]}
+    assert rewritten == set(changes)
+
+
+def test_plan_lists_dashboard_metadata_the_first_apply_replaces(live):
+    def ui_meta(path, doc):
+        if "/dashboards/" in path:
+            doc["metadata"].update(
+                expanded_slices={"1": True}, stagger_refresh=False,
+                global_chart_configuration={"scope": {"rootPath": ["ROOT_ID"], "excluded": [5]}},
+                chart_configuration={"1": {}}, timed_refresh_immune_slices=[1],
+                color_namespace="ns")
+    fake, data = live(edit=ui_meta)
+    p = dashdiff.plan(load_spec(data), fake)
+    assert not p.clean
+    assert {"expanded_slices", "stagger_refresh", "global_chart_configuration",
+            "chart_configuration", "timed_refresh_immune_slices",
+            "color_namespace"} <= set(p.dashboard_settings_changed)
+    hand, _, spec = _hand_built(edit=ui_meta)
+    whats = " ".join(r["what"] for r in first_apply_resets(
+        decompile_bundle(hand, _stub_lookup_for(spec)), hand))
+    for needle in ("expanded", "staggered", "dashboard-wide cross-filter", "colour namespace"):
+        assert needle in whats, needle
+
+
+def test_a_restore_that_cannot_put_chart_params_back_is_not_ok(live):
+    fake, data = live()
+    next(c for c in data["charts"] if c["name"] == "Total Sales")["metric"] = "MAX(sales)"
+    report = apply_mod.apply(load_spec(data), fake, "prod")
+    assert report.ok
+    fake.refuse_chart_puts = True
+    restored = apply_mod.restore_bundle(Path(report.backup).read_bytes(), SLUG, fake)
+    assert not restored.ok and "Total Sales" in restored.import_detail

@@ -13,9 +13,15 @@ while the major version is 0, minor bumps may include breaking changes and say s
 ### Added
 
 - `chartwright adopt <dashboard> --profile P -o spec.json` takes over a dashboard built in the UI where it is. The spec names that dashboard and its charts by their own ids (`dashboard.adopted`), so `apply` updates the same dashboard: same id, same address, same chart ids, so links and embeds keep pointing at it. Adopt changes nothing in Superset.
-  - It lists under `resets` what the first apply resets because a spec can't hold it: everything decompile can't carry, plus tab-scoped filters, per-chart cross-filter scopes, charts exempt from auto-refresh, saved chart queries, tab ids and native filter ids. It refuses while there are any, unless you pass `--accept-reset`.
+  - It lists under `resets` what the first apply resets because a spec can't hold it, and refuses while there are any, unless you pass `--accept-reset`:
+    - everything decompile can't carry;
+    - each chart whose stored options the first apply rewrites, with the option keys (adopt compiles the spec against the instance to find them);
+    - the saved queries of those charts;
+    - tab-scoped filters, tab ids and native filter ids;
+    - dashboard settings the spec can't express: per-chart and dashboard-wide cross-filter scopes, charts exempt from auto-refresh, expanded charts, staggered refresh and the colour namespace.
+  - The spec keeps the dashboard's owners, so the first apply doesn't leave only the account that applies.
   - It refuses a dashboard with no usable URL name, with two charts of one title, or with charts that also sit on other dashboards (unless `--allow-shared`), each time saying what to do instead.
-  - `plan` on an adopted spec compares what apply will write with what each chart stores, and lists the differing option keys under `chart_option_changes`.
+  - `plan` on an adopted spec compares what apply will write with what each chart stores, and lists the differing option keys under `chart_option_changes`; dashboard settings the first apply replaces are listed under `dashboard_settings_changed`.
   - Charts that leave an adopted spec come off that dashboard and are never deleted; charts the tool created after adoption are deleted as on any tool-built dashboard, unless another dashboard uses them.
   - `restore` also accepts the tool's own backups, which covers the first backup of an adopted dashboard, and finds charts renamed since the backup.
   - MCP: `adopt_dashboard` (fifteen tools).
@@ -24,6 +30,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
 ### Fixed
 
 - A chart added to a chartwright dashboard in Superset no longer makes the next `apply` fail on Superset 4.1.4 and 5.0.0. `apply` takes it off the dashboard on every release, leaves the chart itself under Charts, and names it in a warning; on 6.1.0 the chart came off before too, but without a word. To keep such a chart on the dashboard, add it to the spec.
+- `restore` (and the automatic restore after a failed apply) now fails, naming the charts, when it can't put some charts' settings back; before, it reported success with the charts still on the newer settings.
 - `restore` now leaves the dashboard linked to exactly the backup's charts on 4.1.4 and 5.0.0. Before, a chart linked since the backup, such as one a failed apply had just added, stayed linked to the restored dashboard.
 
 ## 0.4.0 (2026-10-04)

@@ -396,10 +396,11 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
             for u in payloads:
                 if u not in existing and u in by_uuid:
                     existing[u] = by_uuid[u]
-        restored = []
+        restored, not_restored = [], []
         for u, row in existing.items():
             rr = client.put_json(f"/api/v1/chart/{row['id']}", payloads[u])
             if rr.status_code != 200:
+                not_restored.append(payloads[u]["slice_name"])
                 report.warnings.append(
                     f"chart {payloads[u]['slice_name']!r}: params restore PUT HTTP {rr.status_code}")
             else:
@@ -441,6 +442,12 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
             scope_errors = _apply_filter_scopes(spec, client, report.dashboard_id)
             for e in scope_errors:
                 report.warnings.append(f"scope reapply: {e}")
+        if not_restored:
+            # The layout is back but these charts still hold the newer params: not a
+            # restore anyone should be told succeeded.
+            report.import_detail = (f"the dashboard was restored but charts {sorted(not_restored)} "
+                                    f"were not; run the restore again")
+            return report
     except SupersetAPIError as e:
         report.import_detail = f"{e} (status={e.status})"
         return report
@@ -649,9 +656,9 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
         unlinked = sorted({n for i, n in foreign_before.items() if i not in still})
         if unlinked:
             report.warnings.append(
-                f"took charts the spec doesn't have off the dashboard: {unlinked}. They were "
-                f"added in Superset and are not deleted: find them under Charts. To keep one "
-                f"on the dashboard, add it to the spec")
+                f"took charts the spec doesn't have off the dashboard: {unlinked}. They are "
+                f"not deleted: find them under Charts. To keep one on the dashboard, add it to "
+                f"the spec")
         linked = {c["slice_name"] for c in now}
         if linked != expected:
             report.import_detail = (

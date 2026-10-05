@@ -220,6 +220,33 @@ def option_changes(compiled: dict, live: dict) -> list[str]:
     return keys
 
 
+def adopted_metadata_resets(live_meta: dict) -> list[tuple[str, str]]:
+    """Dashboard json_metadata keys a dashboard built in the UI may set and the import
+    replaces with the compiled metadata, which the spec can't express: (key, what the
+    first apply does to it). The importer writes json_metadata whole (docs/CONTRACTS.md,
+    "How dashboard settings are stored")."""
+    out = []
+    if live_meta.get("chart_configuration"):
+        out.append(("chart_configuration",
+                    "per-chart cross-filter scopes are cleared; cross-filters, when on, reach "
+                    "every chart"))
+    gcc = live_meta.get("global_chart_configuration") or {}
+    scope = gcc.get("scope") or {}
+    if scope.get("excluded") or (scope.get("rootPath") or ["ROOT_ID"]) != ["ROOT_ID"]:
+        out.append(("global_chart_configuration",
+                    "the dashboard-wide cross-filter scope is cleared to every chart"))
+    if live_meta.get("timed_refresh_immune_slices"):
+        out.append(("timed_refresh_immune_slices",
+                    "charts exempt from auto-refresh are refreshed with the rest"))
+    if live_meta.get("expanded_slices"):
+        out.append(("expanded_slices", "charts shown expanded go back to their normal size"))
+    if live_meta.get("stagger_refresh") is False or live_meta.get("stagger_time") not in (None, 5000):
+        out.append(("stagger_refresh", "the staggered refresh setting goes back to Superset's default"))
+    if live_meta.get("color_namespace"):
+        out.append(("color_namespace", "the colour namespace is cleared"))
+    return out
+
+
 def _adopted_blocks(target: DashboardSpec, live: dict[str, dict]) -> str | None:
     """The cases apply refuses for an adopted spec, so plan can't promise otherwise."""
     titles = [cy.get("slice_name") for cy in live.values()]
@@ -414,6 +441,9 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
                                   and live_ids[f.name] != filter_id(target.dashboard.slug, f.name)]
         p.filters_changed = sorted(set(p.filters_changed))
         p.filters_removed = sorted(set(p.filters_removed))
+        live_meta = json.loads(client.get(f"/api/v1/dashboard/{existing['id']}")["result"]
+                               .get("json_metadata") or "{}")
+        p.dashboard_settings_changed += [k for k, _ in adopted_metadata_resets(live_meta)]
     if not p.clean:
         p.dashboard = "update"
     return p

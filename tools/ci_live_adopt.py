@@ -2,7 +2,7 @@
 
 Flow: import a dashboard that looks hand-built (random uuids), one chart with a saved
 query -> a plain spec at its slug is refused -> `adopt` refuses until its resets are
-accepted -> plan rewrites no chart's options (filters get the tool's ids) -> apply
+accepted, and lists no chart rewrite or cleared query that won't happen -> plan rewrites no chart's options (filters get the tool's ids) -> apply
 updates the SAME
 dashboard (same id, same chart ids) -> a chart dropped from the spec is taken off
 the dashboard but still exists -> a renamed chart keeps its id -> a chart shared
@@ -137,8 +137,11 @@ def main(argv: list[str] | None = None) -> int:
     if not adopted.ok:
         print(f"FAIL: adopt refused: {adopted.detail}")
         return 1
-    if not any(saved_name in r["what"] for r in adopted.resets):
-        print(f"FAIL: adopt did not list the saved query of {saved_name!r} among the resets")
+    # Its options don't change, so its saved query is kept: listing it as cleared would
+    # be wrong, and so would any chart whose options the first apply rewrites.
+    if any(saved_name in r["what"] for r in adopted.resets) or any(
+            "rewritten" in r["what"] for r in adopted.resets):
+        print(f"FAIL: adopt listed resets that won't happen: {adopted.resets}")
         return 1
     adopted_spec = load_spec(adopted.spec)
     p = plan(adopted_spec, client)
