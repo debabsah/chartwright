@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/chartwright)](https://pypi.org/project/chartwright/) [![Python](https://img.shields.io/pypi/pyversions/chartwright)](https://pypi.org/project/chartwright/) [![CI](https://github.com/debabsah/chartwright/actions/workflows/ci.yml/badge.svg)](https://github.com/debabsah/chartwright/actions/workflows/ci.yml) [![Superset](https://img.shields.io/badge/Superset-4.1.4%20%7C%205.0.0%20%7C%206.1.0-1f6fb2)](docs/VERIFICATION.md) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-Each Superset dashboard is defined by a spec file listing its charts, filters, layout and the datasets they read. Chartwright creates or updates the dashboard on your Superset instances from that file, reports where the live dashboard differs from it, and can generate a spec from a dashboard that already exists. Specs can be written by hand or by an AI agent, and both go through identical validation before anything changes in Superset.
+Chartwright manages Apache Superset dashboards as code: one JSON spec file per dashboard, covering its charts and how each is drawn, its filters, layout, text, colours and styling, and naming the datasets it reads. Chartwright creates or updates the dashboard on your Superset instances from the spec, reports where the live dashboard differs from it, and can generate a spec from a dashboard that already exists. Specs can be written by hand or by an AI agent, and both go through identical validation before anything changes in Superset.
 
 ![The Sundown dashboard's Overview in five palettes, then the dashboard scrolling through its Overview, Evening ramp, Storage and Supply tabs, then About](docs/images/sundown.webp)
 
