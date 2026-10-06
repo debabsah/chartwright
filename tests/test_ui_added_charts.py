@@ -143,8 +143,9 @@ def test_restore_matches_the_backups_chart_links(monkeypatch):
     monkeypatch.setattr(ap, "chart_payloads_from_bundle",
                         lambda data, ids, **k: {"u1": {"slice_name": "Orders", "params": "{}"}})
     import chartwright.decompile as dec
-    monkeypatch.setattr(dec, "decompile_bundle", lambda data, lookup: type("D", (), {"spec": SPEC})())
+    monkeypatch.setattr(dec, "decompile_bundle", lambda data, lookup: type("D", (), {"spec": SPEC, "chart_uuids": {}})())
     monkeypatch.setattr(dec, "live_dataset_lookup", lambda client: None)
+    monkeypatch.setattr(ap, "_restore_cross_filter_scopes", lambda data, client, did: [])
     rep = ap.restore_bundle(b"backup-zip", "ui-chart", c)
     assert rep.ok and c.linked == [OURS] and c.deleted == []
     assert any("backup doesn't have" in w and "'Added in UI'" in w for w in rep.warnings)

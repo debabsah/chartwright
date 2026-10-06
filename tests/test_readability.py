@@ -256,6 +256,14 @@ def test_a_subtitle_needs_5_units_and_a_comparison_6():
     assert kpi_fixes(mk([trend(height=4)])) == {"Revenue KPI": 5}   # 22 px value at 4
 
 
+def test_a_big_number_is_judged_at_its_own_text_sizes():
+    # The measured px scale with the chart's share of the card: 0.2 is half of 0.4.
+    assert kpi_fixes(mk([total(subtitle="booked", subtitle_font_size=0.2)])) == {}  # 15 px at 4
+    assert kpi_fixes(mk([total(header_font_size=0.2)])) == {"Orders KPI": 6}  # 22 px at 5
+    # a trendline's comparison keeps 0.15, whatever its number's size
+    assert kpi_fixes(mk([trend(compare_lag=1, header_font_size=0.6)])) == {"Revenue KPI": 6}
+
+
 def test_a_trend_subtitle_counts_only_where_it_shows():
     data = mk([trend(subtitle="Booked revenue", height=5)])
     assert kpi_fixes(data) == {"Revenue KPI": 6}             # 6.x draws it at 11 px

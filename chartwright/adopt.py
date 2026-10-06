@@ -11,9 +11,10 @@ The spec can't hold everything a dashboard built in the UI carries, so the first
 apply resets some of it to the spec's form. Adopt lists every such reset it can
 find (`resets`) and refuses while there are any, unless the caller accepts them
 (`accept_reset`): decompile's losses (settings and charts the spec can't hold,
-which the first apply drops or takes off the dashboard) plus what decompile reads
-past without a loss (per-chart cross-filter scopes, charts exempt from
-auto-refresh, saved chart queries, tab and filter ids).
+which the first apply drops or takes off the dashboard, a per-chart cross-filter
+scope the spec can't carry among them) plus what decompile reads past without a
+loss (the dashboard-wide cross-filter scope, charts exempt from auto-refresh, saved
+chart queries, tab and filter ids).
 
 Adopt also refuses, each time saying what to do instead, when the result could not
 be applied safely:

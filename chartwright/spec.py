@@ -365,6 +365,13 @@ class _ChartBase(BaseModel):
     cache_timeout: int | None = Field(
         default=None, ge=1, description="Seconds Superset caches this chart's query results; omit for the default")
     tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
+    cross_filter_scope: Literal["global", "tab", "none"] | list[str] | None = Field(
+        default=None,
+        description="Which charts a click on this chart cross-filters: global (every chart, "
+                    "Superset's default), tab (the charts in its own tab or sub-tab), none (no "
+                    "chart, e.g. a summary table), or a list of chart names. Needs "
+                    "dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls "
+                    "emit no cross-filters")
 
     @model_validator(mode="after")
     def _chart_metadata(self) -> "_ChartBase":
@@ -559,11 +566,24 @@ class BigNumberFormatRule(_ColourBand):
         return FORMAT_TEXT_HEX.get(self.color, self.color)
 
 
+# The big-number text sizes Superset's panel offers, as shares of the card's height
+# (BigNumber/sharedControls.ts FONT_SIZE_OPTIONS_LARGE / _SMALL, the same at 4.1.4,
+# 5.0.0 and 6.1.0). 0.4 and 0.15 are the panel's defaults (SUPERSET_DEFAULTS).
+HeaderFontSize = Literal[0.2, 0.3, 0.4, 0.5, 0.6]
+SubtitleFontSize = Literal[0.125, 0.15, 0.2, 0.3, 0.4]
+
+
 class BigNumberChart(_ChartBase):
     type: Literal["big_number_total"]
     metric: str
     subtitle: str | None = None
     number_format: str | None = Field(default=None, description="d3 format string, e.g. ',.0f'")
+    header_font_size: HeaderFontSize | None = Field(
+        default=None, description="The number's size, a share of the card's height: 0.2, 0.3, "
+                                  "0.4 (Superset's default), 0.5 or 0.6")
+    subtitle_font_size: SubtitleFontSize | None = Field(
+        default=None, description="The subtitle's size, a share of the card's height: 0.125, "
+                                  "0.15 (Superset's default), 0.2, 0.3 or 0.4")
     date_format: str | None = Field(
         default=None, min_length=1,
         description="Show the number as a date, in a d3 time format, e.g. \"%a %-d %b %Y\" "
@@ -608,6 +628,13 @@ class BigNumberTrendChart(_ChartBase):
     time_column: str
     time_grain: str | None = None
     number_format: str | None = None
+    header_font_size: HeaderFontSize | None = Field(
+        default=None, description="The number's size, a share of the card's height: 0.2, 0.3, "
+                                  "0.4 (Superset's default), 0.5 or 0.6")
+    trend_date_format: str | None = Field(
+        default=None, min_length=1,
+        description="d3 time format for the trendline's dates, in its tooltip (and its x axis "
+                    "on 6.1.0), e.g. \"%b %Y\"; the number itself stays a number")
     compare_lag: int | None = Field(
         default=None, ge=1,
         description="Compare the latest value with the one this many time-grain steps "
@@ -724,6 +751,18 @@ class _AxisChart(_ChartBase):
     x_axis_title: str | None = Field(default=None, description="Title under the x axis")
     y_axis_title: str | None = Field(
         default=None, description="Title above the value axis, e.g. its unit")
+    x_axis_title_margin: int | None = Field(
+        default=None, ge=0,
+        description="Pixels between the x axis and its title; omit for a gap that clears the "
+                    "labels (30, 50 under rotated labels, 64 on a horizontal bar)")
+    y_axis_title_margin: int | None = Field(
+        default=None, ge=0,
+        description="Pixels between the value axis and its title; omit for 15 (30 on a "
+                    "horizontal bar), e.g. 45 for a title along the axis that clears its labels")
+    y_axis_title_position: Literal["Left", "Top"] | None = Field(
+        default=None,
+        description="Top (above the axis, the default here) or Left (along it, turned on its side; "
+                    "the default on a horizontal bar)")
     y_axis_min: float | None = Field(
         default=None,
         description="Bottom of the value axis. Superset hands the bound to the chart as the "
@@ -771,6 +810,19 @@ class _AxisChart(_ChartBase):
         dupes = sorted({n for n in names if names.count(n) > 1})
         if dupes:
             raise ValueError(f"chart {self.name!r}: duplicate annotation names {dupes} (each is a series id)")
+        return self
+
+    @model_validator(mode="after")
+    def _title_spacing(self) -> "_AxisChart":
+        # Superset reads a title's margin and position only beside the title
+        # (Timeseries/transformProps.ts:737-740 at 6.1.0); a mixed chart's secondary
+        # title takes the same two.
+        if self.x_axis_title_margin is not None and not self.x_axis_title:
+            raise ValueError(f"chart {self.name!r}: x_axis_title_margin needs x_axis_title")
+        y_titled = self.y_axis_title or getattr(self, "y_axis_title_secondary", None)
+        for key in ("y_axis_title_margin", "y_axis_title_position"):
+            if getattr(self, key) is not None and not y_titled:
+                raise ValueError(f"chart {self.name!r}: {key} needs y_axis_title")
         return self
 
     def _check_y_axis(self) -> None:
@@ -1401,8 +1453,8 @@ class TreemapChart(_ChartBase, _ColorSchemeMixin):
 
 
 class MixedSeries(BaseModel):
-    """One of a mixed chart's two queries: its metrics, drawn as bars, a line or a
-    filled area, on the primary (left) or secondary (right) value axis. No release gives
+    """One of a mixed chart's two queries: its metrics, drawn as bars, a line, a
+    filled area or points, on the primary (left) or secondary (right) value axis. No release gives
     a query's line a width or dash of its own (docs/CONTRACTS.md). To draw a reference
     series lighter, such as last year under this year, put it in its own query and give
     it a pale colour with the dashboard's label_colors, or make it an area with a low
@@ -1411,11 +1463,11 @@ class MixedSeries(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     metrics: list[str] = Field(min_length=1)
-    kind: Literal["bar", "line", "area"] = Field(
+    kind: Literal["bar", "line", "area", "scatter"] = Field(
         default="bar",
-        description="bar, line, or area: a line with the space under it filled. A line "
-                    "draws over an area whichever query holds it, so an area under a line "
-                    "takes either order",
+        description="bar, line, area (a line with the space under it filled), or scatter "
+                    "(a point per value, no line). A line draws over an area whichever "
+                    "query holds it, so an area under a line takes either order",
     )
     opacity: float | None = Field(
         default=None, ge=0, le=1,
@@ -1781,6 +1833,11 @@ CHART_TYPES = (
     "heatmap", "histogram", "funnel", "treemap", "mixed", "waterfall", "box_plot",
 )
 
+# Charts whose plugin declares no Behavior.InteractiveChart, so a click on them filters
+# nothing: BigNumberTotal and BigNumberWithTrendline (DrillToDetail only), Heatmap,
+# Histogram and Waterfall (no behaviors) index.ts at 4.1.4, 5.0.0 and 6.1.0.
+NO_CROSS_FILTER_TYPES = ("big_number_total", "big_number_trend", "heatmap", "histogram", "waterfall")
+
 
 class _FilterBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -1970,12 +2027,22 @@ DEPENDENCY_PARENT_TYPES = ("select", "range", "time_range")
 DATASET_FILTER_TYPES = ("select", "range", "time_grain", "time_column")
 
 
+# A markdown block's name: its component (and DOM) id is MARKDOWN-<id>.
+MARKDOWN_ID_PATTERN = r"^[a-z][a-z0-9-]{0,47}$"
+
+
 class MarkdownBlock(BaseModel):
-    """A text block in the layout (headers, notes)."""
+    """A text block in the layout (headers, notes). ``id`` names it: the block's
+    component (and DOM) id becomes ``MARKDOWN-<id>``, so the dashboard's ``css`` can
+    style it as ``#MARKDOWN-<id>``."""
 
     model_config = ConfigDict(extra="forbid")
 
     markdown: str = Field(min_length=1)
+    id: str | None = Field(
+        default=None, pattern=MARKDOWN_ID_PATTERN,
+        description="A lowercase slug, unique in the layout, e.g. \"legend\": the block's id "
+                    "is then MARKDOWN-legend, a target for the dashboard's css")
     width: int | None = Field(default=None, ge=1, le=GRID_WIDTH)
     height: int | float | None = Field(
         default=None, ge=0.2, le=100,
@@ -1989,8 +2056,19 @@ class MarkdownBlock(BaseModel):
             raise ValueError(f"markdown height {h}: use fifths of a unit (0.2 = one 8 px grid row), e.g. 1.6")
         return h
 
+    @field_validator("id")
+    @classmethod
+    def _not_positional(cls, i: str | None) -> str | None:
+        if i is not None and i.startswith("sdc-"):
+            raise ValueError(f"markdown id {i!r}: the 'sdc-' prefix is reserved for unnamed blocks' ids")
+        return i
+
 
 RowItem = Union[str, MarkdownBlock]
+
+# A markdown link to a tab of the same dashboard: [words](tab:Title) or (tab:Parent/Child).
+# A title may hold balanced parentheses, as a markdown link target may: (tab:Sales (EU)).
+TAB_LINK_RE = re.compile(r"\]\(tab:((?:[^()]|\([^()]*\))+)\)")
 
 
 class HeaderBlock(BaseModel):
@@ -2567,6 +2645,16 @@ class Layout(_SketchHolder):
         """The tabs that hold content: each top tab, or its sub-tabs."""
         return [leaf for tab in (self.tabs or []) for leaf in (tab.tabs or [tab])]
 
+    def tabs_titled(self, target: str) -> list[tuple[int, ...]]:
+        """Positions of the tabs a link's target names: a top tab by its title (top
+        titles are unique) and a sub-tab by its 'Parent/Child' path, both when a top tab
+        is titled like a path; else a sub-tab by its own title."""
+        subs = [(k, j, f"{t.title}/{s.title}", s.title)
+                for k, t in enumerate(self.tabs or []) for j, s in enumerate(t.tabs or [])]
+        exact = ([(k,) for k, t in enumerate(self.tabs or []) if t.title == target]
+                 + [(k, j) for k, j, path, _ in subs if path == target])
+        return exact or [(k, j) for k, j, _, title in subs if title == target]
+
     def all_rows(self) -> list[list[RowItem]]:
         """Every row of charts and markdown (headers and dividers skipped)."""
         body = self.rows or [row for tab in self.leaf_tabs() for row in (tab.rows or [])]
@@ -2576,6 +2664,12 @@ class Layout(_SketchHolder):
         if self.sketch:
             return [self]
         return [t for t in self.leaf_tabs() if t.sketch]
+
+    def markdown_blocks(self) -> list[MarkdownBlock]:
+        """Every markdown block: in rows (header and footer included) and in sketch legends."""
+        in_rows = [item for row in self.all_rows() for item in row if isinstance(item, MarkdownBlock)]
+        return in_rows + [entry for holder in self.sketch_holders()
+                          for entry in (holder.legend or {}).values() if isinstance(entry, MarkdownBlock)]
 
 
 class DashboardSpec(BaseModel):
@@ -2813,6 +2907,57 @@ class DashboardSpec(BaseModel):
             raise ValueError(f"charts not placed in layout: {sorted(missing)}")
         return self
 
+    # The checks below assume a consistent layout, so they run after it (a chart missing
+    # from the layout is named as such, not as a scope or link error).
+    @model_validator(mode="after")
+    def _cross_filter_scopes(self) -> "DashboardSpec":
+        names = {c.name for c in self.charts}
+        in_tabs = {x for leaf in self.layout.leaf_tabs()
+                   for x in [*(i for row in item_rows(leaf.rows) for i in row),
+                             *(leaf.legend or {}).values()]
+                   if isinstance(x, str)}
+        for c in self.charts:
+            scope = c.cross_filter_scope
+            if scope in (None, "global"):
+                continue
+            where = f"chart {c.name!r}: cross_filter_scope"
+            if c.type in NO_CROSS_FILTER_TYPES:
+                raise ValueError(f"{where}: a {c.type} chart emits no cross-filters")
+            if not self.dashboard.cross_filters:
+                raise ValueError(f"{where} needs dashboard.cross_filters: true")
+            if scope == "tab" and c.name not in in_tabs:
+                raise ValueError(f"{where} 'tab' needs the chart placed in a tab")
+            if isinstance(scope, list):
+                bad = [n for n in scope if n not in names or n == c.name]
+                if not scope or bad or len(set(scope)) != len(scope):
+                    raise ValueError(f"{where} must list other spec charts, once each: {scope}")
+        return self
+
+    @model_validator(mode="after")
+    def _tab_links_resolve(self) -> "DashboardSpec":
+        valid = [t.title if s is None else f"{t.title}/{s.title}"
+                 for t in self.layout.tabs or [] for s in [None, *(t.tabs or [])]]
+        for block in self.layout.markdown_blocks():
+            for target in TAB_LINK_RE.findall(block.markdown):
+                found = self.layout.tabs_titled(target)
+                if not found:
+                    raise ValueError(f"markdown link 'tab:{target}': no such tab; link one of {valid}")
+                if len(found) > 1 and any(len(p) == 1 for p in found):
+                    raise ValueError(f"markdown link 'tab:{target}' is ambiguous: a top tab and a "
+                                     f"sub-tab both answer to it; rename one of them")
+                if len(found) > 1:
+                    raise ValueError(f"markdown link 'tab:{target}' is ambiguous: {len(found)} sub-tabs "
+                                     f"have that title; write tab:Parent/Child, one of {valid}")
+        return self
+
+    @model_validator(mode="after")
+    def _markdown_ids_unique(self) -> "DashboardSpec":
+        ids = [b.id for b in self.layout.markdown_blocks() if b.id is not None]
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        if dupes:
+            raise ValueError(f"duplicate markdown ids {dupes}: an id names one block in the layout")
+        return self
+
     # -- geometry -------------------------------------------------------------
 
     def _row_of(self, want) -> list[RowItem]:
@@ -2932,15 +3077,18 @@ SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
     # Treemap/types.ts:64 (:63 at 6.1.0)). x_label_format: x_axis_time_format's
     # DEFAULT_TIME_FORMAT, smart_date (sharedControls.tsx:320, :341 at 6.1.0;
     # D3Formatting.ts:67, :70 at 5.0.0, :78 at 6.1.0). x_label_rotation: xAxisLabelRotation
-    # 0 (plugin-chart-echarts src/defaults.ts:31).
+    # 0 (plugin-chart-echarts src/defaults.ts:31). cross_filter_scope: a chart with no
+    # chart_configuration entry follows the dashboard's scope (dashboard/types.ts:87-106).
     "chart": {"time_range": "No filter", "number_format": "SMART_NUMBER",
               "number_format_secondary": "SMART_NUMBER", "x_label_format": "smart_date",
-              "x_label_rotation": 0},
+              "x_label_rotation": 0, "cross_filter_scope": "global"},
     # table_timestamp_format: SMART_DATE_ID (plugin-chart-table controlPanel.tsx:394, :413
     # at 5.0.0, :488 at 6.1.0). color_pn defaults true, align_pn false (4.1.4 :523, :509;
     # 5.0.0 :572, :558; 6.1.0 :692, :678), filled in on a dashboard by applyDefaultFormData.
     "table": {"date_format": "smart_date", "color_by_sign": True, "absolute_bars": False},
-    "big_number_trend": {"trend_color": TREND_DEFAULT_HEX},
+    # header_font_size / subheader_font_size: BigNumber/sharedControls.ts, 4.1.4 to 6.1.0.
+    "big_number_total": {"header_font_size": 0.4, "subtitle_font_size": 0.15},
+    "big_number_trend": {"trend_color": TREND_DEFAULT_HEX, "header_font_size": 0.4},
     "timeseries_line": {"marker_size": 6, "opacity": 0.2},
     "timeseries_area": {"marker_size": 6, "opacity": 0.2},
     "timeseries_scatter": {"marker_size": 6},

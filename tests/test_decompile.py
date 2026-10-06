@@ -248,9 +248,9 @@ def test_a_column_beside_markdown_reads_back_as_a_sketch_with_the_block():
     def text_row(path, doc):
         if "/dashboards/" in path:
             pos = doc["position"]
-            pos["MARKDOWN-x"] = {"type": "MARKDOWN", "id": "MARKDOWN-x", "children": [],
+            pos["MARKDOWN-xQ7_b"] = {"type": "MARKDOWN", "id": "MARKDOWN-xQ7_b", "children": [],
                                  "meta": {"code": "Notes", "width": 12, "height": 8}}
-            pos["ROW-x"] = {"type": "ROW", "id": "ROW-x", "children": ["MARKDOWN-x"],
+            pos["ROW-x"] = {"type": "ROW", "id": "ROW-x", "children": ["MARKDOWN-xQ7_b"],
                             "meta": {"background": "BACKGROUND_TRANSPARENT"}}
             pos["HEADER-x"] = {"type": "HEADER", "id": "HEADER-x", "children": [],
                                "meta": {"text": "Detail", "headerSize": "MEDIUM_HEADER",

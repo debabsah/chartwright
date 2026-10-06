@@ -3,6 +3,33 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
+## Unreleased
+
+### Upgrading from 0.6
+
+- A spec that uses a field new here is refused by chartwright 0.6 (`extra_forbidden` or `literal_error`); upgrade CI before committing one. The new fields:
+  - a mixed chart's `kind: "scatter"`;
+  - a big number's `header_font_size` and `subtitle_font_size`, and a trendline's `header_font_size` and `trend_date_format`;
+  - an axis chart's `x_axis_title_margin`, `y_axis_title_margin` and `y_axis_title_position`;
+  - a markdown block's `id`;
+  - a chart's `cross_filter_scope`.
+- A markdown link written `[words](tab:Title)` is a plain, dead link when chartwright 0.6 builds the spec: it doesn't know the form.
+- `decompile` now reads a titled chart's stored title spacing back when it differs from the tool's own (`y_axis_title_position: "Left"`, Superset's default, for one), so `adopt` and `plan` keep it instead of resetting it to "Top".
+
+### Added
+
+- A mixed chart's query can draw points: `kind: "scatter"` writes Superset's `scatter` series type, a point per value and no line. Decompile reads a chart saved with it in Superset back as points instead of naming a loss.
+
+- A big number sets its text sizes: `header_font_size` (0.2, 0.3, 0.4, 0.5 or 0.6 of the card's height) and, on a plain big number, `subtitle_font_size` (0.125 to 0.4), the options Superset's panel offers. Unset, they stay at 0.4 and 0.15 as before. A trendline formats its dates with `trend_date_format`, e.g. `"%b %Y"`; its number stays a number. Decompile reads all three back instead of naming them, and `readability.kpi-text` judges a big number at its own sizes.
+
+- An axis chart sets its titles' spacing: `x_axis_title_margin`, `y_axis_title_margin` (pixels) and `y_axis_title_position` (`"Left"`, along the axis, or `"Top"`). Unset, the spacing chartwright writes stays as it was (30 px under the axis, 15 px above it). Each needs its title; a mixed chart's secondary title shares the y pair.
+
+- A markdown block takes an `id`, a lowercase slug unique in the layout: the block's component id becomes `MARKDOWN-<id>`, which Superset renders as its DOM id, so the dashboard's `css` can style that one block (`#MARKDOWN-legend`). In rows, header and footer rows, and sketch legends; decompile reads it back.
+
+- A markdown link can open a tab of the same dashboard: `[definitions](tab:Definitions)`, or `tab:Sales/Trend` for a sub-tab, compiles to the dashboard's URL with the tab in its hash, which Superset opens on load. An unknown or ambiguous title fails validation and lists the tabs a link can name. Decompile turns such links back into `tab:` form, and `plan` compares two links by the tab they open. For a viewer signed in to Superset, the link loads the dashboard again on that tab, so filter selections not saved in the URL reset; a viewer Superset can't save filter state for stays on the current tab ([Limits](docs/LIMITS.md)).
+
+- A chart sets which charts its clicks cross-filter: `cross_filter_scope` is `"global"` (Superset's default), `"tab"` (the charts in its own tab or sub-tab), `"none"` (no chart, such as a summary table) or a list of chart names. It needs `dashboard.cross_filters`; big numbers, heatmaps, histograms and waterfalls emit no cross-filters and refuse it. `apply` and `restore` key the scopes to the live chart ids after the import. Decompile reads them back, so `plan` reports a scope changed in the UI, and `adopt` keeps a UI dashboard's per-chart scopes instead of listing them as a reset; a scope it can't carry is named as a loss.
+
 ## 0.6.0 (2026-10-05)
 
 Bridge two totals with a waterfall and show a spread with a box plot, colour a KPI by its value, put cell bars on chosen table columns, and head the sections of a sketch. `advise` now checks axis titles, readable type, markdown that fits its block and sub-tabs too thin to earn a click, and `plan` is clean straight after `apply`.

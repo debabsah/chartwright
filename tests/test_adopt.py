@@ -181,7 +181,9 @@ def test_resets_list_what_the_first_apply_resets_without_a_loss():
     """Decompile reads past these without a loss, so adopt checks the export itself."""
     def ui_state(path, doc):
         if "/dashboards/" in path:
-            doc["metadata"]["chart_configuration"] = {"1": {"crossFilters": {"scope": "global"}}}
+            # a per-chart scope on a dashboard with cross-filtering off: decompile names it
+            doc["metadata"]["chart_configuration"] = {"1": {"crossFilters": {
+                "scope": {"rootPath": ["ROOT_ID"], "excluded": [2]}}}}
             doc["metadata"]["timed_refresh_immune_slices"] = [1]
             doc["metadata"]["native_filter_configuration"] = [
                 {"id": "NATIVE_FILTER-ui", "name": "Region", "filterType": "filter_select",
@@ -436,6 +438,21 @@ def test_plan_reads_a_renamed_adopted_chart_as_a_change(live):
     assert p.charts_changed == ["Orders (all time)"] and not p.charts_added and not p.charts_removed
 
 
+def test_plan_reads_a_scope_naming_a_renamed_chart_as_unchanged(live):
+    """A cross-filter scope names its charts; after a rename in the adopted spec, the live
+    scope names the same chart under its old title, and the scope itself hasn't changed."""
+    data = _fixture()
+    data["dashboard"]["cross_filters"] = True
+    data["charts"][3]["cross_filter_scope"] = ["Sales by Deal Size"]  # Sales Over Time
+    fake, adopted = live(data=data)
+    # the scope under the live chart ids, as apply writes it (the fake imports ids as 4.1.4 does)
+    assert apply_mod._apply_cross_filter_scopes(load_spec(adopted), fake, _dash_id(fake)) == []
+    assert dashdiff.plan(load_spec(adopted), fake).clean
+    renamed = json.loads(json.dumps(adopted).replace('"Sales by Deal Size"', '"Deal size mix"'))
+    p = dashdiff.plan(load_spec(renamed), fake)
+    assert p.charts_changed == ["Deal size mix"] and not p.charts_added and not p.charts_removed
+
+
 def test_plan_blocks_where_apply_would_refuse(live):
     fake, data = live()
     fake.charts[fake.linked(_dash_id(fake))["Total Sales"]]["dashboards"].clear()  # taken off in the UI
@@ -617,8 +634,9 @@ def test_plan_lists_dashboard_metadata_the_first_apply_replaces(live):
     p = dashdiff.plan(load_spec(data), fake)
     assert not p.clean
     assert {"expanded_slices", "stagger_refresh", "global_chart_configuration",
-            "chart_configuration", "timed_refresh_immune_slices",
-            "color_namespace"} <= set(p.dashboard_settings_changed)
+            "timed_refresh_immune_slices", "color_namespace"} <= set(p.dashboard_settings_changed)
+    # per-chart scopes are each chart's cross_filter_scope now, and this one sets none
+    assert "chart_configuration" not in p.dashboard_settings_changed
     hand, _, spec = _hand_built(edit=ui_meta)
     whats = " ".join(r["what"] for r in first_apply_resets(
         decompile_bundle(hand, _stub_lookup_for(spec)), hand))

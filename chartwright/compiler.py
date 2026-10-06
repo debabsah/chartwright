@@ -29,6 +29,7 @@ from .spec import (
     OPENING_KEY_GAP,
     OPENING_OTHER_KEY,
     PIVOT_ORDER,
+    TAB_LINK_RE,
     TICK_LAYOUTS,
     DashboardSpec,
     DividerBlock,
@@ -266,15 +267,16 @@ HEATMAP_Y_SORT = {"a_to_z": "alpha_desc", "z_to_a": "alpha_asc",
                   "value_asc": "value_desc", "value_desc": "value_asc"}
 
 
-def _pin_big_number_fonts(p: dict) -> None:
-    """Pin the number and subtitle sizes to the plugin's own documented
-    defaults (proportions of the card). Left unset, 6.1 renders a subtitle fed
+def _pin_big_number_fonts(p: dict, chart) -> None:
+    """Pin the number and subtitle sizes (proportions of the card): the chart's own, or
+    the plugin's documented defaults. Left unset, 6.1 renders a subtitle fed
     through the legacy `subheader` key at proportion 1 of the card
     (BigNumberTotal/transformProps.ts:77-80 at 6.1.0: `subheaderFontSize ?? 1`),
     so short subtitles blow up and crop. 4.1.4/5.0.0 declare both controls
-    natively; 6.1 honors them through that same fallback."""
-    p["header_font_size"] = 0.4
-    p["subheader_font_size"] = 0.15
+    natively; 6.1 honors them through that same fallback. A trendline has no
+    subtitle size of its own: its comparison line keeps 0.15."""
+    p["header_font_size"] = chart.header_font_size or 0.4
+    p["subheader_font_size"] = getattr(chart, "subtitle_font_size", None) or 0.15
 
 
 def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
@@ -307,7 +309,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             # number of epoch milliseconds shows as a date too.
             p["time_format"] = chart.date_format
             p["force_timestamp_formatting"] = True
-        _pin_big_number_fonts(p)
+        _pin_big_number_fonts(p, chart)
         if chart.conditional_formatting:
             p["conditional_formatting"] = [
                 _big_number_rule_payload(r, chart) for r in chart.conditional_formatting
@@ -337,7 +339,12 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
                                 else chart.rolling_min_periods)
         if chart.number_format:
             p["y_axis_format"] = chart.number_format
-        _pin_big_number_fonts(p)
+        if chart.trend_date_format:
+            # The trendline's dates (BigNumberWithTrendline/controlPanel.tsx:212 and
+            # transformProps.ts:245-249, :275 at 6.1.0). Never forced: forced, Superset would
+            # print the number itself as a date (transformProps.ts:109-114).
+            p["time_format"] = chart.trend_date_format
+        _pin_big_number_fonts(p, chart)
         # BigNumberWithTrendline controlPanel.tsx, all three releases; `subtitle` 6.0.0 or later.
         if chart.compare_lag is not None:
             p["compare_lag"] = chart.compare_lag
@@ -509,7 +516,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         _y_axis_params(chart, p)
         if chart.y_axis_title_secondary:
             p["yAxisTitleSecondary"] = chart.y_axis_title_secondary
-            _y_title_layout(p)
+            _y_title_layout(p, chart)  # one margin and position for both value axes
         if chart.y_axis_min_secondary is not None or chart.y_axis_max_secondary is not None:
             p["y_axis_bounds_secondary"] = [chart.y_axis_min_secondary, chart.y_axis_max_secondary]
         if chart.y_axis_log_secondary:
@@ -779,11 +786,14 @@ def _series_limit_params(series, p: dict, suffix: str, metric) -> None:
         p[f"order_desc{suffix}"] = False
 
 
-def _y_title_layout(p: dict) -> None:
+def _y_title_layout(p: dict, chart=None, auto: dict | None = None) -> None:
     # Title above the axis, 15 px clear of it: Superset's own default for a bar's y
-    # title at 6.1.0. Without a margin, 6.1.0 reserves no room for the title.
-    p["y_axis_title_margin"] = 15
-    p["y_axis_title_position"] = "Top"
+    # title at 6.1.0. Without a margin, 6.1.0 reserves no room for the title. An axis
+    # chart's own y_axis_title_margin / y_axis_title_position win.
+    auto = auto or axis_title_defaults(horizontal=False, rotated=False)
+    for key in ("y_axis_title_margin", "y_axis_title_position"):
+        own = getattr(chart, key, None)
+        p[key] = auto[key] if own is None else own
 
 
 # A horizontal bar's titles. transformProps lays them out for a vertical chart, then swaps the
@@ -797,24 +807,31 @@ HBAR_CATEGORY_TITLE_GAP = 64  # clears category labels of about 8 characters at 
 HBAR_VALUE_TITLE_GAP = 30     # clears the value labels under the axis
 
 
+def axis_title_defaults(horizontal: bool, rotated: bool) -> dict:
+    """The title spacing written for an axis chart that sets none of its own. The x title
+    clears the tick labels (rotated labels hang lower; 0, 6.1.0's default margin, draws
+    the title over them); a horizontal bar's titles are laid out as above. Decompile reads
+    a stored value that differs back as the chart's own."""
+    if horizontal:
+        return {"x_axis_title_margin": HBAR_CATEGORY_TITLE_GAP,
+                "y_axis_title_margin": HBAR_VALUE_TITLE_GAP, "y_axis_title_position": "Left"}
+    return {"x_axis_title_margin": 50 if rotated else 30,
+            "y_axis_title_margin": 15, "y_axis_title_position": "Top"}
+
+
 def _y_axis_params(chart, p: dict) -> None:
     """Axis titles, bounds, truncation and log scale: titleControls (sections/chartTitle.tsx)
     and the panels' Y Axis section, at 4.1.4, 5.0.0 and 6.1.0. transformProps passes
     y_axis_bounds to ECharts as the axis min and max, so a bound applies on every release."""
-    horizontal = getattr(chart, "orientation", None) == "horizontal"
+    auto = axis_title_defaults(getattr(chart, "orientation", None) == "horizontal",
+                               bool(chart.x_label_rotation))
     if chart.x_axis_title:
         p["x_axis_title"] = chart.x_axis_title
-        # Clear of the tick labels; rotated labels hang lower. 0 (6.1.0's default margin)
-        # draws the title over the labels.
-        p["x_axis_title_margin"] = (HBAR_CATEGORY_TITLE_GAP if horizontal
-                                    else 50 if chart.x_label_rotation else 30)
+        p["x_axis_title_margin"] = (auto["x_axis_title_margin"] if chart.x_axis_title_margin is None
+                                    else chart.x_axis_title_margin)
     if chart.y_axis_title:
         p["y_axis_title"] = chart.y_axis_title
-        if horizontal:
-            p["y_axis_title_margin"] = HBAR_VALUE_TITLE_GAP
-            p["y_axis_title_position"] = "Left"
-        else:
-            _y_title_layout(p)
+        _y_title_layout(p, chart, auto)
     if chart.y_axis_min is not None or chart.y_axis_max is not None:
         p["y_axis_bounds"] = [chart.y_axis_min, chart.y_axis_max]
     if chart.y_axis_truncate:
@@ -1101,7 +1118,9 @@ def _x_label_params(chart: _AxisChart, p: dict) -> None:
 # Chart types whose 6.1.0 control panel declares echart_options (scatter's does not).
 _ECHART_OPTIONS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "mixed")
 # A mixed query's kind -> its seriesType (EchartsTimeseriesSeriesType, Timeseries/types.ts).
-SERIES_TYPE = {"bar": "bar", "line": "line", "area": "line"}
+# seriesType choices (MixedTimeseries/controlPanel.tsx; EchartsTimeseriesSeriesType in
+# Timeseries/types.ts, the same enum at 4.1.4, 5.0.0 and 6.1.0).
+SERIES_TYPE = {"bar": "bar", "line": "line", "area": "line", "scatter": "scatter"}
 
 
 def _has_bars(chart) -> bool:
@@ -1171,7 +1190,9 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
         child_ids: list[str] = []
         for j, item in enumerate(row):
             if isinstance(item, MarkdownBlock):
-                md_id = f"MARKDOWN-{prefix}{i + 1}-{j + 1}"
+                # The component id is the block's DOM id (Markdown/Markdown.tsx:418 at 6.1.0,
+                # Markdown.jsx:363 at 4.1.4 / 5.0.0), so a named block is a CSS target.
+                md_id = f"MARKDOWN-{item.id or f'{prefix}{i + 1}-{j + 1}'}"
                 child_ids.append(md_id)
                 pos[md_id] = {
                     "type": "MARKDOWN",
@@ -1179,7 +1200,7 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
                     "children": [],
                     "parents": [*parents, row_id],
                     "meta": {
-                        "code": item.markdown,
+                        "code": link_tabs(spec, item.markdown),
                         "width": spec.resolved_item_width(item),
                         "height": grid_rows(item.height or 4),
                     },
@@ -1229,7 +1250,7 @@ def _header_meta(entry: HeaderBlock) -> dict:
             "background": BACKGROUND[entry.background]}
 
 
-def _sketch_block_node(pos, holder, sb, width, node_id, parents) -> str:
+def _sketch_block_node(pos, spec, holder, sb, width, node_id, parents) -> str:
     """Emit one MARKDOWN or HEADER node from a sketch block; a markdown block's own
     height wins over the drawn one, as a chart's does."""
     entry = holder.sketch_block(sb)
@@ -1237,9 +1258,9 @@ def _sketch_block_node(pos, holder, sb, width, node_id, parents) -> str:
         meta = _header_meta(entry)
         node_id = f"HEADER-{node_id}"
     else:
-        meta = {"code": entry.markdown, "width": width,
+        meta = {"code": link_tabs(spec, entry.markdown), "width": width,
                 "height": int(round(holder.sketch_block_height(sb) * ROW_UNITS_PER_SPEC_UNIT))}
-        node_id = f"MARKDOWN-{node_id}"
+        node_id = f"MARKDOWN-{entry.id or node_id}"  # a named block is a CSS target, as in rows
     pos[node_id] = {"type": "HEADER" if sb.kind == "header" else "MARKDOWN", "id": node_id,
                     "children": [], "parents": parents, "meta": meta}
     return node_id
@@ -1272,7 +1293,7 @@ def _sketch_into(pos, holder, spec, parents: list[str], prefix: str, counter: li
                 items = child.children if isinstance(child, SketchColumn) else [child]
                 # A list of its own per node: a shared one is a YAML alias in the bundle.
                 col_children = [
-                    _sketch_block_node(pos, holder, sc, child.width, f"{slot}-{k + 1}",
+                    _sketch_block_node(pos, spec, holder, sc, child.width, f"{slot}-{k + 1}",
                                        [*parents, row_id, col_id])
                     if isinstance(sc, SketchBlock) else
                     _sketch_chart_node(pos, spec, sc, child.width, [*parents, row_id, col_id], counter)
@@ -1288,7 +1309,7 @@ def _sketch_into(pos, holder, spec, parents: list[str], prefix: str, counter: li
                 child_ids.append(col_id)
             elif isinstance(child, SketchBlock):
                 child_ids.append(
-                    _sketch_block_node(pos, holder, child, child.width, slot, [*parents, row_id]))
+                    _sketch_block_node(pos, spec, holder, child, child.width, slot, [*parents, row_id]))
             else:
                 child_ids.append(
                     _sketch_chart_node(pos, spec, child, child.width, [*parents, row_id], counter)
@@ -1302,6 +1323,24 @@ def _sketch_into(pos, holder, spec, parents: list[str], prefix: str, counter: li
         }
         row_ids.append(row_id)
     return row_ids
+
+
+def tab_component_id(position: tuple[int, ...]) -> str:
+    """The id _position gives the tab at `position` (Layout.tabs_titled): TAB-sdc-<k>[-<j>]."""
+    return "TAB-sdc-" + "-".join(str(i + 1) for i in position)
+
+
+def link_tabs(spec: DashboardSpec, text: str) -> str:
+    """[words](tab:Title) -> [words](/superset/dashboard/<slug>/#<tab id>). Superset opens
+    the tab named in the URL hash on load: hydrate turns the hash into directPathToChild
+    (dashboard/actions/hydrate.ts:287-294 at 6.1.0, hydrate.js:222-226 at 4.1.4 / 5.0.0)
+    and each Tabs component starts on the child on that path (Tabs.tsx:135-140 at 6.1.0,
+    Tabs.jsx:190-193 / :139-142). A same-page hash change does not, hence the full URL."""
+    def url(m) -> str:
+        (position,) = spec.layout.tabs_titled(m.group(1))  # validated: exactly one
+        return f"](/superset/dashboard/{spec.dashboard.slug}/#{tab_component_id(position)})"
+
+    return TAB_LINK_RE.sub(url, text)
 
 
 def _position(spec: DashboardSpec) -> dict:
@@ -1334,7 +1373,7 @@ def _position(spec: DashboardSpec) -> dict:
             return into(pos, tab if tab.sketch else tab.rows, spec, parents, prefix, counter)
 
         for k, tab in enumerate(spec.layout.tabs or []):
-            tab_id = f"TAB-sdc-{k + 1}"
+            tab_id = tab_component_id((k,))
             tab_parents = ["ROOT_ID", "GRID_ID", tabs_id]
             if tab.tabs:
                 # sub-tabs: a TABS node inside this TAB (its own id space, so it can
@@ -1343,7 +1382,7 @@ def _position(spec: DashboardSpec) -> dict:
                 sub_parents = [*tab_parents, tab_id, sub_tabs_id]
                 sub_ids = []
                 for j, sub in enumerate(tab.tabs):
-                    sub_id = f"TAB-sdc-{k + 1}-{j + 1}"
+                    sub_id = tab_component_id((k, j))
                     row_ids = content_into(sub, [*sub_parents, sub_id], f"sdc-t{k + 1}-{j + 1}-")
                     pos[sub_id] = tab_node(sub_id, sub.title, row_ids, sub_parents)
                     sub_ids.append(sub_id)
@@ -1544,8 +1583,46 @@ def _range_default_mask(f) -> dict | None:
     }
 
 
+def cross_filter_configuration(spec: DashboardSpec, position: dict) -> dict:
+    """json_metadata.chart_configuration for the charts whose cross-filter scope is not
+    the dashboard's (ChartConfiguration, dashboard/types.ts:87-106 at 6.1.0), keyed by the
+    chart ids in `position`: the bundle's placeholders, which the 6.1.0 importer remaps
+    (commands/dashboard/importers/v1/utils.py:147-190; 4.1.4 and 5.0.0 do not), or the
+    live ids apply writes after import. Charts are found by the spec's uuids. A chart's
+    own id is in its excluded list, as the scoping modal saves it (ScopingModal.tsx:240-246)."""
+    nodes = {(n.get("meta") or {}).get("uuid"): n for n in position.values()
+             if isinstance(n, dict) and n.get("type") == "CHART"}
+    node_of = {c.name: nodes[u] for c in spec.charts
+               if (u := str(spec.chart_uuid(c.name))) in nodes}
+    id_of = {name: node["meta"]["chartId"] for name, node in node_of.items()}
+    out: dict = {}
+    for c in spec.charts:
+        scope = c.cross_filter_scope
+        if scope in (None, "global") or c.name not in id_of:
+            continue
+        me = id_of[c.name]
+        if scope == "none":
+            # What the scoping tree saves with nothing ticked (FilterScope/utils.ts:265-270):
+            # no root reaches no chart, one added later included (getChartIdsInFilterScope.ts:75-85).
+            scope_json, in_scope = {"rootPath": [], "excluded": []}, []
+        elif scope == "tab":
+            tabs = [p for p in node_of[c.name].get("parents") or []
+                    if (position.get(p) or {}).get("type") == "TAB"]
+            if not tabs:
+                continue  # moved out of its tab live; plan reports the difference
+            scope_json = {"rootPath": [tabs[-1]], "excluded": [me]}
+            in_scope = [i for n, i in id_of.items()
+                        if n != c.name and tabs[-1] in (node_of[n].get("parents") or [])]
+        else:
+            in_scope = [id_of[n] for n in scope if n in id_of]
+            scope_json = {"rootPath": ["ROOT_ID"], "excluded": sorted(set(id_of.values()) - set(in_scope))}
+        out[str(me)] = {"id": me, "crossFilters": {"scope": scope_json, "chartsInScope": sorted(in_scope)}}
+    return out
+
+
 def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
     d = spec.dashboard
+    position = _position(spec)
     metadata: dict = {
         "color_scheme": d.color_scheme or "",
         "cross_filters_enabled": d.cross_filters,
@@ -1564,6 +1641,9 @@ def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
         metadata["show_chart_timestamps"] = True
     if spec.filters:
         metadata["native_filter_configuration"] = _native_filters(spec, resolution)
+    chart_configuration = cross_filter_configuration(spec, position)
+    if chart_configuration:
+        metadata["chart_configuration"] = chart_configuration
     out = {
         "dashboard_title": d.title,
         "description": d.description,
@@ -1574,7 +1654,7 @@ def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
         "certification_details": d.certification_details,
         "published": d.published,
         "uuid": str(spec.dashboard_uuid()),
-        "position": _position(spec),
+        "position": position,
         "metadata": metadata,
         "version": "1.0.0",
     }

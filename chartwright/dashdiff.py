@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 import yaml
 
 from .client import SupersetClient
-from .compiler import _metric_payload, compile_bundle, filter_id, grid_rows, spec_units
+from .compiler import (_metric_payload, axis_title_defaults, compile_bundle, filter_id, grid_rows,
+                       link_tabs, spec_units)
 from .decompile import _metric_to_spec, decompile_live
 from .spec import (
     BAR_SWITCHES, DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, FORMAT_COLOR_HEX,
@@ -190,6 +191,15 @@ def _normalize(spec: DashboardSpec) -> dict:
         for field in NAMED_COLOUR_FIELDS:
             if chart.get(field):
                 chart[field] = named_hex(chart[field])
+        if isinstance(chart.get("cross_filter_scope"), list):
+            chart["cross_filter_scope"] = sorted(chart["cross_filter_scope"])  # a set of chart names
+        if "x_label_rotation" in type(model).model_fields:
+            # Title spacing compile writes anyway reads back as unset (decompile).
+            auto = axis_title_defaults(chart.get("orientation") == "horizontal",
+                                       bool(chart.get("x_label_rotation")))
+            for key, value in auto.items():
+                if chart.get(key) == value:
+                    del chart[key]
         if chart["type"] == "table":
             # An empty list compiles as the omitted one, which is how decompile reads it.
             for key in ("metrics", "groupby"):
@@ -218,6 +228,8 @@ def _normalize(spec: DashboardSpec) -> dict:
                 if not isinstance(mitem, str):
                     ditem["width"] = spec.resolved_item_width(mitem)
                     ditem.setdefault("height", 4)
+                    # tab links compare by the tab they open: tab:Trend == tab:Sales/Trend
+                    ditem["markdown"] = link_tabs(spec, ditem["markdown"])
 
     def sketch_as_rows(holder) -> list:
         """Sketch -> rows of chart names, a stacked COLUMN as a nested list, so a
@@ -234,8 +246,9 @@ def _normalize(spec: DashboardSpec) -> dict:
             entry = holder.sketch_block(sc)
             if sc.kind == "header":
                 return {**entry.model_dump(), "width": width}
-            return {"markdown": entry.markdown, "width": width,
-                    "height": holder.sketch_block_height(sc)}
+            block = {"markdown": link_tabs(spec, entry.markdown), "width": width,
+                     "height": holder.sketch_block_height(sc)}
+            return {**block, "id": entry.id} if entry.id else block
 
         rows = []
         for srow in holder.parsed_sketch():
@@ -324,12 +337,10 @@ def adopted_metadata_resets(live_meta: dict) -> list[tuple[str, str]]:
     """Dashboard json_metadata keys a dashboard built in the UI may set and the import
     replaces with the compiled metadata, which the spec can't express: (key, what the
     first apply does to it). The importer writes json_metadata whole (docs/CONTRACTS.md,
-    "How dashboard settings are stored")."""
+    "How dashboard settings are stored"). Per-chart cross-filter scopes are no longer
+    among them: decompile reads them into each chart's cross_filter_scope, and names a
+    scope it can't carry as a loss."""
     out = []
-    if live_meta.get("chart_configuration"):
-        out.append(("chart_configuration",
-                    "per-chart cross-filter scopes are cleared; cross-filters, when on, reach "
-                    "every chart"))
     gcc = live_meta.get("global_chart_configuration") or {}
     scope = gcc.get("scope") or {}
     if scope.get("excluded") or (scope.get("rootPath") or ["ROOT_ID"]) != ["ROOT_ID"]:
@@ -423,11 +434,16 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
         # apply matches adopted charts by uuid, so a chart renamed in the spec is the
         # same chart under a new title (a change), not one removed and one added.
         spec_name = {str(target.chart_uuid(c.name)): c.name for c in target.charts}
+        renamed: dict[str, str] = {}
         for live_name, u in live_result.chart_uuids.items():
             new = spec_name.get(u)
             if new and new != live_name and live_name in l_charts and new not in l_charts:
                 l_charts[new] = l_charts.pop(live_name)
                 live_result.dataset_uuids[new] = live_result.dataset_uuids.get(live_name)
+                renamed[live_name] = new
+        for chart in l_charts.values():  # a scope names its charts, under their new names too
+            if renamed and isinstance(chart.get("cross_filter_scope"), list):
+                chart["cross_filter_scope"] = sorted(renamed.get(n, n) for n in chart["cross_filter_scope"])
     # Dataset identity compares by resolved uuid, not by literal triple:
     # an omitted schema in the spec means "unambiguous", not "different".
     for chart in target.charts:

@@ -124,8 +124,10 @@ def normal_row(row) -> Any:
         width = i.width
         if width is None:   # largest remainder, as compile resolves it
             width, k = max(1, base + (1 if k < rem else 0)), k + 1
-        out.append({"markdown": i.markdown, "width": width,
-                    "height": _num(i.height if i.height is not None else 4)})
+        block = {"markdown": i.markdown, "width": width,
+                 "height": _num(i.height if i.height is not None else 4)}
+        # A named block's id is its CSS target (MARKDOWN-<id>), so it is part of the row.
+        out.append({**block, "id": i.id} if i.id else block)
     return {"row": out, "background": getattr(model, "background", "transparent")}
 
 

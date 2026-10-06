@@ -34,7 +34,7 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - On Superset 6.1+, each band is one solid colour, a rule can colour the text instead of the cell, and a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it. Older releases fade each band toward its threshold and fill only the cell that was tested; on those, `check`, `apply` and `plan` warn for each such rule, naming what that release draws instead.
     - A fixed ascending table sort, d3 number and date formats, and on Superset 6.0+ hidden table columns.
 - **Chart Options**: Set the common options of Superset's chart panels in the spec; an option changed in the UI shows up in `plan`.
-    - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own.
+    - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own. A title can sit along its axis (`y_axis_title_position: "Left"`) at the gap you set (`y_axis_title_margin`).
     - Values written on bars and points, stacked series, 100% stacks, and the top N series of a breakdown.
     - Legends hidden, or placed at the bottom, left or right.
     - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value; stacked or grouped bars ranked by their total; or bars ranked by another metric, drawn or not, so two charts share one order.
@@ -42,8 +42,9 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
     - A trendline KPI over a rolling window: a trailing-12-month total compared with the 12 months before ("+30% vs prior 12 months"), a 3-month average, or a running total.
     - A trendline fitted to its values, so a trailing total that moves a few percent shows the movement.
-    - Filled areas on a mixed chart, such as solar output under a net-load line.
+    - Filled areas on a mixed chart, such as solar output under a net-load line, and points (`kind: "scatter"`) for a query read as single values, such as one-off events over a trend.
     - A big number shown as a date, such as the latest order date as "Sat 3 Oct 2026".
+    - A big number's text size: the number at 0.2-0.6 of the card's height, and a subtitle at 0.125-0.4, from Superset's own options. A trendline's dates in their own format, such as "Oct 2026".
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
     - Table cell bars on the columns you name (`"cell_bars": ["Revenue", "Change"]`), coloured by sign on just the change (`"color_by_sign": ["Change"]`) so revenue bars stay neutral, and sized by absolute value where you list them (`"absolute_bars"`), so a rise and a fall of the same size draw the same bar.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
@@ -63,8 +64,8 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - Name owners by email on 4.1.4 and 5.0.0, whose API returns usernames only with `FAB_ADD_SECURITY_API` on; usernames work on 6.1.0.
     - The account that applies stays an owner alongside them: Superset adds it on every import, and a non-admin account needs it to import the next version.
     - `plan` reports owners changed in the UI, and `decompile` reads them back.
-- **Dashboard CSS**: `"css"` on the dashboard block holds what you would type into Superset's Edit CSS, so the styling is reviewed and versioned with the rest of the dashboard. CSS changed in the UI is drift that `plan` reports and `apply` replaces.
-- **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs.
+- **Dashboard CSS**: `"css"` on the dashboard block holds what you would type into Superset's Edit CSS, so the styling is reviewed and versioned with the rest of the dashboard. CSS changed in the UI is drift that `plan` reports and `apply` replaces. Name a markdown block (`{"markdown": "...", "id": "legend"}`) and the CSS can style that block alone, as `#MARKDOWN-legend`.
+- **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs. A chart can narrow what its clicks reach with `cross_filter_scope`: `"tab"` (the charts in its own tab), `"none"` (no chart, such as a summary table), or a list of chart names.
 - **No Empty First Load**: New charts open on your full data range, so a narrow default time window never hides everything on the first paint. On a large dataset that full range is a lot to draw, so give the filter bar a time range with a default; `chartwright advise` tells you when a dashboard has nothing bounding its dates.
 
 ## Layout Design
@@ -75,7 +76,7 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - An unclear sketch gets a message saying exactly what to fix, never a guess.
     - Every rule drawn and compiled: [the layout guide](LAYOUT-GUIDE.md).
 - **Precise Sizing**: Set exact widths and heights per chart (markdown blocks in 8 px steps from 40 px: `"height": 1.6` is 64 px), or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
-- **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs (with one level of sub-tabs, e.g. a sub-tab per row of a scorecard), section headers and dividers between rows (`{"header": "Revenue", "size": "large"}`, `{"divider": true}`), a white card behind a row, and markdown blocks for notes.
+- **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs (with one level of sub-tabs, e.g. a sub-tab per row of a scorecard), section headers and dividers between rows (`{"header": "Revenue", "size": "large"}`, `{"divider": true}`), a white card behind a row, and markdown blocks for notes. A note can link to a tab: `[definitions](tab:Definitions)` opens that tab for a viewer signed in to Superset (`tab:Sales/Trend` for a sub-tab).
 - **Header and Footer**: `layout.header` rows sit above everything and `layout.footer` rows below it, outside any tab, so a tabbed dashboard shows them above and under every tab: a banner, a data note, a branding strip, a contact line.
     - Adding a header to a dashboard already in use moves nothing else in it.
 
@@ -227,4 +228,3 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
 
 ## Deliberately Not Included
 - Exotic chart types (maps, sankey, gauge): added when a real dashboard needs one (ask); until then those dashboards live on in the UI, untouched.
-- Per-chart cross-filter scoping (which charts emit or receive): the on/off switch is in the spec; finer scoping waits for real demand.

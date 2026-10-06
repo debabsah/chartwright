@@ -62,6 +62,62 @@ running the tool against real instances of all three releases.
   4.1.4/5.0.0, `:187` at 6.1.0). An apply therefore replaces CSS edited in
   the UI with the spec's `css`, or clears it when the spec has none; `plan`
   reports the difference first.
+- **A named markdown block is a CSS target.** Superset renders a layout
+  component's id as its DOM id (`gridComponents/Markdown/Markdown.tsx:418`
+  at 6.1.0, `gridComponents/Markdown.jsx:363` at 4.1.4 and 5.0.0), so a
+  block's `id` compiles to the component id `MARKDOWN-<id>` and the
+  dashboard's `css` can style it as `#MARKDOWN-<id>`. An unnamed block keeps
+  its positional `MARKDOWN-sdc-...` id, whose `sdc-` prefix a name can't
+  take. The UI mints `MARKDOWN-<nanoid>`, mixed case and `_`
+  (`dashboard/util/newComponentFactory.ts:74` at 6.1.0), which decompile
+  never reads as a name; it reads `MARKDOWN-<id>` back as the block's `id`,
+  so `plan` reports a renamed block as a layout change.
+- **A link to a tab is the dashboard's URL with the tab's id in the hash.**
+  In markdown, `[words](tab:Title)` or `(tab:Parent/Child)` compiles to
+  `/superset/dashboard/<slug>/#<tab id>`. Superset opens the tab the hash
+  names when the dashboard loads: `getLocationHash`
+  (`dashboard/util/getLocationHash.ts:20`) feeds `directPathToChild`, the
+  component's parents plus itself (`dashboard/actions/hydrate.ts:287-294` at
+  6.1.0, `hydrate.js:222-226` at 4.1.4 and 5.0.0), and each tab set starts on
+  the child on that path (`gridComponents/Tabs/Tabs.tsx:135-140` at 6.1.0,
+  `Tabs.jsx:190-193` at 4.1.4 and `:139-142` at 5.0.0). A hash change on the
+  open page is not read, so the link is the full URL. A signed-in viewer's URL
+  carries a `native_filters_key` query, which Superset adds on every load, so a
+  click loads the dashboard again and filter selections not saved in the URL
+  reset (seen live on 6.1.0, 2026-10-06). Where Superset can't save the
+  viewer's filter state, the URL has no query, a click only changes the hash,
+  and the tab stays. A bare title names a top tab, or else a sub-tab;
+  validation lists the targets for an unknown title and asks for
+  `Parent/Child` when two sub-tabs share one. A top tab titled like a
+  sub-tab's `Parent/Child` path is refused as ambiguous, and decompile leaves
+  a link to either as its URL.
+  Decompile turns links to this dashboard's tabs back into `tab:` form, and
+  `plan` compares links by the tab they open, so `tab:Trend` and
+  `tab:Sales/Trend` are the same link.
+- **A chart's cross-filter scope lives in the dashboard's
+  `chart_configuration`, keyed by chart id.** 6.1.0 stores `{id, crossFilters:
+  {scope: {rootPath, excluded}, chartsInScope}}` per chart
+  (`superset-frontend/src/dashboard/types.ts:87-106`). `"tab"` roots the scope
+  at the chart's innermost tab; a list roots it at `ROOT_ID` and excludes every
+  other chart; the chart's own id is excluded, as the scoping modal saves it
+  (`nativeFilters/FilterBar/CrossFilters/ScopingModal/ScopingModal.tsx:240-246`).
+  `"none"` is what the scoping tree saves with nothing ticked, an empty root
+  (`FiltersConfigForm/FilterScope/utils.ts:261-270`), which reaches no chart,
+  one added later included (`util/getChartIdsInFilterScope.ts:75-85`). Chart
+  ids don't exist at compile time: the bundle carries the layout's
+  placeholders, which the 6.1.0 importer remaps
+  (`superset/commands/dashboard/importers/v1/utils.py:147-190`) and 4.1.4 and
+  5.0.0 leave alone, so `apply`'s scope stage rewrites `chart_configuration`
+  from the live layout's ids on every release. `restore` maps the backup's own
+  entries to those ids by chart uuid, as the 6.1.0 importer does
+  (`importers/v1/utils.py:48-71`), `chartsInScope` included, which that
+  importer leaves: a chart decompile can't read keeps its scope. Big
+  numbers, heatmaps, histograms and waterfalls declare no
+  `Behavior.InteractiveChart` (their `index.ts` at 4.1.4, 5.0.0 and 6.1.0), so
+  a click on them filters nothing and validation refuses a scope there.
+  Decompile maps ids back to names through the layout, so `plan` reports a
+  scope changed in the UI as a changed chart, and an adopted dashboard keeps
+  the scopes it was built with.
 - **Tags import on 6.0.0 or later, and only with tagging turned on.** The
   dashboard and chart import schemas gain `tags` at 6.0.0
   (`superset/dashboards/schemas.py:502`, `superset/charts/schemas.py:1589`;
@@ -461,7 +517,15 @@ running the tool against real instances of all three releases.
   spec's defaults match it: `only_total` and a heatmap's `show_percentage`
   default to true, and the tool writes them only as false. Axis titles get an
   explicit margin, because 6.1.0's default x-title margin is 0, which draws
-  the title over the tick labels.
+  the title over the tick labels. An axis chart can set its own
+  `x_axis_title_margin`, `y_axis_title_margin` and `y_axis_title_position`
+  (`Left` or `Top`), the titleControls keys (`sections/chartTitle.tsx:41-101`
+  at 6.1.0, the same names at 4.1.4 and 5.0.0); each needs its title, which
+  is the only place Superset reads it (`Timeseries/transformProps.ts:737-740`),
+  and a mixed chart's secondary title shares the y pair. Unset, the tool's
+  spacing applies, and written, that same spacing compares equal in `plan`.
+  Decompile reads a stored value that differs from the tool's spacing back as
+  the chart's own, Superset's `Left` included.
 - **A written Superset default draws the same chart as an omitted field.**
   Writing Superset's own value (`legend_position: "top"`, `legend_type:
   "scroll"`, a pie's `label_type: "key_percent"`, a funnel's `"key"`, a
@@ -663,7 +727,19 @@ running the tool against real instances of all three releases.
   same pair (`BigNumberWithTrendline/controlPanel.tsx:139` and `:153` at
   4.1.4 and 5.0.0, `:212` and `:226` at 6.1.0), but there `time_format` also
   formats the trendline's tooltip dates (and, at 6.1.0, its optional x axis),
-  so the spec offers `date_format` on the plain big number only.
+  so the spec offers `date_format` on the plain big number only. A trendline's
+  `trend_date_format` writes `time_format` unforced, for those dates alone
+  (`transformProps.ts:245-249` and `:275` at 6.1.0): forced, the number itself
+  would print as a date.
+- **A big number's text sizes are shares of the card's height.**
+  `header_font_size` (0.2-0.6) and a total's `subtitle_font_size`
+  (0.125-0.4) take the options `BigNumber/sharedControls.ts` offers, the same
+  at 4.1.4, 5.0.0 and 6.1.0. Unset, the compiler still writes 0.4 and 0.15, the
+  panel's defaults: 6.1.0 reads a subtitle sent as the legacy `subheader` at
+  `subheaderFontSize ?? 1` (`BigNumberTotal/transformProps.ts:77-80`). The
+  subtitle size rides `subheader_font_size`, which every release reads. A
+  trendline's comparison line keeps 0.15. Decompile reads a size Superset
+  offers back and names any other.
 - **A mixed chart's area is a line with "Area chart" ticked.** `kind:
   "area"` writes `seriesType` `line` and `area` (query B: `areaB`), and its
   `opacity` (`opacityB`) scales the fill only; the edge line stays at full
@@ -674,6 +750,10 @@ running the tool against real instances of all three releases.
   including the older `echarts_timeseries_line` and `echarts_timeseries_bar`
   names, draws a straight line (`Timeseries/transformers.ts:237-243` at
   4.1.4, `:306-312` at 6.1.0), so decompile reads it as `kind: "line"`.
+  `kind: "scatter"` writes `seriesType` `scatter`, a point per value and no
+  line (`EchartsTimeseriesSeriesType.Scatter`, `Timeseries/types.ts:44-52` at
+  6.1.0, the same enum at 4.1.4 and 5.0.0); smooth and the steps stay outside
+  the spec and decompile names them.
 - **A mixed chart draws every line solid, at one width.** `transformSeries`
   takes a series' line style only from its caller
   (`Timeseries/transformers.ts:273-276` at 4.1.4, `:287-290` at 5.0.0,

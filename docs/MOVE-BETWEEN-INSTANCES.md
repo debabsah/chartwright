@@ -122,7 +122,7 @@ Ownership comes from the slug: the dashboard's uuid is derived from its slug, an
 Adopt it on the instance where it lives. The spec that `adopt` writes names the dashboard and its charts by their own ids, so applying it updates the same dashboard: its address, id and chart ids stay, and links and embeds keep pointing at it.
 
 1. Run `chartwright adopt regional-sales --profile dev -o regional-sales.json` (the slug or numeric id). It changes nothing in Superset.
-    - If the first apply would reset settings a spec can't hold, such as a forecast on a chart or per-chart cross-filter scopes, it lists each under `resets` and refuses. For a setting you need, rework the chart with fields the spec has (`chartwright schema` lists them), or leave the dashboard unadopted; pass `--accept-reset` to accept the rest.
+    - If the first apply would reset settings a spec can't hold, such as a forecast on a chart or the dashboard-wide cross-filter scope, it lists each under `resets` and refuses. For a setting you need, rework the chart with fields the spec has (`chartwright schema` lists them), or leave the dashboard unadopted; pass `--accept-reset` to accept the rest.
     - If some charts also sit on other dashboards, it refuses, since applying changes them there too: give those dashboards their own copies in Superset, or pass `--allow-shared`.
 2. Run `chartwright plan regional-sales.json --profile dev`. It names each chart whose stored settings the first apply rewrites, under `chart_option_changes`.
 3. Run `chartwright apply regional-sales.json --profile dev`. It backs the dashboard up first, as always.

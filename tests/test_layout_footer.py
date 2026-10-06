@@ -31,6 +31,12 @@ def _round_trip(data: dict):
     return spec, decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _stub_lookup_for(spec))
 
 
+# Component ids as Superset's UI mints them: `${type}-${nanoid()}`, mixed case and '_'
+# (dashboard/util/newComponentFactory.ts:74 at 6.1.0), never a lowercase slug, which
+# decompile would read as a named markdown block's id.
+UI_ID = "uiB_7Qx-"
+
+
 def _renamed(bundle: bytes, old: str, new: str) -> bytes:
     """The same bundle with `old` replaced by `new` in the dashboard file: a
     dashboard whose footer rows were NOT built by chartwright."""
@@ -76,7 +82,7 @@ def test_any_rows_after_the_tabs_read_as_the_footer():
     """A dashboard assembled in Superset's UI (no chartwright ids): rows dragged
     below the tabs are a footer too."""
     spec = load_spec(_with_footer("kitchen_sink.json"))
-    bundle = _renamed(compile_bundle(spec, stub_resolution(spec)), "sdc-footer-", "ui-built-")
+    bundle = _renamed(compile_bundle(spec, stub_resolution(spec)), "sdc-footer-", UI_ID)
     result = decompile_bundle(bundle, _stub_lookup_for(spec))
     assert result.spec["layout"]["footer"] == FOOTER
 
@@ -85,7 +91,7 @@ def test_untabbed_rows_without_the_marker_stay_in_the_body():
     """Without tabs there is no visual boundary: only chartwright's marked rows
     are a footer; anything else stays a body row (nothing is lost)."""
     spec = load_spec(_with_footer("sales_overview.json"))
-    bundle = _renamed(compile_bundle(spec, stub_resolution(spec)), "sdc-footer-", "ui-built-")
+    bundle = _renamed(compile_bundle(spec, stub_resolution(spec)), "sdc-footer-", UI_ID)
     layout = decompile_bundle(bundle, _stub_lookup_for(spec)).spec["layout"]
     assert "footer" not in layout
     assert layout["rows"][-1] == FOOTER[0]
