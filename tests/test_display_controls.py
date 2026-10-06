@@ -41,7 +41,8 @@ NEW_KEYS = {
     "timeseries_limit_metric_b", "order_desc_b", "legendOrientation", "legendType",
     "compare_lag", "compare_suffix", "subtitle", "color_picker", "page_length", "show_totals",
     "include_search", "rowSubTotals", "transposePivot", "show_values", "show_percentage",
-    "number_format", "show_total", "labels_outside", "markerEnabled", "area",
+    "number_format", "show_total", "labels_outside", "markerEnabled", "area", "color_pn",
+    "align_pn",
 }
 
 
@@ -391,6 +392,8 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Share by Line", {"label_type": "key"}),
     ("Top Customers", {"page_length": 50}),
     ("Top Customers", {"column_config": {}}),
+    ("Country Movers", {"color_pn": True}),
+    ("Country Movers", {"show_cell_bars": True}),
     ("Sales Pivot", {"transposePivot": False}),
     ("Line by Deal Size", {"show_percentage": True}),
     ("Revenue KPI", {"compare_lag": 3}),
@@ -484,6 +487,7 @@ def test_series_limit_metric_is_resolved_like_any_metric():
 # -- a written Superset default --------------------------------------------------------
 
 PIE = {"name": "P", "type": "pie", "dataset": DS, "metric": "COUNT(*)", "groupby": "g"}
+TABLE = {"name": "T", "type": "table", "dataset": DS, "metrics": ["SUM(x)"], "groupby": ["g"]}
 EXPLICIT_DEFAULTS = [
     (LINE, "legend_position", "top"),
     (LINE, "legend_type", "scroll"),
@@ -498,6 +502,8 @@ EXPLICIT_DEFAULTS = [
       "metric": "COUNT(*)"}, "color_scheme", "superset_seq_1"),
     ({"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
       "time_column": "ts"}, "trend_color", "#007A87"),
+    (TABLE, "color_by_sign", True),
+    (TABLE, "absolute_bars", False),
 ]
 
 

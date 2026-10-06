@@ -88,6 +88,7 @@ def test_the_registry_gates_the_unsafe_fields_and_warns_for_the_ignored_ones():
         "subtitle": ("6.0.0", "warn"),
         "column_headers": ("6.0.0", "warn"),
         "show_value": ("6.0.0", "warn"),  # on a stacked mixed query: only_total's labels
+        "cell_bars": ("6.1.0", "warn"),  # beside colour rules: no bars before 6.1.0
     }
     schema = json.dumps(json_schema())
     for g in GATED_FIELDS:

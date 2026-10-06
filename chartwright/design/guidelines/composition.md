@@ -26,3 +26,6 @@
 - Heatmaps ship with a sequential scale normalized over the whole map: right
   for magnitudes, wrong for signed deltas -- don't heatmap a metric that
   crosses zero.
+- Table bars only where size is the point (`cell_bars: ["Revenue"]`), never on
+  ids or years. Superset tints every bar by sign, green on 6.x even for revenue:
+  keep that for a change, `color_by_sign: ["Change"]`, listed in cell_bars too.

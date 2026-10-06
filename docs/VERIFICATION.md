@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1564 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1619 tests, 68 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -89,6 +89,11 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   the shape Superset saves, compiles to the earlier output when omitted,
   decompiles back, shows up in `plan` when changed live, and names a bad
   value.
+- **Table cell bars** (`test_table_bars.py`): each switch compiles to the
+  table-wide and per-column keys Superset reads, and to the earlier output
+  when unset or written as Superset's own value; any mix of the two that
+  Superset stores reads back as it draws; a change made live shows up in
+  `plan`; bars asked for beside colour rules warn before 6.1.0.
 - **Release-specific fields** (`test_superset_version.py`): with the
   instance's answer mocked, `check`, `apply` and `plan` refuse tags before
   6.0.0 and chart timestamps before 6.1.0 ahead of any write, warn for the

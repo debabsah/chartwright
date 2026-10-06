@@ -18,8 +18,9 @@ from typing import Callable, get_args
 import yaml
 
 from .compiler import (
-    BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
-    LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
+    BACKGROUND, BAR_SWITCH_KEYS, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX,
+    HEADER_PREFIX, HEADER_SIZE, LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER,
+    STACK_VALUES, VIZ_TYPE,
 )
 from .spec import (
     ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES,
@@ -57,7 +58,8 @@ _IGNORABLE = {
     "left_margin", "show_percentage", "show_values", "value_bounds",
     "xscale_interval", "yscale_interval", "column", "bins", "normalize",
     "show_value", "slice_id", "url_params", "percent_calculation_type",
-    "show_tooltip_labels", "tooltip_label_type", SDC_BAR_MARKER,
+    "show_tooltip_labels", "tooltip_label_type", "allow_render_html", "allow_rearrange_columns",
+    "server_pagination", "percent_metrics", SDC_BAR_MARKER,
 }
 
 # Of the keys above, those a user changes from the value an untouched chart stores:
@@ -99,6 +101,11 @@ _STORED_DEFAULTS: dict[str, tuple] = {
     "bottom_margin": ("auto",), "left_margin": ("auto",), "xscale_interval": (-1,),
     "yscale_interval": (-1,), "value_bounds": ([None, None], [], None),
     "normalize": (False,),
+    # Table controlPanel.tsx: HTML rendered and columns fixed (4.1.4 :449-454, :433-438;
+    # 5.0.0 :468-473, :452-457; 6.1.0 :543-548, :527-532), client-side paging (4.1.4
+    # :317-324, 5.0.0 :351-358, 6.1.0 :387-394), no percentage metrics.
+    "allow_render_html": (True,), "allow_rearrange_columns": (False,),
+    "server_pagination": (False,), "percent_metrics": ([], None),
 }
 # A currency format has no default: unset reads as {} or every part empty.
 _UNSET_WHEN_EMPTY = {"currency_format"}
@@ -110,6 +117,9 @@ _STORED_DEFAULT_WHEN = {
     "y_axis_title_margin": lambda p: bool(p.get("y_axis_title")),
     "y_axis_title_position": lambda p: bool(p.get("y_axis_title")),
     "innerRadius": lambda p: bool(p.get("donut")),
+    # Percentage metrics join the query in aggregate mode only (Table buildQuery.ts: 4.1.4
+    # :131-142, 5.0.0 :120-131, 6.1.0 :129-146), so a raw table's leftovers are inert.
+    "percent_metrics": lambda p: not (p.get("query_mode") == "raw" or p.get("all_columns")),
 }
 
 # Spec chart types with a color_scheme field (spec._ColorSchemeMixin).
@@ -123,6 +133,43 @@ _AXIS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseri
                "bar", "mixed")
 _X_LABEL_KEYS = {"x_axis_time_format", "xAxisLabelRotation", "force_max_interval",
                  "xAxisLabelInterval"}
+
+
+def _bar_switch(p: dict, key: str, own: dict[str, bool], labels: list[str], default: bool):
+    """One cell-bar switch as the spec writes it, from the table-wide param `key` and each
+    column's own value (`own`), which Superset reads first: the table-wide bool while no
+    column of `labels` differs from it (None when the chart leaves it unset), else the
+    labels it is on for (False when none). A column's value that matches the table's, or
+    sits on a column that draws no bar, changes nothing and is dropped. A stored null is
+    a false: only an absent key takes the panel's default (applyDefaultFormData)."""
+    table = bool(p[key]) if key in p else default
+    if all(own.get(k, table) == table for k in labels):
+        return table if key in p else None
+    return [k for k in labels if own.get(k, table)] or False
+
+
+def _bar_switches_to_spec(p: dict, out: dict, switches: dict[str, dict]) -> None:
+    """cell_bars, color_by_sign and absolute_bars from show_cell_bars, color_pn and align_pn
+    and the columns' own showCellBars, colorPositiveNegative and alignPositiveNegative. A
+    stored Superset default reads as unset (color_pn true, align_pn false: the panel's
+    defaults); show_cell_bars reads back as stored, as it always has. Colour and alignment
+    count only on the columns that draw a bar, and are read back only where they can show,
+    so the spec validates."""
+    if out.get("columns"):
+        capable = list(out["columns"])
+    else:
+        capable = [metric_label(m) for m in out.get("metrics") or []]
+    bars = _bar_switch(p, "show_cell_bars", switches["cell_bars"], capable, True)
+    if bars is not None:
+        out["cell_bars"] = bars
+    barred = [] if bars is False else capable if bars in (None, True) else bars
+    for spec_field, key, default in (("color_by_sign", "color_pn", True),
+                                     ("absolute_bars", "align_pn", False)):
+        value = _bar_switch(p, key, switches[spec_field], barred, default)
+        if value is True and not barred:
+            value = None  # asks for bars the table doesn't draw: it shows nothing
+        if value is not None and value != default:
+            out[spec_field] = value
 
 
 def _x_labels_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
@@ -720,6 +767,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             out["conditional_formatting"] = rules
         hidden: list = []
         per_label: dict[str, dict] = {spec_key: {} for spec_key in COLUMN_CONFIG_KEYS}
+        switches: dict[str, dict] = {spec_key: {} for spec_key in BAR_SWITCH_KEYS}
         for label, cfg in (p.get("column_config") or {}).items():
             cfg = cfg if isinstance(cfg, dict) else {}
             if label not in labels:
@@ -740,7 +788,12 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
                 per_label["column_widths"][label] = width
             if isinstance(cfg.get("customColumnName"), str) and cfg["customColumnName"].strip():
                 per_label["column_headers"][label] = cfg["customColumnName"]
-            extra = sorted(k for k in cfg if k not in ("visible", *_COLUMN_CONFIG_SPEC))
+            for spec_field, key in BAR_SWITCH_KEYS.items():
+                if key in cfg:
+                    # Superset tests `=== undefined`, so a stored null is a false.
+                    switches[spec_field][label] = bool(cfg[key])
+            extra = sorted(k for k in cfg if k not in ("visible", *_COLUMN_CONFIG_SPEC,
+                                                       *BAR_SWITCH_KEYS.values()))
             if extra:
                 losses.append(Loss(name, f"column_config {label!r} settings not preserved: {extra}"))
         if hidden:
@@ -748,6 +801,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         for spec_field, values in per_label.items():
             if values:
                 out[spec_field] = values
+        _bar_switches_to_spec(p, out, switches)
         page = _number(p.get("page_length"))
         if isinstance(page, int) and page >= 0:
             out["page_length"] = page
@@ -755,8 +809,6 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             out["show_totals"] = True
         if p.get("include_search") is True:
             out["search_box"] = True
-        if "show_cell_bars" in p:
-            out["cell_bars"] = bool(p["show_cell_bars"])
         if p.get("table_timestamp_format") not in (None, "", "smart_date"):
             out["date_format"] = p["table_timestamp_format"]
         keep_row_limit()
@@ -951,7 +1003,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
     if spec_type == "big_number_total":
         mapped_here = mapped_here | {"subtitle"}
     if spec_type == "table":
-        mapped_here = mapped_here | {"page_length", "show_totals", "include_search"}
+        mapped_here = mapped_here | {"page_length", "show_totals", "include_search", "color_pn",
+                                     "align_pn"}
     if spec_type == "pivot_table":
         mapped_here = mapped_here | {"rowSubTotals", "transposePivot"}
     if spec_type == "histogram":

@@ -140,18 +140,41 @@ def _format_rule_payload(rule) -> dict:
 # 5.0.0 and 6.1.0; customColumnName from 6.0.0, read at TableChart.tsx:806, :859 at 6.1.0).
 COLUMN_CONFIG_KEYS = {"number_formats": "d3NumberFormat", "column_align": "horizontalAlign",
                       "column_widths": "columnWidth", "column_headers": "customColumnName"}
+# The cell-bar switches (spec.BAR_SWITCHES): the key each column stores (TableColumnConfig,
+# plugin-chart-table/src/types.ts 4.1.4 and 5.0.0 :47-49, 6.1.0 :99-103) and the table-wide
+# control it falls back to (Table controlPanel.tsx, all three releases).
+BAR_SWITCH_KEYS = {"cell_bars": "showCellBars", "color_by_sign": "colorPositiveNegative",
+                   "absolute_bars": "alignPositiveNegative"}
+BAR_SWITCH_PARAMS = {"cell_bars": "show_cell_bars", "color_by_sign": "color_pn",
+                     "absolute_bars": "align_pn"}
 
 
 def _column_config(chart) -> dict:
     """Per-column table display: hidden columns, d3 number formats, alignment, minimum
-    widths and header text, merged per label."""
+    widths, header text and the cell-bar switches a list turns on, merged per label."""
     cfg: dict = {}
     for label in chart.hidden:
         cfg.setdefault(label, {})["visible"] = False
     for field, key in COLUMN_CONFIG_KEYS.items():
         for label, value in getattr(chart, field).items():
             cfg.setdefault(label, {})[key] = value
+    for field, key in BAR_SWITCH_KEYS.items():
+        if isinstance(getattr(chart, field), list):
+            for label in getattr(chart, field):
+                cfg.setdefault(label, {})[key] = True
     return cfg
+
+
+def _bar_switches(chart, p: dict) -> None:
+    """The table-wide half of each cell-bar switch. A list turns the table's off and its
+    columns' on (_column_config). A written Superset default (color_by_sign true,
+    absolute_bars false) arrives unset, so a spec without the switches emits nothing."""
+    for field, key in BAR_SWITCH_PARAMS.items():
+        value = getattr(chart, field)
+        if isinstance(value, bool):
+            p[key] = value
+        elif value is not None and field != "absolute_bars":
+            p[key] = False  # align_pn is off unless written: its list needs no table-wide key
 
 
 def _adhoc_filters(chart) -> list[dict]:
@@ -408,8 +431,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         column_config = _column_config(chart)
         if column_config:
             p["column_config"] = column_config
-        if chart.cell_bars is not None:
-            p["show_cell_bars"] = chart.cell_bars
+        _bar_switches(chart, p)
         if chart.date_format:
             p["table_timestamp_format"] = chart.date_format
     elif t == "pivot_table":

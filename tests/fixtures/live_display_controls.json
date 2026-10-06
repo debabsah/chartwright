@@ -153,6 +153,21 @@
       "column_headers": {"SUM(sales)": "Revenue", "customer_name": "Customer"}
     },
     {
+      "name": "Country Movers",
+      "type": "table",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metrics": ["SUM(sales) AS Revenue",
+                  "SQL(SUM(CASE WHEN year = 2004 THEN sales ELSE 0 END) - SUM(CASE WHEN year = 2003 THEN sales ELSE 0 END)) AS Change",
+                  "COUNT(*) AS Orders"],
+      "groupby": ["country"],
+      "row_limit": 25,
+      "sort_by": "SUM(sales) AS Revenue",
+      "number_formats": {"Revenue": "$,.0f", "Change": "+$,.0f"},
+      "cell_bars": ["Revenue", "Change"],
+      "color_by_sign": ["Change"],
+      "absolute_bars": ["Change"]
+    },
+    {
       "name": "Sales Pivot",
       "type": "pivot_table",
       "dataset": {"database": "examples", "table": "cleaned_sales_data"},
@@ -219,6 +234,7 @@
       ["Orders by Hour", "Share by Line"],
       ["Order Funnel", "Sales Treemap"],
       ["Top Customers"],
+      ["Country Movers"],
       ["Sales Pivot"],
       ["Line by Deal Size", "Price Spread"],
       ["Revenue and Orders"]

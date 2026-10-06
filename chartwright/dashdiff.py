@@ -17,9 +17,12 @@ from .client import SupersetClient
 from .compiler import compile_bundle, filter_id
 from .decompile import decompile_live
 from .spec import (
-    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
-    without_superset_defaults,
+    BAR_SWITCHES, DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec,
+    load_spec, row_items, without_superset_defaults,
 )
+
+# A table's fields that list labels (hidden columns, the cell-bar switches).
+TABLE_LABEL_LISTS = ("hidden", *BAR_SWITCHES)
 
 # Dashboard settings `plan` compares one by one (dashboard_settings_changed).
 DASHBOARD_SETTINGS = (
@@ -117,11 +120,19 @@ def _normalize(spec: DashboardSpec) -> dict:
     name, so chart list order is canonicalized by name. A written Superset default
     compares equal to the omitted field, which is all decompile can read back."""
     data = without_superset_defaults(spec).model_dump(exclude_none=True, by_alias=True)
+    models = {c.name: c for c in spec.charts}
     for chart in data["charts"]:
         chart["width"] = spec.resolved_item_width(chart["name"])
         chart["height"] = spec.resolved_height(chart["name"])
         if chart["type"] in DEFAULT_ROW_LIMIT:
             chart.setdefault("row_limit", DEFAULT_ROW_LIMIT[chart["type"]])
+        if chart["type"] == "table":
+            # Label lists are per-column settings, kept in column_config by label: their
+            # order changes nothing, and decompile can't read the author's back.
+            order = {k: i for i, k in enumerate(models[chart["name"]].labels())}
+            for key in TABLE_LABEL_LISTS:
+                if isinstance(chart.get(key), list):
+                    chart[key] = sorted(chart[key], key=lambda k: order.get(k, len(order)))
         if chart["type"] in ("timeseries_line", "timeseries_bar", "timeseries_area",
                              "timeseries_scatter", "big_number_trend"):
             chart.setdefault("time_grain", DEFAULT_TIME_GRAIN)

@@ -142,6 +142,21 @@ GATED_FIELDS: tuple[GatedField, ...] = (
                 "Superset {since}; {runs}, and {that} labels every segment of a stacked "
                 "mixed chart. Set only_total: false for the same labels on every release.",
     ),
+    GatedField(
+        # Keyed on bars the author asks for (cell_bars true or a list, or color_by_sign or
+        # absolute_bars, which draw on them). Superset's own bars, left unset, vanish too,
+        # but nobody asked for them.
+        "cell_bars", "6.1.0", "warn",
+        "draws no cell bar on a table with a colour rule",
+        "plugin-chart-table/src/TableChart.tsx: a numeric column draws no bar while "
+        "conditional_formatting holds any rule at 4.1.4 :705-717, 5.0.0 :710-722 and 6.0.0 "
+        ":844-858; 6.1.0 hides a bar only in a cell a rule paints (:979, :1048)",
+        _charts(lambda c: c.type == "table" and bool(c.conditional_formatting)
+                and c.asks_for_bars()),
+        warning="{where} asks for cell bars beside colour rules (conditional_formatting), which "
+                "Superset draws together from {since}; {runs}, and {that} draws no cell bar on "
+                "a table with any colour rule.",
+    ),
 )
 
 

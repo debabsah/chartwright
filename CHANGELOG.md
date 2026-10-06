@@ -5,7 +5,15 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ## Unreleased
 
+### Added
+
+- Table cell bars per column. `cell_bars` takes a list of labels as well as true or false: `"cell_bars": ["Revenue", "Change"]` draws bars on those columns only. `color_by_sign` colours bars by sign, green above zero and red below (Superset 6.0+; 4.1.4 and 5.0.0 colour only the negative bars, red), for the whole table or the labels listed, so a change shows its sign while revenue bars stay neutral; `"color_by_sign": false` turns off the sign colours Superset draws by default. `absolute_bars` sizes bars by absolute value from the cell's left edge (Superset's "Align +/-"), so a rise and a fall of the same size draw the same bar. Each compiles to Superset's own table-wide and per-column settings; `decompile` reads any mix of them back as Superset draws it, and `plan` reports a change made in the UI. chartwright 0.5.0 and earlier refuse a spec that uses them.
+- `check`, `apply` and `plan` warn when a table asks for cell bars beside colour rules on Superset before 6.1.0, which draws no cell bar on a table with any colour rule.
+
 ### Fixed
+
+- `plan` no longer reports a table changed when its `hidden` labels are listed in another order than `decompile` reads them back; their order changes nothing Superset draws.
+- `decompile` (and so `adopt`) no longer reports the values an untouched table stores as settings it can't carry: HTML rendered, columns fixed in place, paging in the browser, no percentage metrics, and bars coloured by sign. A table saved in Superset reads back without a loss; each of these is still named when changed.
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 

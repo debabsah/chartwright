@@ -719,6 +719,14 @@ class FormatRule(BaseModel):
         return self
 
 
+# A table's cell-bar switches: true or false for the whole table, or the labels that take it
+# (the table-wide switch off, each listed column's own on). Superset reads a column's own
+# value first and the table's otherwise (TableChart.tsx: 4.1.4 :694-701, :718-720; 5.0.0
+# :699-706, :723-725; 6.1.0 :886-893, :906).
+LabelList = Annotated[list[str], Field(min_length=1)]
+BAR_SWITCHES = ("cell_bars", "color_by_sign", "absolute_bars")
+
+
 class TableChart(_ChartBase):
     type: Literal["table"]
     columns: list[str] | None = Field(default=None, description="Raw-records mode: plain columns")
@@ -744,11 +752,30 @@ class TableChart(_ChartBase):
     number_formats: dict[str, str] = Field(
         default_factory=dict, description="d3 format per label, e.g. {\"Rate\": \".3f\"}",
     )
-    cell_bars: bool | None = Field(
+    cell_bars: bool | LabelList | None = Field(
         default=None,
-        description="Bars behind numeric cells (Superset draws them by default; false for ids, "
-                    "years or a column a colour rule already speaks for). `advise --fix` "
-                    "fills false on a raw table with id, code, year or zip columns",
+        description="Bars behind numeric cells: true or false for the whole table (Superset "
+                    "draws them by default), or the labels that get them, e.g. [\"Revenue\"], "
+                    "with none elsewhere. An aggregate table draws them on metrics only. Keep "
+                    "them off ids, years and a column a colour rule already speaks for; "
+                    "`advise --fix` fills false on a raw table with id, code, year or zip columns",
+    )
+    color_by_sign: bool | LabelList | None = Field(
+        default=None,
+        description="Colour each cell bar by its sign: green above zero and red below (Superset "
+                    "6.0+; 4.1.4 and 5.0.0 colour only the negative bars, red). On for the whole "
+                    "table by default; false turns it off, and labels, e.g. [\"Change\"], keep it "
+                    "on those columns only, so a magnitude's bars stay neutral. It colours the "
+                    "bar, not the number: each label needs a cell bar (coloured text is a "
+                    "conditional_formatting rule with paint: text)",
+    )
+    absolute_bars: bool | LabelList | None = Field(
+        default=None,
+        description="Size each cell bar by the value's absolute size, from the cell's left edge "
+                    "(Superset's \"Align +/-\"): -20 and +20 draw the same bar, and color_by_sign "
+                    "tells them apart. By default a column with negative values draws them left "
+                    "of a zero line instead. true for the whole table, or labels, e.g. "
+                    "[\"Change\"]; each label needs a cell bar",
     )
     date_format: str | None = Field(default=None, description="strftime for date columns, e.g. '%Y-%m-%d'")
     page_length: int | None = Field(
@@ -784,6 +811,25 @@ class TableChart(_ChartBase):
     def labels(self) -> list[str]:
         return [metric_label(m) for m in self.metrics or []] + list(self.groupby or []) + list(self.columns or [])
 
+    def bar_capable(self) -> list[str]:
+        """The labels Superset can draw a cell bar on: a metric in aggregate mode, any column
+        in raw mode (a text column draws none), never a dimension (TableChart.tsx: 4.1.4
+        :721, 5.0.0 :726, 6.1.0 :910, `isMetric || isRawRecords || isPercentMetric`)."""
+        return list(self.columns) if self.columns else [metric_label(m) for m in self.metrics or []]
+
+    def barred(self) -> list[str]:
+        """The labels that draw a cell bar, in label order."""
+        bars = self.cell_bars
+        if bars is False:
+            return []
+        capable = self.bar_capable()
+        return capable if bars is None or bars is True else [k for k in capable if k in bars]
+
+    def asks_for_bars(self) -> bool:
+        """Whether the spec asks for cell bars itself, rather than leaving Superset's."""
+        return (self.cell_bars is True or isinstance(self.cell_bars, list)
+                or any(set_value(self, f) for f in ("color_by_sign", "absolute_bars")))
+
     @model_validator(mode="after")
     def _mode(self) -> "TableChart":
         aggregate = bool(self.metrics or self.groupby)
@@ -801,12 +847,39 @@ class TableChart(_ChartBase):
         named += [(h, "hidden") for h in self.hidden] + [(k, "number_formats") for k in self.number_formats]
         named += [(k, attr) for attr in ("column_align", "column_widths", "column_headers")
                   for k in getattr(self, attr)]
+        named += [(k, attr) for attr in BAR_SWITCHES if isinstance(getattr(self, attr), list)
+                  for k in getattr(self, attr)]
         for label, where in named:
             if label not in labels:
                 raise ValueError(f"{where} {label!r} is not one of the table's labels {sorted(labels)}")
         if self.show_totals and raw:
             raise ValueError("table chart: show_totals needs aggregate mode (metrics); a raw table has no totals row")
+        self._check_bar_switches()
         return self
+
+    def _check_bar_switches(self) -> None:
+        for attr in BAR_SWITCHES:
+            value = getattr(self, attr)
+            if isinstance(value, list) and len(set(value)) < len(value):
+                twice = next(k for k in value if value.count(k) > 1)
+                raise ValueError(f"{attr} lists {twice!r} twice")
+        if isinstance(self.cell_bars, list):
+            dims = [k for k in self.cell_bars if k not in self.bar_capable()]
+            if dims:
+                raise ValueError(f"cell_bars {dims[0]!r} is a dimension: an aggregate table draws "
+                                 "cell bars on its metrics only")
+        barred = self.barred()
+        for attr in ("color_by_sign", "absolute_bars"):
+            # A written Superset default (color_by_sign true, absolute_bars false) asks nothing.
+            ask = set_value(self, attr)
+            if ask is True and not barred:
+                raise ValueError(f"{attr} draws on cell bars, and cell_bars is false; "
+                                 "list the columns that keep a bar in cell_bars")
+            if isinstance(ask, list):
+                bare = [k for k in ask if k not in barred]
+                if bare:
+                    raise ValueError(f"{attr} {bare[0]!r} has no cell bar to draw on; add it "
+                                     "to cell_bars")
 
 
 # Pivot aggregate choices, identical in PivotTable controlPanel.tsx at 4.1.4, 5.0.0, 6.1.0.
@@ -2152,6 +2225,9 @@ SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
     "funnel": {"label_type": "key"},
     "treemap": {"label_type": "key_value"},
     "heatmap": {"color_scheme": HEATMAP_DEFAULT_SCHEME},
+    # Table controlPanel.tsx: color_pn defaults true, align_pn false (4.1.4 :523, :509;
+    # 5.0.0 :572, :558; 6.1.0 :692, :678), filled in on a dashboard by applyDefaultFormData.
+    "table": {"color_by_sign": True, "absolute_bars": False},
     "dashboard": {"refresh_frequency": 0, "filter_bar_orientation": "vertical"},
 }
 

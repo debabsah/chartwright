@@ -34,6 +34,7 @@ into one. Everything below works from that one file.
     - A time range per chart, such as a "Last 30 days" KPI on a dashboard that shows all time.
     - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
+    - Table cell bars on the columns you name (`"cell_bars": ["Revenue", "Change"]`), coloured by sign on just the change (`"color_by_sign": ["Change"]`) so revenue bars stay neutral, and sized by absolute value where you list them (`"absolute_bars"`), so a rise and a fall of the same size draw the same bar.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
     - Heatmap values and colour scheme; what pie, funnel and treemap labels show, and their number format.
 - **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend.
