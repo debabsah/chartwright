@@ -1101,7 +1101,9 @@ def _x_label_params(chart: _AxisChart, p: dict) -> None:
 # Chart types whose 6.1.0 control panel declares echart_options (scatter's does not).
 _ECHART_OPTIONS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "mixed")
 # A mixed query's kind -> its seriesType (EchartsTimeseriesSeriesType, Timeseries/types.ts).
-SERIES_TYPE = {"bar": "bar", "line": "line", "area": "line"}
+# seriesType choices (MixedTimeseries/controlPanel.tsx; EchartsTimeseriesSeriesType in
+# Timeseries/types.ts, the same enum at 4.1.4, 5.0.0 and 6.1.0).
+SERIES_TYPE = {"bar": "bar", "line": "line", "area": "line", "scatter": "scatter"}
 
 
 def _has_bars(chart) -> bool:

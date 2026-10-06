@@ -1248,8 +1248,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             # transformSeries draws 'bar' as bars, and scatter, smooth and the steps their
             # own way; any other value, the old echarts_timeseries_* names included, as a
             # straight line (Timeseries/transformers.ts:237-243 at 4.1.4, :306-312 at 6.1.0).
-            kind = "bar" if stored == "bar" else "line"
-            if stored in ("scatter", "smooth", "start", "middle", "end"):
+            kind = stored if stored in ("bar", "scatter") else "line"
+            if stored in ("smooth", "start", "middle", "end"):
                 losses.append(Loss(name, f"query {key.upper()} series type {stored!r} not "
                                          f"preserved (a straight line on re-apply)"))
             disp = kind_key.replace("seriesType", "")  # "" for query A, "B" for query B

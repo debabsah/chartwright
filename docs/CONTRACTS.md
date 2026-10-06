@@ -674,6 +674,10 @@ running the tool against real instances of all three releases.
   including the older `echarts_timeseries_line` and `echarts_timeseries_bar`
   names, draws a straight line (`Timeseries/transformers.ts:237-243` at
   4.1.4, `:306-312` at 6.1.0), so decompile reads it as `kind: "line"`.
+  `kind: "scatter"` writes `seriesType` `scatter`, a point per value and no
+  line (`EchartsTimeseriesSeriesType.Scatter`, `Timeseries/types.ts:44-52` at
+  6.1.0, the same enum at 4.1.4 and 5.0.0); smooth and the steps stay outside
+  the spec and decompile names them.
 - **A mixed chart draws every line solid, at one width.** `transformSeries`
   takes a series' line style only from its caller
   (`Timeseries/transformers.ts:273-276` at 4.1.4, `:287-290` at 5.0.0,

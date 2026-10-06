@@ -1401,8 +1401,8 @@ class TreemapChart(_ChartBase, _ColorSchemeMixin):
 
 
 class MixedSeries(BaseModel):
-    """One of a mixed chart's two queries: its metrics, drawn as bars, a line or a
-    filled area, on the primary (left) or secondary (right) value axis. No release gives
+    """One of a mixed chart's two queries: its metrics, drawn as bars, a line, a
+    filled area or points, on the primary (left) or secondary (right) value axis. No release gives
     a query's line a width or dash of its own (docs/CONTRACTS.md). To draw a reference
     series lighter, such as last year under this year, put it in its own query and give
     it a pale colour with the dashboard's label_colors, or make it an area with a low
@@ -1411,11 +1411,11 @@ class MixedSeries(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     metrics: list[str] = Field(min_length=1)
-    kind: Literal["bar", "line", "area"] = Field(
+    kind: Literal["bar", "line", "area", "scatter"] = Field(
         default="bar",
-        description="bar, line, or area: a line with the space under it filled. A line "
-                    "draws over an area whichever query holds it, so an area under a line "
-                    "takes either order",
+        description="bar, line, area (a line with the space under it filled), or scatter "
+                    "(a point per value, no line). A line draws over an area whichever "
+                    "query holds it, so an area under a line takes either order",
     )
     opacity: float | None = Field(
         default=None, ge=0, le=1,

@@ -3,6 +3,17 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
+## Unreleased
+
+### Upgrading from 0.6
+
+- A spec that uses a field new here is refused by chartwright 0.6 (`extra_forbidden` or `literal_error`); upgrade CI before committing one. The new fields:
+  - a mixed chart's `kind: "scatter"`.
+
+### Added
+
+- A mixed chart's query can draw points: `kind: "scatter"` writes Superset's `scatter` series type, a point per value and no line. Decompile reads a chart saved with it in Superset back as points instead of naming a loss.
+
 ## 0.6.0 (2026-10-05)
 
 Bridge two totals with a waterfall and show a spread with a box plot, colour a KPI by its value, put cell bars on chosen table columns, and head the sections of a sketch. `advise` now checks axis titles, readable type, markdown that fits its block and sub-tabs too thin to earn a click, and `plan` is clean straight after `apply`.
