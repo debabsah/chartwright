@@ -55,7 +55,10 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # With it, a bar's sort_by: data.top-n-sort warns on a row_limit under sort_by "total"
 # (the query is still ordered by the first metric), and chart.ordinal-order leaves a
 # bar ranked by sort_by alone.
-DESIGN_BRAIN_VERSION = "12"
+# "14" = big-number colour rules: chart.format-bands reads them (and no longer counts an
+# '=' band as everything above it), chart.color-contrast (warn) and
+# narrative.kpi-thresholds (info). A new warn rule can newly block a strict gate.
+DESIGN_BRAIN_VERSION = "14"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

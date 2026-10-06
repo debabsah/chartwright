@@ -37,6 +37,7 @@ from .spec import (
     _ColorSchemeMixin,
     _SeriesDisplay,
     hex_to_rgb,
+    metric_label,
     named_hex,
     parse_metric,
     row_items,
@@ -143,9 +144,9 @@ def _metric_payload(metric: str, slug: str, chart_name: str) -> str | dict:
 FORMAT_OPERATOR = {"<": "<", ">": ">", "=": "=", "between": "< x <"}
 
 
-def _format_rule_payload(rule) -> dict:
+def _band_payload(rule, column: str) -> dict:
     out = {
-        "column": rule.metric,
+        "column": column,
         "colorScheme": rule.paint_hex(),
         "operator": FORMAT_OPERATOR[rule.operator],
         # A rule is a solid band. Left unset, Superset fades '<' / '>' / range
@@ -158,6 +159,21 @@ def _format_rule_payload(rule) -> dict:
         out["targetValueRight"] = rule.target_right
     else:
         out["targetValue"] = rule.target
+    return out
+
+
+def _big_number_rule_payload(rule, chart) -> dict:
+    """A big number's rule, as its panel stores it (BigNumberTotal/controlPanel.ts
+    conditional_formatting: 4.1.4 and 5.0.0 :94, 6.1.0 :85). The column is the metric's
+    label, the one numeric column the panel offers; the number is painted from every
+    rule whose column is set (getColorFormatters.ts 4.1.4 and 5.0.0 :199, 6.1.0 :309)
+    and always solid, since the plugin asks for no alpha (BigNumberTotal/transformProps.ts
+    4.1.4 and 5.0.0 :99, 6.1.0 :121)."""
+    return _band_payload(rule, metric_label(chart.metric))
+
+
+def _format_rule_payload(rule) -> dict:
+    out = _band_payload(rule, rule.metric)
     if rule.paint == "text":
         out["objectFormatting"] = "TEXT_COLOR"
     if rule.apply_to:
@@ -262,6 +278,10 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["time_format"] = chart.date_format
             p["force_timestamp_formatting"] = True
         _pin_big_number_fonts(p)
+        if chart.conditional_formatting:
+            p["conditional_formatting"] = [
+                _big_number_rule_payload(r, chart) for r in chart.conditional_formatting
+            ]
     elif t == "big_number_trend":
         p["metric"] = metric(chart.metric)
         p["x_axis"] = chart.time_column

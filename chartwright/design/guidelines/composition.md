@@ -25,7 +25,8 @@
 - Color restraint: Superset's default palette, RAG only where a threshold has
   a real business meaning; never encode the same dimension with two palettes.
 - RAG polarity is a convention, not a choice: red = adverse, green = good
-  (IBCS). Bands on one metric must be disjoint and tell one story.
-- Heatmaps ship with a sequential scale normalized over the whole map: right
-  for magnitudes, wrong for signed deltas -- don't heatmap a metric that
-  crosses zero.
+  (IBCS). Bands on one metric must be disjoint and tell one story. A
+  status-coloured KPI (`big_number_total` rules) may colour only its
+  exceptions, and states its thresholds in its subtitle or description.
+- A heatmap's default sequential scale, normalized over the whole map, suits
+  magnitudes, not signed deltas: don't heatmap a metric that crosses zero.

@@ -446,6 +446,40 @@ running the tool against real instances of all three releases.
   `:616` at 6.1.0); `search_box` adds the search bar beside the picker (`:383`
   at 4.1.4 and 5.0.0, `:593` at 6.1.0). The design brain adds neither to a
   table whose rows all show in its panel (DESIGN-BRAIN.md §16).
+- **A big number's colour rules colour the number, on every release.** The
+  Big Number declares `conditional_formatting` at 4.1.4, 5.0.0 and 6.1.0
+  (`BigNumber/BigNumberTotal/controlPanel.ts`, 4.1.4 and 5.0.0 `:94`, 6.1.0
+  `:85`), so the field needs no version gate. Its `transformProps.ts` builds the
+  rules with no alpha (4.1.4 and 5.0.0 `:98-100`, 6.1.0 `:120-122`), so each is a
+  solid colour (`getColorFormatters.ts`, 4.1.4 and 5.0.0 `:180`, 6.1.0 `:279`),
+  and `BigNumberViz.tsx` sets it as the number's text colour (4.1.4 `:137-153`,
+  5.0.0 `:138-154`, 6.1.0 `:209-225`). What follows from that code:
+  - The number is text, so `green`, `amber` and `red` compile to the darker text
+    shades a table's `"paint": "text"` uses; a hex is used as written.
+  - Every rule is tested against the one number, and the last rule that matches
+    wins. A rule's column only has to be set (`getColorFormatters.ts`, 4.1.4 and
+    5.0.0 `:199`, 6.1.0 `:309`); the tool writes the metric's label, as the
+    panel does.
+  - A value of exactly 0 is never coloured: the number is tested only when it is
+    truthy (`bigNumber ? getColorFromValue(...) : false`, 4.1.4 `:144`, 5.0.0
+    `:145`, 6.1.0 `:216`). Apply's data check warns when a coloured big number
+    is 0 and a rule would have coloured it.
+  - The trendline KPI has no colour rules: `BigNumberWithTrendline` declares no
+    such control and its `transformProps.ts` passes none, at all three tags, so
+    the spec refuses the field there. Rules a chart kept after being switched to
+    the trendline in Superset colour nothing, and decompile drops them without a
+    loss.
+  - Decompile reads a named text shade back as its name and any other hex as
+    itself. 6.1.0's picker stores theme tokens (`colorSuccess`, `colorWarning`,
+    `colorError`, `ConditionalFormattingControl/constants.ts:68-72`), which the
+    spec can't hold, so a rule made there is a named loss, as on tables.
+  - Verified live on 4.1.4, 5.0.0 and 6.1.0: each number took its rule's
+    colour (a name's text shade, a hex as written), a number at 0 and one no
+    rule matched kept the default, `plan` was clean after `apply`, and a rule
+    changed through the chart API showed up in `plan`.
+  - Superset's development branch (read 2026-10-05, not a release) colours 0 but
+    lets every rule overwrite the colour, matched or not, so only the last rule
+    would count. Recheck multi-rule KPIs when the next release ships.
 - **A bar sorts its categories two ways.** With one series a post-processing
   sort orders the returned rows on the x column (`operators/sortOperator.ts`,
   which skips any chart with a groupby, 4.1.4 and 5.0.0 `:46`, 6.1.0 `:45`);

@@ -581,19 +581,37 @@ DatasetLookup = Callable[[str], dict | None]
 """dataset_uuid -> {'database','schema','table'} or None."""
 
 
-def _format_to_spec(cf: dict) -> dict | None:
-    """Superset conditional_formatting entry -> FormatRule dict, None if outside surface."""
-    text = cf.get("objectFormatting") == "TEXT_COLOR"
-    palette = FORMAT_TEXT_HEX if text else FORMAT_COLOR_HEX
+def _band_colour(cf: dict, palette: dict[str, str]) -> str | None:
+    """A rule's colour as the spec writes it: a named shade of `palette` reads back as
+    its name, any other #RRGGBB as itself; None for anything else (a 6.1 theme token)."""
     scheme = cf.get("colorScheme") if isinstance(cf.get("colorScheme"), str) else ""
-    # A named shade for this paint reads back as its name; any other #RRGGBB as itself.
     color = {v.upper(): k for k, v in palette.items()}.get(scheme.upper())
     if color is None and HEX_COLOUR_RE.fullmatch(scheme):
         color = scheme.upper()
+    return color
+
+
+def _band_targets(cf: dict, op: str) -> dict | None:
+    """A rule's threshold(s) as spec fields, None when Superset's entry lacks them."""
+    if op == "between":
+        left, right = cf.get("targetValueLeft"), cf.get("targetValueRight")
+        return None if left is None or right is None else {"target_left": left, "target_right": right}
+    return None if cf.get("targetValue") is None else {"target": cf["targetValue"]}
+
+
+def _band_operator(cf: dict) -> str | None:
     # '< x <' is Superset's range comparator; the bare "between" older
     # chartwright builds wrote (and Superset never matched) reads back the same.
     op = {"< x <": "between"}.get(cf.get("operator"), cf.get("operator"))
-    if not color or not cf.get("column") or op not in ("<", ">", "=", "between"):
+    return op if op in ("<", ">", "=", "between") else None
+
+
+def _format_to_spec(cf: dict) -> dict | None:
+    """Superset conditional_formatting entry -> FormatRule dict, None if outside surface."""
+    text = cf.get("objectFormatting") == "TEXT_COLOR"
+    color = _band_colour(cf, FORMAT_TEXT_HEX if text else FORMAT_COLOR_HEX)
+    op = _band_operator(cf)
+    if not color or not cf.get("column") or op is None:
         return None
     if cf.get("toTextColor") or cf.get("objectFormatting") not in (None, "BACKGROUND_COLOR", "TEXT_COLOR"):
         return None  # legacy text flag / cell bars: outside the surface
@@ -603,16 +621,29 @@ def _format_to_spec(cf: dict) -> dict | None:
     target_col = cf.get("columnFormatting") or ("ENTIRE_ROW" if cf.get("toAllRow") else None)
     if target_col:
         rule["apply_to"] = "row" if target_col == "ENTIRE_ROW" else target_col
-    if op == "between":
-        rule["target_left"] = cf.get("targetValueLeft")
-        rule["target_right"] = cf.get("targetValueRight")
-        if rule["target_left"] is None or rule["target_right"] is None:
-            return None
-    else:
-        rule["target"] = cf.get("targetValue")
-        if rule["target"] is None:
-            return None
-    return rule
+    targets = _band_targets(cf, op)
+    return None if targets is None else rule | targets
+
+
+def _big_number_rules_to_spec(p: dict, losses: list, name: str) -> list[dict]:
+    """A big number's conditional_formatting as BigNumberFormatRule dicts. The plugin
+    paints the number from every rule whose column is set, whichever column it names,
+    always solid and never by cell or row (BigNumberViz.tsx; getColorFormatters.ts
+    4.1.4 and 5.0.0 :199, 6.1.0 :309), so the column, the gradient and the cell options
+    say nothing about the number; a rule without a column paints nothing."""
+    rules = []
+    for cf in p.get("conditional_formatting") or []:
+        cf = cf if isinstance(cf, dict) else {}
+        color, op = _band_colour(cf, FORMAT_TEXT_HEX), _band_operator(cf)
+        targets = _band_targets(cf, op) if op else None
+        if not cf.get("column"):
+            losses.append(Loss(name, f"conditional format with no column, which Superset never "
+                                     f"paints, dropped: {cf}"))
+        elif color is None or targets is None:
+            losses.append(Loss(name, f"conditional format not representable, dropped: {cf}"))
+        else:
+            rules.append({"operator": op, "color": color, **targets})
+    return rules
 
 
 def _rules_to_spec(p: dict, losses: list, name: str, labels: set[str],
@@ -802,6 +833,9 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
                                      f"preserved; set date_format to keep it"))
         if p.get("y_axis_format") not in (None, "", "SMART_NUMBER") and "date_format" not in out:
             out["number_format"] = p["y_axis_format"]
+        rules = _big_number_rules_to_spec(p, losses, name)
+        if rules:
+            out["conditional_formatting"] = rules
     elif spec_type == "big_number_trend":
         m = metric_one(p.get("metric"))
         x = p.get("x_axis")
@@ -1224,11 +1258,15 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
     if spec_type in LEGEND_TYPES:
         mapped_here = mapped_here | _legend_to_spec(p, out, spec_type)
     if spec_type == "big_number_trend":
+        # conditional_formatting: the trendline plugin never reads it (no control, and no
+        # colour rules in its transformProps at 4.1.4, 5.0.0 and 6.1.0), so rules left from
+        # a Big Number the chart was switched from colour nothing.
         mapped_here = mapped_here | {"compare_lag", "compare_suffix", "subtitle", "color_picker",
                                      "rolling_type", "rolling_periods", "min_periods",
-                                     "start_y_axis_at_zero"}
+                                     "start_y_axis_at_zero", "conditional_formatting"}
     if spec_type == "big_number_total":
-        mapped_here = mapped_here | {"subtitle", "time_format", "force_timestamp_formatting"}
+        mapped_here = mapped_here | {"subtitle", "time_format", "force_timestamp_formatting",
+                                     "conditional_formatting"}
     if spec_type == "table":
         mapped_here = mapped_here | {"page_length", "show_totals", "include_search"}
     if spec_type == "pivot_table":

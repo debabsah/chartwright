@@ -140,6 +140,8 @@ def _observations_warning(chart, rows: int) -> str | None:
              f"{BOX_PLOT_ROWS:,}, where Superset 6.0.0 or later stops an unset row_limit")
     return (f"the observations reached {where} ({rows:,} rows), so the boxes may leave "
             f"some out; raise row_limit or coarsen distribute_across")
+
+
 def _value_key(v) -> str:
     """A filter value or a returned one, compared as text: a list of [2, 4] matches the 2
     and 4 a numeric column returns, and 2.0 reads as 2."""
@@ -182,6 +184,24 @@ def _empty_values_warning(chart, queries: list[dict], result: list, ds) -> str |
                      f" no rows" + (" within the row limit" if capped else "")
                      + f", so the chart draws nothing for {'it' if len(missing) == 1 else 'them'}")
     return "; ".join(notes) or None
+
+
+def _zero_colour_warning(chart, result: list) -> str | None:
+    """A big number at exactly 0 under a colour rule that takes 0. Superset colours the
+    number only when it is truthy (BigNumberViz.tsx `bigNumber ? getColorFromValue(...)
+    : false`, 4.1.4 :144, 5.0.0 :145, 6.1.0 :216), so the rule's colour never shows and
+    the number keeps the default text colour. Smoke already holds the value."""
+    if chart.type != "big_number_total" or not chart.conditional_formatting:
+        return None
+    data = (result[0].get("data") or []) if result else []
+    value = data[0].get(metric_label(chart.metric)) if data and isinstance(data[0], dict) else None
+    if isinstance(value, bool) or value != 0:
+        return None
+    taken = [r for r in chart.conditional_formatting if r.matches(0)]
+    if not taken:
+        return None
+    return (f"the number is 0, which Superset never colours, so it shows in the default "
+            f"colour, not the {taken[-1].color} its rules give 0")
 
 
 @dataclass
@@ -610,7 +630,8 @@ def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: Supe
     if rows == 0:
         return outcome(True, True, f"query succeeded but returned 0 rows{with_defaults}")
     notes = [w for w in ((_fit_warning(chart, spec, result) or _bridge_warning(chart, result)
-                          or _observations_warning(chart, rows) or _window_warning(chart, rows)),
+                          or _observations_warning(chart, rows) or _window_warning(chart, rows)
+                          or _zero_colour_warning(chart, result)),
                          _empty_values_warning(chart, queries, result, ds)) if w]
     if notes:
         return outcome(True, True, f"{rows} rows{with_defaults}; " + "; ".join(notes))

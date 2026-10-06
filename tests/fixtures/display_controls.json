@@ -45,6 +45,19 @@
       "subtitle": "Data through"
     },
     {
+      "name": "Average Price",
+      "type": "big_number_total",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "AVG(price_each) AS Avg Price",
+      "number_format": "$,.2f",
+      "description": "Average unit price: green above $90, amber $80 to $90, red below $80.",
+      "conditional_formatting": [
+        {"operator": "<", "target": 80, "color": "red"},
+        {"operator": "between", "target_left": 80, "target_right": 90, "color": "#B26B00"},
+        {"operator": ">", "target": 90, "color": "green"}
+      ]
+    },
+    {
       "name": "Sales by Line",
       "type": "timeseries_line",
       "dataset": {"database": "examples", "table": "cleaned_sales_data"},
@@ -330,7 +343,7 @@
   ],
   "layout": {
     "rows": [
-      ["Revenue KPI", "Trailing Revenue", "Orders This Quarter", "Latest Order"],
+      ["Revenue KPI", "Trailing Revenue", "Orders This Quarter", "Latest Order", "Average Price"],
       ["Sales by Line", "Monthly Orders"],
       ["Quantity Area", "Price vs Time"],
       ["Orders by Hour", "Share by Line"],

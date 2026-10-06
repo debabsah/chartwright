@@ -19,12 +19,13 @@ into one. Everything below works from that one file.
 - **15 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, and mixed (bars, lines and filled areas on two value axes, over time or over categories).
 - **17 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, mixed (bars and a line on two value axes, over time or over categories), waterfall (a bridge from one total to the next through the steps that move it), and box plot (a distribution per group: median, quartiles, whiskers and outliers).
 - **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`), and custom SQL for ratios the dataset doesn't define: `SQL(100.0 * SUM(on_time) / NULLIF(COUNT(*), 0)) AS On-time %`. `chartwright check` lists custom SQL as unchecked, and apply's data check runs it.
-- **Filters and Formatting**: Per-chart WHERE conditions (a column test, or custom SQL such as `{"sql": "amount > 0 OR refunded"}`), a native filter bar, and formatting for table and pivot cells.
+- **Filters and Formatting**: Per-chart WHERE conditions (a column test, or custom SQL such as `{"sql": "amount > 0 OR refunded"}`), a native filter bar, and formatting for table and pivot cells, and for big numbers.
     - Filter bar: value pickers, a time range with an optional starting range, numeric sliders, and time grain and time column pickers.
     - Scope any filter to specific charts, the time range included.
     - Cascading filters: a city picker lists only the cities of the region picked (`"dependencies": ["Region"]`).
     - Value pickers can pre-filter their list, sort it by a saved metric, search every value in the database, or exclude what is picked; every filter takes a description, shown as its tooltip.
     - Solid colour rules on pivot and table cells: green, amber or red (Superset's own picker colours), or any hex colour such as `#0057B8`.
+    - Colour a big number by its value, such as a balance-closure KPI in red outside ±2% and green inside; `chartwright advise` tells you when a colour is too pale to read or the KPI doesn't say what its colours mean.
     - On Superset 6.1+, a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it.
     - A fixed ascending table sort, d3 number and date formats, and on Superset 6.0+ hidden table columns.
 - **Chart Options**: Set the common options of Superset's chart panels in the spec; an option changed in the UI shows up in `plan`.

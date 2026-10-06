@@ -9,6 +9,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 - The design brain is version 8. `advise` now flags a table whose height can't show every row its `row_limit` allows, as the smoke check after `apply` does when the data fills it; before, it passed a table that showed half. A `--design strict` or `advise --strict` gate can newly fail on such a table. To keep the old threshold for tables that rarely reach their `row_limit`, set `table_visible_ratio: 0.5` in `design.yaml` or a standards file.
 - The design brain is version 11. `advise` now warns when a markdown block's text runs past the block's bottom edge (`size.markdown-fit`), so a `--design strict` or `advise --strict` gate can newly fail on such a block; `advise --fix` raises it. `layout.markdown-height` now fixes a one-line block to the height its line takes, 1.6 units for a line of text up to 2.4 for a `#` heading, instead of 2.
+- A spec with `conditional_formatting` on a big number is refused by chartwright 0.5.0 and earlier (`extra_forbidden`); upgrade CI before committing one.
+- The design brain is version 14. Its new warn rule, `chart.color-contrast`, can fail `advise --strict` and `--design strict` on a spec that passed before: a colour rule painting text or a trendline too pale to read.
 
 ### Added
 
@@ -17,6 +19,14 @@ while the major version is 0, minor bumps may include breaking changes and say s
   - A block whose last line or padding only reaches the edge gets an info: it scrolls a few px, and Windows draws a scrollbar in it. That covers short strips: a line of text needs 1.6 units, a `##` heading 2.2.
   - It reads the text sizes and spacing a dashboard's CSS gives its markdown: font sizes, line heights, weights, letter and word spacing, margins, padding and borders set on `.dashboard-markdown` elements, `h4 + p` and `p:last-child` rules included, in cascade order over Superset's own. CSS that could change a block's height in a way it doesn't read (another font family, attribute selectors and pseudo-elements, `@media` rules) is named in the finding, as is a theme.
   - It checks blocks in layout rows, tabs and sub-tabs, and header and footer rows, and allows for the filter bar, which narrows the page on a dashboard with native filters. A header or footer row a standard owns is reported, never resized, and a block holding an image gets no fix, since its height is unknown.
+- `conditional_formatting` on `big_number_total`: colour the number by its value, such as a balance-closure KPI in red outside ±2% and green inside (`[{"operator": "<", "target": -0.02, "color": "red"}, {"operator": ">", "target": 0.02, "color": "red"}]`). The rules take the operators, thresholds and colours of table and pivot rules; a named colour takes its darker text shade, since the number is text. Superset 4.1.4, 5.0.0 and 6.1.0 all colour it, so no release is refused or warned. Decompile reads the rules back, and `plan` reports a rule changed in Superset.
+  - When several rules match, the last one's colour wins, as in Superset.
+  - `apply_to`, `paint` and a `metric` other than the chart's own are refused on a big number's rule, and so is `conditional_formatting` on `big_number_trend`, which Superset can't colour (its `trend_color` colours the line).
+  - Superset never colours a value of exactly 0; apply's data check warns when a coloured big number is 0 and a rule would have coloured it.
+- Design brain 14:
+  - `chart.color-contrast` (warn): a colour too pale to read on the white card, below 3:1 for a big number's rule or a trendline and below 4.5:1 for a table or pivot text rule.
+  - `narrative.kpi-thresholds` (info): a coloured big number whose subtitle and description don't state its thresholds.
+  - `chart.format-bands` checks a big number's rules for overlapping bands. A single band on a big number is fine: colouring only the exceptions is enough.
 
 ### Fixed
 
@@ -102,6 +112,10 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - `decompile` (and so `adopt` and `plan`) no longer lists a mixed chart's untouched query B settings (marker size, time comparison type, metric truncation, rolling window, series sort), which a chart saved in Superset stores beside query A's, as settings it can't carry, nor a trendline KPI's untouched Force date format. It reads the older `echarts_timeseries_line` and `echarts_timeseries_bar` series types, which Superset draws as a straight line, as `kind: "line"`, with no loss.
 
 - `standards apply` no longer adds a header or footer row that the body already holds at its edge (the last rows for a footer, the first for a header). A dashboard built in the UI has no header or footer, so `decompile` and `adopt` read its legal line as a body row, and the standard's footer was then added below it, showing it twice. `--claim` moves such a row into the header or footer and records it; `explain` and the apply summary name it.
+
+- `chart.format-bands` read an `=` rule as covering every value above its target, so a pivot with `= 1` in red and `> 5` in green was reported as overlapping bands.
+
+- `decompile` (and so `adopt`) no longer reports colour rules kept on a trendline KPI that was switched from a Big Number in Superset as a loss: the trendline never draws them.
 
 ## 0.5.0 (2026-10-04)
 

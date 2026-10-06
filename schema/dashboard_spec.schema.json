@@ -816,6 +816,14 @@
           "default": null,
           "description": "Show the number as a date, in a d3 time format, e.g. \"%a %-d %b %Y\" (Sat 3 Oct 2026): a freshness tile over MAX(<date column>). A date or timestamp metric takes it as it is, and a number is read as epoch milliseconds (Superset's Force date format); not with number_format",
           "title": "Date Format"
+        },
+        "conditional_formatting": {
+          "description": "Colour the number by its value, e.g. red outside a tolerance: [{\"operator\": \"<\", \"target\": -0.02, \"color\": \"red\"}, {\"operator\": \">\", \"target\": 0.02, \"color\": \"red\"}]. Rules are solid; when several match, the last one wins. Say what the colours mean (the thresholds) in subtitle or description.",
+          "items": {
+            "$ref": "#/$defs/BigNumberFormatRule"
+          },
+          "title": "Conditional Formatting",
+          "type": "array"
         }
       },
       "required": [
@@ -825,6 +833,98 @@
         "metric"
       ],
       "title": "BigNumberChart",
+      "type": "object"
+    },
+    "BigNumberFormatRule": {
+      "additionalProperties": false,
+      "description": "One colour band on a big number: Superset colours the number itself, solid,\nwhile its value meets the rule (BigNumberViz.tsx at 4.1.4, 5.0.0 and 6.1.0). The\nnumber is text, so a name takes its darker text shade. When several rules match,\nthe last one's colour wins; a value of exactly 0 is never coloured.",
+      "properties": {
+        "metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Leave it out: a big number's rules test its one value. If given, it must be the chart's metric label",
+          "title": "Metric"
+        },
+        "operator": {
+          "enum": [
+            "<",
+            ">",
+            "=",
+            "between"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Threshold for <, > or =",
+          "title": "Target"
+        },
+        "target_left": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Lower bound for 'between'",
+          "title": "Target Left"
+        },
+        "target_right": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Upper bound for 'between'",
+          "title": "Target Right"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "enum": [
+                "green",
+                "amber",
+                "red"
+              ],
+              "type": "string"
+            },
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            }
+          ],
+          "description": "green, amber or red (the darker text shades, which read on white), or any #RRGGBB, used as written",
+          "title": "Color"
+        }
+      },
+      "required": [
+        "operator",
+        "color"
+      ],
+      "title": "BigNumberFormatRule",
       "type": "object"
     },
     "BigNumberTrendChart": {
