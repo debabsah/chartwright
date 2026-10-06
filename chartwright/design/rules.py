@@ -36,6 +36,7 @@ from ..spec import (
     hex_to_rgb,
     parse_metric,
     set_value,
+    table_header_units,
     without_superset_defaults,
 )
 from ..visible import contrast
@@ -266,6 +267,45 @@ def table_window(ctx: RuleContext):
                 if target <= 20 and not brain else None,
                 height_driven=True,
             )
+
+
+@rule("size.table-chrome", "info",
+      "a table whose rows all show in its panel draws no page-size picker, pager or search "
+      "box", since="10")
+def table_chrome(ctx: RuleContext):
+    """DataTables chrome over rows the reader already sees. Any page_length above 0 draws
+    the page-size picker, on one page too (hasPagination, plugin-chart-table
+    DataTable/DataTable.tsx:123 at 4.1.4 and 5.0.0, :173 at 6.1.0), and the pager joins
+    it from a second page (:407 at 4.1.4 and 5.0.0, :616 at 6.1.0); search_box
+    (include_search) draws the search bar (:383 at 4.1.4 and 5.0.0, :593 at 6.1.0). The
+    brain's own fills never add them to such a table (default.page-length,
+    default.search-box), so this names the author's."""
+    for c in ctx.spec.charts:
+        if c.type != "table" or c.row_limit is None:
+            continue
+        h = ctx.height(c.name)
+        # The rows the panel shows with nothing above or below them (spec.py's grid model).
+        shown = math.floor(grid_rows_visible(h, table_header_units()))
+        if c.row_limit > shown:
+            continue  # the rows outgrow the panel: paging and search earn their room
+        chrome, fields = [], []
+        if c.page_length and not ctx.brain_owns(c, "page_length"):
+            pages = math.ceil(c.row_limit / c.page_length)
+            chrome.append("a page-size picker" + (f" and a pager over {pages} pages"
+                                                  if pages > 1 else ""))
+            fields.append(f"page_length {c.page_length}")
+        if c.search_box and not ctx.brain_owns(c, "search_box"):
+            chrome.append("a search box")
+            fields.append("search_box")
+        if not chrome:
+            continue
+        yield Finding(
+            "size.table-chrome", "info", c.name, ctx.where(c.name),
+            f"all {c.row_limit} rows show at height {h:g}, yet {' and '.join(fields)} "
+            f"draw{'s' if len(fields) == 1 else ''} {' and '.join(chrome)} over them; "
+            f"remove {'it' if len(fields) == 1 else 'them'} so the table reads whole "
+            f"(page_length 0 shows every row on one page with no picker)",
+        )
 
 
 @rule("size.hbar-window", "warn", "horizontal bars need ~0.5 units of height per bar", fixable=True)

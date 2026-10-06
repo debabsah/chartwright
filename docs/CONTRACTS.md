@@ -406,6 +406,12 @@ running the tool against real instances of all three releases.
   `:699`, 6.1.0 `:789`). The tool never turns server pagination on, so it
   writes no `server_page_length` (0.3.0 and earlier wrote Superset's stored
   default, 10, which changed nothing). `page_length` in the spec sets the page.
+  Any `page_length` above 0 draws the page-size picker, on a table of one page
+  too, and the pager joins it from a second page (`hasPagination`,
+  `DataTable/DataTable.tsx:123` and `:407` at 4.1.4 and 5.0.0, `:173` and
+  `:616` at 6.1.0); `search_box` adds the search bar beside the picker (`:383`
+  at 4.1.4 and 5.0.0, `:593` at 6.1.0). The design brain adds neither to a
+  table whose rows all show in its panel (DESIGN-BRAIN.md §16).
 - **A bar sorts its categories two ways.** With one series a post-processing
   sort orders the returned rows on the x column (`operators/sortOperator.ts`,
   which skips any chart with a groupby, 4.1.4 and 5.0.0 `:46`, 6.1.0 `:45`);
@@ -475,6 +481,58 @@ running the tool against real instances of all three releases.
   including the older `echarts_timeseries_line` and `echarts_timeseries_bar`
   names, draws a straight line (`Timeseries/transformers.ts:237-243` at
   4.1.4, `:306-312` at 6.1.0), so decompile reads it as `kind: "line"`.
+- **A mixed chart draws every line solid, at one width.** `transformSeries`
+  takes a series' line style only from its caller
+  (`Timeseries/transformers.ts:273-276` at 4.1.4, `:287-290` at 5.0.0,
+  `:356-359` at 6.1.0), and the Mixed Chart hands it none, for either query
+  (`MixedTimeseries/transformProps.ts:382-411` and `:429-460` at 4.1.4, `:384`
+  and `:432` at 5.0.0, `:457-493` and `:530-567` at 6.1.0). Its panel has no
+  width or dash for a query or a metric, so the spec offers none. 6.1.0's
+  ECharts Options can't single out a series either: they replace the chart's
+  list of series whole (`utils/mergeCustomEChartOptions.ts:64-73`), and a
+  theme's `echartsOptionsOverridesByChartType` merges one style into every
+  series (`components/Echart.tsx:254-273`, `utils/themeOverrides.ts:69-89`).
+  To draw a reference series lighter, such as list price under price paid,
+  put it in its own query and give it a pale colour with the dashboard's
+  `label_colors`, or make it an area with a low `opacity`. Seen live on 4.1.4,
+  5.0.0 and 6.1.0: a pale grey list price beside a blue price paid, both
+  2 px solid. Superset dashes a line only
+  for a line chart's time comparison (`time_compare`: `Timeseries/transformProps.ts:285-297`
+  at 4.1.4, `:288-295` at 5.0.0, and `:401-423` at 6.1.0 while "Match time
+  shift color" is ticked, its default), which the spec doesn't write yet;
+  until it does, a second metric in its own query is the way to draw a
+  comparison.
+- **An area chart's edges have no width.** The Area panel declares the fill's
+  `opacity` (`Timeseries/Area/controlPanel.tsx:92` at 4.1.4, `:93` at 5.0.0,
+  `:97` at 6.1.0), which the spec writes as `opacity`, but no line width, so
+  each area keeps a full-strength edge. On 6.1.0 a theme can thin the edges of
+  every area chart on the dashboards that use it, with
+  `"echartsOptionsOverridesByChartType": {"echarts_area": {"series":
+  {"lineStyle": {"width": 1}}}}` at the top of the theme's JSON
+  (`superset-core/src/theme/Theme.tsx:119-137`); that was read from the
+  source, not tried live.
+- **A line, bar, area or scatter chart has one number format for its axis
+  and its values.** The panel's "Axis Format" (`y_axis_format`,
+  `Timeseries/Regular/Bar/controlPanel.tsx:192-195` at 4.1.4 and 5.0.0,
+  `:228-231` at 6.1.0) formats the value axis, the values on the marks and
+  the tooltip (`Timeseries/transformProps.ts` 4.1.4 `:268-270`, `:318-324`
+  and `:515-521`; 5.0.0 `:271-273`, `:316-322` and `:515-521`; 6.1.0
+  `:365-370`, `:490-496` and `:961-967`). 6.1.0's `x_axis_number_format`
+  formats a numeric x axis only (`:189-196`). So `number_format` sets all
+  three, and a format with decimals puts them on the axis too. A `~` drops
+  trailing zeros: seen live on 4.1.4, 5.0.0 and 6.1.0, `,.1~f` labels the
+  axis in whole numbers (0, 20, 40) and a bar 47.2, where `.1f` labels the
+  axis 0.0, 20.0, 40.0; a value that is a whole number then shows without its
+  decimal too.
+- **A trendline KPI's line starts at zero unless `y_axis_truncate`.** The
+  panel's "Start y-axis at 0" (`start_y_axis_at_zero`,
+  `BigNumberWithTrendline/controlPanel.tsx:96` at 4.1.4 and 5.0.0, `:107` at
+  6.1.0, default true) becomes the trendline's `yAxis.scale:
+  !startYAxisAtZero` (`transformProps.ts:219` at 4.1.4 and 5.0.0, `:326` at
+  6.1.0), and the tool always wrote true. `y_axis_truncate: true` writes
+  false, so the line spans the card from its lowest value to its highest. Seen
+  live on 4.1.4, 5.0.0 and 6.1.0: a trailing-12-month total of $5.20M, a flat
+  line over a solid block from zero, rises across the card fitted.
 - **A heatmap's y axis runs from the bottom up.** Both axes are ECharts
   category axes, which put the first label at the left and at the bottom
   (`Heatmap/transformProps.ts:227-240` at 4.1.4, `:431-447` at 6.1.0). The

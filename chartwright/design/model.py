@@ -42,7 +42,11 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # default.count-format now fill a waterfall's show_value and number_format. The box
 # plot: chart.box-plot-observations and chart.box-plot-groups (warn), and
 # chart.ordinal-order now reads a box plot's groups.
-DESIGN_BRAIN_VERSION = "9"
+# "10" = no DataTables chrome on a table whose rows all show: default.search-box fills only
+# a paged table whose rows outgrow its panel (and --fix removes a box it filled on one
+# whose rows all show), and size.table-chrome, a new info rule, names an author's page
+# size or search box there.
+DESIGN_BRAIN_VERSION = "10"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

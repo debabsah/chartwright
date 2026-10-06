@@ -51,8 +51,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 ### Upgrading from 0.5
 
-- A spec with a mixed chart's `kind: "area"`, a trendline's `rolling_type`, a big number's `date_format` or a heatmap's `x_order` or `y_order` is refused by chartwright 0.5.0 and earlier (`literal_error` or `extra_forbidden`); upgrade CI before committing one.
-- The design brain is version 9. `data.rolling-window-span` is a new warn-level rule, so `--design strict` can newly block a rolling trendline KPI whose time range can't hold its window. `advise --fix` fills `compare_suffix` as "vs prior 12 months" where a 12-step rolling window compares with the 12 steps before, and, with column types (`--profile`), `date_format` on a big number of a date column.
+- A spec with a mixed chart's `kind: "area"`, a trendline's `rolling_type` or `y_axis_truncate`, a big number's `date_format` or a heatmap's `x_order` or `y_order` is refused by chartwright 0.5.0 and earlier (`literal_error` or `extra_forbidden`); upgrade CI before committing one.
+- The design brain is version 10. `data.rolling-window-span` is a new warn-level rule, so `--design strict` can newly block a rolling trendline KPI whose time range can't hold its window. `advise --fix` fills `compare_suffix` as "vs prior 12 months" where a 12-step rolling window compares with the 12 steps before, and, with column types (`--profile`), `date_format` on a big number of a date column. It also removes a search box it filled on a table whose rows all show (below), so a spec it fixed before shows that change in its diff.
 
 ### Added
 
@@ -61,6 +61,12 @@ while the major version is 0, minor bumps may include breaking changes and say s
     - `advise` warns when the chart's time range, or a defaulted dashboard time filter it loads with, is too short to hold the window and the comparison (`data.rolling-window-span`), and apply's data check warns from the time buckets the chart really has.
 - A big number shown as a date: `"date_format": "%a %-d %b %Y"` on a `big_number_total` shows `MAX(updated_at)` as "Sat 3 Oct 2026", for a tile that says how fresh the data is. It works on a date or timestamp metric and on a number of epoch milliseconds, and replaces `number_format`. With column types (`advise --profile`), `advise --fix` fills it on a big number of a date column's `MIN` or `MAX`, which Superset shows by default as its day alone ("Tue 31").
 - Heatmap axis order: `x_order` (left to right) and `y_order` (top to bottom), each `a_to_z`, `z_to_a`, `value_asc` or `value_desc`. `"y_order": "a_to_z"` puts the first label on top, such as a cohort triangle's oldest cohort; omitted, the labels keep running A to Z from the bottom up. On Superset 6.1.0 a value order ranks each label by its total; older releases order by the cells, so `check` warns there. `decompile` reads the order back.
+- A trendline KPI fitted to its values: `"y_axis_truncate": true` draws the trendline from its lowest value to its highest instead of up from zero, so a trailing-12-month total that moves a few percent shows the movement rather than a flat line over a solid block. `decompile` reads Superset's unticked "Start y-axis at 0" back as it.
+- Apply's data check names the values a chart's `IN` filter lists that return no rows, on a column the chart groups or draws by: a line chart that lists four zones where two have data now says which two it draws nothing for. A series limit that drops values on purpose, or a time column, is left alone.
+
+### Changed
+
+- The design brain adds no page-size picker, pager or search box to a table whose rows all show in its panel. `advise --fix` now fills a search box only on a raw table that pages, where the box sits in the bar the page-size picker already draws, and removes one it filled on a table whose rows all show. `advise` names a `page_length` or `search_box` you wrote on such a table (`size.table-chrome`, info), since Superset draws a page-size picker for any page size, even over one page; set `page_length` to 0 or leave it out to show every row with no picker.
 
 ### Fixed
 

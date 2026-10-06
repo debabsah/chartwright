@@ -126,7 +126,8 @@ def _display_params() -> dict[str, dict]:
                            # x by value, largest first; y A to Z from the TOP (bottom-up axis)
                            "sort_x_axis": "value_desc", "sort_y_axis": "alpha_desc"}),
     ("Trailing Revenue", {"rolling_type": "sum", "rolling_periods": 12, "min_periods": 6,
-                          "compare_lag": 12}),
+                          "compare_lag": 12, "start_y_axis_at_zero": False}),
+    ("Revenue KPI", {"start_y_axis_at_zero": True}),  # the trendline starts at zero unless truncated
     ("Sales and Price Areas", {"seriesType": "line", "seriesTypeB": "line", "area": True,
                                "areaB": True, "opacity": 1, "opacityB": 0.4, "yAxisIndexB": 1}),
     ("Price Spread", {"x_axis_title": "Unit price", "y_axis_title": "Orders"}),
@@ -334,6 +335,9 @@ def _edit_params(name, **changes):
     ("Revenue KPI", {"color_picker": {"r": 0x1B, "g": 0x7F, "b": 0x3B, "a": 1}}, {"trend_color": "green"}),
     ("Revenue KPI", {"compare_lag": "2"}, {"compare_lag": 2}),
     ("Revenue KPI", {"rolling_type": "None"}, {"rolling_type": None}),
+    # "Start y-axis at 0" unticked fits the trendline; unset is the control's default, true
+    ("Revenue KPI", {"start_y_axis_at_zero": False}, {"y_axis_truncate": True}),
+    ("Trailing Revenue", {"start_y_axis_at_zero": None}, {"y_axis_truncate": None}),
     # rollingWindowOperator: a missing window is 1, missing min periods 0 (ensureIsInt)
     ("Trailing Revenue", {"min_periods": 12}, {"rolling_min_periods": None}),
     ("Trailing Revenue", {"min_periods": None}, {"rolling_min_periods": 0}),
@@ -450,6 +454,8 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Trailing Revenue", {"rolling_periods": 6}),
     ("Trailing Revenue", {"min_periods": 0}),
     ("Trailing Revenue", {"rolling_type": "mean"}),
+    ("Trailing Revenue", {"start_y_axis_at_zero": True}),
+    ("Revenue KPI", {"start_y_axis_at_zero": False}),
     ("Line by Deal Size", {"sort_y_axis": "alpha_asc"}),
     ("Line by Deal Size", {"sort_x_axis": "value_asc"}),
     ("Sales and Price Areas", {"opacityB": 0.9}),

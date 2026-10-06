@@ -35,24 +35,23 @@
   the top; `y_order: "a_to_z"` puts the first label on top, as a cohort
   triangle (oldest cohort first) or a weekday grid reads.
 - A rolling KPI (`rolling_type`) shows a trailing window: name it ("Revenue,
-  trailing 12 months") and give a range holding the window plus `compare_lag`.
-- A paged table (`page_length`) needs room for one page and its pager; a
-  timeseries with many groups keeps the top few with `series_limit`.
+  trailing 12 months"), give a range holding the window plus `compare_lag`,
+  and set `y_axis_truncate` so its trendline shows the movement.
+- A paged table (`page_length`) needs room for one page and its pager; a table
+  whose rows all show takes no `page_length` or `search_box`. A timeseries
+  with many groups keeps the top few with `series_limit`. A mixed chart draws
+  every line alike: give a reference series a pale `label_colors` colour.
 - A waterfall explains how one total became another (last year to this year,
-  plan to actual) through steps that ADD UP: one SUM or COUNT of the change,
-  never an average or a distinct count. Not for shares (a bar) or trends (a
-  line). Put the opening, each step and the closing in the dataset as rows of
-  one step column; name the ends in `opening` and `closing`, the steps between
-  in `steps` (6.1.0+). An opening total needs a dashboard theme that keeps zero
-  on the axis (see `opening` in the schema); without `opening`, the first step
-  rises from zero. Set the three colours and `show_value`.
+  plan to actual) through steps that ADD UP: a SUM or COUNT of the change,
+  never an average. Put the opening, each step and the closing in the dataset
+  as rows of one step column; name the ends in `opening` and `closing`, the
+  steps in `steps` (6.1.0+). An opening total needs a theme that keeps zero on
+  the axis (see `opening` in the schema). Set the three colours and `show_value`.
 - Show the distribution, not the average, when the spread is the story
-  (delivery times, daily sales, latency): an average hides skew and outliers.
-  A `box_plot` beats a line of P50 and P90 across categories or a few periods,
-  and whenever the outliers matter; keep the line for a trend over many
-  periods. Give each box many observations: `distribute_across` a time column
-  at P1D, `groupby` the month. Superset colours each box by its group: pin one
-  colour to the group labels in `dashboard.label_colors`.
+  (delivery times, daily sales): a `box_plot` beats a line of P50 and P90
+  across categories or a few periods; keep the line for long trends. Give each
+  box many observations (`distribute_across` a time column at P1D, `groupby`
+  the month) and pin one colour to its groups in `dashboard.label_colors`.
 - One dominant category flattening its siblings is the data talking: note it
   or filter it, don't hide it.
 - Every chart with a time axis should tolerate the dashboard time filter;

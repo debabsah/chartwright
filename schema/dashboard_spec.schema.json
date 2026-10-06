@@ -576,7 +576,7 @@
             }
           ],
           "default": null,
-          "description": "d3 format for the value axis, e.g. ',.0f'",
+          "description": "d3 format for the value axis, e.g. ',.0f'. Superset uses the same format for the values show_value writes and the tooltip; a '~' drops trailing zeros, so ',.1~f' labels the axis 0, 5, 10 and a value 12.5",
           "title": "Number Format"
         },
         "category_sort": {
@@ -1106,6 +1106,12 @@
           "default": null,
           "description": "Steps a window needs before the trendline shows it. Omitted, it is rolling_periods: the line starts at the first full window, so every point (and the number) is a whole trailing window; 0 also draws the partial windows of the first steps, as Superset's own default does",
           "title": "Rolling Min Periods"
+        },
+        "y_axis_truncate": {
+          "default": false,
+          "description": "Fit the trendline to its values instead of drawing it up from zero (Superset's Start y-axis at 0, unticked). A trailing-12-month total that moves a few percent is a flat line over a solid block from zero; fitted, the line shows the movement. Say so where the reader expects a zero baseline",
+          "title": "Y Axis Truncate",
+          "type": "boolean"
         }
       },
       "required": [
@@ -3541,7 +3547,7 @@
             }
           ],
           "default": null,
-          "description": "d3 format for the primary axis",
+          "description": "d3 format for the primary axis and the tooltip values of its series; Superset also writes query a's show_value labels in it, whichever axis a sits on",
           "title": "Number Format"
         },
         "number_format_secondary": {
@@ -3554,7 +3560,7 @@
             }
           ],
           "default": null,
-          "description": "d3 format for the secondary axis",
+          "description": "d3 format for the secondary axis and the tooltip values of its series; Superset also writes query b's show_value labels in it, whichever axis b sits on",
           "title": "Number Format Secondary"
         },
         "y_axis_title_secondary": {
@@ -3616,7 +3622,7 @@
     },
     "MixedSeries": {
       "additionalProperties": false,
-      "description": "One of a mixed chart's two queries: its metrics, drawn as bars, a line or a\nfilled area, on the primary (left) or secondary (right) value axis.",
+      "description": "One of a mixed chart's two queries: its metrics, drawn as bars, a line or a\nfilled area, on the primary (left) or secondary (right) value axis. Superset draws\nevery line of a mixed chart solid at one width: it has no line width or dash for a\nquery or a metric. To draw a reference series lighter, such as last year under this\nyear, put it in its own query and give it a pale colour with the dashboard's\nlabel_colors, or make it an area with a low opacity.",
       "properties": {
         "metrics": {
           "items": {
@@ -5852,7 +5858,7 @@
             }
           ],
           "default": null,
-          "description": "d3 format for the value axis, e.g. '.1%'",
+          "description": "d3 format for the value axis, e.g. '.1%'. Superset uses the same format for the values show_value writes and the tooltip; a '~' drops trailing zeros, so ',.1~f' labels the axis 0, 5, 10 and a value 12.5",
           "title": "Number Format"
         },
         "type": {
@@ -5893,7 +5899,7 @@
             }
           ],
           "default": null,
-          "description": "Opacity of the area fill, 0-1 (default 0.2)",
+          "description": "Opacity of the area fill, 0-1 (default 0.2). Each area's edge stays a full-strength line: Superset's area chart has no line width",
           "title": "Opacity"
         }
       },
@@ -6357,7 +6363,7 @@
             }
           ],
           "default": null,
-          "description": "d3 format for the value axis, e.g. '.1%'",
+          "description": "d3 format for the value axis, e.g. '.1%'. Superset uses the same format for the values show_value writes and the tooltip; a '~' drops trailing zeros, so ',.1~f' labels the axis 0, 5, 10 and a value 12.5",
           "title": "Number Format"
         },
         "type": {
@@ -6826,7 +6832,7 @@
             }
           ],
           "default": null,
-          "description": "d3 format for the value axis, e.g. '.1%'",
+          "description": "d3 format for the value axis, e.g. '.1%'. Superset uses the same format for the values show_value writes and the tooltip; a '~' drops trailing zeros, so ',.1~f' labels the axis 0, 5, 10 and a value 12.5",
           "title": "Number Format"
         },
         "type": {
@@ -7337,7 +7343,7 @@
             }
           ],
           "default": null,
-          "description": "d3 format for the value axis, e.g. '.1%'",
+          "description": "d3 format for the value axis, e.g. '.1%'. Superset uses the same format for the values show_value writes and the tooltip; a '~' drops trailing zeros, so ',.1~f' labels the axis 0, 5, 10 and a value 12.5",
           "title": "Number Format"
         },
         "type": {

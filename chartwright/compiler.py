@@ -245,7 +245,11 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["x_axis"] = chart.time_column
         p["time_grain_sqla"] = chart.time_grain or DEFAULT_TIME_GRAIN
         p["show_trend_line"] = True
-        p["start_y_axis_at_zero"] = True
+        # "Start y-axis at 0" (BigNumberWithTrendline/controlPanel.tsx:96 at 4.1.4 and 5.0.0,
+        # :107 at 6.1.0, default true), drawn as the trendline's yAxis scale:
+        # !startYAxisAtZero (transformProps.ts:219 at 4.1.4 and 5.0.0, :326 at 6.1.0), so
+        # false fits the line to its values. Always written, true unless y_axis_truncate.
+        p["start_y_axis_at_zero"] = not chart.y_axis_truncate
         # The Advanced Analytics rolling window (BigNumberWithTrendline controlPanel.tsx
         # :179-228 at 4.1.4 and 5.0.0, :252-301 at 6.1.0), applied to the trendline by
         # rollingWindowOperator in buildQuery, so transformProps reads the number and

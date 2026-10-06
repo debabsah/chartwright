@@ -348,8 +348,8 @@ def _page_length(ctx: RuleContext, c):
 
 
 @_fill("default.search-box", "search_box", {"table"},
-       "a raw table of more than ~20 rows gets a search box, when its rows still fit "
-       "beside it (the 20 is judgement)",
+       "a raw table of more than ~20 rows that outgrow its panel, and so page, gets a "
+       "search box; one whose rows all show gets none (the 20 is judgement)",
        superset=False, superset_text="no search box",
        override="write search_box: false")
 def _search_box(ctx: RuleContext, c):
@@ -360,16 +360,21 @@ def _search_box(ctx: RuleContext, c):
     n = ctx.params.search_min_rows
     if c.row_limit <= n:
         return None, f"row_limit {c.row_limit} is {n} rows or fewer"
-    if not c.page_length:
-        # A paged table already draws the bar the search box sits in. On one page, the
-        # bar takes room from the rows, and must not push any behind the scrollbar.
-        h = ctx.height(c.name)
-        fits = math.floor(grid_rows_visible(h, table_header_units(controls=True)))
-        if c.row_limit > fits:
-            return None, (f"{c.row_limit} rows on one page at height {h:g}: a search bar "
-                          f"would leave room for {fits}; page the table or raise the height")
-    return True, (f"up to {c.row_limit} raw rows: searching beats scrolling "
-                  f"(the {n}-row threshold is judgement)")
+    h = ctx.height(c.name)
+    # The rows the panel shows with nothing above them. A table that shows every row
+    # takes no DataTables chrome (size.table-chrome): a search bar over rows the reader
+    # already sees only pushes the last ones behind the scrollbar.
+    shown = math.floor(grid_rows_visible(h, table_header_units()))
+    if c.row_limit <= shown:
+        return None, f"all {c.row_limit} rows show at height {h:g}"
+    if not c.page_length or c.page_length >= c.row_limit:
+        # The box sits in the bar a paged table already draws (its page-size picker), so
+        # it costs no row there. A table on one page that outgrows its panel is either
+        # still to be paged (default.page-length) or too short to page.
+        return None, (f"{c.row_limit} rows on one page outgrow height {h:g}; the box comes "
+                      f"with paging")
+    return True, (f"up to {c.row_limit} raw rows over pages of {c.page_length}: searching "
+                  f"beats paging (the {n}-row threshold is judgement)")
 
 
 # -- legends and labels -------------------------------------------------------------
