@@ -45,29 +45,29 @@ Export the password variable, then:
 
 ```bash
 # Build and update a dashboard
-chartwright validate spec.json                  # check the spec offline
-chartwright check spec.json --profile dev       # find every missing dataset, column or metric
-chartwright plan spec.json --profile dev        # show what apply would change
-chartwright apply spec.json --profile dev       # build or update the dashboard, then query every chart
-chartwright restore backup.zip --profile dev    # roll back to the backup taken before an apply
+chartwright validate spec.json                      # check the spec offline
+chartwright check spec.json --profile <profile>     # find every missing dataset, column or metric
+chartwright plan spec.json --profile <profile>      # show what apply would change
+chartwright apply spec.json --profile <profile>     # build or update the dashboard, then query every chart
+chartwright restore backup.zip --profile <profile>  # roll back to the backup taken before an apply
 
 # Start from a dashboard you already have
-chartwright decompile <slug> --profile dev -o spec.json   # a spec for a copy of it
-chartwright adopt <slug> --profile dev -o spec.json       # manage it where it is
-chartwright absorb spec.json --profile dev                # copy heights set in Superset into the spec
+chartwright decompile <slug> --profile <profile> -o spec.json  # a spec for a copy of it
+chartwright adopt <slug> --profile <profile> -o spec.json      # manage it where it is
+chartwright absorb spec.json --profile <profile>               # copy heights set in Superset into the spec
 
 # Design review
-chartwright brief                               # sizing and layout guidance for writing a spec
-chartwright advise spec.json                    # review the design; --fix applies the safe fixes
-chartwright explain spec.json                   # where each filled-in setting came from
-chartwright redesign <slug> --profile dev -o spec.json    # decompile, review and fix in one step
+chartwright brief                                             # sizing and layout guidance for writing a spec
+chartwright advise spec.json                                  # review the design; --fix applies the safe fixes
+chartwright explain spec.json                                 # where each filled-in setting came from
+chartwright redesign <slug> --profile <profile> -o spec.json  # decompile, review and fix in one step
 
 # Other
-chartwright schema                              # the spec's JSON Schema
-chartwright compile spec.json -o bundle.zip     # build the import file offline
-chartwright standards check specs/              # team standards (also show, assign, apply)
-chartwright save-queries spec.json --profile dev  # optional [visual]: makes CSV reports work
-chartwright calibrate                           # suggest default heights from what absorb copied
+chartwright schema                                      # the spec's JSON Schema
+chartwright compile spec.json -o bundle.zip             # build the import file offline
+chartwright standards check specs/                      # team standards (also show, assign, apply)
+chartwright save-queries spec.json --profile <profile>  # optional [visual]: makes CSV reports work
+chartwright calibrate                                   # suggest default heights from what absorb copied
 ```
 
 `chartwright <command> --help` lists each command's options.
