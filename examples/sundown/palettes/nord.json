@@ -1,0 +1,75 @@
+{
+ "about": "After the Nord theme: arctic slate chrome, frost blue, aurora accents.",
+ "masthead": "#2E3440",
+ "accent": "#5E81AC",
+ "on_masthead": "#D8DEE9",
+ "ground": "#ECEFF4",
+ "tile": "#FFFFFF",
+ "border": "#E5E9F0",
+ "rule": "#D8DEE9",
+ "grid": "#ECEFF4",
+ "head_bg": "#E5E9F0",
+ "ref": "#7B88A1",
+ "ink": "#2E3440",
+ "sec": "#4C566A",
+ "this": "#5E81AC",
+ "prior": "#B8C7DD",
+ "second": "#BF616A",
+ "up": "#BF616A",
+ "down": "#5E81AC",
+ "total": "#4C566A",
+ "cellbar": "rgba(94,129,172,0.22)",
+ "heatmap": "schemePuBu",
+ "status": {
+  "good": [
+   "#3B6B2E",
+   "#DCEBD0",
+   "#EEF5E8",
+   "#7FA067"
+  ],
+  "watch": [
+   "#8A5A00",
+   "#F5E3B8",
+   "#FBF3E0",
+   "#D08770"
+  ],
+  "proven": [
+   "#6B3A00",
+   "#EBCB8B",
+   "#FBF3E0",
+   "#B5683F"
+  ],
+  "act": [
+   "#8C2B33",
+   "#F2D0D3",
+   "#FAECED",
+   "#BF616A"
+  ]
+ },
+ "proven_rise": "#8F4B2E",
+ "rising": "#C5806A",
+ "region": {
+  "California": "#5E81AC",
+  "Texas": "#D08770",
+  "Southwest": "#A3BE8C",
+  "Other regions": "#C2C8D3",
+  "Northwest": "#88C0D0",
+  "Florida": "#B48EAD"
+ },
+ "fuel": {
+  "Solar": "#EBCB8B",
+  "Wind": "#8FBCBB",
+  "Gas": "#D08770",
+  "Coal": "#4C566A",
+  "Nuclear": "#B48EAD",
+  "Hydro": "#81A1C1",
+  "Battery": "#5E81AC",
+  "Battery charging": "#B8C7DD",
+  "Net imports": "#D8DEE9",
+  "Exports": "#E5E9F0",
+  "Other": "#A7AEBB",
+  "Coal, nuclear, hydro": "#4C566A"
+ },
+ "battery_prior": "#B8C7DD",
+ "name": "Nord"
+}

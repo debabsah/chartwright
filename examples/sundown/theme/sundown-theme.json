@@ -1,0 +1,140 @@
+{
+  "algorithm": "default",
+  "token": {
+    "colorPrimary": "#14213D",
+    "colorLink": "#0072B2",
+    "colorBgLayout": "#F3F4F7",
+    "colorBgContainer": "#FFFFFF",
+    "colorBorder": "#D9DEE6",
+    "colorBorderSecondary": "#E5E8EE",
+    "colorText": "#1B1F27",
+    "colorTextSecondary": "#5B6472",
+    "borderRadius": 2,
+    "fontFamily": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    "fontUrls": [
+      "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    ],
+    "fontSize": 14,
+    "fontWeightStrong": 600
+  },
+  "echartsOptionsOverrides": {
+    "legend": {
+      "selector": false,
+      "icon": "roundRect",
+      "itemWidth": 11,
+      "itemHeight": 11,
+      "textStyle": {
+        "color": "#5B6472",
+        "fontSize": 12
+      }
+    },
+    "textStyle": {
+      "fontFamily": "Inter"
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#5B6472",
+        "fontSize": 12
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#D9DEE6"
+        }
+      },
+      "axisTick": {
+        "show": false
+      }
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#5B6472",
+        "fontSize": 12
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#EEF1F5"
+        }
+      }
+    }
+  },
+  "echartsOptionsOverridesByChartType": {
+    "mixed_timeseries": {
+      "xAxis": {
+        "axisLabel": {
+          "interval": 5
+        }
+      },
+      "yAxis": {
+        "splitNumber": 2,
+        "nameTextStyle": {
+          "align": "left"
+        }
+      },
+      "series": {
+        "barGap": "-100%"
+      }
+    },
+    "big_number": {
+      "series": {
+        "lineStyle": {
+          "width": 1.5
+        },
+        "areaStyle": {
+          "opacity": 0.08
+        }
+      }
+    },
+    "echarts_area": {
+      "series": {
+        "lineStyle": {
+          "width": 0
+        }
+      },
+      "yAxis": {
+        "splitNumber": 5,
+        "nameTextStyle": {
+          "align": "left"
+        }
+      }
+    },
+    "echarts_timeseries_bar": {
+      "series": {
+        "barCategoryGap": "20%",
+        "barGap": "15%"
+      },
+      "yAxis": {
+        "splitNumber": 5
+      }
+    },
+    "waterfall": {
+      "yAxis": {
+        "scale": false
+      },
+      "xAxis": {
+        "axisLabel": {
+          "interval": 0
+        }
+      }
+    },
+    "box_plot": {
+      "legend": {
+        "show": false
+      },
+      "series": {
+        "symbolSize": 4,
+        "itemStyle": {
+          "borderColor": "#0072B2",
+          "borderWidth": 1.5
+        }
+      }
+    },
+    "echarts_timeseries_line": {
+      "yAxis": {
+        "splitNumber": 5,
+        "nameTextStyle": {
+          "align": "left"
+        }
+      }
+    }
+  }
+}

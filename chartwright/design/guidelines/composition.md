@@ -6,9 +6,9 @@
   by side; two unrelated charts sharing a row invite false comparison.
 - A row's charts share their time window and grain, or the title says why not.
 - One message per chart: a chart needing a paragraph is two charts, or a table.
-- Titles state the answer where possible ("Orders fell 12% WoW"), the
-  question otherwise ("Orders by week"); never just a column name. Filtered
-  charts name their scope in the title.
+- Titles (recommended): the measure, unit and window ("Orders, last 12 weeks"),
+  numbers only when the spec computes them from data; a typed takeaway ("Orders
+  fell 12%") goes stale at the next refresh. Never just a column name.
 - Tabs split different questions; scrolling deepens one. Never a one-chart tab;
   a one- or two-chart sub-tab belongs on its parent page, under a header row.
 - Whitespace is markdown's job, sparingly: a one-line header (1.6-2.4 units) beats
@@ -17,13 +17,13 @@
   `{"markdown": "...", "height": 1.6}` is a slim caption.
 - One number format per measure across KPIs and axes (`number_format`;
   `number_formats` per table column; pivots keep Superset's smart default).
-- Color restraint: Superset's default palette, RAG only where a threshold has
-  a real business meaning; never encode the same dimension with two palettes.
+- Colour by role (recommended): one accent for chrome, this period saturated and
+  the prior period its tint, status green/amber/red beside an arrow or a word, row
+  tints on status tables. One meaning per colour; never two palettes for one dimension.
 - RAG polarity is a convention: red = adverse, green = good (IBCS). Bands on one
   metric are disjoint and tell one story; a status-coloured KPI colours only its
   exceptions and states its thresholds in its subtitle or description.
-- A heatmap's default sequential scale, normalized over the whole map, suits
-  magnitudes, not signed deltas: don't heatmap a metric that crosses zero.
+- Don't heatmap a metric that crosses zero: its sequential scale suits magnitudes.
 - Table bars only where size is the point (`cell_bars: ["Revenue"]`), never on
   ids or years. Superset tints every bar by sign, green on 6.x even for revenue:
   keep that for a change, `color_by_sign: ["Change"]`, listed in cell_bars too.

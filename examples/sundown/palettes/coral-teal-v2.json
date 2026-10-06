@@ -1,0 +1,75 @@
+{
+ "name": "Coral teal v2",
+ "about": "A deep teal shell and a coral accent; fuels in gold solar, teal wind, soft coral gas, slate coal, berry nuclear, ocean hydro and violet battery.",
+ "masthead": "#06474D",
+ "accent": "#FF385C",
+ "on_masthead": "#B9DCDD",
+ "ground": "#F7F7F7",
+ "tile": "#FFFFFF",
+ "border": "#EBEBEB",
+ "rule": "#DDDDDD",
+ "grid": "#EFEFEF",
+ "head_bg": "#F0F0F0",
+ "ref": "#8C8C8C",
+ "ink": "#222222",
+ "sec": "#6A6A6A",
+ "this": "#008489",
+ "prior": "#9FD8D6",
+ "second": "#1A73E8",
+ "up": "#FF385C",
+ "down": "#008489",
+ "total": "#717171",
+ "cellbar": "rgba(0, 132, 137, 0.20)",
+ "heatmap": "schemeYlGnBu",
+ "status": {
+  "good": [
+   "#137333",
+   "#CEEAD6",
+   "#E6F4EA",
+   "#1E8E3E"
+  ],
+  "watch": [
+   "#995000",
+   "#FEEFC3",
+   "#FEF7E0",
+   "#E8710A"
+  ],
+  "proven": [
+   "#8C3F00",
+   "#FDD663",
+   "#FEF7E0",
+   "#B05A00"
+  ],
+  "act": [
+   "#A50E0E",
+   "#FAD2CF",
+   "#FCE8E6",
+   "#D93025"
+  ]
+ },
+ "proven_rise": "#8C3F00",
+ "rising": "#E8710A",
+ "region": {
+  "California": "#1A73E8",
+  "Texas": "#F9AB00",
+  "Southwest": "#00A699",
+  "Other regions": "#BDC1C6",
+  "Northwest": "#A142F4",
+  "Florida": "#E52592"
+ },
+ "fuel": {
+  "Solar": "#FFB400",
+  "Wind": "#00A699",
+  "Gas": "#FF8E7A",
+  "Coal": "#2F4B4F",
+  "Nuclear": "#C2417A",
+  "Hydro": "#2E86C1",
+  "Battery": "#7B5CE0",
+  "Battery charging": "#D3C6F5",
+  "Net imports": "#B8C7C9",
+  "Exports": "#E3EBEC",
+  "Other": "#C9BFB8",
+  "Coal, nuclear, hydro": "#2F4B4F"
+ },
+ "battery_prior": "#D3C6F5"
+}

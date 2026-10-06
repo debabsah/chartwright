@@ -1,0 +1,75 @@
+{
+ "about": "A black shell, robin's-egg blue, rose gold and champagne, on a mint-white ground.",
+ "masthead": "#0A0A0A",
+ "accent": "#81D8D0",
+ "on_masthead": "#CFE9E6",
+ "ground": "#F3F8F7",
+ "tile": "#FFFFFF",
+ "border": "#E1ECEA",
+ "rule": "#D0E0DD",
+ "grid": "#EAF2F0",
+ "head_bg": "#E8F3F1",
+ "ref": "#8AA3A0",
+ "ink": "#111111",
+ "sec": "#4F5B5A",
+ "this": "#0A8A80",
+ "prior": "#81D8D0",
+ "second": "#B76E79",
+ "up": "#B76E79",
+ "down": "#0A8A80",
+ "total": "#6E6E6E",
+ "cellbar": "rgba(129,216,208,0.45)",
+ "heatmap": "schemeBuGn",
+ "status": {
+  "good": [
+   "#1D6B4C",
+   "#C8EBDD",
+   "#E8F6F0",
+   "#2E9E72"
+  ],
+  "watch": [
+   "#7A5410",
+   "#F6E2B9",
+   "#FCF5E6",
+   "#D19A3A"
+  ],
+  "proven": [
+   "#5B3A0C",
+   "#EBC687",
+   "#FCF5E6",
+   "#A8742A"
+  ],
+  "act": [
+   "#8E2533",
+   "#F2CFD4",
+   "#FAEDEF",
+   "#C2414F"
+  ]
+ },
+ "proven_rise": "#7E4E1E",
+ "rising": "#BE833A",
+ "region": {
+  "California": "#0A8A80",
+  "Texas": "#B76E79",
+  "Southwest": "#81D8D0",
+  "Other regions": "#C9D3D1",
+  "Northwest": "#3E6E8E",
+  "Florida": "#E3A6AE"
+ },
+ "fuel": {
+  "Solar": "#E9C46A",
+  "Wind": "#81D8D0",
+  "Gas": "#B76E79",
+  "Coal": "#2B2B2B",
+  "Nuclear": "#7E5A9B",
+  "Hydro": "#3E6E8E",
+  "Battery": "#0A8A80",
+  "Battery charging": "#A9E3DD",
+  "Net imports": "#C9D3D1",
+  "Exports": "#E1ECEA",
+  "Other": "#B5B5B5",
+  "Coal, nuclear, hydro": "#2B2B2B"
+ },
+ "battery_prior": "#A9E3DD",
+ "name": "Robins Egg"
+}

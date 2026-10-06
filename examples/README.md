@@ -1,8 +1,9 @@
 # The README dashboard
 
 [nyc_taxi_operations.json](nyc_taxi_operations.json) is the spec behind the
-README's screenshot. An AI session with this repo's skill wrote it, unedited,
-from this request:
+README's screenshot. An AI session with this repo's skill wrote it from this
+request; the only later edit is its axis titles, added in 0.6.0 when `advise` began
+asking for them:
 
 > Build an operations dashboard for NYC yellow taxi trips from the
 > nyc_yellow_taxi table in the examples database. I want headline numbers for
@@ -51,3 +52,9 @@ chartwright apply examples/nyc_taxi_operations.json --profile local
 
 `sandbox/up.sh` prints the `[local]` profile block to save as
 `~/.config/chartwright/profiles.toml`.
+
+# Sundown
+
+[sundown/](sundown/) is a six-tab dashboard for siting data centres on the US power
+grid, built from EIA-930 and EIA-860M data: its spec, the script that writes it, seven
+colour palettes and the Superset theme it names. See [its README](sundown/README.md).

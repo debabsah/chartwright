@@ -1,0 +1,2504 @@
+{
+  "spec_version": "1",
+  "design": {
+    "ignore": [
+      "size.min-width@Shape of the day: ERCOT",
+      "size.min-width@Shape of the day: CAISO",
+      "size.min-width@Shape of the day: PJM",
+      "size.min-width@Shape of the day: MISO",
+      "size.min-width@Shape of the day: AZPS",
+      "size.min-width@Shape of the day: NEVP",
+      "size.min-width@Shape of the day: SOCO",
+      "size.min-width@Shape of the day: TVA",
+      "chart.ordinal-order@Net load by hour and month",
+      "layout.tab-balance",
+      "filters.time-picker",
+      "layout.fold-budget@tab-About-row-1"
+    ]
+  },
+  "dashboard": {
+    "title": "Sundown",
+    "slug": "sundown",
+    "theme": "Sundown",
+    "css": "/* Sundown. Structural CSS only: Superset's markdown sanitizer drops class and style. Rules on\n   elements Superset paints itself say !important, or Superset's own equal-specificity rule wins. */\n/* ground and tiles */\n.dashboard-component-tabs,\n.dashboard-component-tabs .dashboard-component-tabs-content { background-color: #F7F7F7 !important; }\n.dashboard-component-tabs { box-shadow: none !important; }\n.dashboard .dashboard-component-tabs { padding-left: 0 !important; }\n.dashboard-component-chart-holder { border: 1px solid #EBEBEB; border-radius: 2px; }\n.background--white { border: 1px solid #EBEBEB; border-radius: 2px; }\n.background--white .dashboard-component-chart-holder { border: 0; }\n.dashboard-component-chart-holder .header-controls { opacity: 0; transition: opacity .15s; }\n.dashboard-component-chart-holder:hover .header-controls { opacity: 1; }\n/* masthead: a navy band, white wordmark */\n.background--white:has(.dashboard-markdown h2) { background-color: #06474D !important; border-color: #06474D !important; }\n.background--white:has(.dashboard-markdown h2) .dashboard-component-chart-holder { background-color: #06474D !important; }\n.dashboard-markdown h2 { font-size: 26px; font-weight: 700; letter-spacing: -.01em; margin: 0; color: #FFFFFF; }\n.dashboard-markdown h2 + p { font-size: 13.5px; color: #B9DCDD; margin: 4px 0 0; }\n.dashboard-markdown h2 + p code { background: rgba(255,255,255,.12); color: #FFFFFF; }\n[data-test-chart-name=\"Data through\"] { text-align: right; position: relative; }\n[data-test-chart-name=\"Data through\"] .header-title { font-size: 11.5px !important; font-weight: 500 !important;\n  color: #B9DCDD !important; justify-content: flex-end; transform: translateX(16px); }\n[data-test-chart-name=\"Data through\"] .header-title a { color: #B9DCDD !important; }\n[data-test-chart-name=\"Data through\"] .superset-legacy-chart-big-number { align-items: flex-end !important; }\n[data-test-chart-name=\"Data through\"] .text-container { align-items: flex-end !important; }\n[data-test-chart-name=\"Data through\"] .header-controls { position: absolute; right: 0; }\n/* filter bar: 'More filters' as an outline button, not the theme's filled primary tint */\n[data-test=\"dropdown-container-btn\"] { background: transparent !important; border: 1px solid #DDDDDD !important;\n  color: #6A6A6A !important; box-shadow: none !important; }\n[data-test=\"dropdown-container-btn\"]:hover { border-color: #6A6A6A !important; color: #222222 !important; }\n[data-test=\"dropdown-container-btn\"] .ant-badge-count { background: #F0F0F0 !important; color: #6A6A6A !important; box-shadow: none !important; }\n/* tabs: inactive secondary, active ink on an accent underline */\n.dashboard-component-tabs .ant-tabs-nav::before { border-bottom: 1px solid #DDDDDD; }\n.dashboard-component-tabs .anchor-link-container { display: none; }\n.dashboard-component-tabs .ant-tabs-tab { font-size: 14.5px; padding: 10px 0; color: #6A6A6A; }\n.dashboard-component-tabs .ant-tabs-tab-btn, .dashboard-component-tabs .dragdroppable-tab { padding: 0 !important; margin: 0 !important; }\n.dashboard-component-tabs .ant-tabs-tab-active .ant-tabs-tab-btn { font-weight: 600; color: #222222 !important; }\n.dashboard-component-tabs .ant-tabs-ink-bar { background: #FF385C !important; height: 3px !important; }\n.dashboard-component-tabs .ant-tabs-nav { margin-bottom: 14px !important; }  /* clear of the KPI cards' accent edge */\n/* section bands: a full-width band in the masthead colour, an accent left edge, white caps */\n.dashboard-component-header { background: #06474D !important; border-left: 5px solid #FF385C !important;\n  border-radius: 2px; padding: 0 14px !important; min-height: 34px; margin-top: 10px; display: flex !important;\n  align-items: center !important; }\n.dashboard-component-header .editable-title, .dashboard-component-header .editable-title input { font-size: 13.5px !important;\n  font-weight: 600 !important; color: #FFFFFF !important; letter-spacing: .07em !important; text-transform: uppercase; }\n.dashboard-component-header .anchor-link-container { display: none !important; }\n/* the one-line colour keys */\n.dashboard-markdown:has(h5) .dashboard-component-chart-holder,\n.dashboard-markdown:has(h6) .dashboard-component-chart-holder { background-color: transparent !important; border: 0 !important; }\n.dashboard-markdown h5 { font-size: 12px; font-weight: 400; color: #6A6A6A; margin: 0; }\n.dashboard-markdown h6 { font-size: 13px; font-weight: 500; color: #6A6A6A; margin: 0; }\n.dashboard-markdown h6 strong { color: #222222; font-weight: 600; }\n.dashboard-markdown [itemprop]::before { content: \"\"; display: inline-block; width: 10px; height: 10px;\n  border-radius: 2px; margin: 0 6px 0 2px; vertical-align: -1px; }\n.dashboard-markdown [itemprop=\"this\"]::before { background: #008489; }\n.dashboard-markdown [itemprop=\"prior\"]::before { background: #9FD8D6; }\n.dashboard-markdown [itemprop=\"solar\"]::before { background: #FFB400; }\n.dashboard-markdown [itemprop=\"up\"]::before { background: #FF385C; }\n.dashboard-markdown [itemprop=\"down\"]::before { background: #008489; }\n.dashboard-markdown [itemprop=\"total\"]::before { background: #717171; }\n.superset-chart-table .cell-bar { background-color: rgba(0, 132, 137, 0.20) !important; }\n/* chart titles */\n.header-title { font-size: 15px !important; font-weight: 600 !important; color: #222222; }\n/* KPI cards: an accent top edge; the number in ink; the delta as coloured text with ▲▼, by meaning */\n.dashboard-component-chart-holder:has([data-test-viz-type^=\"big_number\"]):not(:has([data-test-chart-name=\"Data through\"])) {\n  border-top: 3px solid #FF385C !important; }\n.header-line, .subheader-line, .superset-chart-table td { font-variant-numeric: tabular-nums; }\n[data-test-viz-type=\"big_number\"] .header-line,\n[data-test-viz-type=\"big_number_total\"] .header-line { font-size: 36px !important; line-height: 1.1 !important;\n  font-weight: 600; letter-spacing: -.015em; }\n[data-test-viz-type=\"big_number\"] .header-line { color: #222222; }\n[data-test-viz-type=\"big_number\"] .subheader-line:not(.subtitle-line) { font-size: 13px !important; font-weight: 600;\n  line-height: 1.4 !important; color: #6A6A6A; margin: 4px 0 2px; }\n[data-test-viz-type=\"big_number\"] .subtitle-line,\n[data-test-viz-type=\"big_number_total\"] .subheader-line,\n[data-test-viz-type=\"big_number_total\"] .subtitle-line { font-size: 12.5px !important; color: #6A6A6A; line-height: 1.4 !important; }\n[data-test-viz-type=\"big_number_total\"] .superset-legacy-chart-big-number { justify-content: flex-start !important; }\n[data-test-chart-name=\"Data through\"] .header-line { font-size: 22px !important; color: #FFFFFF !important; }\n[data-test-chart-name=\"Lower-48 demand\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line) { color: #6A6A6A !important; }\n[data-test-chart-name=\"Lower-48 demand\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line)::before { content: \"▲ \"; }\n[data-test-chart-name=\"Lower-48 demand\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line) { color: #6A6A6A !important; }\n[data-test-chart-name=\"Lower-48 demand\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line)::before { content: \"▼ \"; }\n[data-test-chart-name=\"Lower-48 evening ramp\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line) { color: #995000 !important; }\n[data-test-chart-name=\"Lower-48 evening ramp\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line)::before { content: \"▲ \"; }\n[data-test-chart-name=\"Lower-48 evening ramp\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line) { color: #137333 !important; }\n[data-test-chart-name=\"Lower-48 evening ramp\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line)::before { content: \"▼ \"; }\n[data-test-chart-name=\"Batteries installed\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line) { color: #137333 !important; }\n[data-test-chart-name=\"Batteries installed\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line)::before { content: \"▲ \"; }\n[data-test-chart-name=\"Batteries installed\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line) { color: #A50E0E !important; }\n[data-test-chart-name=\"Batteries installed\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line)::before { content: \"▼ \"; }\n[data-test-chart-name=\"Batteries operating\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line) { color: #137333 !important; }\n[data-test-chart-name=\"Batteries operating\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line)::before { content: \"▲ \"; }\n[data-test-chart-name=\"Batteries operating\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line) { color: #A50E0E !important; }\n[data-test-chart-name=\"Batteries operating\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line)::before { content: \"▼ \"; }\n[data-test-chart-name=\"Evening ramp, median day\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line) { color: #995000 !important; }\n[data-test-chart-name=\"Evening ramp, median day\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line)::before { content: \"▲ \"; }\n[data-test-chart-name=\"Evening ramp, median day\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line) { color: #137333 !important; }\n[data-test-chart-name=\"Evening ramp, median day\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line)::before { content: \"▼ \"; }\n[data-test-chart-name=\"Evening ramp, bad day\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line) { color: #995000 !important; }\n[data-test-chart-name=\"Evening ramp, bad day\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line)::before { content: \"▲ \"; }\n[data-test-chart-name=\"Evening ramp, bad day\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line) { color: #137333 !important; }\n[data-test-chart-name=\"Evening ramp, bad day\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line)::before { content: \"▼ \"; }\n[data-test-chart-name=\"Baseload\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line) { color: #995000 !important; }\n[data-test-chart-name=\"Baseload\"] .superset-legacy-chart-big-number.positive .subheader-line:not(.subtitle-line)::before { content: \"▲ \"; }\n[data-test-chart-name=\"Baseload\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line) { color: #6A6A6A !important; }\n[data-test-chart-name=\"Baseload\"] .superset-legacy-chart-big-number.negative .subheader-line:not(.subtitle-line)::before { content: \"▼ \"; }\n/* tables: readable by standard (body 14 px on 36 px rows, header 13 px semibold), no vertical rules */\n.superset-chart-table table thead th { background: #F0F0F0 !important; color: #222222; font-weight: 600; font-size: 13px !important; }\n.superset-chart-table table th, .superset-chart-table table td { border-left: 0 !important; border-right: 0 !important; }\n.superset-chart-table table tbody td { border-top: 1px solid #EFEFEF; font-size: 14px !important; height: 36px; color: #222222; }",
+    "cross_filters": true,
+    "filter_bar_orientation": "horizontal",
+    "label_colors": {
+      "Solar": "#FFB400",
+      "Net load, Jul–Sep 2026": "#008489",
+      "Net load, Jul–Sep 2025": "#9FD8D6",
+      "Median day": "#008489",
+      "Bad day (P90)": "#9FD8D6",
+      "Outside the band": "#E8710A",
+      "Inside the band": "#9FD8D6",
+      "12-month average": "#222222",
+      "Baseload added": "#008489",
+      "Peak added": "#9FD8D6",
+      "Battery, Jul–Sep 2026": "#7B5CE0",
+      "Battery, Jul–Sep 2025": "#D3C6F5",
+      "Wind": "#00A699",
+      "Gas": "#FF8E7A",
+      "Coal": "#2F4B4F",
+      "Nuclear": "#C2417A",
+      "Hydro": "#2E86C1",
+      "Battery": "#7B5CE0",
+      "Battery charging": "#D3C6F5",
+      "Net imports": "#B8C7C9",
+      "Exports": "#E3EBEC",
+      "Other": "#C9BFB8",
+      "Coal, nuclear, hydro": "#2F4B4F",
+      "California": "#1A73E8",
+      "Texas": "#F9AB00",
+      "Southwest": "#00A699",
+      "Other regions": "#BDC1C6",
+      "Northwest": "#A142F4",
+      "Florida": "#E52592",
+      "Proven rise": "#8C3F00",
+      "Rising": "#E8710A",
+      "Flat or falling": "#1E8E3E",
+      "Covers the ramp": "#1E8E3E",
+      "Half or more": "#E8710A",
+      "Under half": "#D93025",
+      "Within 4 h": "#1E8E3E",
+      "4–10 h": "#E8710A",
+      "Over 10 h": "#D93025",
+      "DOM": "#008489",
+      "AEP": "#1A73E8",
+      "CAISO": "#008489",
+      "PJM": "#1A73E8",
+      "Closure": "#008489",
+      "2019 = 100": "#8C8C8C",
+      "12-month test": "#8C8C8C",
+      "2024-01": "#9FD8D6",
+      "2024-02": "#9FD8D6",
+      "2024-03": "#9FD8D6",
+      "2024-04": "#9FD8D6",
+      "2024-05": "#9FD8D6",
+      "2024-06": "#9FD8D6",
+      "2024-07": "#9FD8D6",
+      "2024-08": "#9FD8D6",
+      "2024-09": "#9FD8D6",
+      "2024-10": "#9FD8D6",
+      "2024-11": "#9FD8D6",
+      "2024-12": "#9FD8D6",
+      "2025-01": "#9FD8D6",
+      "2025-02": "#9FD8D6",
+      "2025-03": "#9FD8D6",
+      "2025-04": "#9FD8D6",
+      "2025-05": "#9FD8D6",
+      "2025-06": "#9FD8D6",
+      "2025-07": "#9FD8D6",
+      "2025-08": "#9FD8D6",
+      "2025-09": "#9FD8D6",
+      "2025-10": "#9FD8D6",
+      "2025-11": "#9FD8D6",
+      "2025-12": "#9FD8D6",
+      "2026-01": "#9FD8D6",
+      "2026-02": "#9FD8D6",
+      "2026-03": "#9FD8D6",
+      "2026-04": "#9FD8D6",
+      "2026-05": "#9FD8D6",
+      "2026-06": "#9FD8D6",
+      "2026-07": "#9FD8D6",
+      "2026-08": "#9FD8D6",
+      "2026-09": "#9FD8D6",
+      "2026-10": "#9FD8D6",
+      "2026-11": "#9FD8D6",
+      "2026-12": "#9FD8D6"
+    }
+  },
+  "charts": [
+    {
+      "name": "Data through",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "freshness"
+      },
+      "metric": "MAX(data_through_date)",
+      "date_format": "%a, %-d %b %Y",
+      "description": "The latest day with all 24 hours of demand reported by every grid operator in EIA-930.",
+      "width": 3,
+      "height": 2.4
+    },
+    {
+      "name": "Lower-48 demand",
+      "type": "big_number_trend",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "l48_period"
+      },
+      "display_name": "Demand, TWh",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "month"
+        }
+      ],
+      "metric": "SQL(SUM(demand_twh_all_bas)) AS Demand, TWh",
+      "time_column": "period_start",
+      "time_grain": "P1M",
+      "rolling_type": "sum",
+      "rolling_periods": 12,
+      "compare_lag": 12,
+      "compare_suffix": "vs prior 12 months",
+      "subtitle": "Lower 48 · 12 months to Sep 2026",
+      "number_format": ",.0f",
+      "time_range": "2022-10-01 : 2026-10-01",
+      "trend_color": "#008489",
+      "y_axis_truncate": true,
+      "description": "Electricity demand summed over every Lower-48 grid operator, trailing 12 months.",
+      "width": 3,
+      "height": 4.8
+    },
+    {
+      "name": "Lower-48 evening ramp",
+      "type": "big_number_trend",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "l48_period"
+      },
+      "display_name": "Evening ramp, GW",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "month"
+        }
+      ],
+      "metric": "SQL(MAX(coincident_sunset_ramp_p50_mw) / 1000) AS Evening ramp, GW",
+      "time_column": "period_start",
+      "time_grain": "P1M",
+      "compare_lag": 12,
+      "compare_suffix": "vs a year earlier",
+      "subtitle": "Lower 48 together · median day · Sep 2026",
+      "number_format": ",.1f",
+      "time_range": "2023-10-01 : 2026-10-01",
+      "trend_color": "#008489",
+      "y_axis_truncate": true,
+      "description": "The largest 3-hour rise in Lower-48 net load (demand minus solar and wind) after the solar peak, on the median day of the month. Rising means less headroom.",
+      "width": 3,
+      "height": 4.8
+    },
+    {
+      "name": "Baseload added",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "siting_ba"
+      },
+      "display_name": "◇ Baseload added, GW",
+      "filters": [
+        {
+          "column": "in_roster",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "baseload_night_agrees",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "metric": "SQL(SUM(baseload_change_mw) / 1000) AS Baseload added, GW",
+      "subtitle": "Sum of 49 operators · 12 months to Sep 2026",
+      "number_format": "+,.1f",
+      "conditional_formatting": [
+        {
+          "operator": ">",
+          "target": 0,
+          "color": "#995000"
+        }
+      ],
+      "description": "Change in the 5th percentile of hourly demand (flat load) over 12 months, summed over operators whose night hours agree. Amber: added load means less headroom.",
+      "width": 3,
+      "height": 4.8
+    },
+    {
+      "name": "Batteries installed",
+      "type": "big_number_trend",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "battery_capacity_month"
+      },
+      "display_name": "Batteries, GW",
+      "filters": [
+        {
+          "column": "region_name",
+          "op": "IS NOT NULL"
+        }
+      ],
+      "metric": "SQL(SUM(operating_battery_mw) / 1000) AS Batteries, GW",
+      "time_column": "month_start",
+      "time_grain": "P1M",
+      "compare_lag": 12,
+      "compare_suffix": "vs a year earlier",
+      "subtitle": "Operating · EIA-860M, August 2026",
+      "number_format": ",.1f",
+      "time_range": "2023-09-01 : 2026-09-01",
+      "trend_color": "#008489",
+      "y_axis_truncate": true,
+      "description": "Operating battery nameplate capacity, Lower 48, from EIA-860M.",
+      "width": 3,
+      "height": 4.8
+    },
+    {
+      "name": "Shape of the day: ERCOT",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "ERCOT · 16.9 GW · +28%",
+      "filters": [
+        {
+          "column": "ba",
+          "op": "==",
+          "value": "ERCO"
+        },
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "hour_label",
+      "a": {
+        "metrics": [
+          "SQL(MAX(solar_pct_peak_demand)) AS Solar"
+        ],
+        "kind": "area",
+        "opacity": 0.85,
+        "axis": "primary"
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(net_load_pct_peak_demand_ly)) AS Net load, Jul–Sep 2025",
+          "SQL(MAX(net_load_pct_peak_demand)) AS Net load, Jul–Sep 2026"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "y_axis_min": 0,
+      "y_axis_max": 100,
+      "number_format": ",.0f",
+      "show_legend": false,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "% of daily peak",
+      "description": "Net load (demand minus solar and wind) as a % of each day's peak demand, by hour, averaged over the quarter. The title gives the median evening ramp and its change; where solar is under a tenth of midday demand, the 3-hour rise.",
+      "width": 3,
+      "height": 6
+    },
+    {
+      "name": "Shape of the day: CAISO",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "CAISO · 15.4 GW · -3%",
+      "filters": [
+        {
+          "column": "ba",
+          "op": "==",
+          "value": "CISO"
+        },
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "hour_label",
+      "a": {
+        "metrics": [
+          "SQL(MAX(solar_pct_peak_demand)) AS Solar"
+        ],
+        "kind": "area",
+        "opacity": 0.85,
+        "axis": "primary"
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(net_load_pct_peak_demand_ly)) AS Net load, Jul–Sep 2025",
+          "SQL(MAX(net_load_pct_peak_demand)) AS Net load, Jul–Sep 2026"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "y_axis_min": 0,
+      "y_axis_max": 100,
+      "number_format": ",.0f",
+      "show_legend": false,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "% of daily peak",
+      "description": "Net load (demand minus solar and wind) as a % of each day's peak demand, by hour, averaged over the quarter. The title gives the median evening ramp and its change; where solar is under a tenth of midday demand, the 3-hour rise.",
+      "width": 3,
+      "height": 6
+    },
+    {
+      "name": "Shape of the day: PJM",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "PJM · 11.5 GW · +5% · 3-hour rise",
+      "filters": [
+        {
+          "column": "ba",
+          "op": "==",
+          "value": "PJM"
+        },
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "hour_label",
+      "a": {
+        "metrics": [
+          "SQL(MAX(solar_pct_peak_demand)) AS Solar"
+        ],
+        "kind": "area",
+        "opacity": 0.85,
+        "axis": "primary"
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(net_load_pct_peak_demand_ly)) AS Net load, Jul–Sep 2025",
+          "SQL(MAX(net_load_pct_peak_demand)) AS Net load, Jul–Sep 2026"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "y_axis_min": 0,
+      "y_axis_max": 100,
+      "number_format": ",.0f",
+      "show_legend": false,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "% of daily peak",
+      "description": "Net load (demand minus solar and wind) as a % of each day's peak demand, by hour, averaged over the quarter. The title gives the median evening ramp and its change; where solar is under a tenth of midday demand, the 3-hour rise.",
+      "width": 3,
+      "height": 6
+    },
+    {
+      "name": "Shape of the day: MISO",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "MISO · 10.2 GW · +16%",
+      "filters": [
+        {
+          "column": "ba",
+          "op": "==",
+          "value": "MISO"
+        },
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "hour_label",
+      "a": {
+        "metrics": [
+          "SQL(MAX(solar_pct_peak_demand)) AS Solar"
+        ],
+        "kind": "area",
+        "opacity": 0.85,
+        "axis": "primary"
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(net_load_pct_peak_demand_ly)) AS Net load, Jul–Sep 2025",
+          "SQL(MAX(net_load_pct_peak_demand)) AS Net load, Jul–Sep 2026"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "y_axis_min": 0,
+      "y_axis_max": 100,
+      "number_format": ",.0f",
+      "show_legend": false,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "% of daily peak",
+      "description": "Net load (demand minus solar and wind) as a % of each day's peak demand, by hour, averaged over the quarter. The title gives the median evening ramp and its change; where solar is under a tenth of midday demand, the 3-hour rise.",
+      "width": 3,
+      "height": 6
+    },
+    {
+      "name": "Shape of the day: AZPS",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "AZPS · 2.1 GW · +27%",
+      "filters": [
+        {
+          "column": "ba",
+          "op": "==",
+          "value": "AZPS"
+        },
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "hour_label",
+      "a": {
+        "metrics": [
+          "SQL(MAX(solar_pct_peak_demand)) AS Solar"
+        ],
+        "kind": "area",
+        "opacity": 0.85,
+        "axis": "primary"
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(net_load_pct_peak_demand_ly)) AS Net load, Jul–Sep 2025",
+          "SQL(MAX(net_load_pct_peak_demand)) AS Net load, Jul–Sep 2026"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "y_axis_min": 0,
+      "y_axis_max": 100,
+      "number_format": ",.0f",
+      "show_legend": false,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "% of daily peak",
+      "description": "Net load (demand minus solar and wind) as a % of each day's peak demand, by hour, averaged over the quarter. The title gives the median evening ramp and its change; where solar is under a tenth of midday demand, the 3-hour rise.",
+      "width": 3,
+      "height": 6
+    },
+    {
+      "name": "Shape of the day: NEVP",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "NEVP · 2.1 GW · -10%",
+      "filters": [
+        {
+          "column": "ba",
+          "op": "==",
+          "value": "NEVP"
+        },
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "hour_label",
+      "a": {
+        "metrics": [
+          "SQL(MAX(solar_pct_peak_demand)) AS Solar"
+        ],
+        "kind": "area",
+        "opacity": 0.85,
+        "axis": "primary"
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(net_load_pct_peak_demand_ly)) AS Net load, Jul–Sep 2025",
+          "SQL(MAX(net_load_pct_peak_demand)) AS Net load, Jul–Sep 2026"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "y_axis_min": 0,
+      "y_axis_max": 100,
+      "number_format": ",.0f",
+      "show_legend": false,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "% of daily peak",
+      "description": "Net load (demand minus solar and wind) as a % of each day's peak demand, by hour, averaged over the quarter. The title gives the median evening ramp and its change; where solar is under a tenth of midday demand, the 3-hour rise.",
+      "width": 3,
+      "height": 6
+    },
+    {
+      "name": "Shape of the day: SOCO",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "SOCO · 3.8 GW · -5%",
+      "filters": [
+        {
+          "column": "ba",
+          "op": "==",
+          "value": "SOCO"
+        },
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "hour_label",
+      "a": {
+        "metrics": [
+          "SQL(MAX(solar_pct_peak_demand)) AS Solar"
+        ],
+        "kind": "area",
+        "opacity": 0.85,
+        "axis": "primary"
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(net_load_pct_peak_demand_ly)) AS Net load, Jul–Sep 2025",
+          "SQL(MAX(net_load_pct_peak_demand)) AS Net load, Jul–Sep 2026"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "y_axis_min": 0,
+      "y_axis_max": 100,
+      "number_format": ",.0f",
+      "show_legend": false,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "% of daily peak",
+      "description": "Net load (demand minus solar and wind) as a % of each day's peak demand, by hour, averaged over the quarter. The title gives the median evening ramp and its change; where solar is under a tenth of midday demand, the 3-hour rise.",
+      "width": 3,
+      "height": 6
+    },
+    {
+      "name": "Shape of the day: TVA",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "TVA · 2.8 GW · +14% · 3-hour rise",
+      "filters": [
+        {
+          "column": "ba",
+          "op": "==",
+          "value": "TVA"
+        },
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "hour_label",
+      "a": {
+        "metrics": [
+          "SQL(MAX(solar_pct_peak_demand)) AS Solar"
+        ],
+        "kind": "area",
+        "opacity": 0.85,
+        "axis": "primary"
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(net_load_pct_peak_demand_ly)) AS Net load, Jul–Sep 2025",
+          "SQL(MAX(net_load_pct_peak_demand)) AS Net load, Jul–Sep 2026"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "y_axis_min": 0,
+      "y_axis_max": 100,
+      "number_format": ",.0f",
+      "show_legend": false,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "% of daily peak",
+      "description": "Net load (demand minus solar and wind) as a % of each day's peak demand, by hour, averaged over the quarter. The title gives the median evening ramp and its change; where solar is under a tenth of midday demand, the 3-hour rise.",
+      "width": 3,
+      "height": 6
+    },
+    {
+      "name": "Siting screen",
+      "type": "table",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "siting_ba"
+      },
+      "display_name": "Operators that added 150 MW+ of baseload · 12 months to Sep 2026",
+      "filters": [
+        {
+          "column": "in_roster",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "baseload_change_mw",
+          "op": ">=",
+          "value": 150
+        }
+      ],
+      "columns": [
+        "ba_label",
+        "region_name",
+        "row_status",
+        "baseload_status",
+        "baseload_change_mw",
+        "baseload_growth_arrow",
+        "baseload_growth_2y_arrow",
+        "baseload_idx2019",
+        "ramp_p90_share_of_p95_demand",
+        "cover_ratio",
+        "npe10_duration_p90_h",
+        "closure_display",
+        "row_status_code",
+        "baseload_status_code",
+        "cover_band",
+        "hours_band",
+        "closure_band"
+      ],
+      "hidden": [
+        "row_status_code",
+        "baseload_status_code",
+        "cover_band",
+        "hours_band",
+        "closure_band"
+      ],
+      "sort_by": "baseload_change_mw",
+      "row_limit": 14,
+      "cell_bars": false,
+      "column_headers": {
+        "ba_label": "Operator",
+        "region_name": "Region",
+        "row_status": "Status",
+        "baseload_status": "◇ Baseload",
+        "baseload_change_mw": "◇ Baseload +MW",
+        "baseload_growth_arrow": "1 yr",
+        "baseload_growth_2y_arrow": "2 yr",
+        "baseload_idx2019": "vs 2019",
+        "ramp_p90_share_of_p95_demand": "Rise ÷ peak",
+        "cover_ratio": "◇ Battery ÷ ramp",
+        "npe10_duration_p90_h": "◇ Hours to cut 10%",
+        "closure_display": "Closure"
+      },
+      "number_formats": {
+        "baseload_change_mw": "+,.0f",
+        "baseload_idx2019": ",.0f",
+        "ramp_p90_share_of_p95_demand": ".0%",
+        "cover_ratio": ".2f",
+        "npe10_duration_p90_h": ".1f",
+        "closure_display": "+.1%"
+      },
+      "column_widths": {
+        "ba_label": 90,
+        "region_name": 110,
+        "row_status": 80,
+        "baseload_status": 120
+      },
+      "column_align": {
+        "ba_label": "center",
+        "region_name": "center",
+        "row_status": "center",
+        "baseload_status": "center",
+        "baseload_change_mw": "center",
+        "baseload_growth_arrow": "center",
+        "baseload_growth_2y_arrow": "center",
+        "baseload_idx2019": "center",
+        "ramp_p90_share_of_p95_demand": "center",
+        "cover_ratio": "center",
+        "npe10_duration_p90_h": "center",
+        "closure_display": "center"
+      },
+      "conditional_formatting": [
+        {
+          "metric": "row_status_code",
+          "operator": "=",
+          "target": 1,
+          "color": "#E6F4EA",
+          "apply_to": "row"
+        },
+        {
+          "metric": "row_status_code",
+          "operator": "=",
+          "target": 2,
+          "color": "#FEF7E0",
+          "apply_to": "row"
+        },
+        {
+          "metric": "row_status_code",
+          "operator": "=",
+          "target": 3,
+          "color": "#FCE8E6",
+          "apply_to": "row"
+        },
+        {
+          "metric": "row_status_code",
+          "operator": "=",
+          "target": 1,
+          "color": "#137333",
+          "apply_to": "row_status",
+          "paint": "text"
+        },
+        {
+          "metric": "row_status_code",
+          "operator": "=",
+          "target": 2,
+          "color": "#995000",
+          "apply_to": "row_status",
+          "paint": "text"
+        },
+        {
+          "metric": "row_status_code",
+          "operator": "=",
+          "target": 3,
+          "color": "#A50E0E",
+          "apply_to": "row_status",
+          "paint": "text"
+        },
+        {
+          "metric": "baseload_status_code",
+          "operator": "=",
+          "target": 3,
+          "color": "#8C3F00",
+          "apply_to": "baseload_status",
+          "paint": "text"
+        },
+        {
+          "metric": "baseload_status_code",
+          "operator": "=",
+          "target": 2,
+          "color": "#995000",
+          "apply_to": "baseload_status",
+          "paint": "text"
+        },
+        {
+          "metric": "baseload_status_code",
+          "operator": "=",
+          "target": 1,
+          "color": "#137333",
+          "apply_to": "baseload_status",
+          "paint": "text"
+        },
+        {
+          "metric": "baseload_status_code",
+          "operator": "=",
+          "target": 3,
+          "color": "#8C3F00",
+          "apply_to": "baseload_growth_arrow",
+          "paint": "text"
+        },
+        {
+          "metric": "baseload_status_code",
+          "operator": "=",
+          "target": 2,
+          "color": "#995000",
+          "apply_to": "baseload_growth_arrow",
+          "paint": "text"
+        },
+        {
+          "metric": "cover_band",
+          "operator": "=",
+          "target": 1,
+          "color": "#137333",
+          "apply_to": "cover_ratio",
+          "paint": "text"
+        },
+        {
+          "metric": "cover_band",
+          "operator": "=",
+          "target": 2,
+          "color": "#995000",
+          "apply_to": "cover_ratio",
+          "paint": "text"
+        },
+        {
+          "metric": "cover_band",
+          "operator": "=",
+          "target": 3,
+          "color": "#A50E0E",
+          "apply_to": "cover_ratio",
+          "paint": "text"
+        },
+        {
+          "metric": "hours_band",
+          "operator": "=",
+          "target": 1,
+          "color": "#137333",
+          "apply_to": "npe10_duration_p90_h",
+          "paint": "text"
+        },
+        {
+          "metric": "hours_band",
+          "operator": "=",
+          "target": 2,
+          "color": "#995000",
+          "apply_to": "npe10_duration_p90_h",
+          "paint": "text"
+        },
+        {
+          "metric": "hours_band",
+          "operator": "=",
+          "target": 3,
+          "color": "#A50E0E",
+          "apply_to": "npe10_duration_p90_h",
+          "paint": "text"
+        },
+        {
+          "metric": "closure_band",
+          "operator": "=",
+          "target": 3,
+          "color": "#A50E0E",
+          "apply_to": "closure_display",
+          "paint": "text"
+        }
+      ],
+      "description": "Status: Act when cutting the peak 10% needs over 10 hours of storage or the data doesn't reconcile (closure outside ±2%); Watch when it needs 4–10 hours, batteries cover under half the bad-day ramp, or baseload rose beyond weather (proven); Good otherwise.",
+      "width": 12,
+      "height": 13.6
+    },
+    {
+      "name": "Evening ramp, median day",
+      "type": "big_number_trend",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "ba_period"
+      },
+      "display_name": "Evening ramp, GW",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        }
+      ],
+      "metric": "SQL(MAX(sunset_ramp_p50_cmp_mw) / 1000) AS GW",
+      "time_column": "period_start",
+      "time_grain": "P3M",
+      "compare_lag": 4,
+      "compare_suffix": "vs Jul–Sep 2025",
+      "subtitle": "Median day · Jul–Sep 2026",
+      "number_format": ",.1f",
+      "time_range": "2023-10-01 : 2026-10-01",
+      "trend_color": "#008489",
+      "y_axis_truncate": true,
+      "description": "The largest 3-hour rise in net load after the solar peak, median day of the quarter. Compared only where 9 days in 10 had a duck in both years.",
+      "width": 3,
+      "height": 4.8
+    },
+    {
+      "name": "Evening ramp, bad day",
+      "type": "big_number_trend",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "ba_period"
+      },
+      "display_name": "Bad-day ramp, GW",
+      "metric": "SQL(MAX(sunset_ramp_p90_cmp_mw) / 1000) AS GW",
+      "compare_lag": 12,
+      "compare_suffix": "vs prior 12 months",
+      "subtitle": "1 day in 10 · 12 months to Sep 2026",
+      "number_format": ",.1f",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "t12m"
+        }
+      ],
+      "time_column": "period_end",
+      "time_grain": "P1M",
+      "time_range": "2023-10-01 : 2026-10-01",
+      "trend_color": "#008489",
+      "y_axis_truncate": true,
+      "description": "The evening ramp on 1 day in 10 (P90) over 12 months: what storage is sized to.",
+      "width": 3,
+      "height": 4.8
+    },
+    {
+      "name": "Hours to cut the peak",
+      "type": "big_number_trend",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "ba_period"
+      },
+      "display_name": "◇ Hours to cut 10%",
+      "metric": "SQL(MAX(npe10_duration_p90_h)) AS Hours",
+      "subtitle": "Of storage · 1 day in 10 · 12 months to Sep 2026",
+      "number_format": ",.1f",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "t12m"
+        }
+      ],
+      "time_column": "period_end",
+      "time_grain": "P1M",
+      "time_range": "2023-10-01 : 2026-10-01",
+      "trend_color": "#008489",
+      "y_axis_truncate": true,
+      "description": "Hours of storage to cut the daily net-load peak by 10% on 1 day in 10. Within 4 h a 4-hour battery covers it; over 10 h needs long-duration storage.",
+      "width": 3,
+      "height": 4.8
+    },
+    {
+      "name": "Baseload",
+      "type": "big_number_trend",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "ba_period"
+      },
+      "display_name": "◇ Baseload, GW",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "t12m"
+        }
+      ],
+      "metric": "SQL(MAX(demand_p5_mw) / 1000) AS GW",
+      "time_column": "period_end",
+      "time_grain": "P1M",
+      "compare_lag": 12,
+      "compare_suffix": "vs prior 12 months",
+      "subtitle": "5th percentile of demand · 12 months to Sep 2026",
+      "number_format": ",.1f",
+      "time_range": "2023-10-01 : 2026-10-01",
+      "trend_color": "#008489",
+      "y_axis_truncate": true,
+      "description": "The 5th percentile of hourly demand, a proxy for flat load.",
+      "width": 3,
+      "height": 4.8
+    },
+    {
+      "name": "Net load by hour and month",
+      "type": "heatmap",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "Net load by hour and month, MW · last 24 months",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "month"
+        },
+        {
+          "column": "period_start",
+          "op": ">=",
+          "value": "2024-10-01"
+        }
+      ],
+      "x_column": "period_key",
+      "y_column": "hour_axis",
+      "metric": "SQL(MAX(net_load_mw)) AS Net load, MW",
+      "x_order": "a_to_z",
+      "color_scheme": "schemeYlGnBu",
+      "x_label_every": 3,
+      "y_label_every": 6,
+      "left_margin": 40,
+      "description": "Mean net load by hour of day and month. Darker is more to serve; the evening ramp is the climb from the midday trough to the evening peak.",
+      "width": 7,
+      "height": 8
+    },
+    {
+      "name": "Daily evening ramps by month",
+      "type": "box_plot",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "daily_ba"
+      },
+      "display_name": "Daily evening ramp, GW · 12 months to Sep 2026",
+      "filters": [
+        {
+          "column": "data_date",
+          "op": ">=",
+          "value": "2025-10-01"
+        },
+        {
+          "column": "data_date",
+          "op": "<=",
+          "value": "2026-09-30"
+        },
+        {
+          "column": "sunset_ramp_mw",
+          "op": "IS NOT NULL"
+        },
+        {
+          "column": "sunset_month_ok",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "metrics": [
+        "SQL(MAX(sunset_ramp_mw) / 1000) AS Evening ramp, GW"
+      ],
+      "distribute_across": [
+        "data_date"
+      ],
+      "groupby": [
+        "month_key"
+      ],
+      "whiskers": [
+        10,
+        90
+      ],
+      "row_limit": 1000,
+      "number_format": ",.0f",
+      "x_axis_title": "Month",
+      "y_axis_title": "GW",
+      "description": "Every day's evening ramp, one box per month: the box is the middle half, the whiskers the 10th and 90th percentile days. Storage is sized to the upper whisker.",
+      "width": 5,
+      "height": 8
+    },
+    {
+      "name": "Evening ramp bridge",
+      "type": "waterfall",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "v_sunset_bridge"
+      },
+      "display_name": "What moved the mean day's evening ramp, GW · Jul–Sep 2025 to Jul–Sep 2026",
+      "filters": [
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "step",
+      "metric": "SUM(gw)",
+      "opening": "Mean day, Jul–Sep 2025",
+      "steps": [
+        "Demand",
+        "Solar",
+        "Wind"
+      ],
+      "closing": "Mean day, Jul–Sep 2026",
+      "increase_color": "#FF385C",
+      "decrease_color": "#008489",
+      "total_color": "#717171",
+      "x_axis_title": "Change by source",
+      "y_axis_title": "GW",
+      "increase_label": "Steepens the ramp",
+      "decrease_label": "Eases the ramp",
+      "show_value": true,
+      "number_format": ",.1f",
+      "show_legend": false,
+      "description": "The change in the mean day's evening ramp split exactly into demand, solar and wind: each step is how much that source's swing across the day's 3-hour window changed.",
+      "width": 7,
+      "height": 11.6
+    },
+    {
+      "name": "Evening ramp by operator",
+      "type": "table",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "operator_ramp"
+      },
+      "display_name": "Ten largest evening ramps, GW · Jul–Sep 2026",
+      "filters": [
+        {
+          "column": "has_duck",
+          "op": "==",
+          "value": 1
+        }
+      ],
+      "columns": [
+        "ba_label",
+        "sunset_ramp_p50_gw",
+        "sunset_ramp_p50_arrow",
+        "sunset_ramp_p90_gw",
+        "sunset_ramp_p50_sign"
+      ],
+      "hidden": [
+        "sunset_ramp_p50_sign"
+      ],
+      "sort_by": "sunset_ramp_p50_gw",
+      "row_limit": 10,
+      "page_length": 0,
+      "search_box": false,
+      "cell_bars": [
+        "sunset_ramp_p90_gw"
+      ],
+      "color_by_sign": false,
+      "column_headers": {
+        "ba_label": "Operator",
+        "sunset_ramp_p50_gw": "Median day",
+        "sunset_ramp_p50_arrow": "vs Jul–Sep 2025",
+        "sunset_ramp_p90_gw": "1 day in 10"
+      },
+      "number_formats": {
+        "sunset_ramp_p50_gw": ",.1f",
+        "sunset_ramp_p90_gw": ",.1f"
+      },
+      "column_align": {
+        "ba_label": "center",
+        "sunset_ramp_p50_gw": "center",
+        "sunset_ramp_p50_arrow": "center",
+        "sunset_ramp_p90_gw": "center"
+      },
+      "conditional_formatting": [
+        {
+          "metric": "sunset_ramp_p50_sign",
+          "operator": "=",
+          "target": 1,
+          "color": "#995000",
+          "apply_to": "sunset_ramp_p50_arrow",
+          "paint": "text"
+        },
+        {
+          "metric": "sunset_ramp_p50_sign",
+          "operator": "=",
+          "target": -1,
+          "color": "#137333",
+          "apply_to": "sunset_ramp_p50_arrow",
+          "paint": "text"
+        }
+      ],
+      "description": "Operators with a duck (solar a tenth of midday demand): the evening ramp on the median day and on 1 day in 10. A rising ramp is amber, a falling one green.",
+      "width": 5,
+      "height": 11.6
+    },
+    {
+      "name": "Is the change real",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "signal_month"
+      },
+      "display_name": "Evening ramp: each month's change ÷ weather noise",
+      "filters": [
+        {
+          "column": "metric",
+          "op": "==",
+          "value": "sunset_ramp_p50"
+        },
+        {
+          "column": "month_start",
+          "op": ">=",
+          "value": "2024-10-01"
+        },
+        {
+          "column": "z_noise",
+          "op": "IS NOT NULL"
+        }
+      ],
+      "x_column": "month_start",
+      "time_grain": "P1M",
+      "x_label_format": "%b %y",
+      "a": {
+        "metrics": [
+          "SQL(MAX(CASE WHEN outside_noise_band THEN z_noise END)) AS Outside the band",
+          "SQL(MAX(CASE WHEN NOT outside_noise_band THEN z_noise END)) AS Inside the band"
+        ],
+        "kind": "bar",
+        "axis": "primary",
+        "show_value": true
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(CASE WHEN n_z_12m = 12 THEN z_mean_12m END)) AS 12-month average"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "annotations": [
+        {
+          "name": "12-month test",
+          "value": 1.45,
+          "style": "dashed",
+          "color": "#8C8C8C",
+          "width": 1
+        }
+      ],
+      "number_format": ",.1~f",
+      "show_legend": true,
+      "x_axis_title": "Month",
+      "y_axis_title": "Change ÷ weather noise",
+      "description": "Each month's year-on-year change divided by this operator's own weather noise for that month. Outside the band three months running, or a 12-month average above the dashed line, counts as real. Tested only with four reference years of a duck.",
+      "width": 7,
+      "height": 8
+    },
+    {
+      "name": "Is it real, by operator",
+      "type": "table",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "signal_status"
+      },
+      "display_name": "Verdict by operator · 12 months to Sep 2026",
+      "filters": [
+        {
+          "sql": "baseload_code >= 2 OR rise3h_code >= 2 OR evening_code >= 2"
+        }
+      ],
+      "columns": [
+        "ba_label",
+        "baseload_verdict",
+        "rise3h_verdict",
+        "evening_verdict",
+        "baseload_code",
+        "rise3h_code",
+        "evening_code"
+      ],
+      "hidden": [
+        "baseload_code",
+        "rise3h_code",
+        "evening_code"
+      ],
+      "sort_by": "baseload_code",
+      "row_limit": 15,
+      "page_length": 0,
+      "search_box": false,
+      "column_headers": {
+        "ba_label": "Operator",
+        "baseload_verdict": "◇ Baseload",
+        "rise3h_verdict": "3-hour rise",
+        "evening_verdict": "Evening ramp"
+      },
+      "column_align": {
+        "ba_label": "center",
+        "baseload_verdict": "center",
+        "rise3h_verdict": "center",
+        "evening_verdict": "center"
+      },
+      "conditional_formatting": [
+        {
+          "metric": "baseload_code",
+          "operator": "=",
+          "target": 3,
+          "color": "#FDD663",
+          "apply_to": "baseload_verdict"
+        },
+        {
+          "metric": "baseload_code",
+          "operator": "=",
+          "target": 2,
+          "color": "#FEEFC3",
+          "apply_to": "baseload_verdict"
+        },
+        {
+          "metric": "rise3h_code",
+          "operator": "=",
+          "target": 3,
+          "color": "#FDD663",
+          "apply_to": "rise3h_verdict"
+        },
+        {
+          "metric": "rise3h_code",
+          "operator": "=",
+          "target": 2,
+          "color": "#FEEFC3",
+          "apply_to": "rise3h_verdict"
+        },
+        {
+          "metric": "evening_code",
+          "operator": "=",
+          "target": 3,
+          "color": "#FDD663",
+          "apply_to": "evening_verdict"
+        },
+        {
+          "metric": "evening_code",
+          "operator": "=",
+          "target": 2,
+          "color": "#FEEFC3",
+          "apply_to": "evening_verdict"
+        }
+      ],
+      "description": "Proven: the 12-month test passed (beyond what weather produces 1 time in 100). Watch: outside the weather band three months running. Every operator with a proven or watched rise on any test.",
+      "width": 5,
+      "height": 16.3
+    },
+    {
+      "name": "Evening ramp since 2018",
+      "type": "timeseries_line",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "ba_period"
+      },
+      "display_name": "Evening ramp, GW · median and bad day, by month since Jul 2018",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "month"
+        }
+      ],
+      "metrics": [
+        "SQL(MAX(sunset_ramp_p50_mw) / 1000) AS Median day",
+        "SQL(MAX(sunset_ramp_p90_mw) / 1000) AS Bad day (P90)"
+      ],
+      "time_column": "period_start",
+      "time_grain": "P1M",
+      "x_label_format": "%Y",
+      "number_format": ",.0f",
+      "y_axis_min": 0,
+      "legend_position": "bottom",
+      "time_range": "2018-07-01 : 2026-10-01",
+      "x_axis_title": "Month",
+      "y_axis_title": "GW",
+      "description": "Months when solar was under 5% of peak demand have no evening ramp and are left blank.",
+      "width": 7,
+      "height": 8
+    },
+    {
+      "name": "Baseload and peak added by grid operator",
+      "type": "bar",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "siting_ba"
+      },
+      "display_name": "◇ Baseload and peak added, MW · 12 months to Sep 2026",
+      "filters": [
+        {
+          "column": "in_roster",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "baseload_change_mw",
+          "op": ">=",
+          "value": 150
+        }
+      ],
+      "x_column": "ba_label",
+      "metrics": [
+        "SQL(MAX(baseload_change_mw)) AS Baseload added",
+        "SQL(MAX(peak_change_mw)) AS Peak added"
+      ],
+      "orientation": "horizontal",
+      "row_limit": 13,
+      "number_format": ",.0f",
+      "legend_position": "bottom",
+      "y_axis_min": -500,
+      "show_value": true,
+      "x_axis_title": "Grid operator",
+      "y_axis_title": "MW",
+      "description": "Baseload is the 5th percentile of hourly demand, peak the 95th. Where they rise together the new load is flat; peak also moves with summer weather.",
+      "width": 7,
+      "height": 12
+    },
+    {
+      "name": "Baseload against 2019",
+      "type": "bar",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "siting_ba"
+      },
+      "display_name": "◇ Baseload, 2019 = 100 · 12 months to Sep 2026",
+      "filters": [
+        {
+          "column": "in_roster",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "baseload_change_mw",
+          "op": ">=",
+          "value": 150
+        }
+      ],
+      "x_column": "ba_label",
+      "groupby": "baseload_status",
+      "metrics": [
+        "SQL(MAX(baseload_idx2019)) AS Baseload index"
+      ],
+      "stack": true,
+      "sort_by": "total",
+      "annotations": [
+        {
+          "name": "2019 = 100",
+          "value": 100,
+          "style": "dashed",
+          "color": "#8C8C8C",
+          "width": 1
+        }
+      ],
+      "orientation": "horizontal",
+      "number_format": ",.0f",
+      "legend_position": "bottom",
+      "show_value": true,
+      "x_axis_title": "Grid operator",
+      "y_axis_title": "Index, 2019 = 100",
+      "description": "Each operator's baseload against its own 2019, coloured by whether its rise passes the 12-month test.",
+      "width": 5,
+      "height": 12
+    },
+    {
+      "name": "Load-zone baseload since 2019",
+      "type": "timeseries_line",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "subregion_period"
+      },
+      "display_name": "PJM load zones: ◇ baseload, 2019 = 100 · trailing 12 months",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "t12m"
+        },
+        {
+          "column": "subregion",
+          "op": "IN",
+          "value": [
+            "DOM",
+            "AEP"
+          ]
+        }
+      ],
+      "metrics": [
+        "SQL(MAX(demand_p5_idx2019)) AS Baseload index"
+      ],
+      "groupby": "subregion",
+      "time_column": "period_end",
+      "time_grain": "P1M",
+      "x_label_format": "%Y",
+      "number_format": ",.0f",
+      "y_axis_min": 80,
+      "y_axis_max": 180,
+      "time_range": "2020-12-01 : 2026-10-01",
+      "legend_position": "bottom",
+      "x_axis_title": "Month",
+      "y_axis_title": "Index, 2019 = 100",
+      "annotations": [
+        {
+          "name": "2019 = 100",
+          "value": 100,
+          "style": "dashed",
+          "color": "#8C8C8C",
+          "width": 1
+        }
+      ],
+      "description": "Dominion's Virginia zone (DOM) and American Electric Power's (AEP): lowest hours at night, so their 5th percentile is flat load.",
+      "width": 12,
+      "height": 8
+    },
+    {
+      "name": "Batteries operating",
+      "type": "big_number_trend",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "battery_capacity_month"
+      },
+      "display_name": "Batteries operating, GW",
+      "filters": [
+        {
+          "column": "region_name",
+          "op": "IS NOT NULL"
+        }
+      ],
+      "metric": "SQL(SUM(operating_battery_mw) / 1000) AS GW",
+      "time_column": "month_start",
+      "time_grain": "P1M",
+      "compare_lag": 12,
+      "compare_suffix": "vs a year earlier",
+      "subtitle": "Lower 48 · EIA-860M, August 2026",
+      "number_format": ",.1f",
+      "time_range": "2023-09-01 : 2026-09-01",
+      "trend_color": "#008489",
+      "y_axis_truncate": true,
+      "width": 4,
+      "height": 4.8
+    },
+    {
+      "name": "Operators covered",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "siting_ba"
+      },
+      "display_name": "Operators whose batteries cover the ramp",
+      "filters": [
+        {
+          "column": "in_roster",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "cover_band",
+          "op": "==",
+          "value": 1
+        }
+      ],
+      "metric": "COUNT(*)",
+      "subtitle": "Battery MW ≥ the bad-day ramp · of 51",
+      "number_format": ",.0f",
+      "conditional_formatting": [
+        {
+          "operator": ">",
+          "target": 0,
+          "color": "#137333"
+        }
+      ],
+      "width": 4,
+      "height": 4.8
+    },
+    {
+      "name": "Operators within 4 hours",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "siting_ba"
+      },
+      "display_name": "Operators a 4-hour battery covers",
+      "filters": [
+        {
+          "column": "in_roster",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "hours_band",
+          "op": "==",
+          "value": 1
+        }
+      ],
+      "metric": "COUNT(*)",
+      "subtitle": "Cut the peak 10% in 4 h or less · of 51",
+      "number_format": ",.0f",
+      "conditional_formatting": [
+        {
+          "operator": ">",
+          "target": 0,
+          "color": "#137333"
+        }
+      ],
+      "width": 4,
+      "height": 4.8
+    },
+    {
+      "name": "Batteries installed by region",
+      "type": "timeseries_area",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "battery_capacity_month"
+      },
+      "display_name": "Batteries operating by region, GW · EIA-860M, August 2026",
+      "filters": [
+        {
+          "column": "region_group",
+          "op": "IS NOT NULL"
+        }
+      ],
+      "metrics": [
+        "SQL(SUM(operating_battery_mw) / 1000) AS GW"
+      ],
+      "groupby": "region_group",
+      "time_column": "month_start",
+      "time_grain": "P1M",
+      "x_label_format": "%Y",
+      "number_format": ",.0f",
+      "stack": true,
+      "opacity": 0.9,
+      "time_range": "2020-01-01 : 2026-09-01",
+      "legend_position": "bottom",
+      "x_axis_title": "Month",
+      "y_axis_title": "GW",
+      "width": 12,
+      "height": 8
+    },
+    {
+      "name": "Battery cover of the bad-day ramp",
+      "type": "bar",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "siting_ba"
+      },
+      "display_name": "◇ Battery MW ÷ bad-day evening ramp · 12 months to Sep 2026",
+      "filters": [
+        {
+          "column": "in_roster",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "sunset_ramp_p90_mw",
+          "op": ">=",
+          "value": 1000
+        }
+      ],
+      "x_column": "ba_label",
+      "groupby": "cover_band_label",
+      "stack": true,
+      "sort_by": "total",
+      "metrics": [
+        "SQL(MAX(cover_ratio)) AS Battery ÷ ramp"
+      ],
+      "orientation": "horizontal",
+      "number_format": ",.2f",
+      "legend_position": "bottom",
+      "x_label_every": true,
+      "show_value": true,
+      "x_axis_title": "Grid operator",
+      "y_axis_title": "Battery MW ÷ bad-day ramp",
+      "annotations": [
+        {
+          "name": "Covers the ramp (1.0)",
+          "value": 1,
+          "style": "dashed",
+          "color": "#8C8C8C",
+          "width": 1
+        },
+        {
+          "name": "Half (0.5)",
+          "value": 0.5,
+          "style": "dashed",
+          "color": "#8C8C8C",
+          "width": 1
+        }
+      ],
+      "description": "Operating battery nameplate MW over the bad-day (P90) evening ramp, for operators whose bad-day ramp is 1 GW or more. Nameplate isn't accredited capacity.",
+      "width": 6,
+      "height": 13
+    },
+    {
+      "name": "Hours of storage to cut the peak",
+      "type": "bar",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "siting_ba"
+      },
+      "display_name": "◇ Hours of storage to cut the peak 10% · 1 day in 10 · 12 months to Sep 2026",
+      "filters": [
+        {
+          "column": "in_roster",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "peak_p95_mw",
+          "op": ">=",
+          "value": 5000
+        }
+      ],
+      "x_column": "ba_label",
+      "groupby": "hours_band_label",
+      "stack": true,
+      "sort_by": "total",
+      "metrics": [
+        "SQL(MAX(npe10_duration_p90_h)) AS Hours"
+      ],
+      "orientation": "horizontal",
+      "number_format": ",.1f",
+      "legend_position": "bottom",
+      "x_label_every": true,
+      "show_value": true,
+      "x_axis_title": "Grid operator",
+      "y_axis_title": "Hours of storage",
+      "annotations": [
+        {
+          "name": "4-hour battery",
+          "value": 4,
+          "style": "dashed",
+          "color": "#8C8C8C",
+          "width": 1
+        },
+        {
+          "name": "Long duration (10 h)",
+          "value": 10,
+          "style": "dashed",
+          "color": "#8C8C8C",
+          "width": 1
+        }
+      ],
+      "description": "The energy above 90% of the day's peak net load divided by that 10%, on 1 day in 10: perfect foresight, no losses. Operators with a peak over 5 GW.",
+      "width": 6,
+      "height": 13
+    },
+    {
+      "name": "What serves 13:00 and 20:00",
+      "type": "bar",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "fuel_profile_ba"
+      },
+      "display_name": "What supplies 13:00 and 20:00, MW · Jul–Sep 2026",
+      "filters": [
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "closure_ok",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "hour_label",
+          "op": "IN",
+          "value": [
+            "13:00",
+            "20:00"
+          ]
+        },
+        {
+          "column": "fuel_group",
+          "op": "IS NOT NULL"
+        }
+      ],
+      "x_column": "hour_label",
+      "metrics": [
+        "SQL(SUM(mean_mw)) AS MW"
+      ],
+      "groupby": "fuel_group",
+      "stack": true,
+      "category_sort": "asc",
+      "x_label_every": true,
+      "number_format": ",.0f",
+      "legend_position": "bottom",
+      "legend_type": "plain",
+      "show_value": true,
+      "only_total": true,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "MW",
+      "description": "Mean supply by fuel at 13:00, when solar peaks, and 20:00, after it sets. Below zero is where part of it goes, exports and battery charging, so each bar nets to demand. Months whose generation is more than 5% off demand are left out.",
+      "width": 6,
+      "height": 9
+    },
+    {
+      "name": "Battery output by hour",
+      "type": "mixed",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "Battery discharge by hour, MW · Jul–Sep 2026 vs Jul–Sep 2025",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "x_column": "hour_label",
+      "a": {
+        "metrics": [
+          "SQL(MAX(battery_discharge_ly_mw)) AS Battery, Jul–Sep 2025"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "b": {
+        "metrics": [
+          "SQL(MAX(battery_discharge_mw)) AS Battery, Jul–Sep 2026"
+        ],
+        "kind": "line",
+        "axis": "primary"
+      },
+      "number_format": ",.0f",
+      "show_legend": true,
+      "x_axis_title": "Hour of day",
+      "y_axis_title": "MW",
+      "description": "Discharge only: EIA-930 reports some operators' batteries net of charging and others as discharge only (ERCOT switched in Dec 2025).",
+      "width": 6,
+      "height": 9
+    },
+    {
+      "name": "Solar at 13:00",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "fuel_profile_ba"
+      },
+      "display_name": "Solar at 13:00, share",
+      "filters": [
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "closure_ok",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "metric": "SQL(SUM(CASE WHEN fuel_group = 'Solar' AND hour_label = '13:00' THEN mean_mw END) / NULLIF(SUM(CASE WHEN hour_label = '13:00' AND mean_mw > 0 THEN mean_mw END), 0)) AS Solar at 13:00",
+      "number_format": ".0%",
+      "subtitle": "Of supply at that hour · Jul–Sep 2026",
+      "width": 3,
+      "height": 4.6
+    },
+    {
+      "name": "Gas at 20:00",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "fuel_profile_ba"
+      },
+      "display_name": "Gas at 20:00, share",
+      "filters": [
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "closure_ok",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "metric": "SQL(SUM(CASE WHEN fuel_group = 'Gas' AND hour_label = '20:00' THEN mean_mw END) / NULLIF(SUM(CASE WHEN hour_label = '20:00' AND mean_mw > 0 THEN mean_mw END), 0)) AS Gas at 20:00",
+      "number_format": ".0%",
+      "subtitle": "Of supply at that hour · Jul–Sep 2026",
+      "width": 3,
+      "height": 4.6
+    },
+    {
+      "name": "Battery at 20:00",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "profile_ba"
+      },
+      "display_name": "Battery at 20:00, MW",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "hour_label",
+          "op": "==",
+          "value": "20"
+        }
+      ],
+      "metric": "SQL(MAX(battery_discharge_mw)) AS Battery at 20:00",
+      "number_format": ",.0f",
+      "subtitle": "Mean discharge, where reported · Jul–Sep 2026",
+      "width": 3,
+      "height": 4.6
+    },
+    {
+      "name": "Balance closure",
+      "type": "big_number_total",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "ba_period"
+      },
+      "display_name": "Balance closure",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "quarter"
+        },
+        {
+          "column": "is_latest",
+          "op": "==",
+          "value": true
+        }
+      ],
+      "metric": "SQL(MAX(closure)) AS Closure",
+      "number_format": ".1%",
+      "subtitle": "Jul–Sep 2026 · ±2% guardrail",
+      "conditional_formatting": [
+        {
+          "operator": "<",
+          "target": -0.02,
+          "color": "#A50E0E"
+        },
+        {
+          "operator": ">",
+          "target": 0.02,
+          "color": "#A50E0E"
+        },
+        {
+          "operator": "between",
+          "target_left": -0.02,
+          "target_right": 0.02,
+          "color": "#137333"
+        }
+      ],
+      "description": "(Net generation − interchange − demand) ÷ demand. Green within ±2%; red outside, where fuel shares are approximate. Beyond ±5% the fuel mix is left blank.",
+      "width": 3,
+      "height": 4.6
+    },
+    {
+      "name": "Generation mix since 2018",
+      "type": "timeseries_area",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "fuel_ba_period"
+      },
+      "display_name": "Generation mix, share · since Jul 2018",
+      "filters": [
+        {
+          "column": "period_type",
+          "op": "==",
+          "value": "month"
+        },
+        {
+          "column": "closure_ok",
+          "op": "==",
+          "value": true
+        },
+        {
+          "column": "fuel_group",
+          "op": "IN",
+          "value": [
+            "Solar",
+            "Wind",
+            "Gas",
+            "Coal, nuclear, hydro",
+            "Other"
+          ]
+        }
+      ],
+      "metrics": [
+        "SQL(SUM(twh)) AS TWh"
+      ],
+      "groupby": "fuel_group",
+      "contribution": "row",
+      "stack": true,
+      "opacity": 0.9,
+      "time_column": "period_start",
+      "time_grain": "P1M",
+      "x_label_format": "%Y",
+      "number_format": ".0%",
+      "y_axis_min": 0,
+      "y_axis_max": 1,
+      "time_range": "2018-07-01 : 2026-10-01",
+      "legend_position": "bottom",
+      "x_axis_title": "Month",
+      "y_axis_title": "Share of generation",
+      "width": 12,
+      "height": 8
+    },
+    {
+      "name": "Glossary",
+      "type": "table",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "glossary"
+      },
+      "display_name": "Glossary · every measure on the dashboard",
+      "columns": [
+        "measure",
+        "definition",
+        "formula",
+        "threshold",
+        "source",
+        "sort_order"
+      ],
+      "hidden": [
+        "sort_order"
+      ],
+      "sort_by": "sort_order",
+      "sort_ascending": true,
+      "row_limit": 32,
+      "page_length": 0,
+      "search_box": false,
+      "column_headers": {
+        "measure": "Measure",
+        "definition": "Definition",
+        "formula": "Formula",
+        "threshold": "Status bands",
+        "source": "Source"
+      },
+      "column_widths": {
+        "measure": 200,
+        "definition": 420,
+        "formula": 300,
+        "threshold": 260,
+        "source": 90
+      },
+      "column_align": {
+        "measure": "left",
+        "definition": "left",
+        "formula": "left",
+        "threshold": "left",
+        "source": "left"
+      },
+      "width": 12,
+      "height": 52
+    },
+    {
+      "name": "Data quality by grid operator",
+      "type": "table",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "dq_ba"
+      },
+      "display_name": "Operators with a month past ±2% closure · latest 12 months",
+      "filters": [
+        {
+          "column": "closure_abs",
+          "op": "IS NOT NULL"
+        }
+      ],
+      "columns": [
+        "ba_label",
+        "months_beyond_2pct",
+        "closure_worst_monthly",
+        "closure_t12m",
+        "n_months",
+        "demand_imputed_share",
+        "reports_batteries"
+      ],
+      "sort_by": "months_beyond_2pct",
+      "row_limit": 13,
+      "page_length": 0,
+      "search_box": false,
+      "column_headers": {
+        "ba_label": "Grid operator",
+        "months_beyond_2pct": "Months past ±2%",
+        "closure_t12m": "12-month closure",
+        "closure_worst_monthly": "Worst month",
+        "n_months": "Months",
+        "demand_imputed_share": "Demand imputed",
+        "reports_batteries": "Reports batteries"
+      },
+      "number_formats": {
+        "closure_t12m": "+.1%",
+        "closure_worst_monthly": "+.1%",
+        "demand_imputed_share": ".1%"
+      },
+      "column_align": {
+        "ba_label": "center",
+        "months_beyond_2pct": "center",
+        "closure_worst_monthly": "center",
+        "closure_t12m": "center",
+        "n_months": "center",
+        "demand_imputed_share": "center",
+        "reports_batteries": "center"
+      },
+      "conditional_formatting": [
+        {
+          "metric": "months_beyond_2pct",
+          "operator": ">",
+          "target": 5,
+          "color": "#FCE8E6",
+          "apply_to": "row"
+        },
+        {
+          "metric": "months_beyond_2pct",
+          "operator": "between",
+          "target_left": 0,
+          "target_right": 6,
+          "color": "#FEF7E0",
+          "apply_to": "row"
+        },
+        {
+          "metric": "months_beyond_2pct",
+          "operator": ">",
+          "target": 5,
+          "color": "#A50E0E",
+          "apply_to": "months_beyond_2pct",
+          "paint": "text"
+        }
+      ],
+      "description": "Balance closure is (net generation − interchange − demand) ÷ demand and should sit near zero. Red rows: six or more months past ±2%; amber: one to five.",
+      "width": 7,
+      "height": 15
+    },
+    {
+      "name": "CAISO balance closure",
+      "type": "timeseries_line",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "dq_ba_month"
+      },
+      "display_name": "Balance closure by month, % · CAISO and PJM · since Jan 2024",
+      "filters": [
+        {
+          "column": "ba",
+          "op": "IN",
+          "value": [
+            "CISO",
+            "PJM"
+          ]
+        }
+      ],
+      "metrics": [
+        "SQL(MAX(closure)) AS Closure"
+      ],
+      "groupby": "ba_label",
+      "time_column": "month_start",
+      "time_grain": "P1M",
+      "x_label_format": "%b %y",
+      "number_format": ".0%",
+      "time_range": "2024-01-01 : 2026-10-01",
+      "markers": false,
+      "legend_position": "bottom",
+      "x_axis_title": "Month",
+      "y_axis_title": "Closure, % of demand",
+      "annotations": [
+        {
+          "name": "+2%",
+          "value": 0.02,
+          "style": "dashed",
+          "color": "#8C8C8C",
+          "width": 1
+        },
+        {
+          "name": "−2%",
+          "value": -0.02,
+          "style": "dashed",
+          "color": "#8C8C8C",
+          "width": 1
+        }
+      ],
+      "description": "CAISO's fuel mix stops reconciling from Dec 2025 (its ramp uses only demand, solar and wind and is unaffected); PJM runs above +2% each summer.",
+      "width": 5,
+      "height": 15
+    }
+  ],
+  "filters": [
+    {
+      "type": "select",
+      "name": "Grid operator",
+      "dataset": {
+        "database": "grid_warehouse",
+        "schema": "sundown",
+        "table": "ba_period"
+      },
+      "column": "ba_label",
+      "multi": false,
+      "default": [
+        "ERCOT"
+      ],
+      "required": true,
+      "charts": [
+        "Evening ramp, median day",
+        "Evening ramp, bad day",
+        "Hours to cut the peak",
+        "Baseload",
+        "Net load by hour and month",
+        "Daily evening ramps by month",
+        "Evening ramp bridge",
+        "Is the change real",
+        "Evening ramp since 2018",
+        "What serves 13:00 and 20:00",
+        "Battery output by hour",
+        "Solar at 13:00",
+        "Gas at 20:00",
+        "Battery at 20:00",
+        "Balance closure",
+        "Generation mix since 2018"
+      ]
+    }
+  ],
+  "layout": {
+    "header": [
+      {
+        "row": [
+          {
+            "markdown": "## SUNDOWN\nData-centre siting across the US power grid",
+            "width": 9,
+            "height": 2.4
+          },
+          "Data through"
+        ],
+        "background": "white"
+      }
+    ],
+    "tabs": [
+      {
+        "title": "Overview",
+        "rows": [
+          [
+            "Lower-48 demand",
+            "Lower-48 evening ramp",
+            "Baseload added",
+            "Batteries installed"
+          ],
+          {
+            "header": "Siting screen",
+            "size": "medium"
+          },
+          [
+            "Siting screen"
+          ],
+          {
+            "header": "Shape of the day",
+            "size": "medium"
+          },
+          [
+            {
+              "markdown": "###### <span itemprop=\"this\"></span>**Jul–Sep 2026** · <span itemprop=\"prior\"></span>**Jul–Sep 2025** · <span itemprop=\"solar\"></span>**Solar**",
+              "width": 12,
+              "height": 1.4
+            }
+          ],
+          [
+            "Shape of the day: ERCOT",
+            "Shape of the day: CAISO",
+            "Shape of the day: PJM",
+            "Shape of the day: MISO"
+          ],
+          [
+            "Shape of the day: AZPS",
+            "Shape of the day: NEVP",
+            "Shape of the day: SOCO",
+            "Shape of the day: TVA"
+          ]
+        ]
+      },
+      {
+        "title": "Evening ramp",
+        "tabs": [
+          {
+            "title": "Shape and drivers",
+            "rows": [
+              [
+                "Evening ramp, median day",
+                "Evening ramp, bad day",
+                "Hours to cut the peak",
+                "Baseload"
+              ],
+              {
+                "header": "By hour and by day",
+                "size": "medium"
+              },
+              [
+                "Net load by hour and month",
+                "Daily evening ramps by month"
+              ],
+              {
+                "header": "What moved, Jul–Sep 2025 to Jul–Sep 2026",
+                "size": "medium"
+              },
+              [
+                {
+                  "markdown": "###### <span itemprop=\"up\"></span>**Steepens the ramp** · <span itemprop=\"down\"></span>**Eases it** · <span itemprop=\"total\"></span>**Mean day**",
+                  "width": 12,
+                  "height": 1.4
+                }
+              ],
+              [
+                "Evening ramp bridge",
+                "Evening ramp by operator"
+              ]
+            ]
+          },
+          {
+            "title": "Is it real",
+            "sketch": [
+              "HHHHHHHHHHHH",
+              "SSSSSSSVVVVV",
+              "SSSSSSSVVVVV",
+              "SSSSSSSVVVVV",
+              "SSSSSSSVVVVV",
+              "LLLLLLLVVVVV",
+              "LLLLLLLVVVVV",
+              "LLLLLLLVVVVV",
+              "LLLLLLLVVVVV",
+              "LLLLLLLVVVVV"
+            ],
+            "legend": {
+              "H": {
+                "header": "Change against weather"
+              },
+              "S": "Is the change real",
+              "V": "Is it real, by operator",
+              "L": "Evening ramp since 2018"
+            }
+          }
+        ]
+      },
+      {
+        "title": "Load growth",
+        "rows": [
+          {
+            "header": "Baseload and peak added",
+            "size": "medium"
+          },
+          [
+            "Baseload and peak added by grid operator",
+            "Baseload against 2019"
+          ],
+          {
+            "header": "Data-centre zones in PJM",
+            "size": "medium"
+          },
+          [
+            "Load-zone baseload since 2019"
+          ]
+        ]
+      },
+      {
+        "title": "Storage",
+        "rows": [
+          [
+            "Batteries operating",
+            "Operators covered",
+            "Operators within 4 hours"
+          ],
+          {
+            "header": "Batteries by region",
+            "size": "medium"
+          },
+          [
+            "Batteries installed by region"
+          ],
+          {
+            "header": "Where storage covers the ramp",
+            "size": "medium"
+          },
+          [
+            "Battery cover of the bad-day ramp",
+            "Hours of storage to cut the peak"
+          ]
+        ]
+      },
+      {
+        "title": "Supply",
+        "rows": [
+          [
+            "Solar at 13:00",
+            "Gas at 20:00",
+            "Battery at 20:00",
+            "Balance closure"
+          ],
+          {
+            "header": "Solar peak and after sunset",
+            "size": "medium"
+          },
+          [
+            "What serves 13:00 and 20:00",
+            "Battery output by hour"
+          ],
+          {
+            "header": "Generation mix since 2018",
+            "size": "medium"
+          },
+          [
+            "Generation mix since 2018"
+          ]
+        ]
+      },
+      {
+        "title": "About",
+        "rows": [
+          {
+            "header": "Data quality",
+            "size": "medium"
+          },
+          [
+            "Data quality by grid operator",
+            "CAISO balance closure"
+          ],
+          {
+            "header": "Glossary",
+            "size": "medium"
+          },
+          [
+            "Glossary"
+          ]
+        ]
+      }
+    ],
+    "footer": [
+      [
+        {
+          "markdown": "##### Source: U.S. Energy Information Administration, EIA-930 Hourly Electric Grid Monitor and EIA-860M (August 2026), public domain · ◇ marks a proxy (Glossary) · Built with Chartwright",
+          "width": 12,
+          "height": 1.4
+        }
+      ]
+    ]
+  }
+}
