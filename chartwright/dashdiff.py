@@ -139,13 +139,15 @@ def _canonical_metrics(chart: dict) -> None:
 
 def _canonical_colours(chart: dict) -> None:
     """A named shade's own hex reads as the name: compile paints both alike, and
-    decompile names the shade (_rgb_to_spec, _format_to_spec)."""
+    decompile names the shade (_rgb_to_spec, _format_to_spec, _big_number_rules_to_spec)."""
     text_names = {v.upper(): k for k, v in FORMAT_TEXT_HEX.items()}
     cell_names = {v.upper(): k for k, v in FORMAT_COLOR_HEX.items()}
     if isinstance(chart.get("trend_color"), str):
         chart["trend_color"] = text_names.get(chart["trend_color"].upper(), chart["trend_color"])
+    # A big number's rules colour the number, which is text: a name paints its text shade.
+    number = chart.get("type") == "big_number_total"
     for rule in chart.get("conditional_formatting") or []:
-        names = text_names if rule.get("paint") == "text" else cell_names
+        names = text_names if number or rule.get("paint") == "text" else cell_names
         rule["color"] = names.get(str(rule["color"]).upper(), rule["color"])
 
 

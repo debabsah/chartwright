@@ -159,6 +159,17 @@ def test_rules_round_trip_with_no_loss_and_no_drift():
     assert _normalize(load_spec(out.spec))["charts"] == _normalize(spec)["charts"]
 
 
+@pytest.mark.parametrize("written, same_as_red", [("#B3261E", True), ("#EFA1AA", False)])
+def test_plan_reads_a_rule_hex_as_the_shade_the_number_paints(written, same_as_red):
+    """A name on a big number paints its text shade, so plan reads that shade's hex as the
+    name, as decompile does; the cell shade of the same name is a different colour there."""
+    spec = mk(coloured([{"operator": "<", "target": -0.02, "color": written}]))
+    out = roundtrip(spec)
+    assert _normalize(load_spec(out.spec))["charts"] == _normalize(spec)["charts"]
+    red = mk(coloured([{"operator": "<", "target": -0.02, "color": "red"}]))
+    assert (_normalize(red)["charts"] == _normalize(spec)["charts"]) is same_as_red
+
+
 def test_decompile_reads_what_the_number_shows_and_names_the_rest():
     base = {"column": "Variance", "operator": ">", "targetValue": 1}
     rules = [
