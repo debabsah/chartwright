@@ -349,7 +349,7 @@
             }
           ],
           "default": null,
-          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels, 64 on a horizontal bar)",
           "title": "X Axis Title Margin"
         },
         "y_axis_title_margin": {
@@ -3879,7 +3879,7 @@
             }
           ],
           "default": null,
-          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels, 64 on a horizontal bar)",
           "title": "X Axis Title Margin"
         },
         "y_axis_title_margin": {
@@ -6290,7 +6290,7 @@
             }
           ],
           "default": null,
-          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels, 64 on a horizontal bar)",
           "title": "X Axis Title Margin"
         },
         "y_axis_title_margin": {
@@ -6864,7 +6864,7 @@
             }
           ],
           "default": null,
-          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels, 64 on a horizontal bar)",
           "title": "X Axis Title Margin"
         },
         "y_axis_title_margin": {
@@ -7402,7 +7402,7 @@
             }
           ],
           "default": null,
-          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels, 64 on a horizontal bar)",
           "title": "X Axis Title Margin"
         },
         "y_axis_title_margin": {
@@ -7982,7 +7982,7 @@
             }
           ],
           "default": null,
-          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels, 64 on a horizontal bar)",
           "title": "X Axis Title Margin"
         },
         "y_axis_title_margin": {

@@ -438,6 +438,21 @@ def test_plan_reads_a_renamed_adopted_chart_as_a_change(live):
     assert p.charts_changed == ["Orders (all time)"] and not p.charts_added and not p.charts_removed
 
 
+def test_plan_reads_a_scope_naming_a_renamed_chart_as_unchanged(live):
+    """A cross-filter scope names its charts; after a rename in the adopted spec, the live
+    scope names the same chart under its old title, and the scope itself hasn't changed."""
+    data = _fixture()
+    data["dashboard"]["cross_filters"] = True
+    data["charts"][3]["cross_filter_scope"] = ["Sales by Deal Size"]  # Sales Over Time
+    fake, adopted = live(data=data)
+    # the scope under the live chart ids, as apply writes it (the fake imports ids as 4.1.4 does)
+    assert apply_mod._apply_cross_filter_scopes(load_spec(adopted), fake, _dash_id(fake)) == []
+    assert dashdiff.plan(load_spec(adopted), fake).clean
+    renamed = json.loads(json.dumps(adopted).replace('"Sales by Deal Size"', '"Deal size mix"'))
+    p = dashdiff.plan(load_spec(renamed), fake)
+    assert p.charts_changed == ["Deal size mix"] and not p.charts_added and not p.charts_removed
+
+
 def test_plan_blocks_where_apply_would_refuse(live):
     fake, data = live()
     fake.charts[fake.linked(_dash_id(fake))["Total Sales"]]["dashboards"].clear()  # taken off in the UI

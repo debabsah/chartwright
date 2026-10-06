@@ -190,15 +190,19 @@ def _apply_filter_scopes(spec: DashboardSpec, client: SupersetClient, dashboard_
     return []
 
 
-def _apply_cross_filter_scopes(spec: DashboardSpec, client: SupersetClient, dashboard_id: int,
-                               uuid_of: dict[str, str] | None = None) -> list[str]:
+def _apply_cross_filter_scopes(spec: DashboardSpec, client: SupersetClient, dashboard_id: int) -> list[str]:
     """Rewrite chart_configuration with the live chart ids. The bundle carries placeholder
     ids, which only the 6.1.0 importer remaps, and a chart's live id is known only now."""
     if all(c.cross_filter_scope in (None, "global") for c in spec.charts):
         return []  # the import replaced the metadata with the bundle's, which has none
     detail = client.get(f"/api/v1/dashboard/{dashboard_id}")["result"]
+    config = cross_filter_configuration(spec, json.loads(detail.get("position_json") or "{}"))
+    return _put_chart_configuration(client, dashboard_id, detail, config)
+
+
+def _put_chart_configuration(client: SupersetClient, dashboard_id: int, detail: dict,
+                             config: dict) -> list[str]:
     metadata = json.loads(detail.get("json_metadata") or "{}")
-    config = cross_filter_configuration(spec, json.loads(detail.get("position_json") or "{}"), uuid_of)
     if metadata.get("chart_configuration") == config:
         return []
     metadata["chart_configuration"] = config
@@ -206,6 +210,57 @@ def _apply_cross_filter_scopes(spec: DashboardSpec, client: SupersetClient, dash
     if r.status_code != 200:
         return [f"cross-filter scope PUT failed: HTTP {r.status_code} {r.text[:300]}"]
     return []
+
+
+def _chart_ids_by_uuid(position: dict) -> dict[str, int]:
+    return {str(n["meta"]["uuid"]): n["meta"]["chartId"] for n in position.values()
+            if isinstance(n, dict) and n.get("type") == "CHART"
+            and isinstance(n.get("meta"), dict) and n["meta"].get("uuid") and "chartId" in n["meta"]}
+
+
+def remap_chart_configuration(config: dict, id_map: dict[int, int]) -> dict:
+    """chart_configuration with every chart id moved through `id_map` (old -> new): each
+    entry's key and id, its scope's excluded ids and its chartsInScope. An entry or id
+    with no new id is dropped. Superset 6.1.0's importer does the same, except
+    chartsInScope (commands/dashboard/importers/v1/utils.py:146-189)."""
+    def moved(ids) -> list:
+        return [id_map[i] for i in ids if isinstance(i, int) and i in id_map] if isinstance(ids, list) else ids
+
+    out: dict = {}
+    for key, entry in config.items():
+        new = id_map.get(int(key)) if str(key).isdigit() else None
+        if new is None or not isinstance(entry, dict):
+            continue
+        entry = {**copy.deepcopy(entry), "id": new}
+        cross = entry.get("crossFilters")
+        if isinstance(cross, dict):
+            if isinstance(cross.get("scope"), dict) and "excluded" in cross["scope"]:
+                cross["scope"]["excluded"] = moved(cross["scope"]["excluded"])
+            if "chartsInScope" in cross:
+                cross["chartsInScope"] = moved(cross["chartsInScope"])
+        out[str(new)] = entry
+    return out
+
+
+def _restore_cross_filter_scopes(zip_bytes: bytes, client: SupersetClient,
+                                 dashboard_id: int) -> list[str]:
+    """Put the backup's own chart_configuration back under the chart ids the dashboard
+    has now, every entry kept as backed up: a chart decompile can't read keeps its scope,
+    and a scope keeps its roots. Ids map by chart uuid, from the backup's layout to the
+    live one (build_uuid_to_id_map, importers/v1/utils.py:48-71 at 6.1.0); 4.1.4 and
+    5.0.0 import the ids unmapped."""
+    zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    backup = next((yaml.safe_load(zf.read(n)) or {} for n in zf.namelist()
+                   if "/dashboards/" in n and n.endswith(".yaml")), {})
+    config = (backup.get("metadata") or {}).get("chart_configuration")
+    if not isinstance(config, dict) or not config:
+        return []  # the import wrote the backup's metadata, which has none
+    detail = client.get(f"/api/v1/dashboard/{dashboard_id}")["result"]
+    live = _chart_ids_by_uuid(json.loads(detail.get("position_json") or "{}"))
+    id_map = {old: live[u] for u, old in _chart_ids_by_uuid(backup.get("position") or {}).items()
+              if u in live and isinstance(old, int)}
+    return _put_chart_configuration(client, dashboard_id, detail,
+                                    remap_chart_configuration(config, id_map))
 
 
 def _unlink_charts_off_the_layout(client: SupersetClient, dashboard_id: int) -> str | None:
@@ -539,18 +594,17 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
         from .spec import load_spec
 
         dec = decompile_bundle(zip_bytes, live_dataset_lookup(client))
+        scope_errors = []
         try:
             spec = load_spec(dec.spec)
         except Exception as e:  # noqa: BLE001 - degraded bundles restore without scopes
-            report.warnings.append(f"scopes not reapplied (bundle spec not loadable: {e})")
+            report.warnings.append(f"filter scopes not reapplied (bundle spec not loadable: {e})")
         else:
-            scope_errors = _apply_filter_scopes(spec, client, report.dashboard_id)
-            # The backup's charts by the uuids they have there (an adopted dashboard's are
-            # its own, not the ones derived from the slug).
-            scope_errors += _apply_cross_filter_scopes(spec, client, report.dashboard_id,
-                                                       dec.chart_uuids)
-            for e in scope_errors:
-                report.warnings.append(f"scope reapply: {e}")
+            scope_errors += _apply_filter_scopes(spec, client, report.dashboard_id)
+        # Cross-filter scopes come from the backup itself, not its decompiled spec.
+        scope_errors += _restore_cross_filter_scopes(zip_bytes, client, report.dashboard_id)
+        for e in scope_errors:
+            report.warnings.append(f"scope reapply: {e}")
         if not_restored:
             # The layout is back but these charts still hold the newer params: not a
             # restore anyone should be told succeeded.

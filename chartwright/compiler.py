@@ -1583,19 +1583,17 @@ def _range_default_mask(f) -> dict | None:
     }
 
 
-def cross_filter_configuration(spec: DashboardSpec, position: dict,
-                               uuid_of: dict[str, str] | None = None) -> dict:
+def cross_filter_configuration(spec: DashboardSpec, position: dict) -> dict:
     """json_metadata.chart_configuration for the charts whose cross-filter scope is not
     the dashboard's (ChartConfiguration, dashboard/types.ts:87-106 at 6.1.0), keyed by the
     chart ids in `position`: the bundle's placeholders, which the 6.1.0 importer remaps
     (commands/dashboard/importers/v1/utils.py:147-190; 4.1.4 and 5.0.0 do not), or the
-    live ids apply writes after import. Charts are found by uuid: the spec's own, or
-    `uuid_of` (name -> uuid) for a decompiled backup. A chart's own id is in its excluded
-    list, as the scoping modal saves it (ScopingModal.tsx:240-246)."""
+    live ids apply writes after import. Charts are found by the spec's uuids. A chart's
+    own id is in its excluded list, as the scoping modal saves it (ScopingModal.tsx:240-246)."""
     nodes = {(n.get("meta") or {}).get("uuid"): n for n in position.values()
              if isinstance(n, dict) and n.get("type") == "CHART"}
     node_of = {c.name: nodes[u] for c in spec.charts
-               if (u := (uuid_of or {}).get(c.name) or str(spec.chart_uuid(c.name))) in nodes}
+               if (u := str(spec.chart_uuid(c.name))) in nodes}
     id_of = {name: node["meta"]["chartId"] for name, node in node_of.items()}
     out: dict = {}
     for c in spec.charts:

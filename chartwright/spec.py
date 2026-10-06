@@ -754,7 +754,7 @@ class _AxisChart(_ChartBase):
     x_axis_title_margin: int | None = Field(
         default=None, ge=0,
         description="Pixels between the x axis and its title; omit for a gap that clears the "
-                    "labels (30, 50 under rotated labels)")
+                    "labels (30, 50 under rotated labels, 64 on a horizontal bar)")
     y_axis_title_margin: int | None = Field(
         default=None, ge=0,
         description="Pixels between the value axis and its title; omit for 15 (30 on a "
@@ -2067,7 +2067,8 @@ class MarkdownBlock(BaseModel):
 RowItem = Union[str, MarkdownBlock]
 
 # A markdown link to a tab of the same dashboard: [words](tab:Title) or (tab:Parent/Child).
-TAB_LINK_RE = re.compile(r"\]\(tab:([^)]+)\)")
+# A title may hold balanced parentheses, as a markdown link target may: (tab:Sales (EU)).
+TAB_LINK_RE = re.compile(r"\]\(tab:((?:[^()]|\([^()]*\))+)\)")
 
 
 class HeaderBlock(BaseModel):
@@ -2646,10 +2647,13 @@ class Layout(_SketchHolder):
 
     def tabs_titled(self, target: str) -> list[tuple[int, ...]]:
         """Positions of the tabs a link's target names: a top tab by its title (top
-        titles are unique), else a sub-tab by its title or 'Parent/Child'."""
-        tops = [(k,) for k, t in enumerate(self.tabs or []) if t.title == target]
-        return tops or [(k, j) for k, t in enumerate(self.tabs or []) for j, s in enumerate(t.tabs or [])
-                        if target in (s.title, f"{t.title}/{s.title}")]
+        titles are unique) and a sub-tab by its 'Parent/Child' path, both when a top tab
+        is titled like a path; else a sub-tab by its own title."""
+        subs = [(k, j, f"{t.title}/{s.title}", s.title)
+                for k, t in enumerate(self.tabs or []) for j, s in enumerate(t.tabs or [])]
+        exact = ([(k,) for k, t in enumerate(self.tabs or []) if t.title == target]
+                 + [(k, j) for k, j, path, _ in subs if path == target])
+        return exact or [(k, j) for k, j, _, title in subs if title == target]
 
     def all_rows(self) -> list[list[RowItem]]:
         """Every row of charts and markdown (headers and dividers skipped)."""
@@ -2851,52 +2855,6 @@ class DashboardSpec(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _cross_filter_scopes(self) -> "DashboardSpec":
-        names = {c.name for c in self.charts}
-        in_tabs = {x for leaf in self.layout.leaf_tabs()
-                   for x in [*(i for row in item_rows(leaf.rows) for i in row),
-                             *(leaf.legend or {}).values()]
-                   if isinstance(x, str)}
-        for c in self.charts:
-            scope = c.cross_filter_scope
-            if scope in (None, "global"):
-                continue
-            where = f"chart {c.name!r}: cross_filter_scope"
-            if c.type in NO_CROSS_FILTER_TYPES:
-                raise ValueError(f"{where}: a {c.type} chart emits no cross-filters")
-            if not self.dashboard.cross_filters:
-                raise ValueError(f"{where} needs dashboard.cross_filters: true")
-            if scope == "tab" and c.name not in in_tabs:
-                raise ValueError(f"{where} 'tab' needs the chart placed in a tab")
-            if isinstance(scope, list):
-                bad = [n for n in scope if n not in names or n == c.name]
-                if not scope or bad or len(set(scope)) != len(scope):
-                    raise ValueError(f"{where} must list other spec charts, once each: {scope}")
-        return self
-
-    @model_validator(mode="after")
-    def _tab_links_resolve(self) -> "DashboardSpec":
-        valid = [t.title if s is None else f"{t.title}/{s.title}"
-                 for t in self.layout.tabs or [] for s in [None, *(t.tabs or [])]]
-        for block in self.layout.markdown_blocks():
-            for target in TAB_LINK_RE.findall(block.markdown):
-                found = self.layout.tabs_titled(target)
-                if not found:
-                    raise ValueError(f"markdown link 'tab:{target}': no such tab; link one of {valid}")
-                if len(found) > 1:
-                    raise ValueError(f"markdown link 'tab:{target}' is ambiguous: {len(found)} sub-tabs "
-                                     f"have that title; write tab:Parent/Child, one of {valid}")
-        return self
-
-    @model_validator(mode="after")
-    def _markdown_ids_unique(self) -> "DashboardSpec":
-        ids = [b.id for b in self.layout.markdown_blocks() if b.id is not None]
-        dupes = sorted({i for i in ids if ids.count(i) > 1})
-        if dupes:
-            raise ValueError(f"duplicate markdown ids {dupes}: an id names one block in the layout")
-        return self
-
-    @model_validator(mode="after")
     def _layout_consistent(self) -> "DashboardSpec":
         from .sketch import SketchBlock, sketch_items
 
@@ -2947,6 +2905,57 @@ class DashboardSpec(BaseModel):
         missing = set(by_name) - placed
         if missing:
             raise ValueError(f"charts not placed in layout: {sorted(missing)}")
+        return self
+
+    # The checks below assume a consistent layout, so they run after it (a chart missing
+    # from the layout is named as such, not as a scope or link error).
+    @model_validator(mode="after")
+    def _cross_filter_scopes(self) -> "DashboardSpec":
+        names = {c.name for c in self.charts}
+        in_tabs = {x for leaf in self.layout.leaf_tabs()
+                   for x in [*(i for row in item_rows(leaf.rows) for i in row),
+                             *(leaf.legend or {}).values()]
+                   if isinstance(x, str)}
+        for c in self.charts:
+            scope = c.cross_filter_scope
+            if scope in (None, "global"):
+                continue
+            where = f"chart {c.name!r}: cross_filter_scope"
+            if c.type in NO_CROSS_FILTER_TYPES:
+                raise ValueError(f"{where}: a {c.type} chart emits no cross-filters")
+            if not self.dashboard.cross_filters:
+                raise ValueError(f"{where} needs dashboard.cross_filters: true")
+            if scope == "tab" and c.name not in in_tabs:
+                raise ValueError(f"{where} 'tab' needs the chart placed in a tab")
+            if isinstance(scope, list):
+                bad = [n for n in scope if n not in names or n == c.name]
+                if not scope or bad or len(set(scope)) != len(scope):
+                    raise ValueError(f"{where} must list other spec charts, once each: {scope}")
+        return self
+
+    @model_validator(mode="after")
+    def _tab_links_resolve(self) -> "DashboardSpec":
+        valid = [t.title if s is None else f"{t.title}/{s.title}"
+                 for t in self.layout.tabs or [] for s in [None, *(t.tabs or [])]]
+        for block in self.layout.markdown_blocks():
+            for target in TAB_LINK_RE.findall(block.markdown):
+                found = self.layout.tabs_titled(target)
+                if not found:
+                    raise ValueError(f"markdown link 'tab:{target}': no such tab; link one of {valid}")
+                if len(found) > 1 and any(len(p) == 1 for p in found):
+                    raise ValueError(f"markdown link 'tab:{target}' is ambiguous: a top tab and a "
+                                     f"sub-tab both answer to it; rename one of them")
+                if len(found) > 1:
+                    raise ValueError(f"markdown link 'tab:{target}' is ambiguous: {len(found)} sub-tabs "
+                                     f"have that title; write tab:Parent/Child, one of {valid}")
+        return self
+
+    @model_validator(mode="after")
+    def _markdown_ids_unique(self) -> "DashboardSpec":
+        ids = [b.id for b in self.layout.markdown_blocks() if b.id is not None]
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        if dupes:
+            raise ValueError(f"duplicate markdown ids {dupes}: an id names one block in the layout")
         return self
 
     # -- geometry -------------------------------------------------------------

@@ -434,11 +434,16 @@ def plan(target: DashboardSpec, client: SupersetClient, superset_version: str | 
         # apply matches adopted charts by uuid, so a chart renamed in the spec is the
         # same chart under a new title (a change), not one removed and one added.
         spec_name = {str(target.chart_uuid(c.name)): c.name for c in target.charts}
+        renamed: dict[str, str] = {}
         for live_name, u in live_result.chart_uuids.items():
             new = spec_name.get(u)
             if new and new != live_name and live_name in l_charts and new not in l_charts:
                 l_charts[new] = l_charts.pop(live_name)
                 live_result.dataset_uuids[new] = live_result.dataset_uuids.get(live_name)
+                renamed[live_name] = new
+        for chart in l_charts.values():  # a scope names its charts, under their new names too
+            if renamed and isinstance(chart.get("cross_filter_scope"), list):
+                chart["cross_filter_scope"] = sorted(renamed.get(n, n) for n in chart["cross_filter_scope"])
     # Dataset identity compares by resolved uuid, not by literal triple:
     # an omitted schema in the spec means "unambiguous", not "different".
     for chart in target.charts:

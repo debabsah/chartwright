@@ -1635,3 +1635,11 @@ def test_explain_says_the_body_already_holds_it(repo, capsys):
     rows = C.explain_rows(std(repo, "org"), load_spec(read(path)))
     row = next(r for r in rows if r["item"] == "layout.footer[org][0]")
     assert "already hold" in row["pending"] and "--claim" in row["pending"]
+
+
+def test_a_rows_hash_counts_a_markdown_blocks_id():
+    """A named block's id is its CSS target (MARKDOWN-<id>), so a standard's row with an
+    id isn't matched by the same text without it, or under another id."""
+    plain = {"markdown": "Owner: analytics", "width": 12, "height": 1}
+    assert C.row_hash([plain]) != C.row_hash([{**plain, "id": "owner"}])
+    assert C.row_hash([{**plain, "id": "owner"}]) != C.row_hash([{**plain, "id": "team"}])

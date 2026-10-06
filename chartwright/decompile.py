@@ -27,7 +27,7 @@ from .spec import (
     ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX,
     FORMAT_RANGE_OPERATORS, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES, HEATMAP_DEFAULT_SCHEME,
     HEX_COLOUR_RE, MARKDOWN_ID_PATTERN, NO_CROSS_FILTER_TYPES, PIVOT_ORDER, SUPERSET_DEFAULTS,
-    TICK_LAYOUTS, TREND_DEFAULT_HEX,
+    TAB_LINK_RE, TICK_LAYOUTS, TREND_DEFAULT_HEX,
     WATERFALL_DEFAULT_HEX, FilterOp, HeaderFontSize, LabelType, PivotAggregate, SequentialScheme,
     SubtitleFontSize, metric_label, parse_metric, row_items,
 )
@@ -301,13 +301,17 @@ def _axis_to_spec(p: dict, out: dict, losses: list, name: str, spec_type: str) -
 def _title_spacing_to_spec(p: dict, out: dict, losses: list, name: str) -> set[str]:
     """A title's margin and position, stored beside the title, back as the chart's own when
     they differ from what compile writes for it unset (axis_title_defaults). Without its
-    title they do nothing, so they read as nothing (Timeseries/transformProps.ts:737-740)."""
+    title they do nothing, so they read as nothing (Timeseries/transformProps.ts:737-740).
+    One stored empty beside its title has no spec form, and apply writes compile's value."""
     auto = axis_title_defaults(out.get("orientation") == "horizontal", bool(out.get("x_label_rotation")))
     y_titled = "y_axis_title" in out or "y_axis_title_secondary" in out
     for key, titled in (("x_axis_title_margin", "x_axis_title" in out),
                         ("y_axis_title_margin", y_titled), ("y_axis_title_position", y_titled)):
         value = p.get(key)
-        if not titled or value in (None, "") or value == auto[key]:
+        if titled and key in p and value in (None, ""):
+            losses.append(Loss(name, f"{key} {value!r} not preserved ({auto[key]!r} on re-apply)"))
+            continue
+        if not titled or value is None or value == auto[key]:
             continue
         if key == "y_axis_title_position":
             ok = value in ("Left", "Top")
@@ -1712,8 +1716,8 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                             losses.append(Loss("layout", f"chart {nm!r} in layout but not decompilable; removed from row"))
                     elif ch.get("type") == "MARKDOWN":
                         block: dict = {"markdown": meta.get("code") or ""}
-                        if _markdown_id(ch_id):
-                            block["id"] = _markdown_id(ch_id)
+                        if mid := _markdown_id(ch_id):
+                            block["id"] = mid
                         if meta.get("width"):
                             block["width"] = max(1, min(12, int(meta["width"])))
                         if _markdown_height(meta) is not None:
@@ -1816,13 +1820,47 @@ def _leaf_tabs(layout: dict) -> list[dict]:
     return [leaf for tab in layout.get("tabs") or [] for leaf in (tab.get("tabs") or [tab])]
 
 
-def _cross_filter_scopes_to_spec(metadata: dict, position: dict, charts_by_name: dict,
+def _kept_tabs(layout: dict, position: dict) -> dict[str, str]:
+    """Live TAB id -> its title in the decompiled layout ('Parent/Child' for a sub-tab), for
+    the tabs decompile kept as tabs; a flattened tab has none."""
+    titles = {t["title"]: {s["title"] for s in t.get("tabs") or []} for t in layout.get("tabs") or []}
+    kept: dict[str, str] = {}
+    for tab_id, node in position.items():
+        if not isinstance(node, dict) or node.get("type") != "TAB":
+            continue
+        title = (node.get("meta") or {}).get("text")
+        outer = [((position.get(p) or {}).get("meta") or {}).get("text") for p in node.get("parents") or []
+                 if (position.get(p) or {}).get("type") == "TAB"]
+        if not outer and title in titles:
+            kept[tab_id] = title
+        elif len(outer) == 1 and title in titles.get(outer[0], ()):
+            kept[tab_id] = f"{outer[0]}/{title}"
+    return kept
+
+
+def _cross_filter_scope_of(entry) -> object:
+    """A chart_configuration entry's scope: "global" when it sets none, None when the
+    entry isn't shaped as Superset saves it (ChartConfiguration, dashboard/types.ts)."""
+    if entry is None or entry == {}:
+        return "global"
+    cross = entry.get("crossFilters") if isinstance(entry, dict) else None
+    if isinstance(entry, dict) and cross is None:
+        return "global"
+    return (cross.get("scope") or "global") if isinstance(cross, dict) else None
+
+
+def _cross_filter_scopes_to_spec(metadata: dict, position: dict, layout: dict, charts_by_name: dict,
                                  chart_uuids: dict[str, str], losses: list) -> None:
     """chart_configuration (keyed by chart id) -> each chart's cross_filter_scope, by name
     through the layout's chart ids (a node's uuid, else its sliceName). A chart's own id
-    never counts as in scope; a scope that reaches no chart reads as "none"."""
-    config = {k: v for k, v in (metadata.get("chart_configuration") or {}).items()
-              if (((v or {}).get("crossFilters") or {}).get("scope") or "global") != "global"}
+    never counts as in scope; a scope that reaches no chart reads as "none". A scope
+    rooted at a tab decompile flattened reads as the charts it reached, since "tab" needs
+    the chart in a tab. Any entry that can't be carried is named as a loss."""
+    raw = metadata.get("chart_configuration") or {}
+    if not isinstance(raw, dict):
+        losses.append(Loss("dashboard", f"cross-filter scopes not preserved: not representable: {raw!r}"))
+        return
+    config = {k: v for k, v in raw.items() if _cross_filter_scope_of(v) != "global"}
     if not config:
         return
     if not metadata.get("cross_filters_enabled", False):
@@ -1834,18 +1872,29 @@ def _cross_filter_scopes_to_spec(metadata: dict, position: dict, charts_by_name:
                name_by_uuid.get(str((n.get("meta") or {}).get("uuid"))) or (n.get("meta") or {}).get("sliceName")
                for n in nodes}
     parents_of = {(n.get("meta") or {}).get("chartId"): n.get("parents") or [] for n in nodes}
+    kept_tabs = _kept_tabs(layout, position)
     for key, entry in config.items():
         me = int(key) if str(key).isdigit() else None
-        chart = charts_by_name.get(name_of.get(me))
+        if me not in name_of:
+            continue  # a dead id: no chart on the layout, so the entry does nothing
+        chart = charts_by_name.get(name_of[me])
         if chart is None:
-            continue  # a chart not on the layout (a dead id) or not decompiled
-        scope = entry["crossFilters"]["scope"]
-        if chart["type"] in NO_CROSS_FILTER_TYPES or not isinstance(scope, dict):
-            losses.append(Loss(chart["name"], f"cross-filter scope not preserved: {scope}"))
+            losses.append(Loss("dashboard", f"cross-filter scope of chart {name_of[me]!r} (id {me}) "
+                                            f"not preserved: no decompiled chart matches it"))
             continue
-        root, excluded = scope.get("rootPath") or [], set(scope.get("excluded") or []) - {me}
+        scope = _cross_filter_scope_of(entry)
+        root = scope.get("rootPath") if isinstance(scope, dict) else None
+        excluded = (scope.get("excluded") or []) if isinstance(scope, dict) else None
+        if (chart["type"] in NO_CROSS_FILTER_TYPES or not isinstance(root, list)
+                or not isinstance(excluded, list)
+                or not all(isinstance(x, str) for x in root)
+                or not all(isinstance(x, (int, str)) for x in excluded)):
+            losses.append(Loss(chart["name"], "cross-filter scope not preserved: "
+                                              f"{entry if scope is None else scope}"))
+            continue
+        excluded = set(excluded) - {me}
         tabs = [p for p in parents_of[me] if (position.get(p) or {}).get("type") == "TAB"]
-        if tabs and root == [tabs[-1]] and not excluded:
+        if tabs and root == [tabs[-1]] and not excluded and tabs[-1] in kept_tabs:
             chart["cross_filter_scope"] = "tab"
             continue
         in_scope = sorted(name for cid, name in name_of.items()
@@ -1857,19 +1906,13 @@ def _cross_filter_scopes_to_spec(metadata: dict, position: dict, charts_by_name:
 def _tab_links_to_spec(layout: dict, position: dict, slug: str) -> None:
     """Links to this dashboard's tabs (/superset/dashboard/<slug>/#<tab id>, as compile
     writes them) back to [words](tab:Title) / (tab:Parent/Child), when the decompiled
-    layout holds that tab; any other link stays as written."""
-    titles = {t["title"]: {s["title"] for s in t.get("tabs") or []} for t in layout.get("tabs") or []}
-    targets: dict[str, str] = {}
-    for tab_id, node in position.items():
-        if not isinstance(node, dict) or node.get("type") != "TAB":
-            continue
-        title = (node.get("meta") or {}).get("text")
-        outer = [((position.get(p) or {}).get("meta") or {}).get("text") for p in node.get("parents") or []
-                 if (position.get(p) or {}).get("type") == "TAB"]
-        if not outer and title in titles:
-            targets[tab_id] = title
-        elif len(outer) == 1 and title in titles.get(outer[0], ()):
-            targets[tab_id] = f"{outer[0]}/{title}"
+    layout holds that tab and the target names it alone (Layout.tabs_titled: a top tab
+    titled like a sub-tab's path names both) in a form a link carries; any other link
+    stays as written."""
+    tabs = layout.get("tabs") or []
+    named = [t["title"] for t in tabs] + [f"{t['title']}/{s['title']}" for t in tabs for s in t.get("tabs") or []]
+    targets = {tab_id: form for tab_id, form in _kept_tabs(layout, position).items()
+               if named.count(form) == 1 and TAB_LINK_RE.fullmatch(f"](tab:{form})")}
     if not targets:
         return
     link = re.compile(rf"\]\(/superset/dashboard/{re.escape(slug)}/#(TAB-[A-Za-z0-9_-]+)\)")
@@ -1917,8 +1960,8 @@ def _sketch_from(position: dict, children: list[str], kept_names: set[str],
             if not (meta.get("code") or "").strip():
                 return None
             block: dict = {"markdown": meta["code"]}
-            if _markdown_id(node.get("id")):
-                block["id"] = _markdown_id(node.get("id"))
+            if mid := _markdown_id(node.get("id")):
+                block["id"] = mid
             if _markdown_height(meta) is not None:
                 block["height"] = _markdown_height(meta)
             return ("markdown", block)
@@ -2310,7 +2353,8 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
     ordered = [charts_by_name[n] for n in ordered_names]
 
     _tab_links_to_spec(layout, position, slug)
-    _cross_filter_scopes_to_spec(dash.get("metadata") or {}, position, charts_by_name, chart_uuids, losses)
+    _cross_filter_scopes_to_spec(dash.get("metadata") or {}, position, layout, charts_by_name,
+                                 chart_uuids, losses)
     label_colors = (dash.get("metadata") or {}).get("label_colors") or {}
     css = dash.get("css") if isinstance(dash.get("css"), str) else ""
     spec = {

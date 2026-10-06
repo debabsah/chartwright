@@ -259,6 +259,16 @@ def test_ui_title_spacing_reads_back_beside_its_title():
     assert [loss.what for loss in result.losses] == ["y_axis_title_margin 'wide' not representable; dropped"]
 
 
+def test_cleared_title_spacing_beside_its_title_is_a_named_loss():
+    """A margin or position stored empty beside its title has no spec form, and apply
+    writes the tool's own: decompile names it, so adopt lists it before the first apply."""
+    spec = _spec([{**LINE, "x_axis_title": "Month", "y_axis_title": "USD"}])
+    result = _decompile(spec, _edit_chart("Revenue", x_axis_title_margin=None, y_axis_title_position=""))
+    assert sorted(loss.what for loss in result.losses) == [
+        "x_axis_title_margin None not preserved (30 on re-apply)",
+        "y_axis_title_position '' not preserved ('Top' on re-apply)"]
+
+
 # -- named markdown blocks -------------------------------------------------------------
 
 NOTE = {"markdown": "Figures refresh nightly.", "width": 12, "height": 1}
@@ -402,6 +412,34 @@ def test_tab_link_validation():
         _spec(layout={"rows": [[{"markdown": "[x](tab:Sales)"}], ["Orders"], ["Revenue"]]})
 
 
+def test_tab_titles_with_parentheses_link_and_round_trip():
+    footer = lambda md: [[{"markdown": md, "width": 12, "height": 1}]]  # noqa: E731
+    tabs = [{"title": "Sales (EU)", "rows": [["Revenue"]]}, {"title": "Q1)", "rows": [["By segment"]]}]
+    spec = _spec([LINE, PIE], layout={"tabs": tabs, "footer": footer("[eu](tab:Sales (EU))")})
+    assert _codes(_dashboard(spec)) == ["[eu](/superset/dashboard/sales/#TAB-sdc-1)"]
+    assert _round_trips(spec).spec["layout"]["footer"][0][0]["markdown"] == "[eu](tab:Sales (EU))"
+    # a title no link target can carry: its link reads back as the URL it is
+    raw = "[q1](/superset/dashboard/sales/#TAB-sdc-2)"
+    result = _round_trips(_spec([LINE, PIE], layout={"tabs": tabs, "footer": footer(raw)}))
+    assert result.spec["layout"]["footer"][0][0]["markdown"] == raw
+
+
+def test_a_top_tab_titled_like_a_sub_tabs_path():
+    """tab:Sales/Trend names the top tab 'Sales/Trend' and the sub-tab Sales > Trend: an
+    error to write, and decompile leaves links to either as URLs rather than pick one."""
+    raw = "[sub](/superset/dashboard/sales/#TAB-sdc-1-1) [top](/superset/dashboard/sales/#TAB-sdc-2)"
+
+    def spec(md):
+        return _spec([LINE, PIE], layout={
+            "tabs": [{"title": "Sales", "tabs": [{"title": "Trend", "rows": [["Revenue"]]}]},
+                     {"title": "Sales/Trend", "rows": [["By segment"]]}],
+            "footer": [[{"markdown": md, "width": 12, "height": 1}]]})
+
+    with pytest.raises(ValidationError, match="a top tab and a sub-tab both answer to it"):
+        spec("[x](tab:Sales/Trend)")
+    assert _round_trips(spec(raw)).spec["layout"]["footer"][0][0]["markdown"] == raw
+
+
 def test_links_to_other_dashboards_stay_as_written():
     other = "[elsewhere](/superset/dashboard/other/#TAB-sdc-1)"
     result = _round_trips(_with_links(other))
@@ -536,19 +574,37 @@ def test_apply_rewrites_chart_configuration_with_live_ids():
     assert _apply_cross_filter_scopes(_tabbed("global", ()), client, 1) == [] and client.puts == []
 
 
-def test_restore_finds_the_backups_charts_by_their_own_uuids():
-    """A backup of an adopted dashboard holds the dashboard's own chart uuids, not the ones
-    derived from the slug: restore passes them along (DecompileResult.chart_uuids)."""
-    from chartwright.apply import _apply_cross_filter_scopes
+def test_restore_puts_the_backups_own_scopes_back_under_live_ids():
+    """Restore remaps the backup's own chart_configuration by chart uuid, as the 6.1.0
+    importer does (commands/dashboard/importers/v1/utils.py:48-71, :146-189), chartsInScope
+    included. Every entry is kept as backed up: a scope over two tabs, which no spec field
+    writes, keeps both roots, and nothing is rebuilt from the decompiled spec."""
+    from chartwright.apply import _restore_cross_filter_scopes
 
     spec = _tabbed()
-    dash, position, uuids = _live_layout(spec, own_uuids=True)
+    dash, position, _ = _live_layout(spec)
+    old, live = _chart_ids(dash), _chart_ids({"position": position})
+    tabs = sorted(k for k, n in dash["position"].items() if isinstance(n, dict) and n.get("type") == "TAB")
+    config = {**dash["metadata"]["chart_configuration"],
+              str(old["Top customers"]): {"id": old["Top customers"], "crossFilters": {
+                  "scope": {"rootPath": tabs[:2], "excluded": [old["Top customers"]]},
+                  "chartsInScope": [old["Revenue"], old["By region"]]}}}
+    backup = edit_bundle(_compiled(spec), _edit_metadata(chart_configuration=config))
+    client = _ScopeClient(dict(dash["metadata"]), position)  # 4.1.4 / 5.0.0 import the old ids
+    assert _restore_cross_filter_scopes(backup, client, 1) == []
+    restored = client.puts[0]["chart_configuration"]
+    assert sorted(restored) == sorted(str(live[n]) for n in ("Revenue", "By segment", "Top customers"))
+    assert restored[str(live["Top customers"])] == {"id": live["Top customers"], "crossFilters": {
+        "scope": {"rootPath": tabs[:2], "excluded": [live["Top customers"]]},
+        "chartsInScope": [live["Revenue"], live["By region"]]}}
+    assert restored[str(live["By segment"])]["crossFilters"]["chartsInScope"] == [live["Top customers"]]
+    # already in place (a second restore): nothing to write
+    client = _ScopeClient({**dash["metadata"], "chart_configuration": restored}, position)
+    assert _restore_cross_filter_scopes(backup, client, 1) == [] and client.puts == []
+    # a backup without scopes writes nothing
     client = _ScopeClient(dict(dash["metadata"]), position)
-    assert _apply_cross_filter_scopes(spec, client, 1) == []
-    assert client.puts[0]["chart_configuration"] == {}  # by the derived uuids, no chart is found
-    client = _ScopeClient(dict(dash["metadata"]), position)
-    assert _apply_cross_filter_scopes(spec, client, 1, uuids) == []
-    assert len(client.puts[0]["chart_configuration"]) == 2
+    assert _restore_cross_filter_scopes(_compiled(_tabbed("global", ())), client, 1) == []
+    assert client.puts == []
 
 
 def test_cross_filter_scope_validation():
@@ -564,6 +620,65 @@ def test_cross_filter_scope_validation():
     for bad in (["Revenue"], ["Nope"], [], ["By segment", "By segment"]):
         with pytest.raises(ValidationError, match="must list other spec charts"):
             _spec([{**LINE, "cross_filter_scope": bad}, PIE], dashboard={"cross_filters": True})
+
+
+def test_a_chart_off_the_layout_is_named_before_its_scope():
+    with pytest.raises(ValidationError, match="charts not placed in layout"):
+        _spec([{**LINE, "cross_filter_scope": "tab"}, PIE], dashboard={"cross_filters": True},
+              layout={"rows": [["By segment"]]})
+
+
+def _split_tabs(path, doc):
+    """Customers moved to a second tab strip, with a row between the two: decompile
+    flattens tabs it can't hold apart into rows."""
+    if "/dashboards/" not in path:
+        return
+    pos = doc["position"]
+    grid = pos["GRID_ID"]
+    customers = pos[grid["children"][0]]["children"].pop()
+    pos["ROW-mid"] = {"type": "ROW", "id": "ROW-mid", "children": ["MARKDOWN-mid"],
+                      "parents": ["ROOT_ID", "GRID_ID"], "meta": {"background": "BACKGROUND_TRANSPARENT"}}
+    pos["MARKDOWN-mid"] = {"type": "MARKDOWN", "id": "MARKDOWN-mid", "children": [],
+                           "parents": ["ROOT_ID", "GRID_ID", "ROW-mid"],
+                           "meta": {"code": "Between", "width": 12, "height": 50}}
+    pos["TABS-two"] = {"type": "TABS", "id": "TABS-two", "children": [customers],
+                       "parents": ["ROOT_ID", "GRID_ID"], "meta": {}}
+    grid["children"] += ["ROW-mid", "TABS-two"]
+
+
+def test_a_tab_scope_in_flattened_tabs_reads_as_the_charts_it_reached():
+    """"tab" needs the chart in a tab of the spec; once its tab is flattened, the scope
+    reads as the charts it reached, and the spec decompile writes loads."""
+    result = _decompile(_tabbed(), _split_tabs)
+    assert "mixed rows + tabs at top level; tabs flattened into rows" in [loss.what for loss in result.losses]
+    scopes = {c["name"]: c.get("cross_filter_scope") for c in result.spec["charts"]}
+    assert scopes["Revenue"] == ["By segment"] and scopes["By segment"] == ["Top customers"]
+    load_spec(result.spec)
+
+
+def test_scopes_decompile_cant_carry_are_named_losses():
+    cid = _chart_ids(_dashboard(_tabbed()))
+    # entries not shaped as Superset saves them: named, never a crash
+    for entry in ([], {"crossFilters": []},
+                  {"crossFilters": {"scope": {"rootPath": ["ROOT_ID"], "excluded": [{}]}}},
+                  {"crossFilters": {"scope": {"rootPath": "ROOT_ID", "excluded": []}}}):
+        result = _decompile(_tabbed("global", ()),
+                            _edit_metadata(chart_configuration={str(cid["Revenue"]): entry}))
+        assert [loss.what.split(":")[0] for loss in result.losses] == ["cross-filter scope not preserved"]
+    result = _decompile(_tabbed("global", ()), _edit_metadata(chart_configuration=["not", "a", "map"]))
+    assert [loss.what.split(":")[0] for loss in result.losses] == ["cross-filter scopes not preserved"]
+
+    # a layout chart no decompiled chart matches (a stale sliceName and no uuid)
+    def stale(path, doc):
+        if "/dashboards/" in path:
+            for n in doc["position"].values():
+                if isinstance(n, dict) and n.get("type") == "CHART" and n["meta"]["sliceName"] == "Revenue":
+                    n["meta"].pop("uuid")
+                    n["meta"]["sliceName"] = "Old revenue"
+
+    result = _decompile(_tabbed(), stale)
+    assert (f"cross-filter scope of chart 'Old revenue' (id {cid['Revenue']}) not preserved: "
+            f"no decompiled chart matches it") in [loss.what for loss in result.losses]
 
 
 def test_scopes_on_a_dashboard_without_cross_filtering_are_a_named_loss():

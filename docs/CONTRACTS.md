@@ -84,7 +84,9 @@ running the tool against real instances of all three releases.
   open page is not read, so the link is the full URL and a click loads the
   dashboard again: filter selections not saved in the URL reset. A bare
   title names a top tab, or else a sub-tab; validation lists the targets for
-  an unknown title and asks for `Parent/Child` when two sub-tabs share one.
+  an unknown title and asks for `Parent/Child` when two sub-tabs share one. A
+  top tab titled like a sub-tab's `Parent/Child` path is refused as ambiguous,
+  and decompile leaves a link to either as its URL.
   Decompile turns links to this dashboard's tabs back into `tab:` form, and
   `plan` compares links by the tab they open, so `tab:Trend` and
   `tab:Sales/Trend` are the same link.
@@ -101,8 +103,11 @@ running the tool against real instances of all three releases.
   ids don't exist at compile time: the bundle carries the layout's
   placeholders, which the 6.1.0 importer remaps
   (`superset/commands/dashboard/importers/v1/utils.py:147-190`) and 4.1.4 and
-  5.0.0 leave alone, so `apply`'s scope stage, and `restore`, rewrite
-  `chart_configuration` from the live layout's ids on every release. Big
+  5.0.0 leave alone, so `apply`'s scope stage rewrites `chart_configuration`
+  from the live layout's ids on every release. `restore` maps the backup's own
+  entries to those ids by chart uuid, as the 6.1.0 importer does
+  (`importers/v1/utils.py:48-71`), `chartsInScope` included, which that
+  importer leaves: a chart decompile can't read keeps its scope. Big
   numbers, heatmaps, histograms and waterfalls declare no
   `Behavior.InteractiveChart` (their `index.ts` at 4.1.4, 5.0.0 and 6.1.0), so
   a click on them filters nothing and validation refuses a scope there.
