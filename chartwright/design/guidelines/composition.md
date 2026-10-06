@@ -15,13 +15,13 @@
 - Tabs when sections answer different questions; scrolling when one question
   deepens. Never a tab with a single lonely chart.
 - Whitespace is markdown's job, sparingly: a one-line section header beats an
-  empty band (2 units is plenty for a header). In a sketch, draw headers and
-  notes as legend blocks: `"T": {"header": "Revenue"}` drawn across the page
-  titles the band below it, drawn above a chart it heads that chart's column,
-  and `{"markdown": "...", "height": 1.6}` is a slim caption. Consistent
-  number formats per measure across KPI cards and axes (`number_format` on KPIs, timeseries and
-  bars; `number_formats` per column on tables; pivots use Superset's smart
-  default).
+  empty band, at the 1.6 to 2.4 units `advise` fits to its line. In a sketch,
+  draw headers and notes as legend blocks: `"T": {"header": "Revenue"}` drawn
+  across the page titles the band below it, drawn above a chart it heads that
+  chart's column, and `{"markdown": "...", "height": 1.6}` is a slim caption.
+  Consistent number formats per measure across KPI cards and axes
+  (`number_format` on KPIs, timeseries and bars; `number_formats` per column
+  on tables; pivots use Superset's smart default).
 - Color restraint: Superset's default palette, RAG only where a threshold has
   a real business meaning; never encode the same dimension with two palettes.
 - RAG polarity is a convention, not a choice: red = adverse, green = good

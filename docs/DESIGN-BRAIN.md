@@ -379,6 +379,7 @@ fails when it drifts.
 | `size.hbar-window` | warn | ✔ | - | 1 | horizontal bars need ~0.5 units of height per bar |
 | `size.heatmap-geometry` | warn | ✔ | - | 1 | heatmaps need >= 5/12 width (7/12 with many columns) and 6 height |
 | `size.kpi-height` | warn | ✔ | - | 1 | big numbers read best at 2-6 units |
+| `size.markdown-fit` | warn/info | ✔ | - | 11 | a markdown block must be tall enough for its text: Superset cuts off the rest, with no scrollbar on macOS |
 | `size.min-width` | warn/error | - | - | 2 | below 3/12 width a chart is unreadable; KPIs need 2/12 |
 | `size.pie-geometry` | warn | ✔ | - | 1 | pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds |
 | `size.pivot-window` | warn | ✔ | - | 2 | a pivot's height must hold its header rows, totals row and the body rows its spec fixes (advise --profile counts the rest) |
@@ -1485,6 +1486,68 @@ release, with no overlapping labels. ECharts thins the ticks to fit.
 a 29 February starts and ends on the same day and month, so `%d %b` could name
 two dates. Superset's `Last year` spans 365 days and still takes the fill.
 
+### Markdown blocks
+
+Measured on 2026-10-05 the same way, by `tools/record_markdown_fit.py`: 17 texts
+at 12, 8, 6, 4 and 3 twelfths on each release, the longest beside the filter bar
+too, and each at 6/12 at three heights with Windows-style scrollbars on. The
+fixture is `tests/fixtures/markdown_fit/measurements.json`.
+
+Superset draws a markdown block's text in a holder with 16 px of padding on every
+side. What doesn't fit scrolls inside the holder (`overflow-y: auto`). macOS draws
+no scrollbar there until the reader scrolls, so the text stops mid-line with no
+sign that more follows; Windows draws a scrollbar. A block is never drawn shorter
+than 40 px, so heights under 1 unit draw as 1. A header row, a sub-tab and a footer
+row wrap text exactly as wide as layout rows do.
+
+| | 4.1.4 and 5.0.0 | 6.1.0 |
+|---|---|---|
+| paragraph | 14 px Inter, 22 px lines, 8 px below | the same |
+| `#` | 28 px, 39.2 px line, 12 px above and below | the same |
+| `##` | 21 px, 29.4 px line, 12 px above, 8 below | 20 px, 28 px line |
+| `###` to `#####` | 16 px, 22.4 px line, 8 px above, 4 below | the same |
+| list | indented 40 px, 9.5 px below | 14 px above and below |
+| table row | 22 px | 24 px, 2 px apart |
+| block quote | 17.5 px text on 27.5 px lines, padded 19 px, 19 px below | 14 px text, inset 40 px each side, 14 px above and below |
+| code block | 18.2 px lines, padded 20 px, 9.5 px below | 22 px lines, 14 px above and below |
+| grid at 1600 px | 1536 px, 1276 px beside the filter bar | 1536 px, 1308 px beside it |
+
+So a strip pays 32 px of padding plus its line's margins before its text: a line of
+text needs 62 px (1.6 units), `###` 66 px (1.8), `##` 81.4 px (2.2; 80 px on 6.1.0)
+and `#` 95.2 px (2.4). That is the "about 60 px of chrome" that cut strips under 2
+units off, and `size.markdown-fit` counts it with everything else.
+
+`chartwright/design/markdown_fit.py` parses the markdown into blocks, wraps each
+line word by word with Inter's measured character widths, and stacks the blocks
+with CSS's collapsing margins. At each release's own styles it matched 265 of the
+270 measured heights within 1.5 px. The other five were the long text at narrow
+widths, where the shared character table (the widest of each character at any
+release) wraps a line or three more than 5.0.0 or 6.1.0 does. Two bounds come out:
+
+- The low bound takes the more compact release, the widest grid and characters 3%
+  narrower. It never exceeded a measured height: 80 of 90 it matched, the rest it
+  undershot by a line or two, or 3.5% (132 px) on the long text at 3/12.
+- The high bound takes the taller release, characters 1% wider, and two 17 px
+  scrollbars: the page's own, which narrows the grid on Windows, and one in the
+  block. It never fell short: 75 of 90 it matched, and at 6/12 and wider it allowed
+  at most 44 px, or 110 px beside the filter bar. Narrow blocks of long text cost
+  the most, up to 10% at 3/12 beside the filter bar.
+
+The second scrollbar is there because of one render. A block that overflows while
+it loads (before its web font arrives, say) draws a scrollbar, and the narrower
+text can need the extra line that keeps it there: on 5.0.0 a two-line text whose
+first line came within 1% of the edge kept a scrollbar and a cut-off third line at
+the height it needed without one. At the height the high bound gives, no block
+scrolled on any release.
+
+`size.markdown-fit` warns when the low bound's text runs 8 px (a grid row) or more
+past the bottom edge, so letters are cut on every release. A block whose last line
+only touches the edge, or whose padding doesn't fit, gets an info: it scrolls a few
+px, and Windows draws a scrollbar in it. `--fix` raises the block to the high bound,
+and `layout.markdown-height` now shrinks a one-line block to the height its line
+takes on every release instead of a flat 2 units, which cut a `#` heading's
+padding off.
+
 ### Not measured
 
 - Other viewports and themes. The constants are pixel sizes, so a
@@ -1504,6 +1567,11 @@ two dates. Superset's `Last year` spans 365 days and still takes the fill.
 - The other thresholds this page names: axis heights, pie and heatmap
   geometry, the horizontal-bar height per bar in `size.hbar-window`, and
   `vbar_max_categories`.
+- Markdown under another font, size or spacing: a theme, dashboard CSS that sets
+  type (both named in the finding), or a browser that blocks web fonts and falls
+  back to Helvetica or Arial. Characters outside ASCII take rough widths (0.6 em,
+  1 em for East Asian wide ones). Images and embeds add a height the text can't
+  tell, so a block holding one gets no fix.
 
 `search_min_rows` (20) and `page_min_rows` (3) are usability judgement, not
 pixel facts, and stay so. On page sizes, Nielsen recommends that "it's usually

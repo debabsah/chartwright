@@ -18,6 +18,7 @@ import re
 from datetime import date
 
 from ..spec import (
+    DEFAULT_HEIGHT,
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
     SUPERSET_COLOR_SCHEMES,
@@ -40,6 +41,7 @@ from ..spec import (
     without_superset_defaults,
 )
 from ..visible import contrast
+from .markdown_fit import Fit, box_px, estimate
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 
 # -- size: minimum readable geometry ------------------------------------------
@@ -1573,11 +1575,12 @@ def color_scheme(ctx: RuleContext):
             )
 
 
-@rule("layout.markdown-height", "info", "a one-line markdown header doesn't need a chart-sized block", fixable=True, since="2")
-def markdown_height(ctx: RuleContext):
-    # Operates on the raw layout indices so the fix can address the block
-    # (markdown has no name to key on). A container address is None (layout
-    # rows), a tab index, [tab, sub-tab], "header" or "footer"; fix.py reads the same.
+def _markdown_blocks(ctx: RuleContext):
+    """Every markdown block in the layout's rows, as (container, label, row, item,
+    block). Raw layout indices, so a fix can address the block (markdown has no name
+    to key on): the container is None (layout rows), a tab index, [tab, sub-tab],
+    "header" or "footer", and the row index counts headers and dividers. fix.py reads
+    the same."""
     lay = ctx.spec.layout
     sources = []
     if lay.header:
@@ -1593,20 +1596,105 @@ def markdown_height(ctx: RuleContext):
                 sources.append(([ti, si], f"tab {title!r}", sub.rows))
     if lay.footer:
         sources.append(("footer", "footer", lay.footer))
-    owned = ctx.standard_rows()
     for addr, label, rows in sources:
         for ri, row in enumerate(rows):
-            if addr in ("header", "footer") and (addr, ri) in owned:
-                continue  # a standard's row: the standard is its one owner, not a repair
-            # ri indexes the raw rows (headers and dividers included): the fix reads the same list.
             for ii, item in enumerate(row_items(row) or []):
-                if isinstance(item, str):
-                    continue
-                lines = [l for l in item.markdown.splitlines() if l.strip()]
-                h = item.height or 4
-                if len(lines) <= 1 and h >= 3:
-                    yield Finding(
-                        "layout.markdown-height", "info", None, f"{label} row {ri}",
-                        f"one-line markdown block at {h} units; 2 is plenty for a header",
-                        fix={"md": [addr, ri, ii], "set": {"height": 2}},
-                    )
+                if not isinstance(item, str):
+                    yield addr, label, ri, ii, item
+
+
+def _markdown_estimate(ctx: RuleContext, item) -> Fit:
+    """How the block's text fits at its width. The filter bar narrows the grid when it
+    opens by default: on the left, beside a dashboard with native filters. A horizontal
+    bar sits above the grid, but 4.1.4 and 5.0.0 draw it on the left without the
+    HORIZONTAL_FILTER_BAR flag, so that case is bounded both ways."""
+    d = ctx.spec.dashboard
+    bar = (bool(ctx.spec.filters) if d.filter_bar_orientation != "horizontal"
+           else None if ctx.spec.filters else False)
+    return estimate(item.markdown, ctx.spec.resolved_item_width(item), bar)
+
+
+_TYPE_CSS = re.compile(r"(?<![\w-])(?:font(?:-family|-size)?|line-height|letter-spacing|"
+                       r"word-spacing)\s*:", re.I)
+
+
+@rule("layout.markdown-height", "info", "a one-line markdown header doesn't need a chart-sized block", fixable=True, since="2")
+def markdown_height(ctx: RuleContext):
+    owned = ctx.standard_rows()
+    for addr, label, ri, ii, item in _markdown_blocks(ctx):
+        if addr in ("header", "footer") and (addr, ri) in owned:
+            continue  # a standard's row: the standard is its one owner, not a repair
+        lines = [l for l in item.markdown.splitlines() if l.strip()]
+        h = item.height or DEFAULT_HEIGHT["markdown"]
+        if len(lines) > 1 or h < 3:
+            continue
+        # The height the line takes, padding and margins included (size.markdown-fit's
+        # estimate): a level-1 heading needs 2.4 units, a plain line 1.6.
+        fit = _markdown_estimate(ctx, item)
+        if fit.media or h <= fit.units:
+            continue
+        yield Finding(
+            "layout.markdown-height", "info", None, f"{label} row {ri}",
+            f"one-line markdown block at {h:g} units; {fit.units:g} fits it",
+            fix={"md": [addr, ri, ii], "set": {"height": fit.units}},
+        )
+
+
+@rule("size.markdown-fit", "warn",
+      "a markdown block must be tall enough for its text: Superset cuts off the rest, "
+      "with no scrollbar on macOS", fixable=True, since="11", severities=("warn", "info"))
+def markdown_fit(ctx: RuleContext):
+    """The text's height, estimated from its markdown and its width (markdown_fit.py),
+    against the block's. Warns only when the lower bound of the estimate already cuts
+    letters off (8 px, one grid row, past the bottom edge): text Superset hides with no
+    sign in a screenshot. A block whose last line merely touches the edge, or whose
+    padding doesn't fit, gets an info: it scrolls a few px, and Windows draws a
+    scrollbar in it. That is how a one-line strip under 1.6 units, or a heading strip
+    under 2, falls short.
+
+    The fix raises the height to the upper bound, which fits on every release. None
+    when the block holds an image (its height is unknown), when the text needs more
+    than the 100-unit maximum, or in a header or footer row a standard owns (its
+    height is the standard's; only a cut-off text is reported there)."""
+    d = ctx.spec.dashboard
+    if d.css and _TYPE_CSS.search(d.css):
+        caveat = "; the dashboard's CSS sets its own type, so this assumes Superset's default"
+    elif d.theme:
+        caveat = f"; this assumes Superset's default type, which the theme {d.theme!r} may change"
+    else:
+        caveat = ""
+    owned = ctx.standard_rows()
+    for addr, label, ri, ii, item in _markdown_blocks(ctx):
+        h = item.height or DEFAULT_HEIGHT["markdown"]
+        box = box_px(h)
+        fit = _markdown_estimate(ctx, item)
+        if fit.need_low <= box:
+            continue
+        cut = fit.text_low - box >= 8
+        standard = addr in ("header", "footer") and (addr, ri) in owned
+        if standard and not cut:
+            continue
+        w = ctx.spec.resolved_item_width(item)
+        need = (f"at least ~{fit.units:g} units with its image" if fit.media
+                else f"~{fit.units:g} units")
+        if cut:
+            hidden = max(1, round((fit.text_low - box) / 22))
+            lead = (f"markdown text runs past its block: about {hidden} line"
+                    f"{'s' if hidden > 1 else ''} cut off at the bottom edge, hidden behind "
+                    f"an inner scrollbar macOS doesn't draw")
+        else:
+            lead = (f"markdown block {fit.need_low - box:.0f} px short: its last line or its "
+                    f"padding reaches the bottom edge, so the block scrolls, and Windows draws "
+                    f"a scrollbar in it")
+        if standard:
+            tail = "; a standard owns this row, so its height is the standard's to change"
+        elif fit.units > 100:
+            tail = "; past the 100-unit maximum, so split the text or give it a tab of its own"
+        else:
+            tail = f"; raise the height{' or widen it' if w < 12 else ''}"
+        yield Finding(
+            "size.markdown-fit", "warn" if cut else "info", None, f"{label} row {ri}",
+            f"{lead}; it needs {need} at {w}/12, has {h:g}{tail}{caveat}",
+            fix=({"md": [addr, ri, ii], "set": {"height": fit.units}}
+                 if not (standard or fit.media or fit.units > 100) else None),
+        )

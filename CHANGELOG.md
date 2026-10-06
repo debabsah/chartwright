@@ -8,6 +8,14 @@ while the major version is 0, minor bumps may include breaking changes and say s
 ### Upgrading
 
 - The design brain is version 8. `advise` now flags a table whose height can't show every row its `row_limit` allows, as the smoke check after `apply` does when the data fills it; before, it passed a table that showed half. A `--design strict` or `advise --strict` gate can newly fail on such a table. To keep the old threshold for tables that rarely reach their `row_limit`, set `table_visible_ratio: 0.5` in `design.yaml` or a standards file.
+- The design brain is version 11. `advise` now warns when a markdown block's text runs past the block's bottom edge (`size.markdown-fit`), so a `--design strict` or `advise --strict` gate can newly fail on such a block; `advise --fix` raises it. `layout.markdown-height` now fixes a one-line block to the height its line takes, 1.6 units for a line of text up to 2.4 for a `#` heading, instead of 2.
+
+### Added
+
+- `advise` checks that each markdown block is tall enough for its text (`size.markdown-fit`). Superset cuts the rest off inside the block: macOS shows no scrollbar there, so a screenshot shows the text stopping mid-line. The check estimates the text's height from its headings, paragraphs, lists, tables, quotes, code and line breaks and the block's width, measured against what 4.1.4, 5.0.0 and 6.1.0 draw.
+  - It warns when letters are cut off on every release and says by how much ("it needs ~29.6 units at 12/12, has 10"); `--fix` raises the block to a height that shows every line on every release, Windows scrollbars included.
+  - A block whose last line or padding only reaches the edge gets an info: it scrolls a few px, and Windows draws a scrollbar in it. That covers short strips: a line of text needs 1.6 units, a `##` heading 2.2.
+  - It checks blocks in layout rows, tabs and sub-tabs, and header and footer rows, and allows for the filter bar, which narrows the page on a dashboard with native filters. A header or footer row a standard owns is reported, never resized, and a block holding an image gets no fix, since its height is unknown.
 
 ### Fixed
 

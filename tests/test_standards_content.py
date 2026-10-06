@@ -969,7 +969,7 @@ def test_a_released_row_is_the_authors_for_repairs_too(tmp_path, capsys):
     apply(capsys, str(path))
     assert read(path)["design"]["standard_written"]["layout.footer[org][0]"]["released"]
     fixed, _ = advise_and_fix(read(path))
-    assert fixed["layout"]["footer"][0][0]["height"] == 2
+    assert fixed["layout"]["footer"][0][0]["height"] == 1.6
 
 
 def test_a_released_row_put_back_word_for_word_is_still_the_authors(tmp_path, capsys):
@@ -984,7 +984,7 @@ def test_a_released_row_put_back_word_for_word_is_still_the_authors(tmp_path, ca
     edit(path, lambda d: d["layout"]["footer"][0][0].update(markdown="Legal notice"))
     assert C.owned_rows(load_spec(read(path))) == set()
     fixed, _ = advise_and_fix(read(path))
-    assert fixed["layout"]["footer"][0][0]["height"] == 2
+    assert fixed["layout"]["footer"][0][0]["height"] == 1.6
 
 
 def test_blocks_go_after_a_leading_namespace(tmp_path, capsys):
@@ -1285,8 +1285,25 @@ def test_a_repair_never_edits_a_standards_row(tmp_path, capsys):
     apply(capsys, str(path))
     data = read(path)
     fixed, _ = advise_and_fix(data)
-    assert fixed["layout"]["footer"][0][0]["height"] == 2, "the author's row is repaired"
+    assert fixed["layout"]["footer"][0][0]["height"] == 1.6, "the author's row is repaired"
     assert fixed["layout"]["footer"][-1] == [{"markdown": "Legal"}], "the standard's is not"
+
+
+def test_a_standards_row_cut_off_is_reported_but_never_resized(tmp_path, capsys):
+    """size.markdown-fit names a standard's row whose text is cut off, with no fix (the
+    height is the standard's), and says nothing of one whose padding merely scrolls."""
+    org = ("name: org\ndefault: true\ncontent:\n  footer:\n"
+           "    - [{markdown: \"## Legal\\n\\nFor named recipients only.\", height: 1.2}]\n"
+           "    - [{markdown: Legal, height: 1}]\n")
+    repo = make_repo(tmp_path / "r", {"org.yaml": org}).parent
+    path = spec_file(repo)
+    apply(capsys, str(path))
+    data = read(path)
+    found = [f for f in advise(load_spec(data)).findings if f.rule == "size.markdown-fit"]
+    assert [(f.where, f.severity, f.fix) for f in found] == [("footer row 1", "warn", None)]
+    assert "a standard owns this row, so its height is the standard's to change" in found[0].detail
+    fixed, _ = advise_and_fix(data)
+    assert fixed["layout"]["footer"][1:] == data["layout"]["footer"][1:]
 
 
 def test_number_format_skips_charts_whose_metrics_disagree_or_plot_shares(repo):
@@ -1450,7 +1467,7 @@ def test_explain_has_a_dashboard_section(repo, capsys):
         "released", "bnbColors", "supersetColors")
     assert scheme["override"].startswith("it is yours")
     text = run_ok(capsys, "explain", str(path))
-    assert text.splitlines()[0].startswith("Design defaults (design brain 10")
+    assert text.splitlines()[0].startswith("Design defaults (design brain 11")
     assert "Dashboard content (standard org -> finance, via design.standard)" in text
     # A chart field the standard wrote says so in the chart section too.
     k = next(c for c in payload["charts"] if c["chart"] == "K")

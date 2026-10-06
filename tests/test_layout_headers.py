@@ -169,5 +169,5 @@ def test_the_markdown_height_fix_addresses_the_right_block_past_headers():
     data = with_rows([{"header": "Top"}, {"row": [{"markdown": "One line", "height": 4}, "Revenue"],
                                           "background": "white"}, ["Orders", "By Region"]])
     fixed, report = advise_and_fix(data, overlay=load_overlay(None))
-    assert fixed["layout"]["rows"][1]["row"][0]["height"] == 2
+    assert fixed["layout"]["rows"][1]["row"][0]["height"] == 1.6
     assert fixed["layout"]["rows"][0] == {"header": "Top"}

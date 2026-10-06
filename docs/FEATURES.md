@@ -67,7 +67,7 @@ into one. Everything below works from that one file.
     - Draw section headers and notes too: a legend letter can stand for `{"header": "Monthly sales"}` or `{"markdown": "Source: the ledger"}`. A header drawn across the page titles the band below it; drawn above a chart, it heads that chart's column.
     - An unclear sketch gets a message saying exactly what to fix, never a guess.
     - Every rule drawn and compiled: [the layout guide](LAYOUT-GUIDE.md).
-- **Precise Sizing**: Set exact widths and heights per chart (markdown blocks down to one 8 px grid row: `"height": 1.6` is 64 px), or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
+- **Precise Sizing**: Set exact widths and heights per chart (markdown blocks in 8 px steps from 40 px: `"height": 1.6` is 64 px), or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
 - **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs (with one level of sub-tabs, e.g. a sub-tab per row of a scorecard), section headers and dividers between rows (`{"header": "Revenue", "size": "large"}`, `{"divider": true}`), a white card behind a row, and markdown blocks for notes.
 - **Header and Footer**: `layout.header` rows sit above everything and `layout.footer` rows below it, outside any tab, so a tabbed dashboard shows them above and under every tab: a banner, a data note, a branding strip, a contact line.
     - Adding a header to a dashboard already in use moves nothing else in it.
@@ -75,7 +75,7 @@ into one. Everything below works from that one file.
 ## The Design Brain
 - **Codified BI/UX Practice**: An optional layer holding what Few, Tufte and IBCS teach about reading a dashboard, plus the Superset rendering quirks that break it, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).
 - **The Brief**: `chartwright brief` prints design guidance for the AI (or you) to read before writing a spec: budgets, chart choice, and composition, tuned to an audience preset (`executive`, `analytical`, or `operational`).
-- **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices); `--chart` looks at one chart.
+- **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, markdown blocks tall enough for their text, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices); `--chart` looks at one chart.
 - **Design Defaults in the Spec**: Leave the small display choices unset and `advise --fix` writes sensible values into the spec, where the diff shows them; `chartwright explain` says where each value came from and how to change it.
     - Monthly time axes labelled `Sep 2026`, counts shown as `12,345`, "vs previous month" after a trendline KPI's change.
     - Tables that page by what fits their panel, a search box on long raw tables that page, no cell bars behind id, code, year or zip columns. A table whose rows all fit its panel shows just its rows, and `advise` points out a page size or search box you wrote there.

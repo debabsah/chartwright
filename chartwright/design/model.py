@@ -46,7 +46,10 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # a paged table whose rows outgrow its panel (and --fix removes a box it filled on one
 # whose rows all show), and size.table-chrome, a new info rule, names an author's page
 # size or search box there.
-DESIGN_BRAIN_VERSION = "10"
+# "11" = size.markdown-fit, a new warn-severity rule for markdown text cut off by its
+# block, and layout.markdown-height fixes a one-line block to the height its line takes
+# (1.6 to 2.4 units) instead of 2, from the same estimate.
+DESIGN_BRAIN_VERSION = "11"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
