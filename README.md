@@ -6,7 +6,7 @@ Chartwright is a command-line tool that manages Apache Superset dashboards as co
 
 ![The Sundown dashboard's Overview in five palettes, then the dashboard scrolling through its Overview, Evening ramp, Storage and Supply tabs, then About](docs/images/sundown.webp)
 
-*Sundown, a six-tab dashboard built using Chartwright.*
+*Sundown: example dashboard built using Chartwright.*
 
 | You can | Instead of (Superset up to 6.1.0, [cited to source](docs/CONTRACTS.md)) | How it works |
 |---|---|---|
