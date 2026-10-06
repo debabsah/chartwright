@@ -19,12 +19,13 @@ import yaml
 
 from .compiler import (
     BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
-    LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
+    HEATMAP_X_SORT, HEATMAP_Y_SORT, LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER,
+    STACK_VALUES, VIZ_TYPE,
 )
 from .spec import (
     ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES,
-    HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, TREND_DEFAULT_HEX, FilterOp, LabelType,
-    PivotAggregate, SequentialScheme, metric_label, row_items,
+    HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, SUPERSET_DEFAULTS, TREND_DEFAULT_HEX,
+    FilterOp, LabelType, PivotAggregate, SequentialScheme, metric_label, row_items,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
@@ -58,6 +59,14 @@ _IGNORABLE = {
     "xscale_interval", "yscale_interval", "column", "bins", "normalize",
     "show_value", "slice_id", "url_params", "percent_calculation_type",
     "show_tooltip_labels", "tooltip_label_type", SDC_BAR_MARKER,
+    # A mixed chart's query B twins of the above (createCustomizeSection 'B',
+    # createAdvancedAnalyticsSection and createQuerySection '_b', MixedTimeseries
+    # controlPanel.tsx at 4.1.4, 5.0.0 and 6.1.0), with the same stored defaults.
+    "markerSizeB", "comparison_type_b", "truncate_metric_b", "rolling_type_b",
+    "sort_series_typeB",
+    # The big numbers' "Force date format" (BigNumberTotal/controlPanel.ts and
+    # BigNumberWithTrendline/controlPanel.tsx, default false at all three tags).
+    "force_timestamp_formatting",
 }
 
 # Of the keys above, those a user changes from the value an untouched chart stores:
@@ -99,6 +108,9 @@ _STORED_DEFAULTS: dict[str, tuple] = {
     "bottom_margin": ("auto",), "left_margin": ("auto",), "xscale_interval": (-1,),
     "yscale_interval": (-1,), "value_bounds": ([None, None], [], None),
     "normalize": (False,),
+    "markerSizeB": (6,), "comparison_type_b": ("values",), "truncate_metric_b": (True,),
+    "rolling_type_b": (None, "None", ""), "sort_series_typeB": ("sum",),
+    "force_timestamp_formatting": (False, None),
 }
 # A currency format has no default: unset reads as {} or every part empty.
 _UNSET_WHEN_EMPTY = {"currency_format"}
@@ -106,6 +118,7 @@ _UNSET_WHEN_EMPTY = {"currency_format"}
 _STORED_DEFAULT_WHEN = {
     "only_total": lambda p: bool(p.get("show_value")) and bool(p.get("stack")),
     "comparison_type": lambda p: bool(p.get("time_compare")),
+    "comparison_type_b": lambda p: bool(p.get("time_compare_b")),
     "x_axis_title_margin": lambda p: bool(p.get("x_axis_title")),
     "y_axis_title_margin": lambda p: bool(p.get("y_axis_title")),
     "y_axis_title_position": lambda p: bool(p.get("y_axis_title")),
@@ -155,6 +168,8 @@ _STACK_ALLOWED = {"timeseries_bar": (True,), "bar": (True,),
                   "timeseries_area": (True, "stream", "expand")}  # others: True, "stream"
 _CONTRIBUTION_SPEC = {v: k for k, v in CONTRIBUTION_VALUES.items()}
 _PIVOT_ORDER_SPEC = {v: k for k, v in PIVOT_ORDER.items()}
+_HEATMAP_X_ORDER = {v: k for k, v in HEATMAP_X_SORT.items()}     # alpha_asc -> a_to_z
+_HEATMAP_Y_ORDER = {v: k for k, v in HEATMAP_Y_SORT.items()}     # alpha_asc -> z_to_a
 _LABEL_TYPES = set(get_args(LabelType))
 _PIVOT_AGGREGATES = set(get_args(PivotAggregate))
 _SEQUENTIAL_SCHEMES = set(get_args(SequentialScheme))
@@ -277,6 +292,31 @@ def _line_style_to_spec(p: dict, out: dict, spec_type: str) -> set[str]:
     if filled and opacity is not None and 0 <= opacity <= 1 and opacity != 0.2:
         out["opacity"] = opacity
     return {"markerEnabled", "markerSize", "area", "opacity"}
+
+
+def _rolling_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
+    """A trendline KPI's rolling window. rollingWindowOperator reads a missing window as
+    1 and missing min periods as 0 (ensureIsInt, operators/rollingWindowOperator.ts at
+    4.1.4, 5.0.0 and 6.1.0), and a cumulative sum reads neither."""
+    kind = p.get("rolling_type")
+    if kind in (None, "", "None"):
+        return
+    if kind not in ("sum", "mean", "std", "cumsum"):
+        losses.append(Loss(name, f"rolling_type {kind!r} not preserved (no rolling window on re-apply)"))
+        return
+    out["rolling_type"] = kind
+    if kind == "cumsum":
+        return
+    periods = _number(p.get("rolling_periods"))
+    periods = periods if isinstance(periods, int) and periods >= 1 else 1
+    out["rolling_periods"] = periods
+    least = _number(p.get("min_periods"))
+    least = least if isinstance(least, int) and least >= 0 else 0
+    if least > periods:
+        losses.append(Loss(name, f"min_periods {least} above the {periods}-step window not "
+                                 f"preserved (whole windows only on re-apply)"))
+    elif least != periods:
+        out["rolling_min_periods"] = least
 
 
 def _rgb_to_spec(colour) -> str | None:
@@ -595,7 +635,16 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             else p.get("subheader")
         if text:
             out["subtitle"] = text
-        if p.get("y_axis_format"):
+        fmt = p.get("time_format") if isinstance(p.get("time_format"), str) else None
+        if p.get("force_timestamp_formatting") is True:
+            # Forced, the number shows as a date whatever its type, so number_format is inert.
+            out["date_format"] = fmt or "smart_date"
+        elif fmt not in (None, "", "smart_date"):
+            # Unforced, the format applies only when the metric itself is a date or a string,
+            # which the spec can't tell offline; date_format would force it on a number too.
+            losses.append(Loss(name, f"time_format {fmt!r} without Force date format not "
+                                     f"preserved; set date_format to keep it"))
+        if p.get("y_axis_format") and "date_format" not in out:
             out["number_format"] = p["y_axis_format"]
     elif spec_type == "big_number_trend":
         m = metric_one(p.get("metric"))
@@ -619,6 +668,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         colour = _rgb_to_spec(p.get("color_picker"))
         if colour:
             out["trend_color"] = colour
+        _rolling_to_spec(p, out, losses, name)
     elif spec_type in ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"):
         ms = [metric_one(m) for m in (p.get("metrics") or [])]
         ms = [m for m in ms if m]
@@ -832,6 +882,15 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             out["number_format"] = p["y_axis_format"]
         if p.get("show_legend") is False:
             out["show_legend"] = False
+        # Unset (5.0.0 and later have no default) reads as the tool's alpha_asc.
+        for key, field, orders in (("sort_x_axis", "x_order", _HEATMAP_X_ORDER),
+                                   ("sort_y_axis", "y_order", _HEATMAP_Y_ORDER)):
+            order = orders.get(p.get(key) or "alpha_asc")
+            if order is None:
+                losses.append(Loss(name, f"heatmap {key} {p[key]!r} not preserved (axis "
+                                         f"ascending on re-apply)"))
+            elif order != SUPERSET_DEFAULTS["heatmap"][field]:
+                out[field] = order
         keep_row_limit()
     elif spec_type == "histogram":
         col = p.get("column")
@@ -893,12 +952,23 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
                 losses.append(Loss(name, f"mixed chart query {key.upper()} has no representable metrics; chart skipped"))
                 return None
             series: dict = {"metrics": ms}
-            kind = p.get(kind_key) or "line"  # the plugin's own default series type
-            if kind not in ("bar", "line"):
-                losses.append(Loss(name, f"query {key.upper()} series type {kind!r} not preserved (line on re-apply)"))
-                kind = "line"
+            stored = p.get(kind_key) or "line"  # the plugin's own default series type
+            # transformSeries draws 'bar' as bars, and scatter, smooth and the steps their
+            # own way; any other value, the old echarts_timeseries_* names included, as a
+            # straight line (Timeseries/transformers.ts:237-243 at 4.1.4, :306-312 at 6.1.0).
+            kind = "bar" if stored == "bar" else "line"
+            if stored in ("scatter", "smooth", "start", "middle", "end"):
+                losses.append(Loss(name, f"query {key.upper()} series type {stored!r} not "
+                                         f"preserved (a straight line on re-apply)"))
+            disp = kind_key.replace("seriesType", "")  # "" for query A, "B" for query B
+            # "Area chart" fills under a line; a bar draws no area, so there it does nothing.
+            if kind == "line" and p.get(f"area{disp}") is True:
+                kind = "area"
             if kind != "bar":
                 series["kind"] = kind
+            opacity = _number(p.get(f"opacity{disp}"))
+            if kind == "area" and opacity is not None and 0 <= opacity <= 1 and opacity != 0.2:
+                series["opacity"] = opacity
             if p.get(axis_key) == 1:
                 series["axis"] = "secondary"
             gb = [g for g in (p.get(f"groupby{sfx}") or []) if isinstance(g, str)]
@@ -906,7 +976,6 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
                 losses.append(Loss(name, f"query {key.upper()}: multiple groupby {gb}; kept first only"))
             if gb:
                 series["groupby"] = gb[0]
-            disp = kind_key.replace("seriesType", "")  # "" for query A, "B" for query B
             if p.get(f"markerEnabled{disp}"):
                 series["markers"] = True
             if p.get(f"show_value{disp}") is True:
@@ -932,10 +1001,12 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
          "conditional_formatting", "column_config"}
         if spec_type == "table" else set())
     if spec_type == "mixed":
-        mapped_here = {"metrics_b", "groupby_b", "adhoc_filters_b", "row_limit_b", "seriesTypeB",
+        mapped_here = {"metrics_b", "groupby_b", "adhoc_filters_b", "row_limit_b", "seriesType",
+                       "seriesTypeB",
                        "yAxisIndex", "yAxisIndexB", "y_axis_format_secondary",
                        "markerEnabled", "markerEnabledB"}
-        mapped_here |= {f"{k}{s}" for k in ("show_value", "stack", "only_total") for s in ("", "B")}
+        mapped_here |= {f"{k}{s}" for k in ("show_value", "stack", "only_total", "area", "opacity")
+                        for s in ("", "B")}
         mapped_here |= {f"{k}{s}" for k in ("limit", "timeseries_limit_metric", "order_desc")
                         for s in ("", "_b")}
     if p.get("time_range") not in (None, "", "No filter"):
@@ -947,9 +1018,10 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
     if spec_type in LEGEND_TYPES:
         mapped_here = mapped_here | _legend_to_spec(p, out, spec_type)
     if spec_type == "big_number_trend":
-        mapped_here = mapped_here | {"compare_lag", "compare_suffix", "subtitle", "color_picker"}
+        mapped_here = mapped_here | {"compare_lag", "compare_suffix", "subtitle", "color_picker",
+                                     "rolling_type", "rolling_periods", "min_periods"}
     if spec_type == "big_number_total":
-        mapped_here = mapped_here | {"subtitle"}
+        mapped_here = mapped_here | {"subtitle", "time_format", "force_timestamp_formatting"}
     if spec_type == "table":
         mapped_here = mapped_here | {"page_length", "show_totals", "include_search"}
     if spec_type == "pivot_table":
@@ -958,6 +1030,8 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         mapped_here = mapped_here | {"x_axis_title", "y_axis_title"}
     if spec_type == "pie":
         mapped_here = mapped_here | {"show_total"}
+    if spec_type == "heatmap":
+        mapped_here = mapped_here | {"sort_x_axis", "sort_y_axis"}
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
         mapped_here = mapped_here | _axis_to_spec(p, out, losses, name, spec_type)

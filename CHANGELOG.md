@@ -23,6 +23,24 @@ while the major version is 0, minor bumps may include breaking changes and say s
   - A chart the dashboard shows empty on load, such as one under a default time range the data doesn't reach, is now named empty.
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
+### Upgrading from 0.5
+
+- A spec with a mixed chart's `kind: "area"`, a trendline's `rolling_type`, a big number's `date_format` or a heatmap's `x_order` or `y_order` is refused by chartwright 0.5.0 and earlier (`literal_error` or `extra_forbidden`); upgrade CI before committing one.
+- The design brain is version 9. `data.rolling-window-span` is a new warn-level rule, so `--design strict` can newly block a rolling trendline KPI whose time range can't hold its window. `advise --fix` fills `compare_suffix` as "vs prior 12 months" where a 12-step rolling window compares with the 12 steps before, and, with column types (`--profile`), `date_format` on a big number of a date column.
+
+### Added
+
+- Filled areas on a mixed chart: `"kind": "area"` on query `a` or `b`, with `opacity` for the fill (0 to 1; Superset's default is 0.2). A line draws over an area whichever query holds it, and at opacity 1 the area's edge disappears into its fill, so solar output under a net-load line reads as one solid shape; give it a light colour with `label_colors`. `decompile` reads Superset's "Area chart" box back as `kind: "area"`.
+- A rolling window on a trendline KPI: `rolling_type` (`sum`, `mean`, `std`, or `cumsum` for a running total) with `rolling_periods`, the window in time-grain steps. At P1M, `"rolling_type": "sum", "rolling_periods": 12` shows a trailing-12-month total, and `compare_lag: 12` compares it with the 12 months before. Every point is a whole window; set `rolling_min_periods` to also draw the partial windows of the first steps.
+    - `advise` warns when the chart's time range, or a defaulted dashboard time filter it loads with, is too short to hold the window and the comparison (`data.rolling-window-span`), and apply's data check warns from the time buckets the chart really has.
+- A big number shown as a date: `"date_format": "%a %-d %b %Y"` on a `big_number_total` shows `MAX(updated_at)` as "Sat 3 Oct 2026", for a tile that says how fresh the data is. It works on a date or timestamp metric and on a number of epoch milliseconds, and replaces `number_format`. With column types (`advise --profile`), `advise --fix` fills it on a big number of a date column's `MIN` or `MAX`, which Superset shows by default as its day alone ("Tue 31").
+- Heatmap axis order: `x_order` (left to right) and `y_order` (top to bottom), each `a_to_z`, `z_to_a`, `value_asc` or `value_desc`. `"y_order": "a_to_z"` puts the first label on top, such as a cohort triangle's oldest cohort; omitted, the labels keep running A to Z from the bottom up. On Superset 6.1.0 a value order ranks each label by its total; older releases order by the cells, so `check` warns there. `decompile` reads the order back.
+
+### Fixed
+
+- `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
+
+- `decompile` (and so `adopt` and `plan`) no longer lists a mixed chart's untouched query B settings (marker size, time comparison type, metric truncation, rolling window, series sort), which a chart saved in Superset stores beside query A's, as settings it can't carry, nor a trendline KPI's untouched Force date format. It reads the older `echarts_timeseries_line` and `echarts_timeseries_bar` series types, which Superset draws as a straight line, as `kind: "line"`, with no loss.
 
 - `standards apply` no longer adds a header or footer row that the body already holds at its edge (the last rows for a footer, the first for a header). A dashboard built in the UI has no header or footer, so `decompile` and `adopt` read its legal line as a body row, and the standard's footer was then added below it, showing it twice. `--claim` moves such a row into the header or footer and records it; `explain` and the apply summary name it.
 

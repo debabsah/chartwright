@@ -16,11 +16,32 @@
       "trend_color": "#0057B8"
     },
     {
+      "name": "Trailing Revenue",
+      "type": "big_number_trend",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "SUM(sales)",
+      "time_column": "order_date",
+      "time_grain": "P1M",
+      "rolling_type": "sum",
+      "rolling_periods": 12,
+      "rolling_min_periods": 6,
+      "compare_lag": 12,
+      "subtitle": "Trailing 12 months"
+    },
+    {
       "name": "Orders This Quarter",
       "type": "big_number_total",
       "dataset": {"database": "examples", "table": "cleaned_sales_data"},
       "metric": "COUNT(*)",
       "time_range": "Last quarter"
+    },
+    {
+      "name": "Latest Order",
+      "type": "big_number_total",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "MAX(order_date)",
+      "date_format": "%a %-d %b %Y",
+      "subtitle": "Data through"
     },
     {
       "name": "Sales by Line",
@@ -179,7 +200,9 @@
       "number_format": ",.0f",
       "show_percentage": false,
       "normalize_across": "y",
-      "show_legend": false
+      "show_legend": false,
+      "x_order": "value_desc",
+      "y_order": "a_to_z"
     },
     {
       "name": "Price Spread",
@@ -209,11 +232,20 @@
       "y_axis_log_secondary": true,
       "y_axis_truncate": true,
       "legend_position": "bottom"
+    },
+    {
+      "name": "Sales and Price Areas",
+      "type": "mixed",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "order_date",
+      "time_grain": "P1M",
+      "a": {"metrics": ["SUM(sales)"], "kind": "area", "opacity": 1},
+      "b": {"metrics": ["AVG(price_each)"], "kind": "area", "axis": "secondary", "opacity": 0.4}
     }
   ],
   "layout": {
     "rows": [
-      ["Revenue KPI", "Orders This Quarter"],
+      ["Revenue KPI", "Trailing Revenue", "Orders This Quarter", "Latest Order"],
       ["Sales by Line", "Monthly Orders"],
       ["Quantity Area", "Price vs Time"],
       ["Orders by Hour", "Share by Line"],
@@ -221,7 +253,8 @@
       ["Top Customers"],
       ["Sales Pivot"],
       ["Line by Deal Size", "Price Spread"],
-      ["Revenue and Orders"]
+      ["Revenue and Orders"],
+      ["Sales and Price Areas"]
     ]
   }
 }

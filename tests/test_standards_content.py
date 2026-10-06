@@ -1297,8 +1297,11 @@ def test_number_format_skips_charts_whose_metrics_disagree_or_plot_shares(repo):
         {"type": "bar", "name": "S", "dataset": DS, "x_column": "x",
          "metrics": ["COUNT(*) AS Orders"], "contribution": "row"},
         {"type": "bar", "name": "O", "dataset": DS, "x_column": "x",
-         "metrics": ["COUNT(*) AS Orders"]}],
-        "layout": {"rows": [["B", "S", "O"]]}})
+         "metrics": ["COUNT(*) AS Orders"]},
+        # a big number shown as a date takes no number format (the spec refuses both)
+        {"type": "big_number_total", "name": "D", "dataset": DS,
+         "metric": "COUNT(*) AS Orders", "date_format": "%d %b %Y"}],
+        "layout": {"rows": [["B", "S", "O", "D"]]}})
     ids = [i.id for i in C.expected_items(fin, spec) if i.slot == "number_format"]
     assert ids == ["charts[O].number_format"]
 
@@ -1447,7 +1450,7 @@ def test_explain_has_a_dashboard_section(repo, capsys):
         "released", "bnbColors", "supersetColors")
     assert scheme["override"].startswith("it is yours")
     text = run_ok(capsys, "explain", str(path))
-    assert text.splitlines()[0].startswith("Design defaults (design brain 8")
+    assert text.splitlines()[0].startswith("Design defaults (design brain 9")
     assert "Dashboard content (standard org -> finance, via design.standard)" in text
     # A chart field the standard wrote says so in the chart section too.
     k = next(c for c in payload["charts"] if c["chart"] == "K")

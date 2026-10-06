@@ -135,7 +135,7 @@ def _findings(ctx: RuleContext, fill: Fill):
 
 
 def _fill(rule_id: str, field: str, types, doc: str, *, superset, superset_text: str,
-          override: str):
+          override: str, since: str = "5"):
     def deco(decide):
         f = Fill(rule_id, field, frozenset(types), decide, superset, superset_text, override)
         FILLS[rule_id] = f
@@ -143,7 +143,7 @@ def _fill(rule_id: str, field: str, types, doc: str, *, superset, superset_text:
         def fn(ctx: RuleContext):
             yield from _findings(ctx, f)
 
-        rule(rule_id, "info", doc, fixable=True, since="5")(fn)
+        rule(rule_id, "info", doc, fixable=True, since=since)(fn)
         return decide
     return deco
 
@@ -220,7 +220,8 @@ _UNITS = {"PT1H": "hour", "P1D": "day", "P1W": "week", "P1M": "month",
 
 
 @_fill("default.compare-suffix", "compare_suffix", {"big_number_trend"},
-       "a trendline KPI's change says what it compares against ('vs previous month')",
+       "a trendline KPI's change says what it compares against ('vs previous month'; "
+       "'vs prior 12 months' between trailing windows)",
        superset="", superset_text="Superset's bare percentage",
        override="write compare_suffix yourself, e.g. 'vs last month'")
 def _compare_suffix(ctx: RuleContext, c):
@@ -231,8 +232,40 @@ def _compare_suffix(ctx: RuleContext, c):
     if unit is None:
         return None, f"grain {label} has no plain name"
     lag = c.compare_lag
+    if lag > 1 and c.rolling_type in ("sum", "mean", "std") and c.rolling_periods == lag:
+        # Both values are windows of `lag` steps that meet: this one and the one before.
+        return (f"vs prior {lag} {unit}s",
+                f"compare_lag {lag} over a {lag}-step rolling {c.rolling_type} at grain {label}")
     text = f"vs previous {unit}" if lag == 1 else f"vs {lag} {unit}s earlier"
     return text, f"compare_lag {lag} at grain {label}"
+
+
+# A big number of a date, as a freshness tile reads it: "Sat 3 Oct 2026".
+DATE_TILE_FORMAT = "%a %-d %b %Y"
+
+
+@_fill("default.date-tile", "date_format", {"big_number_total"},
+       "a big number of a date column's MIN or MAX reads as a whole date ('Sat 3 Oct "
+       "2026'); needs the column's type (--profile)",
+       superset="smart_date", superset_text="Superset's adaptive date ('Tue 31')",
+       override="write date_format yourself, e.g. '%Y-%m-%d'", since="9")
+def _date_tile(ctx: RuleContext, c):
+    parsed = parse_metric(c.metric) or {}
+    column = parsed.get("column")
+    if parsed.get("aggregate") not in ("MIN", "MAX") or not column or column == "*":
+        return None, "the metric is not MIN or MAX of a column"
+    if ctx.written(c, "number_format"):
+        return None, "number_format is written, so the author reads it as a number"
+    ds = ctx.dataset_for(c)
+    temporal = ds.is_temporal(column) if ds is not None else None
+    if temporal is None:
+        return None, f"{column!r} has no known type (advise --profile reads it)"
+    if not temporal:
+        return None, f"{column!r} is not a date column"
+    # Superset's default (smart_date, and a total has no time grain) shows only the day,
+    # e.g. 'Tue 31', for the latest date (seen on 4.1.4, 5.0.0 and 6.1.0).
+    return DATE_TILE_FORMAT, (f"{parsed['aggregate']}({column}) is a date, which Superset "
+                              f"shows as only its day ('Tue 31')")
 
 
 # -- number formats -------------------------------------------------------------
@@ -249,6 +282,8 @@ COUNT_FORMAT_TYPES = (KPI_TYPES | TIMESERIES_TYPES
        superset="SMART_NUMBER", superset_text="Superset's SMART_NUMBER ('12.3k')",
        override="write number_format yourself, e.g. '.3s'")
 def _count_format(ctx: RuleContext, c):
+    if getattr(c, "date_format", None):
+        return None, "date_format shows the number as a date"
     shown = [c.metric] if hasattr(c, "metric") else list(c.metrics)
     other = [m for m in shown if (parse_metric(m) or {}).get("aggregate") not in _COUNTS]
     if other:

@@ -90,7 +90,7 @@ def test_every_fill_is_info_fixable_and_governs_a_fillable_field():
     for rid, fill in FILLS.items():
         r = RULES[rid]
         assert rid.startswith("default.") and r.severity == "info" and r.fixable
-        assert r.since == "5"
+        assert r.since == ("9" if rid == "default.date-tile" else "5")
 
 
 @pytest.mark.parametrize("path", FIXTURES, ids=lambda p: p.name)
@@ -168,6 +168,35 @@ def test_compare_suffix_names_the_comparison(grain, lag, want):
     assert filled_value(mk([trend(**kw)]), "default.compare-suffix", "K") == want
 
 
+@pytest.mark.parametrize("rolling,lag,want", [
+    ({"rolling_type": "sum", "rolling_periods": 12}, 12, "vs prior 12 months"),
+    ({"rolling_type": "mean", "rolling_periods": 3}, 3, "vs prior 3 months"),
+    ({"rolling_type": "sum", "rolling_periods": 12}, 1, "vs previous month"),
+    ({"rolling_type": "sum", "rolling_periods": 12}, 6, "vs 6 months earlier"),
+    ({"rolling_type": "cumsum"}, 12, "vs 12 months earlier"),  # a running total: no window
+])
+def test_compare_suffix_names_the_window_before_a_trailing_one(rolling, lag, want):
+    """Lag 12 on a trailing-12 total compares this year's 12 months with the 12 before:
+    windows that meet, so 'vs prior 12 months' says what the change compares."""
+    chart = trend(compare_lag=lag, time_grain="P1M", **rolling)
+    assert filled_value(mk([chart]), "default.compare-suffix", "K") == want
+
+
+def test_a_big_number_shown_as_a_date_gets_no_number_format():
+    """date_format and number_format exclude each other, so neither the count format nor
+    the hero-number nudge may offer one to a date tile."""
+    kpi = {"type": "big_number_total", "name": "Fresh", "dataset": DS, "metric": "COUNT(*)"}
+    assert filled_value(mk([kpi]), "default.count-format", "Fresh") == ",.0f"
+    dated = {**kpi, "date_format": "%a %-d %b %Y"}
+    rep = advise(load_spec(mk([dated])), overlay=EMPTY)
+    assert not [f for f in rep.findings
+                if f.rule in ("default.count-format", "narrative.big-number-format")]
+    assert not [f for f in advise(load_spec(mk([{**dated, "metric": "MAX(ts)"}])),
+                                  overlay=EMPTY).findings
+                if f.rule == "narrative.big-number-format"]
+    assert load_spec(fix(mk([dated]))[0])  # --fix leaves a valid spec
+
+
 def test_compare_suffix_needs_compare_lag_and_respects_the_author():
     assert fills(mk([trend()]), "default.compare-suffix") == {}
     assert fills(mk([trend(compare_lag=1, compare_suffix="MoM")]),
@@ -242,6 +271,40 @@ def test_cell_bars_with_types_needs_a_numeric_identifier():
     data = mk([raw_table(columns=["zip", "amount"])])
     assert fills(data, "default.cell-bars", resolution=res(1)) == {}  # a string zip draws no bar
     assert "T" in fills(data, "default.cell-bars", resolution=res(0))
+
+
+# -- default.date-tile -------------------------------------------------------------------
+
+
+def _typed(**types):
+    return Resolution(datasets={"db//orders": ResolvedDataset(
+        id=1, uuid="u", table="orders", schema=None, database_name="db",
+        columns=list(types), metrics=[], column_types=types)})
+
+
+def test_a_big_number_of_a_date_reads_as_a_whole_date():
+    """Superset's smart date shows the latest order date as 'Tue 31' (seen on 4.1.4, 5.0.0
+    and 6.1.0); with the column's type known, --fix writes a whole date."""
+    fresh = {"type": "big_number_total", "name": "Fresh", "dataset": DS,
+             "metric": "MAX(ordered_at)"}
+    data = mk([fresh])
+    res = _typed(ordered_at=2, amount=0)  # 2: TEMPORAL
+    f = fills(data, "default.date-tile", resolution=res)["Fresh"]
+    assert f.fix["set"] == {"date_format": "%a %-d %b %Y"} and "'Tue 31'" in f.why
+    assert filled_value(mk([{**fresh, "metric": "MIN(ordered_at) AS First order"}]),
+                        "default.date-tile", "Fresh") is None  # offline: the type is unknown
+    assert "Fresh" in fills(mk([{**fresh, "metric": "MIN(ordered_at) AS First order"}]),
+                            "default.date-tile", resolution=res)
+    for other in ({"metric": "MAX(amount)"}, {"metric": "SUM(ordered_at)"},
+                  {"metric": "MAX(ordered_at)", "date_format": "%Y"},
+                  {"metric": "MAX(ordered_at)", "number_format": ",d"}):
+        assert fills(mk([{**fresh, **other}]), "default.date-tile", resolution=res) == {}, other
+    # with the date fill offered, the hero-number nudge stands down: one remedy, one finding
+    rep = advise(load_spec(data), overlay=EMPTY, resolution=res)
+    assert not [x for x in rep.findings if x.rule == "narrative.big-number-format"]
+    fixed, _ = fix(data, resolution=res)
+    assert fixed["charts"][0]["date_format"] == "%a %-d %b %Y"
+    assert fixed["design"]["filled"] == {"Fresh": {"date_format": "%a %-d %b %Y"}}
 
 
 # -- default.page-length -----------------------------------------------------------------
@@ -758,7 +821,7 @@ def test_explain_shows_every_governed_field_and_its_source(monkeypatch, tmp_path
     code, out = _cli(["explain", str(spec), "--json", "--chart", "A"], monkeypatch, tmp_path, capsys)
     assert code == 0 and json.loads(out)["charts"][0]["chart"] == "A"
     code, out = _cli(["explain", str(spec)], monkeypatch, tmp_path, capsys)
-    assert code == 0 and out.startswith("Design defaults (design brain 8")
+    assert code == 0 and out.startswith("Design defaults (design brain 9")
     code, out = _cli(["explain", str(spec), "--chart", "Z"], monkeypatch, tmp_path, capsys)
     assert code == 1 and "unknown_chart" in out
 

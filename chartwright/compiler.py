@@ -176,6 +176,19 @@ def _adhoc_filter_list(filters) -> list[dict]:
     return out
 
 
+# Heatmap axis order -> sort_x_axis / sort_y_axis (sortAxisChoices, Heatmap/controlPanel.tsx
+# :26-31 at 4.1.4 and 5.0.0, :28-33 at 6.1.0). Both axes are ECharts category axes, whose
+# first label sits at the left and at the BOTTOM (Heatmap/transformProps.ts:227-240 at 4.1.4,
+# :431-447 at 6.1.0, no inverse), so the y order, written top to bottom, is reversed here.
+# 6.1.0 sorts each axis itself (sortAxisValues, transformProps.ts:88-145); before, the axes
+# list labels as the query's ORDER BY returns them (buildQuery.ts:39-48 at 4.1.4, :39-52 at
+# 5.0.0 and 6.0.0), which versions.py warns about for a value order.
+HEATMAP_X_SORT = {"a_to_z": "alpha_asc", "z_to_a": "alpha_desc",
+                  "value_asc": "value_asc", "value_desc": "value_desc"}
+HEATMAP_Y_SORT = {"a_to_z": "alpha_desc", "z_to_a": "alpha_asc",
+                  "value_asc": "value_desc", "value_desc": "value_asc"}
+
+
 def _pin_big_number_fonts(p: dict) -> None:
     """Pin the number and subtitle sizes to the plugin's own documented
     defaults (proportions of the card). Left unset, 6.1 renders a subtitle fed
@@ -209,6 +222,14 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["subheader"] = chart.subtitle
         if chart.number_format:
             p["y_axis_format"] = chart.number_format
+        if chart.date_format:
+            # "Date format" and "Force date format" (BigNumberTotal/controlPanel.ts:66 and
+            # :80 at 4.1.4 and 5.0.0, :57 and :71 at 6.1.0). transformProps formats the number
+            # with the time format when the metric is temporal or a string, or when forced
+            # (transformProps.ts:87-92 at 4.1.4 and 5.0.0, :109-114 at 6.1.0); forced, a
+            # number of epoch milliseconds shows as a date too.
+            p["time_format"] = chart.date_format
+            p["force_timestamp_formatting"] = True
         _pin_big_number_fonts(p)
     elif t == "big_number_trend":
         p["metric"] = metric(chart.metric)
@@ -216,7 +237,19 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["time_grain_sqla"] = chart.time_grain or DEFAULT_TIME_GRAIN
         p["show_trend_line"] = True
         p["start_y_axis_at_zero"] = True
-        p["rolling_type"] = "None"
+        # The Advanced Analytics rolling window (BigNumberWithTrendline controlPanel.tsx
+        # :179-228 at 4.1.4 and 5.0.0, :252-301 at 6.1.0), applied to the trendline by
+        # rollingWindowOperator in buildQuery, so transformProps reads the number and
+        # compare_lag's point from the rolled series (transformProps.ts:110-128 at 4.1.4
+        # and 5.0.0, :189-210 at 6.1.0). The backend drops the first min_periods - 1 rows
+        # (utils/pandas_postprocessing/rolling.py:99-100, the same at all three tags), so
+        # min_periods = rolling_periods keeps only whole windows; Superset's own 0 draws
+        # the partial windows of the first steps too.
+        p["rolling_type"] = chart.rolling_type or "None"
+        if chart.rolling_periods is not None:
+            p["rolling_periods"] = chart.rolling_periods
+            p["min_periods"] = (chart.rolling_periods if chart.rolling_min_periods is None
+                                else chart.rolling_min_periods)
         if chart.number_format:
             p["y_axis_format"] = chart.number_format
         _pin_big_number_fonts(p)
@@ -328,8 +361,11 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p[f"groupby{suffix}"] = [series.groupby] if series.groupby else []
             p[f"row_limit{suffix}"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         p["adhoc_filters_b"] = _adhoc_filters(chart)
-        p["seriesType"] = chart.a.kind
-        p["seriesTypeB"] = chart.b.kind
+        # An area is a line series with its "Area chart" box ticked (area / areaB, read
+        # by transformSeries as areaStyle; MixedTimeseries/transformProps.ts:387-390 and
+        # :434-437 at 4.1.4, :466-469 and :540-543 at 6.1.0).
+        p["seriesType"] = SERIES_TYPE[chart.a.kind]
+        p["seriesTypeB"] = SERIES_TYPE[chart.b.kind]
         p["yAxisIndex"] = 0 if chart.a.axis == "primary" else 1
         p["yAxisIndexB"] = 0 if chart.b.axis == "primary" else 1
         p["y_axis_format"] = chart.number_format or "SMART_NUMBER"
@@ -339,6 +375,12 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         # markerEnabled / markerEnabledB (createCustomizeSection, all three releases);
         # emitted only when set, so pre-feature bundles stay byte-identical.
         for suffix, series in (("", chart.a), ("B", chart.b)):
+            if series.kind == "area":
+                p[f"area{suffix}"] = True
+                if series.opacity is not None:
+                    # The fill is opacity x this (transformSeries areaStyle, Timeseries/
+                    # transformers.ts at 4.1.4, 5.0.0 and 6.1.0); the edge line stays opaque.
+                    p[f"opacity{suffix}"] = series.opacity
             if series.markers:
                 p[f"markerEnabled{suffix}"] = True
             if series.show_value:
@@ -450,8 +492,8 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["normalize_across"] = chart.normalize_across
         p["legend_type"] = "continuous"
         p["linear_color_scheme"] = chart.color_scheme or HEATMAP_DEFAULT_SCHEME
-        p["sort_x_axis"] = "alpha_asc"
-        p["sort_y_axis"] = "alpha_asc"
+        p["sort_x_axis"] = HEATMAP_X_SORT[chart.x_order or "a_to_z"]
+        p["sort_y_axis"] = HEATMAP_Y_SORT[chart.y_order or "z_to_a"]
         p["show_legend"] = chart.show_legend
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         # Heatmap controlPanel.tsx, all three releases; emitted only when set.
@@ -718,6 +760,8 @@ def _x_label_params(chart: _AxisChart, p: dict) -> None:
 
 # Chart types whose 6.1.0 control panel declares echart_options (scatter's does not).
 _ECHART_OPTIONS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "mixed")
+# A mixed query's kind -> its seriesType (EchartsTimeseriesSeriesType, Timeseries/types.ts).
+SERIES_TYPE = {"bar": "bar", "line": "line", "area": "line"}
 
 
 def _has_bars(chart) -> bool:

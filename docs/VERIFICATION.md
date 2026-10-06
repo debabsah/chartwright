@@ -217,7 +217,8 @@ filter bar with two value pickers and a time range, plus markdown and tabs.
 second-writer and fault-injection runs.) The same check then runs on two
 more specs, `tests/fixtures/live_display_controls.json` (every chart display
 control: legends, axis titles and bounds, stacking, labels, table and pivot
-options) and `tests/fixtures/live_dashboard_controls.json` (dashboard
+options, a trendline KPI's rolling window, a mixed chart's filled areas and a
+heatmap's axis order) and `tests/fixtures/live_dashboard_controls.json` (dashboard
 settings and owners, colour schemes, goal lines, a header and footer
 outside the tabs, header rows inside them, cascading and
 pre-filtered native filters, time grain and time column filters). They are

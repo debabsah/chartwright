@@ -469,6 +469,20 @@ class BigNumberChart(_ChartBase):
     metric: str
     subtitle: str | None = None
     number_format: str | None = Field(default=None, description="d3 format string, e.g. ',.0f'")
+    date_format: str | None = Field(
+        default=None, min_length=1,
+        description="Show the number as a date, in a d3 time format, e.g. \"%a %-d %b %Y\" "
+                    "(Sat 3 Oct 2026): a freshness tile over MAX(<date column>). A date or "
+                    "timestamp metric takes it as it is, and a number is read as epoch "
+                    "milliseconds (Superset's Force date format); not with number_format",
+    )
+
+    @model_validator(mode="after")
+    def _one_format(self) -> "BigNumberChart":
+        if self.date_format and self.number_format:
+            raise ValueError(f"chart {self.name!r}: date_format shows the number as a date, "
+                             "so number_format never applies; keep one")
+        return self
 
 
 class BigNumberTrendChart(_ChartBase):
@@ -481,12 +495,14 @@ class BigNumberTrendChart(_ChartBase):
         default=None, ge=1,
         description="Compare the latest value with the one this many time-grain steps "
                     "earlier, shown as a percentage change under the number, e.g. 1 at P1M is "
-                    "month over month",
+                    "month over month. With rolling_type both values are windows: lag 12 "
+                    "on a trailing-12 sum compares this year's 12 months with the 12 before",
     )
     compare_suffix: str | None = Field(
         default=None,
         description='Text after the percentage change, e.g. "vs last month". Leave it unset '
-                    "unless asked: `advise --fix` fills it from the grain and compare_lag")
+                    "unless asked: `advise --fix` fills it from the grain, compare_lag and "
+                    "the rolling window")
     subtitle: str | None = Field(
         default=None,
         description="A line of context under the number (Superset 6.0.0 or later; older "
@@ -496,6 +512,29 @@ class BigNumberTrendChart(_ChartBase):
         default=None,
         description="Colour of the trendline: green, amber or red (the text shades colour "
                     "rules use) or any #RRGGBB; Superset's default is teal #007A87",
+    )
+    rolling_type: Literal["sum", "mean", "std", "cumsum"] | None = Field(
+        default=None,
+        description="A rolling window over the trendline, which the number and compare_lag "
+                    "then read: sum, mean or std over the last rolling_periods time-grain "
+                    "steps, or cumsum, a running total from the first point. sum at P1M "
+                    "with rolling_periods 12 is a trailing-12-month total, and compare_lag "
+                    "12 compares it with the 12 months before. The chart's time range must "
+                    "hold rolling_periods + compare_lag steps, or no change shows. Say the "
+                    "window in the title or subtitle: the number is no longer the latest "
+                    "step's",
+    )
+    rolling_periods: int | None = Field(
+        default=None, ge=1,
+        description="With rolling_type sum, mean or std: the window, in time-grain steps, "
+                    "e.g. 12 at P1M for a trailing year",
+    )
+    rolling_min_periods: int | None = Field(
+        default=None, ge=0,
+        description="Steps a window needs before the trendline shows it. Omitted, it is "
+                    "rolling_periods: the line starts at the first full window, so every "
+                    "point (and the number) is a whole trailing window; 0 also draws the "
+                    "partial windows of the first steps, as Superset's own default does",
     )
 
     @field_validator("trend_color", mode="before")
@@ -511,6 +550,23 @@ class BigNumberTrendChart(_ChartBase):
     def _compare(self) -> "BigNumberTrendChart":
         if self.compare_suffix and self.compare_lag is None:
             raise ValueError(f"chart {self.name!r}: compare_suffix needs compare_lag")
+        windowed = self.rolling_periods is not None or self.rolling_min_periods is not None
+        if windowed and self.rolling_type is None:
+            raise ValueError(f"chart {self.name!r}: rolling_periods and rolling_min_periods "
+                             "need rolling_type")
+        if self.rolling_type == "cumsum" and windowed:
+            raise ValueError(f"chart {self.name!r}: rolling_type cumsum is a running total "
+                             "from the first point; it takes no rolling_periods or "
+                             "rolling_min_periods")
+        if self.rolling_type in ("sum", "mean", "std") and self.rolling_periods is None:
+            raise ValueError(f"chart {self.name!r}: rolling_type {self.rolling_type} needs "
+                             "rolling_periods, the window in time-grain steps (e.g. 12 at "
+                             "P1M for a trailing year)")
+        if (self.rolling_min_periods is not None and self.rolling_periods is not None
+                and self.rolling_min_periods > self.rolling_periods):
+            raise ValueError(f"chart {self.name!r}: rolling_min_periods "
+                             f"({self.rolling_min_periods}) can't pass rolling_periods "
+                             f"({self.rolling_periods}): a window never holds more steps")
         return self
 
     def trend_rgb(self) -> dict | None:
@@ -1015,6 +1071,19 @@ class HeatmapChart(_ChartBase):
                     "whole heatmap (default), its x value's column, or its y value's row",
     )
     show_legend: bool = Field(default=True, description="false hides the colour scale")
+    x_order: PivotOrder | None = Field(
+        default=None,
+        description="The x labels, left to right: a_to_z (the default) or z_to_a by label, "
+                    "value_asc or value_desc by the metric",
+    )
+    y_order: PivotOrder | None = Field(
+        default=None,
+        description="The y labels, top to bottom: a_to_z puts the first label on top, e.g. "
+                    "a cohort triangle's oldest cohort; value_asc or value_desc by the "
+                    "metric. Omitted, Superset draws the labels A to Z from the bottom up, "
+                    "which reads z_to_a. A value order ranks each label by its total from "
+                    "Superset 6.1.0; before, by its largest or smallest cell",
+    )
 
 
 class HistogramChart(_ChartBase, _ColorSchemeMixin):
@@ -1067,13 +1136,25 @@ class TreemapChart(_ChartBase, _ColorSchemeMixin):
 
 
 class MixedSeries(BaseModel):
-    """One of a mixed chart's two queries: its metrics, drawn as bars or a line, on
-    the primary (left) or secondary (right) value axis."""
+    """One of a mixed chart's two queries: its metrics, drawn as bars, a line or a
+    filled area, on the primary (left) or secondary (right) value axis."""
 
     model_config = ConfigDict(extra="forbid")
 
     metrics: list[str] = Field(min_length=1)
-    kind: Literal["bar", "line"] = "bar"
+    kind: Literal["bar", "line", "area"] = Field(
+        default="bar",
+        description="bar, line, or area: a line with the space under it filled. A line "
+                    "draws over an area whichever query holds it, so an area under a line "
+                    "takes either order",
+    )
+    opacity: float | None = Field(
+        default=None, ge=0, le=1,
+        description="With kind area: the fill's opacity, 0-1 (Superset's default 0.2). "
+                    "Superset draws the area's edge as a line in the same colour at full "
+                    "strength; at 1 the edge disappears into the fill, a filled area with "
+                    "no outline (give it a light colour with dashboard label_colors)",
+    )
     axis: Literal["primary", "secondary"] = "primary"
     groupby: str | None = Field(default=None, description="At most one dimension column")
     markers: bool = Field(
@@ -1099,6 +1180,8 @@ class MixedSeries(BaseModel):
 
     @model_validator(mode="after")
     def _display(self) -> "MixedSeries":
+        if set_value(self, "opacity") is not None and self.kind != "area":
+            raise ValueError("opacity is an area's fill; it needs kind \"area\"")
         if not self.only_total and not (self.show_value and self.stack):
             raise ValueError("only_total applies to show_value on a stacked series")
         if self.series_limit is not None and not self.groupby:
@@ -1110,7 +1193,8 @@ class MixedSeries(BaseModel):
 
 class MixedChart(_Legend, _AxisChart, _ColorSchemeMixin):
     """Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue
-    as bars with revenue per order as a line. ``x_column`` is a time column (bucketed
+    as bars with revenue per order as a line, or a filled area under a line (``kind:
+    "area"``). ``x_column`` is a time column (bucketed
     by ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and
     ``b`` are the two queries; the chart's own ``filters`` apply to both. The y_axis_*
     fields set the primary (left) axis; their *_secondary twins the right one."""
@@ -1733,8 +1817,9 @@ class DashboardMeta(BaseModel):
 
 # The chart fields the design brain may fill with a design default (`advise --fix`,
 # docs/DESIGN-BRAIN.md section 16). design.filled may list only these.
-BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "number_format", "page_length",
-                         "search_box", "show_legend", "show_value", "x_label_format")
+BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "date_format", "number_format",
+                         "page_length", "search_box", "show_legend", "show_value",
+                         "x_label_format")
 
 
 # design.standard_written: one entry per item of spec content a standard wrote
@@ -2246,14 +2331,21 @@ SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
     "pie": {"label_type": "key_percent"},
     "funnel": {"label_type": "key"},
     "treemap": {"label_type": "key_value"},
-    "heatmap": {"color_scheme": HEATMAP_DEFAULT_SCHEME},
+    # The labels A to Z on both axes, the y axis from the bottom up, so it reads z_to_a
+    # from the top (sort_x_axis and sort_y_axis alpha_asc, which the tool always wrote).
+    "heatmap": {"color_scheme": HEATMAP_DEFAULT_SCHEME, "x_order": "a_to_z", "y_order": "z_to_a"},
+    "mixed_series": {"opacity": 0.2},  # a mixed chart's query a or b
     "dashboard": {"refresh_frequency": 0, "filter_bar_orientation": "vertical"},
 }
 
 
 def _default_fields(model: BaseModel) -> dict[str, object]:
-    kind = "dashboard" if isinstance(model, DashboardMeta) else getattr(model, "type", None)
+    kind = ("dashboard" if isinstance(model, DashboardMeta)
+            else "mixed_series" if isinstance(model, MixedSeries) else getattr(model, "type", None))
     out = {f: v for f, v in SUPERSET_DEFAULTS["legend"].items() if f in type(model).model_fields}
+    if kind == "big_number_trend" and model.rolling_periods is not None:
+        # Omitted, a window's min periods is the window itself: compiled alike, read back alike.
+        out["rolling_min_periods"] = model.rolling_periods
     return {**out, **SUPERSET_DEFAULTS.get(kind, {})}
 
 
@@ -2270,6 +2362,11 @@ def without_superset_defaults(spec: DashboardSpec) -> DashboardSpec:
     def strip(model: BaseModel) -> BaseModel:
         update = {f: None for f in _default_fields(model) if set_value(model, f) is None
                   and getattr(model, f) is not None}
+        if isinstance(model, MixedChart):
+            for key in ("a", "b"):
+                series = getattr(model, key)
+                if strip(series) is not series:
+                    update[key] = strip(series)
         return model.model_copy(update=update) if update else model
 
     return spec.model_copy(update={"dashboard": strip(spec.dashboard),

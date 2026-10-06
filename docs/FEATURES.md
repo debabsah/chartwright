@@ -16,7 +16,7 @@ into one. Everything below works from that one file.
 
 ## Dashboard Design
 - **Deterministic Dashboards**: The same spec always produces the identical dashboard. Diff it in git, review it in a PR.
-- **15 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, and mixed (bars and a line on two value axes, over time or over categories).
+- **15 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, and mixed (bars, lines and filled areas on two value axes, over time or over categories).
 - **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`), and custom SQL for ratios the dataset doesn't define: `SQL(100.0 * SUM(on_time) / NULLIF(COUNT(*), 0)) AS On-time %`. `chartwright check` lists custom SQL as unchecked, and apply's data check runs it.
 - **Filters and Formatting**: Per-chart WHERE conditions (a column test, or custom SQL such as `{"sql": "amount > 0 OR refunded"}`), a native filter bar, and formatting for table and pivot cells.
     - Filter bar: value pickers, a time range with an optional starting range, numeric sliders, and time grain and time column pickers.
@@ -33,9 +33,13 @@ into one. Everything below works from that one file.
     - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value.
     - A time range per chart, such as a "Last 30 days" KPI on a dashboard that shows all time.
     - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
+    - A trendline KPI over a rolling window: a trailing-12-month total compared with the 12 months before ("+30% vs prior 12 months"), a 3-month average, or a running total.
+    - Filled areas on a mixed chart, such as solar output under a net-load line.
+    - A big number shown as a date, such as the latest order date as "Sat 3 Oct 2026".
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
     - Heatmap values and colour scheme; what pie, funnel and treemap labels show, and their number format.
+    - Heatmap axes in label order, such as a cohort triangle with its oldest cohort on top, or by value.
 - **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend.
 - **Dashboard and Chart Settings**: Set the dashboard's own settings and each chart's in the spec, so a change made in the UI shows up in `plan`.
     - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).

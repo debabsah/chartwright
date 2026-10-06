@@ -90,8 +90,9 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "",
         "## Design defaults: `advise --fix` fills these, so leave them unset unless the user asks",
         "",
-        "- x_label_format, compare_suffix, number_format of COUNT metrics, and on tables cell_bars,",
-        "  page_length and search_box; show_legend on a single named series; show_value on few bars.",
+        "- x_label_format, compare_suffix, number_format of COUNT metrics, date_format on a big",
+        "  number of a date column, and on tables cell_bars, page_length and search_box;",
+        "  show_legend on a single named series; show_value on few bars.",
         "  Set one yourself only when the user asks for it, and say so in your reply.",
         "- Run `chartwright advise <spec> --fix` (MCP: fix_spec) before you build. It writes each value",
         "  into the spec file and records it in design.filled; its `fixed` entries say kind \"fill\" and why.",
@@ -99,7 +100,7 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "  A filled value you change or delete is yours from then on (kind \"release\"); never edit design.filled,",
         "  except to rename a chart's entry when you rename the chart, so its fills stay the brain's.",
         "- Never filled, set them only on request: category_sort, y_axis_truncate, compare_lag,",
-        "  series_limit, show_totals, and currency formats.",
+        "  rolling_type, series_limit, show_totals, and currency formats.",
     ]
 
     lines += ["", _guideline("chart-choice.md").strip(), "", _guideline("composition.md").strip()]

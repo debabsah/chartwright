@@ -1,7 +1,7 @@
 """Issue #1: table/pivot heights are fixed while rendered rows grow with the
 data; smoke must warn when rows would hide behind the inner scrollbar."""
 
-from chartwright.smoke import _fit_warning
+from chartwright.smoke import _fit_warning, _window_warning
 from chartwright.spec import load_spec
 
 DS = {"database": "db", "table": "orders"}
@@ -96,3 +96,21 @@ def test_non_grid_charts_and_empty_results_skipped():
              "metrics": ["COUNT(*)"], "height": 4}
     spec = spec_with(pivot)
     assert _fit_warning(spec.charts[0], spec, result_rows([])) is None
+
+
+def test_a_rolling_kpi_warns_when_its_data_holds_too_few_buckets():
+    """data.rolling-window-span reads a time range it can parse; smoke counts the time
+    buckets the chart really has, so "No filter" over 14 months is caught too."""
+    ttm = {"type": "big_number_trend", "name": "TTM", "dataset": DS, "metric": "SUM(x)",
+           "time_column": "ts", "time_grain": "P1M", "rolling_type": "sum",
+           "rolling_periods": 12, "compare_lag": 12}
+    chart = spec_with(ttm).charts[0]
+    warning = _window_warning(chart, 14)
+    assert warning == ("a 12-step rolling window with compare_lag 12 over 14 time buckets "
+                       "draws 3 trendline point(s) and no change; widen the chart's time range")
+    assert _window_warning(chart, 24) is None                     # 13 points: the change shows
+    assert _window_warning(spec_with({**ttm, "rolling_min_periods": 0}).charts[0], 14) is None
+    assert _window_warning(spec_with({**ttm, "compare_lag": None}).charts[0], 12)  # one point
+    assert _window_warning(spec_with({**ttm, "compare_lag": None}).charts[0], 13) is None
+    cum = {**ttm, "rolling_type": "cumsum", "rolling_periods": None}
+    assert _window_warning(spec_with(cum).charts[0], 2) is None

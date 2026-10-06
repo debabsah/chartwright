@@ -322,12 +322,14 @@ fails when it drifts.
 | `chart.trend-grain` | info | - | - | 2 | trend tiles at a fine grain over full history draw thousands of points in a small card |
 | `chart.vbar-categories` | warn | ✔ | - | 1 | vertical bars drop labels past ~8 categories; rank with horizontal bars |
 | `data.grain-vs-range` | warn | - | - | 1 | the time grain should yield a sane number of points for the range |
+| `data.rolling-window-span` | warn | - | - | 9 | a rolling trendline KPI's time range must hold its window and its comparison |
 | `data.row-limit-intent` | info | - | - | 1 | row limits doing design work should be deliberate, not defaults |
 | `data.top-n-sort` | warn | - | - | 2 | a limit without an order is a sample, not a ranking |
 | `data.unwindowed-history` | warn | - | - | 3 | timeseries charts with no way to bound the window draw ALL history at their grain |
 | `default.cell-bars` | info | ✔ | - | 5 | a raw table with id, code, year or zip columns draws no cell bars (a bar behind an identifier reads as an amount) |
-| `default.compare-suffix` | info | ✔ | - | 5 | a trendline KPI's change says what it compares against ('vs previous month') |
+| `default.compare-suffix` | info | ✔ | - | 5 | a trendline KPI's change says what it compares against ('vs previous month'; 'vs prior 12 months' between trailing windows) |
 | `default.count-format` | info | ✔ | - | 5 | counts read as whole numbers with thousands separators (',.0f') |
+| `default.date-tile` | info | ✔ | - | 9 | a big number of a date column's MIN or MAX reads as a whole date ('Sat 3 Oct 2026'); needs the column's type (--profile) |
 | `default.page-length` | info | ✔ | - | 5 | a table whose row_limit outgrows its panel pages by the rows that fit beside its page controls |
 | `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows gets a search box, when its rows still fit beside it (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
@@ -1121,7 +1123,8 @@ thresholds; those marked judgement are usability choices, not pixel facts.
 | rule | field | fills | only when |
 |---|---|---|---|
 | `default.x-label-format` | `x_label_format` | `%b %Y` at P1M, `%Y` at P1Y, `%d %b` at P1D or P1W | a timeseries chart (line, bar, area, scatter); for day labels, the chart's `time_range` spans at most `day_label_max_span_days` (365), since `%d %b` drops the year, and a 366-day span without a 29 February starts and ends on the same day and month. An omitted grain is read as its P1D default. Not on a categorical bar or a mixed chart, whose x axis may not be time |
-| `default.compare-suffix` | `compare_suffix` | `vs previous month`, `vs 12 months earlier` | a trendline KPI with `compare_lag`, at a grain with a plain name (hour, day, week, month, quarter, year) |
+| `default.compare-suffix` | `compare_suffix` | `vs previous month`, `vs 12 months earlier`; `vs prior 12 months` when a rolling sum, mean or std over 12 steps compares with the 12 before (`rolling_periods` equal to `compare_lag`) | a trendline KPI with `compare_lag`, at a grain with a plain name (hour, day, week, month, quarter, year) |
+| `default.date-tile` | `date_format` | `%a %-d %b %Y` (Sat 3 Oct 2026) | a `big_number_total` whose metric is `MIN` or `MAX` of a column the dataset reports as temporal, so only with column types (`--profile`), and no `number_format` written. Superset's smart date shows such a number as its day alone (`Tue 31`) |
 | `default.count-format` | `number_format` | `,.0f` | every metric the chart shows is `COUNT` or `COUNT_DISTINCT`, on a chart with one `number_format` (not a table or a mixed chart); not with `contribution`, a 100 % stack, or a pivot aggregation that leaves fractions |
 | `default.cell-bars` | `cell_bars` | `false` | a raw-mode table with a column named `id`, `code`, `year`, `zip`, `zipcode` or `postcode` as a whole trailing token (`order_id`, `fiscal_year`; not `uuid` or `zip_count`). With column types (`--profile`), only a numeric one counts. Aggregate tables draw bars on metrics only, so they never need it |
 | `default.page-length` | `page_length` | the whole rows that fit beside the page-size bar and the pager | a table with an explicit `row_limit` larger than the rows that fit on one page, and a page of at least `page_min_rows` (3, judgement). The one grid model `size.table-window` reads, so the fill can never make that rule ask for more height |
@@ -1134,7 +1137,8 @@ offers the same remedy with a fix: one remedy, one finding.
 
 The decision record's suggestion-only list stays without fills: category
 sort (`chart.ordinal-order` reports ordinal names), y-axis truncation,
-`compare_lag`, series limits (`chart.series-limit` reports them with
+`compare_lag`, a trendline's rolling window (`data.rolling-window-span` reports
+a time range too short for it), series limits (`chart.series-limit` reports them with
 `--profile`), `show_totals` (Superset's totals row sums every group, not
 the rows shown), and number or currency formats guessed from names. The
 brief tells an author to set these only on request.
