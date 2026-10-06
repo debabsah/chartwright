@@ -266,15 +266,16 @@ HEATMAP_Y_SORT = {"a_to_z": "alpha_desc", "z_to_a": "alpha_asc",
                   "value_asc": "value_desc", "value_desc": "value_asc"}
 
 
-def _pin_big_number_fonts(p: dict) -> None:
-    """Pin the number and subtitle sizes to the plugin's own documented
-    defaults (proportions of the card). Left unset, 6.1 renders a subtitle fed
+def _pin_big_number_fonts(p: dict, chart) -> None:
+    """Pin the number and subtitle sizes (proportions of the card): the chart's own, or
+    the plugin's documented defaults. Left unset, 6.1 renders a subtitle fed
     through the legacy `subheader` key at proportion 1 of the card
     (BigNumberTotal/transformProps.ts:77-80 at 6.1.0: `subheaderFontSize ?? 1`),
     so short subtitles blow up and crop. 4.1.4/5.0.0 declare both controls
-    natively; 6.1 honors them through that same fallback."""
-    p["header_font_size"] = 0.4
-    p["subheader_font_size"] = 0.15
+    natively; 6.1 honors them through that same fallback. A trendline has no
+    subtitle size of its own: its comparison line keeps 0.15."""
+    p["header_font_size"] = chart.header_font_size or 0.4
+    p["subheader_font_size"] = getattr(chart, "subtitle_font_size", None) or 0.15
 
 
 def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
@@ -307,7 +308,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             # number of epoch milliseconds shows as a date too.
             p["time_format"] = chart.date_format
             p["force_timestamp_formatting"] = True
-        _pin_big_number_fonts(p)
+        _pin_big_number_fonts(p, chart)
         if chart.conditional_formatting:
             p["conditional_formatting"] = [
                 _big_number_rule_payload(r, chart) for r in chart.conditional_formatting
@@ -337,7 +338,12 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
                                 else chart.rolling_min_periods)
         if chart.number_format:
             p["y_axis_format"] = chart.number_format
-        _pin_big_number_fonts(p)
+        if chart.trend_date_format:
+            # The trendline's dates (BigNumberWithTrendline/controlPanel.tsx:212 and
+            # transformProps.ts:245-249, :275 at 6.1.0). Never forced: forced, Superset would
+            # print the number itself as a date (transformProps.ts:109-114).
+            p["time_format"] = chart.trend_date_format
+        _pin_big_number_fonts(p, chart)
         # BigNumberWithTrendline controlPanel.tsx, all three releases; `subtitle` 6.0.0 or later.
         if chart.compare_lag is not None:
             p["compare_lag"] = chart.compare_lag

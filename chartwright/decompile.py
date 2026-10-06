@@ -27,8 +27,8 @@ from .spec import (
     ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX,
     FORMAT_RANGE_OPERATORS, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES, HEATMAP_DEFAULT_SCHEME,
     HEX_COLOUR_RE, PIVOT_ORDER, SUPERSET_DEFAULTS, TICK_LAYOUTS, TREND_DEFAULT_HEX,
-    WATERFALL_DEFAULT_HEX, FilterOp, LabelType, PivotAggregate, SequentialScheme, metric_label,
-    parse_metric, row_items,
+    WATERFALL_DEFAULT_HEX, FilterOp, HeaderFontSize, LabelType, PivotAggregate, SequentialScheme,
+    SubtitleFontSize, metric_label, parse_metric, row_items,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
@@ -674,6 +674,23 @@ def _format_to_spec(cf: dict) -> dict | None:
     return None if targets is None else rule | targets
 
 
+def _big_number_sizes_to_spec(p: dict, out: dict, losses: list, name: str, spec_type: str) -> None:
+    """header_font_size (and a total's subheader_font_size, its subtitle_font_size) back as
+    the spec's sizes; the panel's default reads as unset, and a size it doesn't offer
+    is named. A trendline's subheader size sizes its comparison, which the spec pins."""
+    sizes = [("header_font_size", "header_font_size", HeaderFontSize)]
+    if spec_type == "big_number_total":
+        sizes.append(("subheader_font_size", "subtitle_font_size", SubtitleFontSize))
+    for key, field_name, options in sizes:
+        size = p.get(key)
+        if size is None or size == SUPERSET_DEFAULTS[spec_type][field_name]:
+            continue
+        if size in get_args(options):
+            out[field_name] = size
+        else:
+            losses.append(Loss(name, f"{key} {size!r} is not one of Superset's sizes; dropped"))
+
+
 def _big_number_rules_to_spec(p: dict, losses: list, name: str) -> list[dict]:
     """A big number's conditional_formatting as BigNumberFormatRule dicts. The plugin
     paints the number from every rule whose column is set, whichever column it names,
@@ -888,6 +905,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
                                      f"preserved; set date_format to keep it"))
         if p.get("y_axis_format") not in (None, "", "SMART_NUMBER") and "date_format" not in out:
             out["number_format"] = p["y_axis_format"]
+        _big_number_sizes_to_spec(p, out, losses, name, spec_type)
         rules = _big_number_rules_to_spec(p, losses, name)
         if rules:
             out["conditional_formatting"] = rules
@@ -903,6 +921,9 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             out["time_grain"] = p["time_grain_sqla"]
         if p.get("y_axis_format") not in (None, "", "SMART_NUMBER"):
             out["number_format"] = p["y_axis_format"]
+        if isinstance(p.get("time_format"), str) and p["time_format"] not in ("", "smart_date"):
+            out["trend_date_format"] = p["time_format"]
+        _big_number_sizes_to_spec(p, out, losses, name, spec_type)
         lag = _number(p.get("compare_lag"))
         if isinstance(lag, int) and lag >= 1:
             out["compare_lag"] = lag
@@ -1323,10 +1344,12 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         # a Big Number the chart was switched from colour nothing.
         mapped_here = mapped_here | {"compare_lag", "compare_suffix", "subtitle", "color_picker",
                                      "rolling_type", "rolling_periods", "min_periods",
-                                     "start_y_axis_at_zero", "conditional_formatting"}
+                                     "start_y_axis_at_zero", "conditional_formatting",
+                                     "time_format", "header_font_size"}
     if spec_type == "big_number_total":
         mapped_here = mapped_here | {"subtitle", "time_format", "force_timestamp_formatting",
-                                     "conditional_formatting"}
+                                     "conditional_formatting", "header_font_size",
+                                     "subheader_font_size"}
     if spec_type == "table":
         mapped_here = mapped_here | {"page_length", "show_totals", "include_search", "color_pn",
                                      "align_pn"}

@@ -663,7 +663,19 @@ running the tool against real instances of all three releases.
   same pair (`BigNumberWithTrendline/controlPanel.tsx:139` and `:153` at
   4.1.4 and 5.0.0, `:212` and `:226` at 6.1.0), but there `time_format` also
   formats the trendline's tooltip dates (and, at 6.1.0, its optional x axis),
-  so the spec offers `date_format` on the plain big number only.
+  so the spec offers `date_format` on the plain big number only. A trendline's
+  `trend_date_format` writes `time_format` unforced, for those dates alone
+  (`transformProps.ts:245-249` and `:275` at 6.1.0): forced, the number itself
+  would print as a date.
+- **A big number's text sizes are shares of the card's height.**
+  `header_font_size` (0.2-0.6) and a total's `subtitle_font_size`
+  (0.125-0.4) take the options `BigNumber/sharedControls.ts` offers, the same
+  at 4.1.4, 5.0.0 and 6.1.0. Unset, the compiler still writes 0.4 and 0.15, the
+  panel's defaults: 6.1.0 reads a subtitle sent as the legacy `subheader` at
+  `subheaderFontSize ?? 1` (`BigNumberTotal/transformProps.ts:77-80`). The
+  subtitle size rides `subheader_font_size`, which every release reads. A
+  trendline's comparison line keeps 0.15. Decompile reads a size Superset
+  offers back and names any other.
 - **A mixed chart's area is a line with "Area chart" ticked.** `kind:
   "area"` writes `seriesType` `line` and `area` (query B: `areaB`), and its
   `opacity` (`opacityB`) scales the fill only; the edge line stays at full

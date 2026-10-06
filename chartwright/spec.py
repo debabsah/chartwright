@@ -559,11 +559,24 @@ class BigNumberFormatRule(_ColourBand):
         return FORMAT_TEXT_HEX.get(self.color, self.color)
 
 
+# The big-number text sizes Superset's panel offers, as shares of the card's height
+# (BigNumber/sharedControls.ts FONT_SIZE_OPTIONS_LARGE / _SMALL, the same at 4.1.4,
+# 5.0.0 and 6.1.0). 0.4 and 0.15 are the panel's defaults (SUPERSET_DEFAULTS).
+HeaderFontSize = Literal[0.2, 0.3, 0.4, 0.5, 0.6]
+SubtitleFontSize = Literal[0.125, 0.15, 0.2, 0.3, 0.4]
+
+
 class BigNumberChart(_ChartBase):
     type: Literal["big_number_total"]
     metric: str
     subtitle: str | None = None
     number_format: str | None = Field(default=None, description="d3 format string, e.g. ',.0f'")
+    header_font_size: HeaderFontSize | None = Field(
+        default=None, description="The number's size, a share of the card's height: 0.2, 0.3, "
+                                  "0.4 (Superset's default), 0.5 or 0.6")
+    subtitle_font_size: SubtitleFontSize | None = Field(
+        default=None, description="The subtitle's size, a share of the card's height: 0.125, "
+                                  "0.15 (Superset's default), 0.2, 0.3 or 0.4")
     date_format: str | None = Field(
         default=None, min_length=1,
         description="Show the number as a date, in a d3 time format, e.g. \"%a %-d %b %Y\" "
@@ -608,6 +621,13 @@ class BigNumberTrendChart(_ChartBase):
     time_column: str
     time_grain: str | None = None
     number_format: str | None = None
+    header_font_size: HeaderFontSize | None = Field(
+        default=None, description="The number's size, a share of the card's height: 0.2, 0.3, "
+                                  "0.4 (Superset's default), 0.5 or 0.6")
+    trend_date_format: str | None = Field(
+        default=None, min_length=1,
+        description="d3 time format for the trendline's dates, in its tooltip (and its x axis "
+                    "on 6.1.0), e.g. \"%b %Y\"; the number itself stays a number")
     compare_lag: int | None = Field(
         default=None, ge=1,
         description="Compare the latest value with the one this many time-grain steps "
@@ -2940,7 +2960,9 @@ SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
     # at 5.0.0, :488 at 6.1.0). color_pn defaults true, align_pn false (4.1.4 :523, :509;
     # 5.0.0 :572, :558; 6.1.0 :692, :678), filled in on a dashboard by applyDefaultFormData.
     "table": {"date_format": "smart_date", "color_by_sign": True, "absolute_bars": False},
-    "big_number_trend": {"trend_color": TREND_DEFAULT_HEX},
+    # header_font_size / subheader_font_size: BigNumber/sharedControls.ts, 4.1.4 to 6.1.0.
+    "big_number_total": {"header_font_size": 0.4, "subtitle_font_size": 0.15},
+    "big_number_trend": {"trend_color": TREND_DEFAULT_HEX, "header_font_size": 0.4},
     "timeseries_line": {"marker_size": 6, "opacity": 0.2},
     "timeseries_area": {"marker_size": 6, "opacity": 0.2},
     "timeseries_scatter": {"marker_size": 6},

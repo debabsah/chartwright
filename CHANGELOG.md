@@ -8,11 +8,14 @@ while the major version is 0, minor bumps may include breaking changes and say s
 ### Upgrading from 0.6
 
 - A spec that uses a field new here is refused by chartwright 0.6 (`extra_forbidden` or `literal_error`); upgrade CI before committing one. The new fields:
-  - a mixed chart's `kind: "scatter"`.
+  - a mixed chart's `kind: "scatter"`;
+  - a big number's `header_font_size` and `subtitle_font_size`, and a trendline's `header_font_size` and `trend_date_format`.
 
 ### Added
 
 - A mixed chart's query can draw points: `kind: "scatter"` writes Superset's `scatter` series type, a point per value and no line. Decompile reads a chart saved with it in Superset back as points instead of naming a loss.
+
+- A big number sets its text sizes: `header_font_size` (0.2, 0.3, 0.4, 0.5 or 0.6 of the card's height) and, on a plain big number, `subtitle_font_size` (0.125 to 0.4), the options Superset's panel offers. Unset, they stay at 0.4 and 0.15 as before. A trendline formats its dates with `trend_date_format`, e.g. `"%b %Y"`; its number stays a number. Decompile reads all three back instead of naming them, and `readability.kpi-text` judges a big number at its own sizes.
 
 ## 0.6.0 (2026-10-05)
 

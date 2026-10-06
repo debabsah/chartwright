@@ -44,6 +44,7 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - A trendline fitted to its values, so a trailing total that moves a few percent shows the movement.
     - Filled areas on a mixed chart, such as solar output under a net-load line, and points (`kind: "scatter"`) for a query read as single values, such as one-off events over a trend.
     - A big number shown as a date, such as the latest order date as "Sat 3 Oct 2026".
+    - A big number's text size: the number at 0.2-0.6 of the card's height, and a subtitle at 0.125-0.4, from Superset's own options. A trendline's dates in their own format, such as "Oct 2026".
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
     - Table cell bars on the columns you name (`"cell_bars": ["Revenue", "Change"]`), coloured by sign on just the change (`"color_by_sign": ["Change"]`) so revenue bars stay neutral, and sized by absolute value where you list them (`"absolute_bars"`), so a rise and a fall of the same size draw the same bar.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.

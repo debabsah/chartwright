@@ -6,7 +6,9 @@ up in `plan` when the spec value changes."""
 
 import io
 import json
+import sys
 import zipfile
+from pathlib import Path
 
 import pytest
 import yaml
@@ -19,10 +21,15 @@ from chartwright.decompile import decompile_bundle
 from chartwright.spec import load_spec
 from chartwright.testing import edit_bundle, stub_resolution
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
+from params_drift import CONTRACT, check  # noqa: E402
+
 DS = {"database": "examples", "table": "orders"}
 LINE = {"name": "Revenue", "type": "timeseries_line", "dataset": DS,
         "metrics": ["SUM(revenue)"], "time_column": "order_date", "time_grain": "P1M"}
 KPI = {"name": "Orders", "type": "big_number_total", "dataset": DS, "metric": "COUNT(*)"}
+TREND = {"name": "Orders trend", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
+         "time_column": "order_date", "time_grain": "P1M"}
 MIXED = {"name": "Volume and delays", "type": "mixed", "dataset": DS, "x_column": "order_date",
          "time_grain": "P1M", "a": {"metrics": ["COUNT(*)"]},
          "b": {"metrics": ["MAX(delay)"], "kind": "line", "axis": "secondary"}}
@@ -90,6 +97,14 @@ def _round_trips(spec):
     return result
 
 
+def _contract_clean(emitted: dict[str, set[str]]) -> None:
+    """Every key emitted is one the viz type's control panel declares, on every release
+    (6.1.0-only keys are allowed, and ignored, before 6.1.0)."""
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, emitted) == [], version
+
+
 def _plan(target, live, monkeypatch) -> dict:
     """`plan` against a live dashboard that is `live` compiled and exported."""
     import chartwright.resolver as resolver
@@ -120,3 +135,62 @@ def test_mixed_series_can_be_scatter(monkeypatch):
     result = _decompile(_spec([MIXED]), _edit_chart(MIXED["name"], seriesType="scatter"))
     assert result.losses == [], result.losses_json()
     assert result.spec["charts"][0]["a"]["kind"] == "scatter"
+
+
+# -- big-number text sizes and a trendline's dates ---------------------------------------
+
+def test_big_number_sizes_default_to_the_pinned_values():
+    p = _params(_spec([KPI, TREND]))
+    assert (p["Orders"]["header_font_size"], p["Orders"]["subheader_font_size"]) == (0.4, 0.15)
+    assert (p["Orders trend"]["header_font_size"], p["Orders trend"]["subheader_font_size"]) == (0.4, 0.15)
+    assert not {"time_format", "force_timestamp_formatting"} & (set(p["Orders"]) | set(p["Orders trend"]))
+
+
+def test_big_number_sizes_and_the_trendline_date_format(monkeypatch):
+    """BigNumber/sharedControls.ts (the size options, 4.1.4 to 6.1.0); a trendline's
+    time_format formats its dates (BigNumberWithTrendline/transformProps.ts:245-249, :275
+    at 6.1.0) and is never forced, which would print the number itself as a date."""
+    last = {**KPI, "name": "Last order", "metric": "MAX(order_date)", "date_format": "%b %d, %Y",
+            "header_font_size": 0.3, "subtitle_font_size": 0.2, "subtitle": "most recent"}
+    trend = {**TREND, "trend_date_format": "%b %Y", "header_font_size": 0.5}
+    spec = _spec([last, trend])
+    p = _params(spec)
+    assert (p["Last order"]["header_font_size"], p["Last order"]["subheader_font_size"]) == (0.3, 0.2)
+    assert p["Orders trend"]["time_format"] == "%b %Y"
+    assert "force_timestamp_formatting" not in p["Orders trend"]
+    assert p["Orders trend"]["header_font_size"] == 0.5
+    _round_trips(spec)
+    _contract_clean({"big_number_total": set(p["Last order"]), "big_number": set(p["Orders trend"])})
+    plan = _plan(spec, _spec([{**last, "header_font_size": 0.4}, trend]), monkeypatch)
+    assert plan["charts_changed"] == ["Last order"]
+    plan = _plan(spec, _spec([last, {**trend, "trend_date_format": "%Y"}]), monkeypatch)
+    assert plan["charts_changed"] == ["Orders trend"]
+
+
+def test_written_default_sizes_build_and_plan_as_omitted():
+    written = _spec([{**KPI, "header_font_size": 0.4, "subtitle_font_size": 0.15},
+                     {**TREND, "header_font_size": 0.4}])
+    omitted = _spec([KPI, TREND])
+    assert _compiled(written) == _compiled(omitted)
+    assert _normalize(written) == _normalize(omitted)
+
+
+def test_big_number_sizes_take_only_superset_options():
+    with pytest.raises(ValidationError):
+        _spec([{**KPI, "header_font_size": 0.45}])
+    with pytest.raises(ValidationError):
+        _spec([{**TREND, "subtitle_font_size": 0.2}])  # a trendline has no subtitle size
+
+
+def test_big_number_decompile_reads_ui_sizes_and_names_the_rest():
+    result = _decompile(_spec([KPI, TREND]), _edit_chart("Orders", header_font_size=0.6,
+                                                         subheader_font_size=0.3))
+    assert result.losses == [], result.losses_json()
+    back = result.spec["charts"][0]
+    assert (back["header_font_size"], back["subtitle_font_size"]) == (0.6, 0.3)
+    result = _decompile(_spec([KPI]), _edit_chart("Orders", header_font_size=0.45))
+    assert [loss.what for loss in result.losses] == [
+        "header_font_size 0.45 is not one of Superset's sizes; dropped"]
+    # a trendline's comparison size is no field: a changed one is a named setting
+    result = _decompile(_spec([TREND]), _edit_chart("Orders trend", subheader_font_size=0.3))
+    assert any("subheader_font_size=0.3" in loss.what for loss in result.losses), result.losses_json()

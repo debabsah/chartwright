@@ -40,8 +40,8 @@ What sets each size at 4.1.4, 5.0.0 and 6.1.0 (measured in headless Chromium at 
   theme.fontSizeLG (:80 at 6.1.0); `.header-title` inherits it.
 - Big numbers: BigNumberViz sizes each line to a share of the card's height
   (PROPORTION and computeMaxFontSize, BigNumberViz.tsx:36-57 and :275-321 at 4.1.4), and
-  chartwright pins header_font_size 0.4 and subheader_font_size 0.15
-  (compiler._pin_big_number_fonts). The size is an inline style, so only CSS marked
+  chartwright pins header_font_size 0.4 and subheader_font_size 0.15 unless the chart
+  sets its own (compiler._pin_big_number_fonts). The size is an inline style, so only CSS marked
   `!important` changes it.
 
 Theme tokens (6.0 and later): Superset lets antd derive every map token from the seed,
@@ -921,6 +921,10 @@ def _kpi(ctx: RuleContext, c) -> _Kpi:
         """What the card's height draws below its floor; a size the CSS pins is the
         CSS finding's, whatever the height."""
         value, label = kpi_px(c.type, units)
+        # ponytail: the tables were measured at 0.4 / 0.15; a chart's own share scales them
+        # linearly, as BigNumberViz sizes text by height x share. Measure per size if it misleads.
+        value *= (c.header_font_size or 0.4) / 0.4
+        label *= (getattr(c, "subtitle_font_size", None) or 0.15) / 0.15
         if cap is not None:
             label = min(label, cap)
         out = ([f"value at {value:.0f} px"]
