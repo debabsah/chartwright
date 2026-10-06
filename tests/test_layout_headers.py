@@ -125,7 +125,9 @@ def test_a_ui_header_with_no_size_reads_as_small():
     assert out.spec["layout"]["rows"][3] == {"header": "Detail", "size": "small"}
 
 
-def test_a_header_inside_a_column_is_a_named_loss():
+def test_a_header_inside_a_column_beside_a_divider_is_a_named_loss():
+    """A sketch holds a header in a column (tests/test_sketch.py), but not a divider: in
+    a section with one, the rows keep the divider and drop the column's header, named."""
     def fn(doc):
         pos = doc["position"]
         pos["COLUMN-x"] = {"type": "COLUMN", "id": "COLUMN-x", "children": ["HEADER-x"], "meta": {}}
@@ -167,5 +169,5 @@ def test_the_markdown_height_fix_addresses_the_right_block_past_headers():
     data = with_rows([{"header": "Top"}, {"row": [{"markdown": "One line", "height": 4}, "Revenue"],
                                           "background": "white"}, ["Orders", "By Region"]])
     fixed, report = advise_and_fix(data, overlay=load_overlay(None))
-    assert fixed["layout"]["rows"][1]["row"][0]["height"] == 2
+    assert fixed["layout"]["rows"][1]["row"][0]["height"] == 1.6
     assert fixed["layout"]["rows"][0] == {"header": "Top"}

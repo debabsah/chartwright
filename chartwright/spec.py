@@ -3,7 +3,7 @@
 Anything not expressible here does not exist. Validation errors are the only
 feedback channel an LLM caller gets; keep messages precise and actionable.
 
-Surface: 15 chart types, per-chart WHERE filters, a dashboard-level native
+Surface: 17 chart types, per-chart WHERE filters, a dashboard-level native
 filter bar (select, time range, numeric range, time grain, time column),
 markdown blocks, headers, dividers, and tabs.
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 import uuid as _uuid
 from typing import Annotated, Any, ClassVar, Literal, Union
 
@@ -24,14 +25,16 @@ DEFAULT_ROW_LIMIT = {
     "timeseries_line": 10000, "timeseries_bar": 10000, "timeseries_area": 10000,
     "timeseries_scatter": 10000, "bar": 10000, "pie": 100, "table": 1000,
     "pivot_table": 10000, "heatmap": 10000, "histogram": 10000, "funnel": 10,
-    "treemap": 100, "mixed": 10000,
+    "treemap": 100, "mixed": 10000, "waterfall": 10000,
 }
 DEFAULT_TIME_GRAIN = "P1D"
 
 # How a rendered table or pivot spends spec height. ONE model, read by the design
 # critic (size.table-window, size.pivot-window, size.grid-fit), the page-length and
 # search-box fills, and apply-time smoke, so offline advice, data-aware advice, the
-# fills and the apply warning can never disagree about the same chart.
+# fills and the apply warning can never disagree about the same chart. Every consumer
+# asks grid_fit() what a chart drawing N body rows needs; they differ only in where N
+# comes from (the rows a query returned, a probed count, or the row_limit ceiling).
 #
 # Measured 2026-10-03 on rendered Superset 4.1.4, 5.0.0 and 6.1.0 (1600 px viewport,
 # default theme; docs/DESIGN-BRAIN.md, "Calibration"). Each constant is the largest
@@ -42,14 +45,23 @@ GRID_HEADER_UNITS = 2.5        # card title, column header and card padding: 99.
 GRID_CONTROLS_UNITS = 1.05     # the bar above the rows that search_box or any page_length
                                # adds: 41.1 px / 39.1 px (6.1.0 draws 33.1 px for a page size alone)
 GRID_PAGER_UNITS = 1.45        # the pager under a table of more than one page: 57.9 px / 42.9 px
-PIVOT_UNITS_PER_ROW = 0.65     # pivot body row: 25.8 px on average (19 rows: 490.1 px)
+GRID_TOTALS_UNITS = 0.74       # show_totals' Summary row: the table foot, which DataTable keeps
+                               # out of the scrolling body (6.1.0 plugin-chart-table DataTable/
+                               # hooks/useSticky.tsx:183,217); not measured, so one body row
+PIVOT_UNITS_PER_ROW = 0.65     # pivot body row: 25.8 px on average (19 rows: 490.1 px), as 6.1.0's
+                               # styles give it: 12 px text at line-height 1.4, 4 px padding above
+                               # and below and a 1 px rule (react-pivottable/Styles.ts:27,33,113,115)
 PIVOT_FRAME_UNITS = 2.55       # pivot card title, margins and padding: 101 px
-PIVOT_HEADER_ROW_UNITS = 0.66  # one pivot header row: 26.3 px; a pivot draws one per column
-                               # dimension plus two (the metric row and the row-dimension names)
+PIVOT_HEADER_ROW_UNITS = 0.66  # one pivot header row: 26.3 px (pivot_frame counts them)
 PIVOT_TOTALS_UNITS = 0.72      # the totals row column_totals pins over the bottom rows: 28.8 px
+                               # (sticky at the bottom, Styles.ts:55-59)
 PIVOT_HSCROLL_UNITS = 0.45     # the horizontal scrollbar under a pivot whose column dimensions
                                # outgrow the panel: 11 px in Chromium's classic scrollbars, and
-                               # Windows draws 17 px; overlay scrollbars (macOS) take none
+                               # Windows draws 17 px; overlay scrollbars (macOS) take none.
+                               # 6.1.0 styles its own at 8 px (PivotTableChart.tsx:70-73)
+# The metric names: one more attribute of a pivot's rows or columns, which Superset adds
+# even for a single metric (6.1.0 plugin-chart-pivot-table PivotTableChart.tsx:98,382-386).
+PIVOT_METRIC = "\x00metric"
 
 
 def grid_units_for_rows(rows: float, header_units: float = GRID_HEADER_UNITS,
@@ -64,34 +76,118 @@ def grid_rows_visible(height: float, header_units: float = GRID_HEADER_UNITS,
     return max(0.0, (height - header_units) / row_units)
 
 
-def table_header_units(*, controls: bool = False, pager: bool = False) -> float:
+def table_header_units(*, controls: bool = False, pager: bool = False,
+                       totals: bool = False) -> float:
     """Everything a table draws besides its body rows: card title, column header and
     padding, plus the bar above the rows (`controls`: a search box, or any
-    page_length, which draws a page-size picker even on one page) and the pager under
-    them (`pager`: more rows than one page holds)."""
+    page_length, which draws a page-size picker even on one page), the pager under
+    them (`pager`: more rows than one page holds) and the Summary row (`totals`:
+    show_totals)."""
     return (GRID_HEADER_UNITS + (GRID_CONTROLS_UNITS if controls else 0)
-            + (GRID_PAGER_UNITS if pager else 0))
+            + (GRID_PAGER_UNITS if pager else 0) + (GRID_TOTALS_UNITS if totals else 0))
 
 
-def pivot_header_units(column_dims: int, *, totals: bool = False) -> float:
-    """Everything a pivot draws besides its body rows: card frame, a header row per
-    column dimension plus two, room for a horizontal scrollbar when column dimensions
-    can outgrow the panel, and the pinned totals row (`column_totals`)."""
-    return (PIVOT_FRAME_UNITS + PIVOT_HEADER_ROW_UNITS * (column_dims + 2)
-            + (PIVOT_HSCROLL_UNITS if column_dims else 0)
+def pivot_axes(chart) -> tuple[list[str], list[str]]:
+    """The (row, column) attributes a pivot draws, as 6.1.0's PivotTableChart.tsx:377-386
+    builds them: transpose swaps the dimensions, and the metric names (PIVOT_METRIC) are
+    one more attribute, on the columns unless metrics_layout is rows; outermost, or
+    innermost with combine_metric."""
+    rows, cols = ((list(chart.columns), list(chart.rows)) if chart.transpose
+                  else (list(chart.rows), list(chart.columns)))
+    side = rows if chart.metrics_layout == "rows" else cols
+    side.insert(len(side) if chart.combine_metric else 0, PIVOT_METRIC)
+    return rows, cols
+
+
+def pivot_frame(chart) -> tuple[int, bool, bool]:
+    """(header rows, horizontal-scrollbar room, totals row) of a pivot as configured.
+    6.1.0's TableRenderers.tsx draws a header row per column attribute, and one naming
+    the row attributes when there are any (:1418-1423); the totals row with
+    column_totals, and always when there are no row attributes (:367, :1429). Column
+    dimensions, not metric names, are what can outgrow the panel."""
+    rows, cols = pivot_axes(chart)
+    return (len(cols) + (1 if rows else 0), any(a != PIVOT_METRIC for a in cols),
+            chart.column_totals or not rows)
+
+
+def pivot_header_units(header_rows: int, *, hscroll: bool = False,
+                       totals: bool = False) -> float:
+    """Everything a pivot draws besides its body rows: card frame, its header rows,
+    room for a horizontal scrollbar (`hscroll`) and the pinned totals row (`totals`)."""
+    return (PIVOT_FRAME_UNITS + PIVOT_HEADER_ROW_UNITS * header_rows
+            + (PIVOT_HSCROLL_UNITS if hscroll else 0)
             + (PIVOT_TOTALS_UNITS if totals else 0))
+
+
+def pivot_rows(chart, records: list[dict]) -> tuple[int, int]:
+    """(leaf rows, subtotal rows) a pivot draws for its query's records: a body row per
+    distinct row key, never per record (the query returns rows x columns records). The
+    metric names count as a row attribute when laid out as rows, and row_subtotals adds
+    a row per distinct key prefix (6.1.0 react-pivottable/utilities.ts:957-975). With no
+    row attribute there is no body row: the pivot is its totals row."""
+    rows, _ = pivot_axes(chart)
+    if not rows:
+        return 0, 0
+    labels = [metric_label(m) for m in chart.metrics] if PIVOT_METRIC in rows else [None]
+    keys = {tuple(label if a == PIVOT_METRIC else r.get(a) for a in rows)
+            for r in records for label in labels}
+    subtotals = (len({k[:i] for k in keys for i in range(1, len(rows))})
+                 if chart.row_subtotals else 0)
+    return len(keys), subtotals
+
+
+def pivot_rows_from_counts(chart, counts: dict[str, int]) -> tuple[int, int, bool]:
+    """(leaf rows, subtotal rows, exact) a pivot draws, from the distinct values of each
+    row dimension counted one column at a time (`counts`). Exact with at most one row
+    dimension; with more, the combinations number at least the largest count, so the
+    leaf rows are a lower bound and subtotals go uncounted (exact False)."""
+    rows, _ = pivot_axes(chart)
+    if not rows:
+        return 0, 0, True
+    size = {a: len(chart.metrics) if a == PIVOT_METRIC else counts[a] for a in rows}
+    dims = [a for a in rows if a != PIVOT_METRIC]
+    if len(dims) > 1:
+        per = len(chart.metrics) if PIVOT_METRIC in rows else 1
+        return max(size[a] for a in dims) * per, 0, False
+    subtotals = (sum(math.prod(size[a] for a in rows[:i]) for i in range(1, len(rows)))
+                 if chart.row_subtotals else 0)
+    return math.prod(size.values()), subtotals, True
+
+
+def table_page(chart) -> int | None:
+    """Rows on one page of a paged table (page_length > 0), never more than row_limit;
+    None when every row is on one page."""
+    if not getattr(chart, "page_length", None):
+        return None
+    return min(chart.page_length, chart.row_limit) if chart.row_limit else chart.page_length
 
 
 def grid_header(chart, rows: int | None = None) -> tuple[float, float]:
     """(header units, units per body row) of a table or pivot chart as configured,
     drawing `rows` body rows (None: unknown, so a paged table counts its pager)."""
     if chart.type == "pivot_table":
-        return (pivot_header_units(len(chart.columns), totals=chart.column_totals),
+        header_rows, hscroll, totals = pivot_frame(chart)
+        return (pivot_header_units(header_rows, hscroll=hscroll, totals=totals),
                 PIVOT_UNITS_PER_ROW)
     page = chart.page_length or 0
     return (table_header_units(controls=bool(page) or chart.search_box,
-                               pager=bool(page) and (rows is None or rows > page)),
+                               pager=bool(page) and (rows is None or rows > page),
+                               totals=chart.show_totals),
             GRID_UNITS_PER_ROW)
+
+
+def grid_fit(chart, rows: int | None) -> tuple[int | None, float, float]:
+    """(body rows the panel must hold, header units, units per body row) of a table or
+    pivot drawing `rows` body rows: the one estimate that smoke (the rows the query
+    returned), size.grid-fit (a probed count), size.pivot-window (what the spec alone
+    fixes) and size.table-window (the row_limit ceiling) each compare a height with. A
+    paged table holds one page beside its pager. None: unknown (a paged table still
+    holds one page)."""
+    header, row = grid_header(chart, rows)
+    page = table_page(chart) if chart.type == "table" else None
+    if page is not None and (rows is None or rows > page):
+        rows = page
+    return rows, header, row
 
 ADHOC_AGGREGATES = ("SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX")
 _ADHOC_RE = re.compile(r"^(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((.+?)\)(?:\s+AS\s+(.+))?$")
@@ -116,6 +212,11 @@ FORMAT_COLOR_HEX = {"green": "#ACE1C4", "amber": "#FDE380", "red": "#EFA1AA"}
 # Text needs darker shades of the same three: each is >= 4.5:1 on white (WCAG AA).
 FORMAT_TEXT_HEX = {"green": "#1B7F3B", "amber": "#8A6100", "red": "#B3261E"}
 HEX_COLOUR_RE = re.compile(r"#[0-9A-F]{6}", re.IGNORECASE)
+# A colour rule's test. Every one is a Superset comparator at 4.1.4, 5.0.0, 6.0.0 and
+# 6.1.0 (compiler.FORMAT_OPERATOR); "between" leaves both bounds out, as Superset's
+# "< x <" does, and "between_inclusive" takes them in ("≤ x ≤").
+FormatOperator = Literal["<", ">", "=", ">=", "<=", "!=", "between", "between_inclusive"]
+FORMAT_RANGE_OPERATORS = ("between", "between_inclusive")
 
 FilterOp = Literal["==", "!=", ">", ">=", "<", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL"]
 _LIST_OPS = ("IN", "NOT IN")
@@ -326,12 +427,17 @@ ANNOTATION_STYLES = ("solid", "dashed", "dotted")
 class Annotation(BaseModel):
     """A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal
     line at y = 80. Superset draws it as a series named ``name`` (in the legend
-    and tooltip); formula layers have no on-chart label in any release."""
+    and tooltip); formula layers have no on-chart label in any release. On a
+    horizontal bar the value axis runs across, so the line stands upright at its
+    value (transformFormulaAnnotation swaps the point to [y, x] there)."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, description="Series name in the legend and tooltip, e.g. \"Goal\"")
-    value: float | None = Field(default=None, description="A flat line at this y value, e.g. 80")
+    value: float | None = Field(
+        default=None,
+        description="A line at this value on the value axis, e.g. 80: flat across most charts, "
+                    "upright across a horizontal bar (a 1.0x threshold, a 4-hour limit)")
     formula: str | None = Field(
         default=None, min_length=1,
         description="Instead of value: a formula in x, e.g. \"2*x + 10\" (x is the "
@@ -369,11 +475,131 @@ class Annotation(BaseModel):
         return self
 
 
+class _ColourBand(BaseModel):
+    """One solid colour band: the colour Superset paints while a value meets the
+    operator and its threshold(s). Table, pivot and big-number rules share it
+    (FormatRule, BigNumberFormatRule); each says what the band tests and paints."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric: str | None = None
+    operator: FormatOperator = Field(
+        description="<, >, =, >=, <=, != against target; 'between' (bounds excluded) or "
+                    "'between_inclusive' (bounds included) against target_left and target_right")
+    target: float | None = Field(default=None, description="Threshold for <, >, =, >=, <= or !=")
+    target_left: float | None = Field(default=None, description="Lower bound for 'between' or 'between_inclusive'")
+    target_right: float | None = Field(default=None, description="Upper bound for 'between' or 'between_inclusive'")
+    color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = Field(
+        description="green, amber or red (Superset's own picker colours; text paint uses a darker "
+                    "shade of each), or any #RRGGBB, used as written for cell and text",
+    )
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _colour(cls, v):
+        if not isinstance(v, str):
+            raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
+        if v in FORMAT_COLOR_HEX:
+            return v
+        if HEX_COLOUR_RE.fullmatch(v):
+            return v.upper()
+        raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
+
+    @model_validator(mode="after")
+    def _target_shape(self) -> "_ColourBand":
+        if self.operator in FORMAT_RANGE_OPERATORS:
+            if self.target is not None or self.target_left is None or self.target_right is None:
+                raise ValueError(f"{self.operator!r} needs target_left + target_right (and no target)")
+        elif self.target is None or self.target_left is not None or self.target_right is not None:
+            raise ValueError(f"operator {self.operator!r} needs target (and no target_left/right)")
+        return self
+
+    def matches(self, value: float) -> bool:
+        """Whether Superset's comparator takes `value`: '<', '>', '=', '≥', '≤', '≠', the
+        open range '< x <' and the closed '≤ x ≤' (getColorFormatters.ts getColorFunction,
+        4.1.4, 5.0.0 and 6.1.0)."""
+        if self.operator == "between":
+            return self.target_left < value < self.target_right
+        if self.operator == "between_inclusive":
+            return self.target_left <= value <= self.target_right
+        t = self.target
+        return {"<": value < t, ">": value > t, "=": value == t, ">=": value >= t,
+                "<=": value <= t, "!=": value != t}[self.operator]
+
+
+class BigNumberFormatRule(_ColourBand):
+    """One colour band on a big number: Superset colours the number itself, solid,
+    while its value meets the rule (BigNumberViz.tsx at 4.1.4, 5.0.0 and 6.1.0). The
+    number is text, so a name takes its darker text shade. When several rules match,
+    the last one's colour wins; a value of exactly 0 is never coloured."""
+
+    metric: str | None = Field(
+        default=None,
+        description="Leave it out: a big number's rules test its one value. If given, it "
+                    "must be the chart's metric label",
+    )
+    color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = Field(
+        description="green, amber or red (the darker text shades, which read on white), or "
+                    "any #RRGGBB, used as written",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _number_only(cls, data):
+        if isinstance(data, dict):
+            if "apply_to" in data:
+                raise ValueError("apply_to is table-only: a big number's rule colours the number itself")
+            if "paint" in data:
+                raise ValueError("paint is for table and pivot cells: a big number's rule colours "
+                                 "the number, so a named colour takes its text shade")
+        return data
+
+    def paint_hex(self) -> str:
+        """The colour Superset paints the number: a name's text shade, or the hex as written."""
+        return FORMAT_TEXT_HEX.get(self.color, self.color)
+
+
 class BigNumberChart(_ChartBase):
     type: Literal["big_number_total"]
     metric: str
     subtitle: str | None = None
     number_format: str | None = Field(default=None, description="d3 format string, e.g. ',.0f'")
+    date_format: str | None = Field(
+        default=None, min_length=1,
+        description="Show the number as a date, in a d3 time format, e.g. \"%a %-d %b %Y\" "
+                    "(Sat 3 Oct 2026): a freshness tile over MAX(<date column>). A date or "
+                    "timestamp metric takes it as it is, and a number is read as epoch "
+                    "milliseconds (Superset's Force date format); not with number_format",
+    )
+    conditional_formatting: list[BigNumberFormatRule] = Field(
+        default_factory=list,
+        description="Colour the number by its value, e.g. red outside a tolerance: "
+                    "[{\"operator\": \"<\", \"target\": -0.02, \"color\": \"red\"}, "
+                    "{\"operator\": \">\", \"target\": 0.02, \"color\": \"red\"}]. Rules are "
+                    "solid; when several match, the last one wins. Say what the colours mean "
+                    "(the thresholds) in subtitle or description.",
+    )
+
+    @model_validator(mode="after")
+    def _one_format(self) -> "BigNumberChart":
+        if self.date_format and self.number_format:
+            raise ValueError(f"chart {self.name!r}: date_format shows the number as a date, "
+                             "so number_format never applies; keep one")
+        return self
+
+    @model_validator(mode="after")
+    def _rules(self) -> "BigNumberChart":
+        label = metric_label(self.metric)
+        for rule in self.conditional_formatting:
+            if rule.metric is None:
+                continue
+            if rule.metric != label:
+                raise ValueError(
+                    f"chart {self.name!r}: conditional_formatting metric {rule.metric!r} is not "
+                    f"the chart's metric label {label!r}; leave metric out (a big number's "
+                    "rules test its one value)")
+            rule.metric = None  # it can only name the chart's own metric; decompile reads it as omitted
+        return self
 
 
 class BigNumberTrendChart(_ChartBase):
@@ -386,12 +612,14 @@ class BigNumberTrendChart(_ChartBase):
         default=None, ge=1,
         description="Compare the latest value with the one this many time-grain steps "
                     "earlier, shown as a percentage change under the number, e.g. 1 at P1M is "
-                    "month over month",
+                    "month over month. With rolling_type both values are windows: lag 12 "
+                    "on a trailing-12 sum compares this year's 12 months with the 12 before",
     )
     compare_suffix: str | None = Field(
         default=None,
         description='Text after the percentage change, e.g. "vs last month". Leave it unset '
-                    "unless asked: `advise --fix` fills it from the grain and compare_lag")
+                    "unless asked: `advise --fix` fills it from the grain, compare_lag and "
+                    "the rolling window")
     subtitle: str | None = Field(
         default=None,
         description="A line of context under the number (Superset 6.0.0 or later; older "
@@ -402,6 +630,49 @@ class BigNumberTrendChart(_ChartBase):
         description="Colour of the trendline: green, amber or red (the text shades colour "
                     "rules use) or any #RRGGBB; Superset's default is teal #007A87",
     )
+    rolling_type: Literal["sum", "mean", "std", "cumsum"] | None = Field(
+        default=None,
+        description="A rolling window over the trendline, which the number and compare_lag "
+                    "then read: sum, mean or std over the last rolling_periods time-grain "
+                    "steps, or cumsum, a running total from the first point. sum at P1M "
+                    "with rolling_periods 12 is a trailing-12-month total, and compare_lag "
+                    "12 compares it with the 12 months before. The chart's time range must "
+                    "hold rolling_periods + compare_lag steps, or no change shows. Say the "
+                    "window in the title or subtitle: the number is no longer the latest "
+                    "step's",
+    )
+    rolling_periods: int | None = Field(
+        default=None, ge=1,
+        description="With rolling_type sum, mean or std: the window, in time-grain steps, "
+                    "e.g. 12 at P1M for a trailing year",
+    )
+    rolling_min_periods: int | None = Field(
+        default=None, ge=0,
+        description="Steps a window needs before the trendline shows it. Omitted, it is "
+                    "rolling_periods: the line starts at the first full window, so every "
+                    "point (and the number) is a whole trailing window; 0 also draws the "
+                    "partial windows of the first steps, as Superset's own default does",
+    )
+    y_axis_truncate: bool = Field(
+        default=False,
+        description="Fit the trendline to its values instead of drawing it up from zero "
+                    "(Superset's Start y-axis at 0, unticked). A trailing-12-month total "
+                    "that moves a few percent is a flat line over a solid block from zero; "
+                    "fitted, the line shows the movement. Say so where the reader expects a "
+                    "zero baseline",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_colour_rules(cls, data):
+        # BigNumberWithTrendline declares no conditional_formatting control and its
+        # transformProps passes no colour rules, at 4.1.4, 5.0.0 and 6.1.0.
+        if isinstance(data, dict) and "conditional_formatting" in data:
+            raise ValueError(
+                f"chart {data.get('name')!r}: big_number_trend takes no conditional_formatting: "
+                "Superset colours the number only on big_number_total (trend_color colours "
+                "the trendline)")
+        return data
 
     @field_validator("trend_color", mode="before")
     @classmethod
@@ -416,6 +687,23 @@ class BigNumberTrendChart(_ChartBase):
     def _compare(self) -> "BigNumberTrendChart":
         if self.compare_suffix and self.compare_lag is None:
             raise ValueError(f"chart {self.name!r}: compare_suffix needs compare_lag")
+        windowed = self.rolling_periods is not None or self.rolling_min_periods is not None
+        if windowed and self.rolling_type is None:
+            raise ValueError(f"chart {self.name!r}: rolling_periods and rolling_min_periods "
+                             "need rolling_type")
+        if self.rolling_type == "cumsum" and windowed:
+            raise ValueError(f"chart {self.name!r}: rolling_type cumsum is a running total "
+                             "from the first point; it takes no rolling_periods or "
+                             "rolling_min_periods")
+        if self.rolling_type in ("sum", "mean", "std") and self.rolling_periods is None:
+            raise ValueError(f"chart {self.name!r}: rolling_type {self.rolling_type} needs "
+                             "rolling_periods, the window in time-grain steps (e.g. 12 at "
+                             "P1M for a trailing year)")
+        if (self.rolling_min_periods is not None and self.rolling_periods is not None
+                and self.rolling_min_periods > self.rolling_periods):
+            raise ValueError(f"chart {self.name!r}: rolling_min_periods "
+                             f"({self.rolling_min_periods}) can't pass rolling_periods "
+                             f"({self.rolling_periods}): a window never holds more steps")
         return self
 
     def trend_rgb(self) -> dict | None:
@@ -473,7 +761,8 @@ class _AxisChart(_ChartBase):
     annotations: list[Annotation] = Field(
         default_factory=list,
         description="Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, "
-                    "\"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+                    "\"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a "
+                    "horizontal bar a value stands upright across the bars",
     )
 
     @model_validator(mode="after")
@@ -547,13 +836,22 @@ def json_value(v) -> str:
     return "true" if v is True else "false" if v is False else f'"{v}"'
 
 
+# The line, bar, area and scatter panels have one number format, "Axis Format"
+# (y_axis_format), for the value axis, the values on the marks and the tooltip
+# (Timeseries/transformProps.ts at 4.1.4, 5.0.0 and 6.1.0); 6.1.0's x_axis_number_format
+# formats a numeric x axis only.
+_VALUE_FORMAT = ("d3 format for the value axis, e.g. {example}. Superset uses the same "
+                 "format for the values show_value writes and the tooltip; a '~' drops "
+                 "trailing zeros, so ',.1~f' labels the axis 0, 5, 10 and a value 12.5")
+
+
 class _TimeseriesBase(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
     metrics: list[str] = Field(min_length=1)
     time_column: str
     time_grain: str | None = Field(default=None, description="ISO 8601 duration, e.g. P1D, P1W, P1M")
     groupby: str | None = Field(default=None, description="At most one dimension column")
     row_limit: int | None = Field(default=None, ge=1)
-    number_format: str | None = Field(default=None, description="d3 format for the value axis, e.g. '.1%'")
+    number_format: str | None = Field(default=None, description=_VALUE_FORMAT.format(example="'.1%'"))
 
     STACKS: ClassVar[tuple] = (False, True, "stream")
 
@@ -596,7 +894,9 @@ class TimeseriesAreaChart(_TimeseriesBase):
     markers: bool = Field(default=False, description="A marker at each point")
     marker_size: int | None = _marker_size()
     opacity: float | None = Field(
-        default=None, ge=0, le=1, description="Opacity of the area fill, 0-1 (default 0.2)")
+        default=None, ge=0, le=1,
+        description="Opacity of the area fill, 0-1 (default 0.2). Each area's edge stays "
+                    "a full-strength line: Superset's area chart has no line width")
     STACKS: ClassVar[tuple] = (False, True, "stream", "expand")
 
     @model_validator(mode="after")
@@ -625,7 +925,7 @@ class BarChart(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
     groupby: str | None = None
     row_limit: int | None = Field(default=None, ge=1)
     orientation: Literal["vertical", "horizontal"] = "vertical"
-    number_format: str | None = Field(default=None, description="d3 format for the value axis, e.g. ',.0f'")
+    number_format: str | None = Field(default=None, description=_VALUE_FORMAT.format(example="',.0f'"))
     category_sort: Literal["asc", "desc"] | None = Field(
         default=None,
         description="Order the bars by their category (x_column) instead of by the first "
@@ -636,13 +936,56 @@ class BarChart(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
                     "stays ordered by the series ranking (Superset has one \"Sort query by\" "
                     "control for both), so there a row_limit keeps the largest values",
     )
+    sort_by: str | None = Field(
+        default=None, min_length=1,
+        description="Rank the bars by something other than the first metric, largest first "
+                    "(on the left, or on top of a horizontal bar). \"total\" ranks stacked or "
+                    "grouped bars by their sum; a metric, written like any metric, ranks them "
+                    "by its value and orders the query by it, so a row_limit keeps the top "
+                    "bars by it. The metric need not be drawn: two charts sorted by the same "
+                    "one share an order. A metric needs no groupby; with \"total\" a row_limit "
+                    "keeps the rows with the largest first metric, so for a top N by total "
+                    "write the total as a metric, e.g. \"SQL(SUM(a) + SUM(b)) AS Total\"",
+    )
+
+    TOTAL: ClassVar[str] = "total"
 
     @model_validator(mode="after")
     def _display(self) -> "BarChart":
         self._check_legend()
         self._check_y_axis()
         self._check_series_display((False, True))
+        self._check_sort_by()
         return self
+
+    def several_series(self) -> bool:
+        return bool(self.groupby) or len(self.metrics) > 1
+
+    def sort_metric(self) -> str | None:
+        """The metric sort_by ranks by, or None (unset, or "total")."""
+        return self.sort_by if self.sort_by not in (None, self.TOTAL) else None
+
+    def _check_sort_by(self) -> None:
+        if self.sort_by is None:
+            return
+        name = self.name
+        if self.category_sort:
+            raise ValueError(f"chart {name!r}: set category_sort or sort_by, not both "
+                             "(one orders the bars by label, the other by a measure)")
+        if self.contribution:
+            raise ValueError(f"chart {name!r}: sort_by ranks by values, and contribution plots "
+                             "shares (a sort metric would count in each bar's share)")
+        if self.sort_by == self.TOTAL:
+            if not self.several_series():
+                raise ValueError(f"chart {name!r}: sort_by \"total\" ranks several series by "
+                                 "their sum; one series already ranks by its metric")
+        elif self.groupby:
+            # sortOperator.ts skips a chart with a groupby (4.1.4 and 5.0.0 :46, 6.1.0 :45):
+            # the plugin then sorts the categories by name or by a sum, min, max or mean
+            # of the series (SortSeriesType), never by one metric.
+            raise ValueError(f"chart {name!r}: Superset ranks grouped bars by their series "
+                             f"only; use sort_by \"total\", or drop the groupby to rank by "
+                             f"{self.sort_by!r}")
 
 
 class PieChart(_Legend, _ChartBase, _ColorSchemeMixin):
@@ -667,41 +1010,25 @@ class PieChart(_Legend, _ChartBase, _ColorSchemeMixin):
         return self
 
 
-class FormatRule(BaseModel):
+class FormatRule(_ColourBand):
     """One solid colour band on one metric: green / amber / red, or any
     #RRGGBB. A pivot colours a cell by its OWN value only, so band a
     normalized metric (e.g. a %-of-goal ratio) when thresholds differ per
     row. A table can read one column and paint another (apply_to): colour a
-    number by a status column beside it."""
-
-    model_config = ConfigDict(extra="forbid")
+    number by a status column beside it. Solid bands, apply_to and text paint
+    take effect from Superset 6.1.0; check, apply and plan warn on an older
+    instance (version_warnings)."""
 
     metric: str = Field(description="Display label of the metric (table: or column) whose value is tested")
-    operator: Literal["<", ">", "=", "between"]
-    target: float | None = Field(default=None, description="Threshold for <, > or =")
-    target_left: float | None = Field(default=None, description="Lower bound for 'between'")
-    target_right: float | None = Field(default=None, description="Upper bound for 'between'")
-    color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = Field(
-        description="green, amber or red (Superset's own picker colours; text paint uses a darker "
-                    "shade of each), or any #RRGGBB, used as written for cell and text",
-    )
     apply_to: str | None = Field(
         default=None,
-        description="Table only: the label of the column to paint, or \"row\"; default the metric's own cells",
+        description="Table only: the label of the column to paint, or \"row\"; default the metric's "
+                    "own cells (Superset 6.1.0 or later; older releases paint the metric's own cells)",
     )
     paint: Literal["cell", "text"] = Field(
-        default="cell", description="Paint the cell background (default) or the text, e.g. an arrow")
-
-    @field_validator("color", mode="before")
-    @classmethod
-    def _colour(cls, v):
-        if not isinstance(v, str):
-            raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
-        if v in FORMAT_COLOR_HEX:
-            return v
-        if HEX_COLOUR_RE.fullmatch(v):
-            return v.upper()
-        raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
+        default="cell",
+        description="Paint the cell background (default) or the text, e.g. an arrow (text: Superset "
+                    "6.1.0 or later; older releases fill the cell with the text colour)")
 
     def paint_hex(self) -> str:
         """The colour Superset paints: a name's shade for this paint, or the hex as written."""
@@ -709,14 +1036,13 @@ class FormatRule(BaseModel):
             return (FORMAT_TEXT_HEX if self.paint == "text" else FORMAT_COLOR_HEX)[self.color]
         return self.color
 
-    @model_validator(mode="after")
-    def _target_shape(self) -> "FormatRule":
-        if self.operator == "between":
-            if self.target is not None or self.target_left is None or self.target_right is None:
-                raise ValueError("'between' needs target_left + target_right (and no target)")
-        elif self.target is None or self.target_left is not None or self.target_right is not None:
-            raise ValueError(f"operator {self.operator!r} needs target (and no target_left/right)")
-        return self
+
+# A table's cell-bar switches: true or false for the whole table, or the labels that take it
+# (the table-wide switch off, each listed column's own on). Superset reads a column's own
+# value first and the table's otherwise (TableChart.tsx: 4.1.4 :694-701, :718-720; 5.0.0
+# :699-706, :723-725; 6.1.0 :886-893, :906).
+LabelList = Annotated[list[str], Field(min_length=1)]
+BAR_SWITCHES = ("cell_bars", "color_by_sign", "absolute_bars")
 
 
 class TableChart(_ChartBase):
@@ -744,11 +1070,30 @@ class TableChart(_ChartBase):
     number_formats: dict[str, str] = Field(
         default_factory=dict, description="d3 format per label, e.g. {\"Rate\": \".3f\"}",
     )
-    cell_bars: bool | None = Field(
+    cell_bars: bool | LabelList | None = Field(
         default=None,
-        description="Bars behind numeric cells (Superset draws them by default; false for ids, "
-                    "years or a column a colour rule already speaks for). `advise --fix` "
-                    "fills false on a raw table with id, code, year or zip columns",
+        description="Bars behind numeric cells: true or false for the whole table (Superset "
+                    "draws them by default), or the labels that get them, e.g. [\"Revenue\"], "
+                    "with none elsewhere. An aggregate table draws them on metrics only. Keep "
+                    "them off ids, years and a column a colour rule already speaks for; "
+                    "`advise --fix` fills false on a raw table with id, code, year or zip columns",
+    )
+    color_by_sign: bool | LabelList | None = Field(
+        default=None,
+        description="Colour each cell bar by its sign: green above zero and red below (Superset "
+                    "6.0+; 4.1.4 and 5.0.0 colour only the negative bars, red). On for the whole "
+                    "table by default; false turns it off, and labels, e.g. [\"Change\"], keep it "
+                    "on those columns only, so a magnitude's bars stay neutral. It colours the "
+                    "bar, not the number: each label needs a cell bar (coloured text is a "
+                    "conditional_formatting rule with paint: text)",
+    )
+    absolute_bars: bool | LabelList | None = Field(
+        default=None,
+        description="Size each cell bar by the value's absolute size, from the cell's left edge "
+                    "(Superset's \"Align +/-\"): -20 and +20 draw the same bar, and color_by_sign "
+                    "tells them apart. By default a column with negative values draws them left "
+                    "of a zero line instead. true for the whole table, or labels, e.g. "
+                    "[\"Change\"]; each label needs a cell bar",
     )
     date_format: str | None = Field(default=None, description="strftime for date columns, e.g. '%Y-%m-%d'")
     page_length: int | None = Field(
@@ -784,6 +1129,25 @@ class TableChart(_ChartBase):
     def labels(self) -> list[str]:
         return [metric_label(m) for m in self.metrics or []] + list(self.groupby or []) + list(self.columns or [])
 
+    def bar_capable(self) -> list[str]:
+        """The labels Superset can draw a cell bar on: a metric in aggregate mode, any column
+        in raw mode (a text column draws none), never a dimension (TableChart.tsx: 4.1.4
+        :721, 5.0.0 :726, 6.1.0 :910, `isMetric || isRawRecords || isPercentMetric`)."""
+        return list(self.columns) if self.columns else [metric_label(m) for m in self.metrics or []]
+
+    def barred(self) -> list[str]:
+        """The labels that draw a cell bar, in label order."""
+        bars = self.cell_bars
+        if bars is False:
+            return []
+        capable = self.bar_capable()
+        return capable if bars is None or bars is True else [k for k in capable if k in bars]
+
+    def asks_for_bars(self) -> bool:
+        """Whether the spec asks for cell bars itself, rather than leaving Superset's."""
+        return (self.cell_bars is True or isinstance(self.cell_bars, list)
+                or any(set_value(self, f) for f in ("color_by_sign", "absolute_bars")))
+
     @model_validator(mode="after")
     def _mode(self) -> "TableChart":
         aggregate = bool(self.metrics or self.groupby)
@@ -801,12 +1165,39 @@ class TableChart(_ChartBase):
         named += [(h, "hidden") for h in self.hidden] + [(k, "number_formats") for k in self.number_formats]
         named += [(k, attr) for attr in ("column_align", "column_widths", "column_headers")
                   for k in getattr(self, attr)]
+        named += [(k, attr) for attr in BAR_SWITCHES if isinstance(getattr(self, attr), list)
+                  for k in getattr(self, attr)]
         for label, where in named:
             if label not in labels:
                 raise ValueError(f"{where} {label!r} is not one of the table's labels {sorted(labels)}")
         if self.show_totals and raw:
             raise ValueError("table chart: show_totals needs aggregate mode (metrics); a raw table has no totals row")
+        self._check_bar_switches()
         return self
+
+    def _check_bar_switches(self) -> None:
+        for attr in BAR_SWITCHES:
+            value = getattr(self, attr)
+            if isinstance(value, list) and len(set(value)) < len(value):
+                twice = next(k for k in value if value.count(k) > 1)
+                raise ValueError(f"{attr} lists {twice!r} twice")
+        if isinstance(self.cell_bars, list):
+            dims = [k for k in self.cell_bars if k not in self.bar_capable()]
+            if dims:
+                raise ValueError(f"cell_bars {dims[0]!r} is a dimension: an aggregate table draws "
+                                 "cell bars on its metrics only")
+        barred = self.barred()
+        for attr in ("color_by_sign", "absolute_bars"):
+            # A written Superset default (color_by_sign true, absolute_bars false) asks nothing.
+            ask = set_value(self, attr)
+            if ask is True and not barred:
+                raise ValueError(f"{attr} draws on cell bars, and cell_bars is false; "
+                                 "list the columns that keep a bar in cell_bars")
+            if isinstance(ask, list):
+                bare = [k for k in ask if k not in barred]
+                if bare:
+                    raise ValueError(f"{attr} {bare[0]!r} has no cell bar to draw on; add it "
+                                     "to cell_bars")
 
 
 # Pivot aggregate choices, identical in PivotTable controlPanel.tsx at 4.1.4, 5.0.0, 6.1.0.
@@ -920,6 +1311,44 @@ class HeatmapChart(_ChartBase):
                     "whole heatmap (default), its x value's column, or its y value's row",
     )
     show_legend: bool = Field(default=True, description="false hides the colour scale")
+    x_order: PivotOrder | None = Field(
+        default=None,
+        description="The x labels, left to right: a_to_z (the default) or z_to_a by label, "
+                    "value_asc or value_desc by the metric",
+    )
+    y_order: PivotOrder | None = Field(
+        default=None,
+        description="The y labels, top to bottom: a_to_z puts the first label on top, e.g. "
+                    "a cohort triangle's oldest cohort; value_asc or value_desc by the "
+                    "metric. Omitted, Superset draws the labels A to Z from the bottom up, "
+                    "which reads z_to_a. A value order ranks each label by its total from "
+                    "Superset 6.1.0; before, by its largest or smallest cell",
+    )
+    # Heatmap controlPanel.tsx xscale_interval / yscale_interval (-1 auto, 1-50) and
+    # left_margin ('auto' or px, free-form) at 4.1.4, 5.0.0 and 6.1.0.
+    x_label_every: int | None = Field(
+        default=None, ge=1, le=50,
+        description="A label every N x values, counted from the first: 6 on an hour axis "
+                    "reads 0, 6, 12, 18, and 1 (or true) labels every value. Omit for "
+                    "Superset's automatic spacing, which drops labels that would collide",
+    )
+    y_label_every: int | None = Field(
+        default=None, ge=1, le=50,
+        description="As x_label_every, counted up the y axis from its bottom label (ECharts steps from index 0, the bottom): with y_order \"a_to_z\", whose first label is on top, a step of 6 on 24 hours labels 23, 17, 11, 05; leave y_order unset to read 00, 06, 12, 18 upward")
+    left_margin: int | None = Field(
+        default=None, ge=0, le=200,
+        description="Room, in px, left of the y-axis labels. Superset 6.1.0 draws them wider "
+                    "than it measures them and cuts the longest label's first letters off "
+                    "at the card's edge; 16 clears them. Omit for none. Leave it unset unless "
+                    "asked: `advise --fix` fills it",
+    )
+
+    @field_validator("x_label_every", "y_label_every", mode="before")
+    @classmethod
+    def _label_every(cls, v):
+        # A bar's x_label_every is true or false; here true is 1 (every value) and
+        # false is Superset's automatic spacing, so both spellings read the same.
+        return None if v is False else v
 
 
 class HistogramChart(_ChartBase, _ColorSchemeMixin):
@@ -972,13 +1401,29 @@ class TreemapChart(_ChartBase, _ColorSchemeMixin):
 
 
 class MixedSeries(BaseModel):
-    """One of a mixed chart's two queries: its metrics, drawn as bars or a line, on
-    the primary (left) or secondary (right) value axis."""
+    """One of a mixed chart's two queries: its metrics, drawn as bars, a line or a
+    filled area, on the primary (left) or secondary (right) value axis. No release gives
+    a query's line a width or dash of its own (docs/CONTRACTS.md). To draw a reference
+    series lighter, such as last year under this year, put it in its own query and give
+    it a pale colour with the dashboard's label_colors, or make it an area with a low
+    opacity."""
 
     model_config = ConfigDict(extra="forbid")
 
     metrics: list[str] = Field(min_length=1)
-    kind: Literal["bar", "line"] = "bar"
+    kind: Literal["bar", "line", "area"] = Field(
+        default="bar",
+        description="bar, line, or area: a line with the space under it filled. A line "
+                    "draws over an area whichever query holds it, so an area under a line "
+                    "takes either order",
+    )
+    opacity: float | None = Field(
+        default=None, ge=0, le=1,
+        description="With kind area: the fill's opacity, 0-1 (Superset's default 0.2). "
+                    "Superset draws the area's edge as a line in the same colour at full "
+                    "strength; at 1 the edge disappears into the fill, a filled area with "
+                    "no outline (give it a light colour with dashboard label_colors)",
+    )
     axis: Literal["primary", "secondary"] = "primary"
     groupby: str | None = Field(default=None, description="At most one dimension column")
     markers: bool = Field(
@@ -1004,6 +1449,8 @@ class MixedSeries(BaseModel):
 
     @model_validator(mode="after")
     def _display(self) -> "MixedSeries":
+        if set_value(self, "opacity") is not None and self.kind != "area":
+            raise ValueError("opacity is an area's fill; it needs kind \"area\"")
         if not self.only_total and not (self.show_value and self.stack):
             raise ValueError("only_total applies to show_value on a stacked series")
         if self.series_limit is not None and not self.groupby:
@@ -1015,7 +1462,8 @@ class MixedSeries(BaseModel):
 
 class MixedChart(_Legend, _AxisChart, _ColorSchemeMixin):
     """Bars and a line on two value axes (Superset's Mixed Chart), e.g. revenue
-    as bars with revenue per order as a line. ``x_column`` is a time column (bucketed
+    as bars with revenue per order as a line, or a filled area under a line (``kind:
+    "area"``). ``x_column`` is a time column (bucketed
     by ``time_grain``) or any column (a categorical axis, e.g. by cause). ``a`` and
     ``b`` are the two queries; the chart's own ``filters`` apply to both. The y_axis_*
     fields set the primary (left) axis; their *_secondary twins the right one."""
@@ -1026,8 +1474,21 @@ class MixedChart(_Legend, _AxisChart, _ColorSchemeMixin):
     a: MixedSeries
     b: MixedSeries
     row_limit: int | None = Field(default=None, ge=1)
-    number_format: str | None = Field(default=None, description="d3 format for the primary axis")
-    number_format_secondary: str | None = Field(default=None, description="d3 format for the secondary axis")
+    # MixedTimeseries/transformProps.ts formats each axis, and the tooltip values of the
+    # series on it, with that axis's format (:268-282 and :605-631 at 4.1.4, :348-357 and
+    # :800-827 at 6.1.0), but query A's value labels with y_axis_format and query B's with
+    # y_axis_format_secondary, whichever axis each sits on (:374-380 and :421-427 at 4.1.4,
+    # :449-455 and :522-528 at 6.1.0).
+    number_format: str | None = Field(
+        default=None,
+        description="d3 format for the primary axis and the tooltip values of its series; "
+                    "Superset also writes query a's show_value labels in it, whichever axis "
+                    "a sits on")
+    number_format_secondary: str | None = Field(
+        default=None,
+        description="d3 format for the secondary axis and the tooltip values of its series; "
+                    "Superset also writes query b's show_value labels in it, whichever axis "
+                    "b sits on")
     y_axis_title_secondary: str | None = Field(default=None, description="Title of the secondary axis")
     y_axis_min_secondary: float | None = Field(default=None, description="Bottom of the secondary axis")
     y_axis_max_secondary: float | None = Field(default=None, description="Top of the secondary axis")
@@ -1042,12 +1503,274 @@ class MixedChart(_Legend, _AxisChart, _ColorSchemeMixin):
         return self
 
 
+# Superset's own bar colours for a waterfall: the colour pickers' defaults in
+# Waterfall/controlPanel.tsx (4.1.4 and 5.0.0 :72, :81, :90; 6.1.0 :78, :108, :150),
+# the same three in transformProps.ts.
+WATERFALL_DEFAULT_HEX = {"increase_color": "#5AC189", "decrease_color": "#E04355",
+                         "total_color": "#666666"}
+# x_label_rotation -> the waterfall's and box plot's x_ticks_layout choices ("auto"
+# is Superset's default: no rotation set).
+TICK_LAYOUTS = {0: "flat", 45: "45°", 90: "90°"}
+# A bridge's closing total is named by its own order key (compiler.steps_order_sql), and
+# every step's key sorts before it: keys are '0' and three digits, so the name must
+# start with a letter or a digit 1-9, which every common collation sorts after '0'.
+CLOSING_NAME_RE = re.compile(r"^(?:[^\W\d_]|[1-9])")
+# With an opening total, the opening is named by its own key too, and the steps' keys
+# are the opening's name and a number (OPENING_KEY_GAP, then three digits), so the
+# opening must sort first and the closing after the last key.
+OPENING_KEY_GAP = " "
+OPENING_OTHER_KEY = " 9999"   # after every step's key: a value steps doesn't list
+BRIDGE_TOTAL = "Total"        # the breakdown both totals of an opened bridge carry
+
+
+def _letters(text: str) -> str:
+    """The letters and digits of a name, case and accents folded: what the linguistic
+    collations (en_US.UTF-8 and the like) compare first, skipping spaces and punctuation."""
+    folded = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(ch for ch in folded if ch.isalnum())
+
+
+def sorts_before(a: str, b: str) -> bool:
+    """a sorts before b in a byte-order (C, binary) collation and in a linguistic one."""
+    return a < b and _letters(a) < _letters(b)
+
+
+def _named_colour(field: str, v):
+    """green, amber or red (the text shades colour rules use) or #RRGGBB, upper-cased."""
+    if v is None or v in FORMAT_TEXT_HEX:
+        return v
+    if not isinstance(v, str) or not HEX_COLOUR_RE.fullmatch(v):
+        raise ValueError(f"{field} must be green, amber, red or #RRGGBB, got {v!r}")
+    return v.upper()
+
+
+def named_hex(colour: str) -> str:
+    """The #RRGGBB a named or hex colour paints."""
+    return FORMAT_TEXT_HEX.get(colour, colour)
+
+
+NamedColour = Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
+
+
+def _bar_colour(what: str, stock: str):
+    return Field(
+        default=None,
+        description=f"Colour of the {what} bars: green, amber or red (the text shades colour "
+                    f"rules use) or any #RRGGBB; Superset's default is {stock}",
+    )
+
+
+class WaterfallChart(_ChartBase):
+    """Steps that add up to a running total (Superset's Waterfall), e.g. a bridge from
+    last year's revenue through each driver to this year's. Each value of ``x_column``
+    is a bar rising or falling by ``metric``; Superset adds the closing total.
+
+    Superset draws the steps in the x_column's own order (labels A to Z). For a bridge
+    in its own order, ``steps`` lists them and ``closing`` names the dataset row that
+    closes it (Superset 6.1.0 or later). The first step rises from zero in the increase
+    colour; ``opening`` draws the opening row as a total instead, on a dashboard whose
+    theme keeps zero on the value axis, which the plugin otherwise lets float up."""
+
+    type: Literal["waterfall"]
+    x_column: str = Field(
+        description="The column whose values are the steps, one bar each, e.g. a revenue "
+                    "driver; or a time column, one bar per time_grain period")
+    metric: str = Field(
+        description="The one measure every step adds to the running total, e.g. "
+                    "SUM(delta); it must add up, so not AVG, MIN, MAX or COUNT_DISTINCT")
+    time_grain: str | None = Field(
+        default=None,
+        description="For a time x_column: the period of each bar, e.g. P1M; omitted, each "
+                    "distinct timestamp is a bar")
+    groupby: str | None = Field(
+        default=None,
+        description="Break each x value down by this column (Superset's Breakdowns): its "
+                    "values as steps, then that x value's running total")
+    steps: list[str] | None = Field(
+        default=None, min_length=1, max_length=1000,
+        description="The x_column's values in the order to draw them, e.g. [\"FY2025\", "
+                    "\"Price\", \"Volume\", \"Mix\"]: the opening first, or after opening when "
+                    "that is set; values not listed are drawn after them, A to Z. Needs "
+                    "closing. Superset 6.1.0 or later: older releases draw a running total "
+                    "after every step, so check, apply and plan refuse it there")
+    closing: str | None = Field(
+        default=None, min_length=1,
+        description="With steps: the x_column value of the row that closes the bridge, "
+                    "e.g. \"FY2026\". Superset draws it last, as the running total in "
+                    "total_color, under its own name; the row's own value is not drawn, so a "
+                    "closing that doesn't reconcile with the steps shows their sum (apply's "
+                    "data check says so). Without opening, it must start with a letter or a "
+                    "digit 1-9")
+    opening: str | None = Field(
+        default=None, min_length=1,
+        description="With steps and closing: the x_column value of the row that opens the "
+                    "bridge, e.g. \"FY2025\", drawn first as a total in total_color under its "
+                    "own name, instead of the first step rising in the increase colour. It "
+                    "must sort before closing (FY2025 before FY2026). The dashboard needs a "
+                    "theme (dashboard.theme, Superset 6.0.0 or later) whose JSON keeps zero on "
+                    "the value axis, {\"echartsOptionsOverridesByChartType\": {\"waterfall\": "
+                    "{\"yAxis\": {\"scale\": false}}}}: without it the axis floats up and cuts "
+                    "the opening away, so check and apply refuse it")
+    total_label: str | None = Field(
+        default=None, min_length=1,
+        description="Without steps: the name of the closing total Superset adds, e.g. "
+                    "\"FY2026\" (Superset 6.1.0 or later; older releases name it Total)")
+    increase_color: NamedColour | None = _bar_colour("rising", "green #5AC189")
+    decrease_color: NamedColour | None = _bar_colour("falling", "red #E04355")
+    total_color: NamedColour | None = _bar_colour("total", "grey #666666")
+    increase_label: str | None = Field(
+        default=None, min_length=1,
+        description="What the legend and tooltip call a rising step, e.g. \"Gain\" "
+                    "(Superset 6.1.0 or later; older releases say Increase)")
+    decrease_label: str | None = Field(
+        default=None, min_length=1,
+        description="What the legend and tooltip call a falling step, e.g. \"Loss\" "
+                    "(Superset 6.1.0 or later; older releases say Decrease)")
+    show_value: bool = Field(default=False, description="Write each step's value on its bar")
+    show_legend: bool = Field(
+        default=False, description="A legend naming the rising, falling and total bars "
+                                   "(Superset's waterfall shows none by default)")
+    number_format: str | None = Field(
+        default=None, description="d3 format for the value axis, labels and tooltip, e.g. ',.0f'")
+    x_axis_title: str | None = Field(default=None, description="Title under the x axis")
+    y_axis_title: str | None = Field(default=None, description="Title of the value axis, e.g. its unit")
+    x_label_rotation: Literal[0, 45, 90] | None = Field(
+        default=None, description="Rotate the step labels: 0, 45 or 90 degrees (Superset's "
+                                  "X Tick Layout); omitted, Superset lays them out itself")
+    x_label_format: str | None = Field(
+        default=None, description="d3 time format for the labels of a time x_column, e.g. '%b %Y'")
+    row_limit: int | None = Field(default=None, ge=1)
+
+    @field_validator("increase_color", "decrease_color", "total_color", mode="before")
+    @classmethod
+    def _colours(cls, v, info):
+        return _named_colour(info.field_name, v)
+
+    @model_validator(mode="after")
+    def _bridge(self) -> "WaterfallChart":
+        name = self.name
+        if self.steps is None:
+            for field in ("closing", "opening"):
+                if getattr(self, field) is not None:
+                    raise ValueError(f"chart {name!r}: {field} needs steps (the bridge's order)")
+            return self
+        dupes = sorted({s for s in self.steps if self.steps.count(s) > 1})
+        if dupes:
+            raise ValueError(f"chart {name!r}: steps lists {dupes} more than once")
+        if any(not s for s in self.steps):
+            raise ValueError(f"chart {name!r}: steps must be non-empty values of {self.x_column!r}")
+        if self.closing is None:
+            raise ValueError(f"chart {name!r}: steps needs closing: the x_column value of "
+                             "the row that closes the bridge, drawn as its total")
+        for field in ("closing", "opening"):
+            if getattr(self, field) in self.steps:
+                raise ValueError(f"chart {name!r}: {field} {getattr(self, field)!r} is also a "
+                                 "step; name the opening and closing rows apart from steps")
+        if self.opening is None:
+            if len(self.steps) < 2:
+                raise ValueError(f"chart {name!r}: steps needs at least 2 values, the opening "
+                                 "and a step (or set opening)")
+            if not CLOSING_NAME_RE.match(self.closing):
+                raise ValueError(f"chart {name!r}: closing {self.closing!r} must start with a "
+                                 "letter or a digit 1-9 (Superset sorts the bars by keys that "
+                                 "must come before the closing's name)")
+        else:
+            if self.opening == self.closing:
+                raise ValueError(f"chart {name!r}: opening and closing are the same row")
+            if not sorts_before(self.opening + OPENING_OTHER_KEY, self.closing):
+                raise ValueError(
+                    f"chart {name!r}: opening {self.opening!r} must sort before closing "
+                    f"{self.closing!r}, as FY2025 does before FY2026: Superset orders the bars "
+                    f"by keys made from the opening's name. Without opening, the first step "
+                    f"rises from zero and the names have no such limit")
+            if BRIDGE_TOTAL in self.steps:
+                raise ValueError(f"chart {name!r}: with opening, no step can be named "
+                                 f"{BRIDGE_TOTAL!r}: Superset marks the two totals with it")
+        for field in ("time_grain", "groupby", "total_label"):
+            if getattr(self, field) is not None:
+                why = ("the closing row names the total" if field == "total_label"
+                       else "steps orders the values of one categorical x_column")
+                raise ValueError(f"chart {self.name!r}: {field} does not go with steps ({why})")
+        return self
+
+    def colour_hex(self, field: str) -> str:
+        """The #RRGGBB Superset paints for one of the three bar colours."""
+        value = getattr(self, field)
+        return named_hex(value) if value is not None else WATERFALL_DEFAULT_HEX[field]
+
+
+Percentiles = Annotated[list[int], Field(min_length=2, max_length=2)]
+
+
+class BoxPlotChart(_ChartBase, _ColorSchemeMixin):
+    """The distribution of a measure in each group (Superset's Box Plot): its median,
+    quartiles, whiskers and outliers, e.g. the daily sales of each month. Each row of
+    ``distribute_across`` (a day, with time_grain P1D) is one observation of the
+    ``metrics``; ``groupby`` draws one box per value, each from its own observations."""
+
+    type: Literal["box_plot"]
+    metrics: list[str] = Field(
+        min_length=1,
+        description="The measure each observation takes, e.g. [\"SUM(sales)\"]: a box per "
+                    "group and metric, all on one value axis")
+    distribute_across: list[str] = Field(
+        min_length=1,
+        description="The columns whose rows are the observations (Superset's Distribute "
+                    "across), e.g. [\"order_date\"] with time_grain P1D: one observation a day")
+    groupby: list[str] = Field(
+        default_factory=list,
+        description="One box per value of these columns (Superset's Dimensions), e.g. "
+                    "[\"month\"]; omitted, one box for every observation")
+    time_grain: str | None = Field(
+        default=None,
+        description="The period of a time column in distribute_across, e.g. P1D; omitted, "
+                    "each distinct timestamp is one observation")
+    whiskers: Literal["tukey", "min_max"] | Percentiles = Field(
+        default="tukey",
+        description="How far the whiskers reach: \"tukey\" (to the furthest value within 1.5 "
+                    "times the box's height, values beyond drawn as outliers; Superset's "
+                    "default), \"min_max\" (the lowest and highest values, no outliers), or two "
+                    "percentiles, e.g. [5, 95], with the values beyond them as outliers")
+    number_format: str | None = Field(
+        default=None, description="d3 format for the value axis and tooltip, e.g. '$,.0f'")
+    x_label_format: str | None = Field(
+        default=None, description="d3 time format for groups of a time column, e.g. '%b %Y'")
+    x_axis_title: str | None = Field(default=None, description="Title under the x axis")
+    y_axis_title: str | None = Field(default=None, description="Title above the value axis, e.g. its unit")
+    x_label_rotation: Literal[0, 45, 90] | None = Field(
+        default=None, description="Rotate the group labels: 0, 45 or 90 degrees (Superset's "
+                                  "X Tick Layout); omitted, Superset lays them out itself")
+    row_limit: int | None = Field(
+        default=None, ge=1,
+        description="The most rows the query returns, observations of every group together; "
+                    "past it, the boxes miss observations (apply's data check says when it "
+                    "is reached). Superset 6.0.0 or later declares it; omitted, 6.x stops at "
+                    "10,000 rows and older releases at the server's ROW_LIMIT")
+
+    @model_validator(mode="after")
+    def _distribution(self) -> "BoxPlotChart":
+        both = sorted(set(self.distribute_across) & set(self.groupby))
+        if both:
+            raise ValueError(f"chart {self.name!r}: {both} are in both distribute_across and "
+                             "groupby; a box would hold one observation")
+        for field in ("distribute_across", "groupby", "metrics"):
+            values = getattr(self, field)
+            if len(set(values)) != len(values):
+                raise ValueError(f"chart {self.name!r}: {field} lists a value twice")
+        if isinstance(self.whiskers, list):
+            lo, hi = self.whiskers
+            if not 0 <= lo < hi <= 100:
+                raise ValueError(f"chart {self.name!r}: whisker percentiles {self.whiskers} must "
+                                 "be two whole numbers from 0 to 100, the lower first, e.g. [5, 95]")
+        return self
+
+
 Chart = Annotated[
     Union[
         BigNumberChart, BigNumberTrendChart, TimeseriesLineChart, TimeseriesBarChart,
         TimeseriesAreaChart, TimeseriesScatterChart, BarChart, PieChart, TableChart,
         PivotTableChart, HeatmapChart, HistogramChart, FunnelChart, TreemapChart,
-        MixedChart,
+        MixedChart, WaterfallChart, BoxPlotChart,
     ],
     Field(discriminator="type"),
 ]
@@ -1055,7 +1778,7 @@ Chart = Annotated[
 CHART_TYPES = (
     "big_number_total", "big_number_trend", "timeseries_line", "timeseries_bar",
     "timeseries_area", "timeseries_scatter", "bar", "pie", "table", "pivot_table",
-    "heatmap", "histogram", "funnel", "treemap", "mixed",
+    "heatmap", "histogram", "funnel", "treemap", "mixed", "waterfall", "box_plot",
 )
 
 
@@ -1256,7 +1979,8 @@ class MarkdownBlock(BaseModel):
     width: int | None = Field(default=None, ge=1, le=GRID_WIDTH)
     height: int | float | None = Field(
         default=None, ge=0.2, le=100,
-        description="Height units (1 = 40 px) in fifths: 0.2 = 8 px, one Superset grid row (1.6 = 64 px)")
+        description="Height units (1 = 40 px) in fifths: 0.2 = 8 px, one Superset grid row (1.6 = 64 px). "
+                    "Superset draws a block at least 1 unit tall")
 
     @field_validator("height")
     @classmethod
@@ -1328,10 +2052,12 @@ def item_rows(rows) -> list[list]:
 class _SketchHolder(BaseModel):
     """Shared surface for ASCII layout sketches (see chartwright/sketch.py).
 
-    A sketch draws the layout as text: legend symbols map to chart names,
-    character runs become twelfths of the 12-column grid, each line adds
-    `line` height units (1 unit = 40 px; repeat lines for taller), and
-    vertically stacked symbols compile to Superset COLUMN containers.
+    A sketch draws the layout as text: legend symbols map to chart names (or
+    stand for a markdown or header block), character runs become twelfths of
+    the 12-column grid, each line adds `line` height units (1 unit = 40 px;
+    repeat lines for taller), and vertically stacked symbols compile to
+    Superset COLUMN containers. A header is one line: across the whole sketch
+    it is a section title between bands, anywhere else it sits in a column.
     '.' is a reserved EMPTY cell, legal trailing-right (a row narrower than
     the page) or at the BOTTOM of a slice/stack (a short chart beside a tall
     one); anywhere else is a named error (Superset packs left and upward)."""
@@ -1339,19 +2065,48 @@ class _SketchHolder(BaseModel):
     sketch: list[str] | None = Field(
         default=None, description="ASCII layout: one string per grid line; spaces are cosmetic"
     )
-    legend: dict[str, str] | None = Field(
-        default=None, description="Sketch symbol -> chart name"
+    legend: dict[str, str | MarkdownBlock | HeaderBlock] | None = Field(
+        default=None,
+        description="Sketch symbol -> chart name, or a block drawn like a chart: "
+                    "{\"markdown\": \"...\"} (its height in fifths, optional, wins over the "
+                    "drawn one; the drawing sets its width) or {\"header\": \"...\", \"size\": "
+                    "..., \"background\": ...} (one line; across the whole sketch it is a "
+                    "section title, elsewhere it sits above or below the charts it shares a "
+                    "column with)",
     )
     line: int = Field(
         default=2, ge=1, le=20,
         description="Height units per sketch line (1 unit = 40 px)",
     )
 
-    def parsed_sketch(self):
-        from .sketch import parse_sketch_cached
+    @field_validator("legend")
+    @classmethod
+    def _blocks_take_drawn_widths(cls, legend):
+        for symbol, entry in (legend or {}).items():
+            if isinstance(entry, MarkdownBlock) and entry.width is not None:
+                raise ValueError(f"legend {symbol!r}: a sketch draws its markdown blocks' "
+                                 "widths; drop width and draw the block as wide as it should be")
+        return legend
 
-        return parse_sketch_cached(
-            tuple(self.sketch or ()), tuple(sorted((self.legend or {}).items())), self.line)
+    def parsed_sketch(self):
+        from .sketch import BlockRef, parse_sketch_cached
+
+        legend = tuple(sorted(
+            (symbol, entry if isinstance(entry, str)
+             else BlockRef("markdown" if isinstance(entry, MarkdownBlock) else "header"))
+            for symbol, entry in (self.legend or {}).items()))
+        return parse_sketch_cached(tuple(self.sketch or ()), legend, self.line)
+
+    def sketch_block(self, block) -> "MarkdownBlock | HeaderBlock":
+        """The legend's block for a parsed SketchBlock."""
+        return self.legend[block.symbol]
+
+    def sketch_block_height(self, block) -> float:
+        """A parsed block's height: a markdown block's own height wins over the drawn
+        one, as a chart's does; a header's is what the drawing gives it."""
+        entry = self.sketch_block(block)
+        return (entry.height if isinstance(entry, MarkdownBlock) and entry.height is not None
+                else block.height)
 
 
 class Tab(_SketchHolder):
@@ -1638,8 +2393,9 @@ class DashboardMeta(BaseModel):
 
 # The chart fields the design brain may fill with a design default (`advise --fix`,
 # docs/DESIGN-BRAIN.md section 16). design.filled may list only these.
-BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "number_format", "page_length",
-                         "search_box", "show_legend", "show_value", "x_label_format")
+BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "date_format", "left_margin", "number_format",
+                         "page_length", "search_box", "show_legend", "show_value",
+                         "x_label_format")
 
 
 # design.standard_written: one entry per item of spec content a standard wrote
@@ -1980,6 +2736,20 @@ class DashboardSpec(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _opened_bridges_have_a_theme(self) -> "DashboardSpec":
+        # The plugin's value axis floats (scale: true) and has no bounds: only a theme's
+        # ECharts override keeps zero on it, so an opening total shows (check verifies
+        # the theme's JSON on the instance).
+        opened = [c.name for c in self.charts if getattr(c, "opening", None)]
+        if opened and self.dashboard.theme is None:
+            raise ValueError(
+                f"charts {opened} open with a total, which needs dashboard.theme: a theme "
+                f"whose JSON keeps zero on a waterfall's value axis, {{\"echartsOptionsOverrides"
+                f"ByChartType\": {{\"waterfall\": {{\"yAxis\": {{\"scale\": false}}}}}}}}; "
+                f"without it, drop opening and the first step rises from zero")
+        return self
+
+    @model_validator(mode="after")
     def _sql_metrics_labelled(self) -> "DashboardSpec":
         for c in self.charts:
             for m in chart_metrics(c):
@@ -1992,6 +2762,8 @@ class DashboardSpec(BaseModel):
 
     @model_validator(mode="after")
     def _layout_consistent(self) -> "DashboardSpec":
+        from .sketch import SketchBlock, sketch_items
+
         by_name = {c.name: c for c in self.charts}
         placed: set[str] = set()
         for i, row in enumerate(self.layout.all_rows()):
@@ -2028,8 +2800,9 @@ class DashboardSpec(BaseModel):
                 raise ValueError(f"{where}: {e}") from e
             for row in parsed:
                 for child in row.children:
-                    charts = child.children if hasattr(child, "children") else [child]
-                    for sc in charts:
+                    for sc in sketch_items(child):
+                        if isinstance(sc, SketchBlock):
+                            continue  # a markdown or header block: no chart to place
                         if sc.name not in by_name:
                             raise ValueError(f"{where}: legend maps to unknown chart {sc.name!r}")
                         if sc.name in placed:
@@ -2057,13 +2830,15 @@ class DashboardSpec(BaseModel):
     def _sketch_charts(self) -> dict[str, object]:
         """Chart name -> SketchChart for every chart placed via a sketch.
         Sketch geometry is authoritative: widths and heights are drawn."""
+        from .sketch import SketchBlock, sketch_items
+
         out: dict[str, object] = {}
         for holder in self.layout.sketch_holders():
             for row in holder.parsed_sketch():
                 for child in row.children:
-                    charts = child.children if hasattr(child, "children") else [child]
-                    for sc in charts:
-                        out[sc.name] = sc
+                    for sc in sketch_items(child):
+                        if not isinstance(sc, SketchBlock):
+                            out[sc.name] = sc
         return out
 
     def resolved_item_width(self, item: RowItem) -> int:
@@ -2116,7 +2891,8 @@ class DashboardSpec(BaseModel):
 
 def chart_metrics(chart) -> list[str]:
     """Every metric string a chart names: its metric(s), a mixed chart's two
-    queries, an aggregate table's sort metric and the metric ranking a series limit."""
+    queries, an aggregate table's or a bar's sort metric and the metric ranking a
+    series limit."""
     out: list[str] = []
     if getattr(chart, "metric", None):
         out.append(chart.metric)
@@ -2128,6 +2904,8 @@ def chart_metrics(chart) -> list[str]:
         out += [s.series_limit_metric for s in (chart.a, chart.b) if s.series_limit_metric]
     if chart.type == "table" and chart.sort_by and not chart.columns:
         out.append(chart.sort_by)
+    if chart.type == "bar" and chart.sort_metric():
+        out.append(chart.sort_metric())
     return out
 
 
@@ -2144,6 +2922,24 @@ def load_spec(data: dict) -> DashboardSpec:
 # as unset (docs/CONTRACTS.md, "A written Superset default").
 SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
     "legend": {"legend_position": "top", "legend_type": "scroll"},  # every chart with a legend
+    # Every chart with the field; each is the control's default at 4.1.4, 5.0.0 and 6.1.0.
+    # time_range: NO_TIME_RANGE (superset-ui-chart-controls shared-controls/
+    # sharedControls.tsx:210, :215 at 6.1.0). number_format: y_axis_format's
+    # DEFAULT_NUMBER_FORMAT, which the pivot's valueFormat and the mixed chart's secondary
+    # format spread (sharedControls.tsx:289, :307 at 6.1.0; utils/D3Formatting.ts:55), and
+    # 'SMART_NUMBER' in the pie's, funnel's and treemap's DEFAULT_FORM_DATA
+    # (plugin-chart-echarts Pie/types.ts:78, Funnel/types.ts:72 (:71 at 6.1.0),
+    # Treemap/types.ts:64 (:63 at 6.1.0)). x_label_format: x_axis_time_format's
+    # DEFAULT_TIME_FORMAT, smart_date (sharedControls.tsx:320, :341 at 6.1.0;
+    # D3Formatting.ts:67, :70 at 5.0.0, :78 at 6.1.0). x_label_rotation: xAxisLabelRotation
+    # 0 (plugin-chart-echarts src/defaults.ts:31).
+    "chart": {"time_range": "No filter", "number_format": "SMART_NUMBER",
+              "number_format_secondary": "SMART_NUMBER", "x_label_format": "smart_date",
+              "x_label_rotation": 0},
+    # table_timestamp_format: SMART_DATE_ID (plugin-chart-table controlPanel.tsx:394, :413
+    # at 5.0.0, :488 at 6.1.0). color_pn defaults true, align_pn false (4.1.4 :523, :509;
+    # 5.0.0 :572, :558; 6.1.0 :692, :678), filled in on a dashboard by applyDefaultFormData.
+    "table": {"date_format": "smart_date", "color_by_sign": True, "absolute_bars": False},
     "big_number_trend": {"trend_color": TREND_DEFAULT_HEX},
     "timeseries_line": {"marker_size": 6, "opacity": 0.2},
     "timeseries_area": {"marker_size": 6, "opacity": 0.2},
@@ -2151,14 +2947,23 @@ SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
     "pie": {"label_type": "key_percent"},
     "funnel": {"label_type": "key"},
     "treemap": {"label_type": "key_value"},
-    "heatmap": {"color_scheme": HEATMAP_DEFAULT_SCHEME},
+    # The labels A to Z on both axes, the y axis from the bottom up, so it reads z_to_a
+    # from the top (sort_x_axis and sort_y_axis alpha_asc, which the tool always wrote).
+    "heatmap": {"color_scheme": HEATMAP_DEFAULT_SCHEME, "x_order": "a_to_z", "y_order": "z_to_a"},
+    "mixed_series": {"opacity": 0.2},  # a mixed chart's query a or b
+    "waterfall": dict(WATERFALL_DEFAULT_HEX),
     "dashboard": {"refresh_frequency": 0, "filter_bar_orientation": "vertical"},
 }
 
 
 def _default_fields(model: BaseModel) -> dict[str, object]:
-    kind = "dashboard" if isinstance(model, DashboardMeta) else getattr(model, "type", None)
-    out = {f: v for f, v in SUPERSET_DEFAULTS["legend"].items() if f in type(model).model_fields}
+    kind = ("dashboard" if isinstance(model, DashboardMeta)
+            else "mixed_series" if isinstance(model, MixedSeries) else getattr(model, "type", None))
+    shared = {**SUPERSET_DEFAULTS["legend"], **SUPERSET_DEFAULTS["chart"]} if kind != "dashboard" else {}
+    out = {f: v for f, v in shared.items() if f in type(model).model_fields}
+    if kind == "big_number_trend" and model.rolling_periods is not None:
+        # Omitted, a window's min periods is the window itself: compiled alike, read back alike.
+        out["rolling_min_periods"] = model.rolling_periods
     return {**out, **SUPERSET_DEFAULTS.get(kind, {})}
 
 
@@ -2175,6 +2980,11 @@ def without_superset_defaults(spec: DashboardSpec) -> DashboardSpec:
     def strip(model: BaseModel) -> BaseModel:
         update = {f: None for f in _default_fields(model) if set_value(model, f) is None
                   and getattr(model, f) is not None}
+        if isinstance(model, MixedChart):
+            for key in ("a", "b"):
+                series = getattr(model, key)
+                if strip(series) is not series:
+                    update[key] = strip(series)
         return model.model_copy(update=update) if update else model
 
     return spec.model_copy(update={"dashboard": strip(spec.dashboard),

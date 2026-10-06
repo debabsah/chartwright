@@ -35,11 +35,13 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1564 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (2421 tests, 78 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
 | Locked text visible | `standards verify-visible` in headless Chromium: the standards fixture's locked footer shows, and the same dashboard with near-white footer CSS is caught. Installing the browser may fail without failing the job (the check is then skipped); once installed, a failing check fails it | every PR and push to main, all 3 versions |
+| Markdown fit | 17 markdown texts at 6/12, and a dashboard's own 14 blocks under its own CSS, in headless Chromium in a 1440 px window with Windows-style scrollbars: at the height `advise --fix` gives each, none scrolls; a unit less, each block `size.markdown-fit` calls cut off is, and each it reports scrolls. Skipped, like the row above, when the browser fails to install | every PR and push to main, all 3 versions |
+| Type sizes | Headless Chromium measures the type sizes Superset draws (table and pivot cells, titles, ECharts labels, big numbers at heights 2 to 10, and cells under a dashboard's CSS); they must match what the readability rules model. Runs once the browser installs, as above | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
 | Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every PR and push to main, all 3 versions |
 | Fault injection | A typed failure at every stage boundary; complete restore | every PR and push to main, all 3 versions |
@@ -63,11 +65,14 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   timestamps and entry order pinned, so the same spec produces the
   identical bundle on any build platform.
 - **Lossless round-trips** (`test_decompile.py`): decompiling a compiled
-  spec reproduces that spec exactly, across the full surface (15 charts
-  covering all 15 chart types, chart filters, the native filter bar,
-  markdown, tabs), and stays stable under a second round-trip. Decompiling
-  a real 25-chart export that uses unsupported chart types names every
-  loss; nothing drops silently.
+  spec reproduces that spec exactly, across the full surface (18 charts
+  covering all 17 chart types, chart filters, the native filter bar,
+  markdown, tabs), and stays stable under a second round-trip. The same
+  spec written in every spelling compile stores alike (fifth-unit heights,
+  `SQL(MAX(col)) AS Label` metrics in every metric field, Superset's own
+  defaults written out, a named colour's hex) decompiles with no loss and
+  `plan` finds nothing to change. Decompiling a real 25-chart export that
+  uses unsupported chart types names every loss; nothing drops silently.
 - **Randomized round-trips** (`test_property_roundtrip.py`): a seeded
   random editor mutates a spec while keeping it valid (the same generator
   the live soak uses) through 20 seeds and 6 steps each; compile then
@@ -89,20 +94,58 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   the shape Superset saves, compiles to the earlier output when omitted,
   decompiles back, shows up in `plan` when changed live, and names a bad
   value.
-- **Release-specific fields** (`test_superset_version.py`): with the
+- **Big-number colour rules** (`test_big_number_formatting.py`): rules compile
+  to the shape the Big Number panel stores, with the metric's label as the
+  column and the text shades for named colours, and nothing when omitted;
+  every supported release takes them; table-only options, a foreign metric
+  and rules on a trendline are refused; they decompile back with no drift, a
+  theme token or an unsupported operator is a named loss, and rules left on a
+  trendline are none; smoke warns when the number is 0 and a rule would have
+  coloured it; the critic's overlap, contrast and stated-threshold checks fire
+  where they should and nowhere else.
+- **Table cell bars** (`test_table_bars.py`): each switch compiles to the
+  table-wide and per-column keys Superset reads, and to the earlier output
+  when unset or written as Superset's own value; any mix of the two that
+  Superset stores reads back as it draws; a change made live shows up in
+  `plan`; bars asked for beside colour rules warn before 6.1.0.
+- **Release-specific fields** (`test_superset_version.py`,
+  `test_format_rule_gating.py`): with the
   instance's answer mocked, `check`, `apply` and `plan` refuse tags before
   6.0.0 and chart timestamps before 6.1.0 ahead of any write, warn for the
-  fields older releases ignore, and read the version from `/version` (6.1.0)
+  fields older releases ignore (a table's hidden columns before 6.0.0; a
+  colour rule's `apply_to`, text paint, solid band and dark fill before
+  6.1.0, each warning naming what the older release draws instead), and
+  read the version from `/version` (6.1.0)
   or the sign-in page (4.1.4, 5.0.0); `compile --superset-version` gives
-  the same answers and the same bundle.
+  the same answers and the same bundle, and the MCP `check_spec` the same
+  warnings.
+- **Colour-rule operators** (`test_format_rule_gating.py`,
+  `test_display_controls.py`): `>=`, `<=`, `!=`, `between` and
+  `between_inclusive` compile to Superset's own comparators, round-trip on
+  tables and pivots, read back from rules made in the UI (a half-open range
+  stays a named loss, as does a gradient), show up in `plan` when changed in
+  the UI, and `chart.format-bands` reads each one's range, bounds included
+  or not.
 - **The design brain** (`test_design*.py`, `test_calibrate.py`,
   `test_redesign.py`): every rule table-driven against violating and clean
   specs; fix-loop convergence, idempotence, and the no-fractional-heights
   invariant; a seeded advise-never-raises fuzz; the chart-type taxonomy
   contract; design.yaml trust-boundary validation; the golden dogfood
-  (the shipped example raises nothing but pending design defaults, and
-  nothing at all once `--fix` writes them); calibration grouping, decay,
+  (the shipped example raises nothing but pending design defaults and the
+  KPI heights `readability.kpi-text` raises, and nothing at all once `--fix`
+  writes them); calibration grouping, decay,
   and overlay round-trips.
+- **Readable type** (`test_readability.py`): each `readability.*` rule is an
+  info where Superset's default is under its floor and a warn where the
+  dashboard's CSS or theme sets text under it, and names the selector or token
+  to set; the CSS reader applies a declaration only where it beats Superset's
+  own rule on that release, and names what it can't place; antd's font scale,
+  the compact algorithm included; a theme's ECharts overrides on 6.1 and not
+  6.0; big numbers raised to the height their text needs, one band at one
+  height, the fix loop converging under `size.kpi-height`. The model is held to
+  what headless Chromium measured on 4.1.4, 5.0.0 and 6.1.0 for six
+  stylesheets and big numbers at heights 2 to 10
+  (`fixtures/readability/measurements.json`).
 - **Design defaults** (`test_design_defaults.py`): each `default.*` fill
   fires where its conditions hold and nowhere else, never touches a field
   the author wrote (a written Superset default included), keeps its own
@@ -120,6 +163,13 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   back as its header; the critic advises header rows in place, spends the
   header in every tab's fold budget, and fixes header markdown by its own
   address.
+- **Sketch blocks** (`test_sketch.py`): header and markdown legend entries
+  parse like charts, a header one line; a header across the sketch compiles
+  to a HEADER between rows and any other to one in a COLUMN; each placement
+  round-trips through decompile to the same layout tree and plans clean; a
+  header, note or column width changed live is layout drift; a chart-only
+  sketch compiles to the bytes it always did; every example in the layout
+  guide compiles (`test_docs.py`).
 - **Standards** (`test_standards.py`): `extends` merges each key as
   documented and records the layer behind it; cycles, unknown parents, a
   fourth file, unknown rule ids and parameters, and every way a lower file
@@ -175,6 +225,21 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   visual extra says how to install it; Playwright is no core dependency. A
   live test runs the real browser when `CHARTWRIGHT_VISIBLE_LIVE` names a
   Superset.
+- **Markdown fit** (`test_markdown_fit.py`): what 4.1.4, 5.0.0 and 6.1.0
+  drew in headless Chromium, in windows 1600 and 1440 px wide, for 17 markdown
+  texts at five widths, beside the filter bar, and for a dashboard's own 14
+  blocks under its own CSS (`fixtures/markdown_fit/measurements.json`): the
+  estimate's low bound never exceeds any of those heights and its high bound
+  never falls short, each within a set margin; at the fix's height no block
+  scrolled with Windows-style scrollbars on, a block the rule calls cut off
+  was, and one it reports at all scrolled; the CSS cascade it computes gives
+  every element each release drew its computed size, line height, margins,
+  padding, borders and weight, with no CSS, with every property set on every
+  element, and under the dashboard's CSS; the CSS it can't read is named; the
+  grid widths it assumes are the ones drawn, in rows, header, footer and
+  sub-tabs; the parser reads each markdown shape; and `size.markdown-fit`
+  warns, informs, fixes in every container and stays silent as documented,
+  never resizing a standard's row.
 - **Dashboard owners** (`test_dashboard_owners.py`): owners never reach
   the bundle; usernames resolve where the security API answers and emails
   everywhere, an unknown or ambiguous owner is a resolve-stage error with
@@ -194,9 +259,10 @@ collects, the same "generated, not hand-maintained" rule the rule table in
 
 Superset's backend has no schema for chart options; each chart type's
 options are defined only by its frontend plugin. The file
-`tools/contracts/params-contract.json` holds the option names for the 13
-emitted chart types, extracted from plugin source at each supported
-release (the Mixed Chart's by `tools/extract_mixed_contract.py`), and `tools/params_drift.py` (run by `test_params_contract.py`)
+`tools/contracts/params-contract.json` holds the option names for the 16
+chart plugins the compiler writes, extracted from plugin source at each
+supported release (the Mixed Chart's by `tools/extract_mixed_contract.py`,
+the waterfall's and the box plot's by `tools/extract_panel_contract.py`), and `tools/params_drift.py` (run by `test_params_contract.py`)
 fails the build if the compiler ever emits an option a target release does
 not declare. Current status: clean against all three releases; the single
 tool-owned key (`sdc_categorical_bar`) is allowlisted with its rationale
@@ -211,13 +277,16 @@ resolution, which collects every bad reference into typed errors, and a
 deliberately misspelled column, which must come back with the real column
 as its first suggestion. Then an
 apply of the complete example spec (`tests/fixtures/kitchen_sink.json`),
-which exercises all 15 chart types, per-chart WHERE filters, a native
+which exercises all 17 chart types, per-chart WHERE filters, a native
 filter bar with two value pickers and a time range, plus markdown and tabs.
 (A numeric range filter scoped to specific charts is exercised live by the
 second-writer and fault-injection runs.) The same check then runs on two
 more specs, `tests/fixtures/live_display_controls.json` (every chart display
 control: legends, axis titles and bounds, stacking, labels, table and pivot
-options) and `tests/fixtures/live_dashboard_controls.json` (dashboard
+options, a trendline KPI's rolling window and fitted axis, a mixed chart's
+filled areas, a heatmap's axis order, a big number's colour rules, and colour
+rules with every operator, `apply_to` and text paint) and
+`tests/fixtures/live_dashboard_controls.json` (dashboard
 settings and owners, colour schemes, goal lines, a header and footer
 outside the tabs, header rows inside them, cascading and
 pre-filtered native filters, time grain and time column filters). They are
@@ -225,17 +294,36 @@ the offline display and dashboard controls fixtures pointed at Superset's
 example data. Each apply is followed by a per-chart data check: each
 chart's query, over the chart's own time range, must return HTTP 200 and
 rows; an empty chart is a named
-warning, never a silent pass. Finally a second apply of the same spec,
+warning, never a silent pass. Then a second apply of the same spec,
 asserting that every chart keeps its id. Id stability matters because
 dashboard metadata references charts by id: changing ids is what turns a
-stale browser tab into a writer that corrupts filter scopes.
+stale browser tab into a writer that corrupts filter scopes. Finally
+`plan`, which must find nothing to change: everything the spec wrote reads
+back from the live dashboard as the same spec. The display-controls spec
+writes fifth-unit heights and aggregates as custom SQL (`SQL(COUNT(*)) AS
+Orders`, in a series limit, a table's sort and both mixed-chart queries)
+so that holds for them on every release.
+
+A waterfall bridge needs rows for its opening, steps and closing, which no
+example dataset has, so `tools/ci_live_waterfall.py` makes one, a virtual
+dataset on the examples database, and on 6.0.0 or later the theme an opening
+total needs; then it applies `tests/fixtures/live_waterfall.json`. On 6.1.0 two
+bridges apply, one opening with a total and one with a rising first step; the
+data check passes them (a row for the opening, every step and the closing, and
+a closing that equals the steps added up), `plan` is clean, decompile reads
+each bridge's opening, steps and closing back, and a re-apply keeps every
+chart id. On 4.1.4 and 5.0.0 resolve must refuse the bridges' `steps` and the
+theme with `superset_version_too_old` and warn for the 6.1.0 labels, and the
+plain waterfalls apply with `plan` clean.
 
 ## 4. Lifecycle soak (`tools/soak.py`)
 
 The loop users actually live in, run to exhaustion. Each cycle applies one
 seeded random edit within the supported surface (add, remove, or rename
 charts; retitle; add, remove, or rescope filters; regenerate the layout;
-switch between rows and tabs) and then asserts, against the live instance:
+switch between rows and tabs; set a fifth-unit height; respell a chart's
+metrics as `SQL(AGG(col)) AS Label` with Superset's defaults written out)
+and then asserts, against the live instance:
 
 1. `apply` completes, including link verification and the per-chart data
    check;
@@ -304,7 +392,7 @@ second-writer scenarios, and fault injection.
 
 ## Defect ledger: what each layer caught
 
-Twenty-two real defects found by these layers, none of which the original
+Twenty-four real defects found by these layers, none of which the original
 unit suite could see. The layer that caught each one is the reason that
 layer exists.
 
@@ -332,6 +420,8 @@ layer exists.
 | 20 | A labeled `COUNT(*)` metric lost its label on decompile, so `plan` reported drift forever on clean dashboards | the same `plan` run, after #19 was fixed |
 | 21 | The client treated a rate-limited response (HTTP 429) as fatal instead of backing off, and PUT requests skipped the typed-error wrapper entirely | live CI: Superset rate-limited a burst of decompile lookups |
 | 22 | Charts drawn on a time axis (line, bar, area, scatter, trendline KPI, mixed over time) ignored both their own `time_range` and the dashboard time filter, on every release: they had no time-range filter on their axis | live calibration: a line chart limited to March 2004 to March 2005 still drew 2003 to 2005 |
+| 23 | A colour rule's `apply_to`, text paint and solid band, and the white text on a dark fill, take effect only on 6.1.0, and a hidden column only from 6.0.0; 4.1.4 and 5.0.0 painted the tested column, filled cells with the dark text shade (1.0:1 on a pivot), faded bands and showed the hidden column, with no warning | building a table colour feature; screenshots on 4.1.4 and 6.1.0 |
+| 24 | `plan` reported a table changed after every apply when a rule's colour was written as a named shade's hex | the live check for #23 |
 
 ## Reproduce everything
 
@@ -345,13 +435,18 @@ export SDC_CI_PASSWORD=admin
 python tools/ci_live_check.py --base-url http://localhost:8098   # kitchen sink
 python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_display_controls.json
 python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
+python tools/ci_live_waterfall.py --base-url http://localhost:8098   # a bridge; --cleanup removes it
 python tools/ci_live_standards.py --base-url http://localhost:8098   # tests/fixtures/standards_live
 python tools/ci_live_ui_chart.py --base-url http://localhost:8098    # a chart added in Superset
 python tools/ci_live_adopt.py --base-url http://localhost:8098       # adopt in place
 pip install -e ".[visual]" && playwright install chromium
 python tools/ci_live_visible.py --base-url http://localhost:8098     # locked text visible
+python tools/ci_live_markdown_fit.py --base-url http://localhost:8098  # markdown blocks fit
 python tools/ci_live_saved_queries.py --base-url http://localhost:8098   # saved queries, CSV export
 python tools/record_visible_measurements.py --base-url http://localhost:8098   # refresh the fixture
+python tools/record_markdown_fit.py --base-url http://localhost:8098   # refresh the markdown fixture
+python tools/record_readability_measurements.py --check --base-url http://localhost:8098   # type sizes
+python tools/record_readability_measurements.py --base-url http://localhost:8098   # refresh that fixture
 python tools/soak.py       --base-url http://localhost:8098 --cycles 500 --seed 1
 python tools/adversary.py  --base-url http://localhost:8098
 python tools/faultline.py  --base-url http://localhost:8098

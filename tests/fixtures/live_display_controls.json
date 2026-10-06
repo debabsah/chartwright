@@ -16,11 +16,48 @@
       "trend_color": "#0057B8"
     },
     {
+      "name": "Trailing Revenue",
+      "type": "big_number_trend",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "SUM(sales)",
+      "time_column": "order_date",
+      "time_grain": "P1M",
+      "rolling_type": "sum",
+      "rolling_periods": 12,
+      "rolling_min_periods": 6,
+      "compare_lag": 12,
+      "subtitle": "Trailing 12 months",
+      "y_axis_truncate": true
+    },
+    {
       "name": "Orders This Quarter",
       "type": "big_number_total",
       "dataset": {"database": "examples", "table": "cleaned_sales_data"},
-      "metric": "COUNT(*)",
-      "time_range": "Last quarter"
+      "metric": "SQL(COUNT(*)) AS Orders",
+      "number_format": "SMART_NUMBER",
+      "time_range": "Last quarter",
+      "height": 3.4
+    },
+    {
+      "name": "Latest Order",
+      "type": "big_number_total",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "MAX(order_date)",
+      "date_format": "%a %-d %b %Y",
+      "subtitle": "Data through"
+    },
+    {
+      "name": "Average Price",
+      "type": "big_number_total",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metric": "AVG(price_each) AS Avg Price",
+      "number_format": "$,.2f",
+      "description": "Average unit price: green above $90, amber $80 to $90, red below $80.",
+      "conditional_formatting": [
+        {"operator": "<", "target": 80, "color": "red"},
+        {"operator": "between", "target_left": 80, "target_right": 90, "color": "#B26B00"},
+        {"operator": ">", "target": 90, "color": "green"}
+      ]
     },
     {
       "name": "Sales by Line",
@@ -31,8 +68,9 @@
       "time_grain": "P1M",
       "groupby": "product_line",
       "series_limit": 5,
-      "series_limit_metric": "SUM(quantity_ordered)",
+      "series_limit_metric": "SQL(SUM(quantity_ordered)) AS Units",
       "series_limit_ascending": true,
+      "height": 4.6,
       "show_value": true,
       "stack": "stream",
       "only_total": false,
@@ -103,6 +141,27 @@
       "time_range": "Last year"
     },
     {
+      "name": "Countries by Deal Size",
+      "type": "bar",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "country",
+      "metrics": ["SUM(sales)"],
+      "groupby": "deal_size",
+      "orientation": "horizontal",
+      "stack": true,
+      "sort_by": "total"
+    },
+    {
+      "name": "Lines by Quantity",
+      "type": "bar",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "product_line",
+      "metrics": ["SUM(sales)"],
+      "orientation": "horizontal",
+      "sort_by": "SUM(quantity_ordered)",
+      "annotations": [{"name": "Target", "value": 1000000, "style": "dashed", "color": "#B3261E"}]
+    },
+    {
       "name": "Share by Line",
       "type": "pie",
       "dataset": {"database": "examples", "table": "cleaned_sales_data"},
@@ -143,14 +202,38 @@
       "metrics": ["SUM(sales)"],
       "groupby": ["customer_name"],
       "row_limit": 50,
-      "sort_by": "SUM(sales)",
+      "sort_by": "SQL(MAX(sales)) AS Largest order",
+      "height": 9.6,
       "page_length": 20,
       "show_totals": true,
       "search_box": true,
       "number_formats": {"SUM(sales)": "$,.0f"},
       "column_align": {"customer_name": "left", "SUM(sales)": "right"},
       "column_widths": {"customer_name": 220},
-      "column_headers": {"SUM(sales)": "Revenue", "customer_name": "Customer"}
+      "column_headers": {"SUM(sales)": "Revenue", "customer_name": "Customer"},
+      "conditional_formatting": [
+        {"metric": "SUM(sales)", "operator": ">=", "target": 200000, "color": "green"},
+        {"metric": "SUM(sales)", "operator": "between_inclusive", "target_left": 100000,
+         "target_right": 199999, "color": "amber"},
+        {"metric": "SUM(sales)", "operator": "<=", "target": 50000, "color": "red", "paint": "text"},
+        {"metric": "SUM(sales)", "operator": "!=", "target": 0, "color": "#5B6F82",
+         "apply_to": "customer_name", "paint": "text"}
+      ]
+    },
+    {
+      "name": "Country Movers",
+      "type": "table",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metrics": ["SUM(sales) AS Revenue",
+                  "SQL(SUM(CASE WHEN year = 2004 THEN sales ELSE 0 END) - SUM(CASE WHEN year = 2003 THEN sales ELSE 0 END)) AS Change",
+                  "COUNT(*) AS Orders"],
+      "groupby": ["country"],
+      "row_limit": 25,
+      "sort_by": "SUM(sales) AS Revenue",
+      "number_formats": {"Revenue": "$,.0f", "Change": "+$,.0f"},
+      "cell_bars": ["Revenue", "Change"],
+      "color_by_sign": ["Change"],
+      "absolute_bars": ["Change"]
     },
     {
       "name": "Sales Pivot",
@@ -165,7 +248,11 @@
       "row_subtotals": true,
       "transpose": true,
       "metrics_layout": "rows",
-      "row_limit": 500
+      "row_limit": 500,
+      "conditional_formatting": [
+        {"metric": "COUNT(*)", "operator": "<=", "target": 5, "color": "red"},
+        {"metric": "COUNT(*)", "operator": ">=", "target": 20, "color": "green"}
+      ]
     },
     {
       "name": "Line by Deal Size",
@@ -179,7 +266,12 @@
       "number_format": ",.0f",
       "show_percentage": false,
       "normalize_across": "y",
-      "show_legend": false
+      "show_legend": false,
+      "x_order": "value_desc",
+      "y_order": "a_to_z",
+      "x_label_every": 2,
+      "y_label_every": 1,
+      "left_margin": 16
     },
     {
       "name": "Price Spread",
@@ -196,11 +288,12 @@
       "x_column": "order_date",
       "time_grain": "P1M",
       "time_range": "Last year",
-      "a": {"metrics": ["SUM(sales)"], "groupby": "deal_size", "show_value": true, "stack": true,
-            "only_total": false, "series_limit": 2, "series_limit_metric": "COUNT(*)",
-            "series_limit_ascending": true},
-      "b": {"metrics": ["COUNT(*)"], "kind": "line", "axis": "secondary", "groupby": "status",
-            "show_value": true, "series_limit": 3},
+      "a": {"metrics": ["SQL(SUM(sales)) AS Revenue"], "groupby": "deal_size", "show_value": true,
+            "stack": true, "only_total": false, "series_limit": 2,
+            "series_limit_metric": "SQL(COUNT(*)) AS Orders", "series_limit_ascending": true},
+      "b": {"metrics": ["SQL(count(*)) AS Orders"], "kind": "line",
+            "axis": "secondary", "groupby": "status", "show_value": true, "series_limit": 3},
+      "height": 5.8,
       "x_axis_title": "Month",
       "y_axis_title": "Revenue",
       "y_axis_title_secondary": "Orders",
@@ -209,19 +302,80 @@
       "y_axis_log_secondary": true,
       "y_axis_truncate": true,
       "legend_position": "bottom"
+    },
+    {
+      "name": "Sales and Price Areas",
+      "type": "mixed",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "order_date",
+      "time_grain": "P1M",
+      "a": {"metrics": ["SUM(sales)"], "kind": "area", "opacity": 1},
+      "b": {"metrics": ["AVG(price_each)"], "kind": "area", "axis": "secondary", "opacity": 0.4}
+    },
+    {
+      "name": "Yearly Sales Steps",
+      "type": "waterfall",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "order_date",
+      "time_grain": "P1Y",
+      "groupby": "deal_size",
+      "metric": "SUM(sales)",
+      "total_label": "All years",
+      "increase_color": "green",
+      "decrease_color": "red",
+      "total_color": "#5B6770",
+      "increase_label": "Gain",
+      "decrease_label": "Loss",
+      "show_value": true,
+      "show_legend": true,
+      "number_format": ",.0f",
+      "x_axis_title": "Year",
+      "y_axis_title": "Sales",
+      "x_label_format": "%Y",
+      "x_label_rotation": 0
+    },
+    {
+      "name": "Daily Sales Spread",
+      "type": "box_plot",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metrics": ["SUM(sales)"],
+      "distribute_across": ["order_date"],
+      "time_grain": "P1D",
+      "groupby": ["deal_size"],
+      "whiskers": [5, 95],
+      "number_format": "$,.0f",
+      "x_axis_title": "Deal size",
+      "y_axis_title": "Daily sales",
+      "x_label_rotation": 45,
+      "row_limit": 5000,
+      "color_scheme": "wavesOfBlue"
+    },
+    {
+      "name": "Order Value Range",
+      "type": "box_plot",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metrics": ["SUM(sales)"],
+      "distribute_across": ["order_number"],
+      "groupby": ["product_line"],
+      "whiskers": "min_max"
     }
   ],
   "layout": {
     "rows": [
-      ["Revenue KPI", "Orders This Quarter"],
+      ["Revenue KPI", "Trailing Revenue", "Orders This Quarter", "Latest Order", "Average Price"],
       ["Sales by Line", "Monthly Orders"],
       ["Quantity Area", "Price vs Time"],
       ["Orders by Hour", "Share by Line"],
+      ["Countries by Deal Size", "Lines by Quantity"],
       ["Order Funnel", "Sales Treemap"],
       ["Top Customers"],
+      ["Country Movers"],
       ["Sales Pivot"],
       ["Line by Deal Size", "Price Spread"],
-      ["Revenue and Orders"]
+      ["Revenue and Orders"],
+      ["Sales and Price Areas"],
+      ["Yearly Sales Steps"],
+      ["Daily Sales Spread", "Order Value Range"]
     ]
   }
 }

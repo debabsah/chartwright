@@ -78,6 +78,17 @@ def test_roundtrip_has_no_drift():
     assert _normalize(live)["charts"] == _normalize(spec)["charts"]
 
 
+def test_hidden_labels_in_any_order_have_no_drift():
+    """Superset keeps column_config by label, so decompile reads hidden labels back in the
+    bundle's key order; plan compared the lists in order and reported the table changed
+    after a clean apply."""
+    spec = mk(aggregate(metrics=["MAX(rate) AS Rate", "MAX(st) AS status"],
+                        hidden=["status", "Rate"]))
+    result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _lookup(spec))
+    assert result.spec["charts"][0]["hidden"] == ["Rate", "status"]
+    assert _normalize(load_spec(result.spec)) == _normalize(spec)
+
+
 def test_decompile_outside_surface():
     base = {"column": "status", "colorScheme": "#ACE1C4", "operator": "=", "targetValue": 1}
     assert _format_to_spec({**base, "toAllRow": True})["apply_to"] == "row"  # 5.x-era flag
@@ -97,6 +108,20 @@ def test_text_paint_uses_the_dark_palette_and_round_trips():
     spec = mk(chart)
     result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _lookup(spec))
     assert result.losses == [], result.losses_json()
+    assert _normalize(load_spec(result.spec))["charts"] == _normalize(spec)["charts"]
+
+
+def test_hidden_labels_plan_clean_in_any_order():
+    # Two rule-only columns hidden in the reverse of the order decompile reads them in.
+    rules = [{"metric": "b_flag", "operator": "=", "target": 1, "color": "#9AA3AE", "paint": "text",
+              "apply_to": "Trend"},
+             {"metric": "a_flag", "operator": "=", "target": 1, "color": "#E7ECF5", "apply_to": "row"}]
+    chart = aggregate(metrics=["MAX(txt) AS Trend", "MAX(a) AS a_flag", "MAX(b) AS b_flag"],
+                      hidden=["b_flag", "a_flag"], conditional_formatting=rules)
+    spec = mk(chart)
+    result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _lookup(spec))
+    assert result.losses == [], result.losses_json()
+    assert sorted(result.spec["charts"][0]["hidden"]) == ["a_flag", "b_flag"]
     assert _normalize(load_spec(result.spec))["charts"] == _normalize(spec)["charts"]
 
 

@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Literal
 
-from .spec import DashboardSpec
+from .spec import FORMAT_COLOR_HEX, DashboardSpec
 
 Release = tuple[int, int, int]
 
@@ -75,6 +75,33 @@ def _charts(predicate) -> Callable[[DashboardSpec], list[str | None]]:
     return lambda spec: [c.name for c in spec.charts if predicate(c)]
 
 
+def _rules(predicate, types=("table", "pivot_table")) -> Callable[[DashboardSpec], list[str | None]]:
+    """Tables and pivots with a colour rule that matches."""
+    return _charts(lambda c: c.type in types and any(predicate(r) for r in c.conditional_formatting))
+
+
+# The cell text a rule's fill sits under before 6.1.0: the table's rgba(0, 0, 0, 0.85),
+# measured on 4.1.4 and 5.0.0 (6.0.0 sets theme.colorText, TableChart.tsx:930, Ant
+# Design's near-black by default), and the pivot's primary.dark2 #156378
+# (react-pivottable/Styles.js:105 at 4.1.4 and 5.0.0, measured on both).
+_CELL_TEXT_BEFORE_6_1 = {"table": (0, 0, 0, 0.85), "pivot_table": (0x15, 0x63, 0x78)}
+_HARD_TO_READ = 3.0  # WCAG's floor for large text; green, amber and red's cell shades clear it
+
+
+def _dark_fills(spec: DashboardSpec) -> list[str | None]:
+    """Charts with a cell-painted hex too dark for the release's own cell text."""
+    from .visible import contrast
+
+    def dark(chart_type, rule) -> bool:
+        if rule.paint != "cell" or rule.color in FORMAT_COLOR_HEX:
+            return False
+        fill = tuple(int(rule.color[i:i + 2], 16) for i in (1, 3, 5))
+        return contrast(_CELL_TEXT_BEFORE_6_1[chart_type], fill) < _HARD_TO_READ
+
+    return [c.name for c in spec.charts if c.type in _CELL_TEXT_BEFORE_6_1
+            and any(dark(c.type, r) for r in c.conditional_formatting)]
+
+
 GATED_FIELDS: tuple[GatedField, ...] = (
     GatedField(
         "tags", "6.0.0", "error",
@@ -112,7 +139,9 @@ GATED_FIELDS: tuple[GatedField, ...] = (
         "force_max_interval is a 6.1.0 control (controls.tsx:389, Timeseries and "
         "MixedTimeseries controlPanel.tsx); xAxisLabelInterval is at 6.0.0 controls.tsx:305; "
         "neither at 4.1.4 or 5.0.0",
-        _charts(lambda c: getattr(c, "x_label_every", False)),
+        # A heatmap's x_label_every is its own xscale_interval, which every release reads
+        # (Heatmap/controlPanel.tsx 4.1.4 :130, 5.0.0 :128, 6.1.0 :155).
+        _charts(lambda c: c.type != "heatmap" and getattr(c, "x_label_every", False)),
     ),
     GatedField(
         "subtitle", "6.0.0", "warn",
@@ -141,6 +170,138 @@ GATED_FIELDS: tuple[GatedField, ...] = (
         warning="show_value on a stacked query of {where} labels each stack's total from "
                 "Superset {since}; {runs}, and {that} labels every segment of a stacked "
                 "mixed chart. Set only_total: false for the same labels on every release.",
+    ),
+    *(GatedField(
+        # A value order is taken everywhere, but means a label's total only from 6.1.0.
+        field, "6.1.0", "warn",
+        "orders a heatmap axis by value through the query",
+        "sortAxisValues sorts each axis itself, a value order by each label's total, at "
+        "6.1.0 Heatmap/transformProps.ts:88-145; at 4.1.4, 5.0.0 and 6.0.0 the axes list "
+        "labels as the query's ORDER BY returns them (Heatmap/buildQuery.ts:39-48 at 4.1.4, "
+        ":39-52 at 5.0.0 and 6.0.0)",
+        _charts(lambda c, f=field: c.type == "heatmap"
+                and getattr(c, f) in ("value_asc", "value_desc")),
+        warning=f"{field} by value on {{where}} ranks each label by its total from Superset "
+                "{since}; {runs}, and {that} lists the labels in the order the query sorts "
+                "the cells, so a label's place follows its largest or smallest cell, and with "
+                "both axes by value the first axis's direction decides both.",
+    ) for field in ("x_order", "y_order")),
+    GatedField(
+        # A bridge in its own order needs show_total: false, or the plugin adds a running
+        # total after every step (seen on 4.1.4); steps always comes with closing.
+        "steps", "6.1.0", "error",
+        "draws a running total after every step of the bridge: its waterfall has no "
+        "show_total control and adds one per x value",
+        "show_total at 6.1.0 Waterfall/controlPanel.tsx:134, read at transformProps.ts:126,148; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0, whose transformer adds a total per x value "
+        "(transformProps.ts:120-124 at 4.1.4)",
+        _charts(lambda c: c.type == "waterfall" and c.steps is not None),
+    ),
+    GatedField(
+        "total_label", "6.1.0", "warn",
+        "names the closing total Total",
+        "total_label at 6.1.0 Waterfall/controlPanel.tsx:159, read at transformProps.ts:201; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0 (TOTAL_MARK, Waterfall/constants.ts:22)",
+        _charts(lambda c: c.type == "waterfall" and c.total_label),
+    ),
+    GatedField(
+        "increase_label", "6.1.0", "warn",
+        "calls a rising step Increase in the legend and tooltip",
+        "increase_label at 6.1.0 Waterfall/controlPanel.tsx:86, read at transformProps.ts:203; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0",
+        _charts(lambda c: c.type == "waterfall" and c.increase_label),
+    ),
+    GatedField(
+        # A dashboard's query takes it on every release (buildQueryObject.ts reads row_limit
+        # from the stored params: seen on a 4.1.4 dashboard); the older panel has no
+        # control for it, so Explore's query leaves it out (seen on 4.1.4 and 5.0.0).
+        "row_limit", "6.0.0", "warn",
+        "has no Row limit on a box plot's panel: the dashboard's query stops at it, but "
+        "the chart opened in Explore queries without it",
+        "row_limit at 6.0.0 BoxPlot/controlPanel.ts:81 (6.1.0 :81); absent at 4.1.4 and 5.0.0, "
+        "where buildQueryObject.ts:117-120 still reads the stored value",
+        _charts(lambda c: c.type == "box_plot" and c.row_limit is not None),
+        warning="row_limit on {where} is a Superset {since} control on a box plot; {runs}, "
+                "and {that} has no Row limit on the box plot's panel: the dashboard's query "
+                "stops at it, but the chart opened in Explore queries without it.",
+    ),
+    GatedField(
+        "decrease_label", "6.1.0", "warn",
+        "calls a falling step Decrease in the legend and tooltip",
+        "decrease_label at 6.1.0 Waterfall/controlPanel.tsx:116, read at transformProps.ts:204; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0",
+        _charts(lambda c: c.type == "waterfall" and c.decrease_label),
+    ),
+    GatedField(
+        # Keyed on bars the author asks for (cell_bars true or a list, or color_by_sign or
+        # absolute_bars, which draw on them). Superset's own bars, left unset, vanish too,
+        # but nobody asked for them.
+        "cell_bars", "6.1.0", "warn",
+        "draws no cell bar on a table with a colour rule",
+        "plugin-chart-table/src/TableChart.tsx: a numeric column draws no bar while "
+        "conditional_formatting holds any rule at 4.1.4 :705-717, 5.0.0 :710-722 and 6.0.0 "
+        ":844-858; 6.1.0 hides a bar only in a cell a rule paints (:979, :1048)",
+        _charts(lambda c: c.type == "table" and bool(c.conditional_formatting)
+                and c.asks_for_bars()),
+        warning="{where} asks for cell bars beside colour rules (conditional_formatting), which "
+                "Superset draws together from {since}; {runs}, and {that} draws no cell bar on "
+                "a table with any colour rule.",
+    ),
+    GatedField(
+        "hidden", "6.0.0", "warn",
+        "ignores it: the table shows the column",
+        "column_config visible read at 6.0.0 plugin-chart-table/src/TableChart.tsx:1182 "
+        "(6.1.0 :743); absent at 4.1.4 and 5.0.0",
+        _charts(lambda c: c.type == "table" and c.hidden),
+    ),
+    GatedField(
+        # Every colour but an '=' rule's: Equal's cutoff is its extreme, so getOpacity is 1.
+        "conditional_formatting", "6.1.0", "warn",
+        "fades each colour by the value's distance from its threshold",
+        "useGradient read at 6.1.0 superset-ui-chart-controls/src/utils/getColorFormatters.ts"
+        ":273-276; 4.1.4 and 5.0.0 (:180) and 6.0.0 (:189) always scale the colour by "
+        "getOpacity, from 0.05 at the threshold to 1 at the column's extreme",
+        _rules(lambda r: r.operator != "="),
+        warning="conditional_formatting on {where} paints each band in one solid colour from "
+                "Superset {since}; {runs}, and {that} fades a colour by the value's distance "
+                "from its threshold, so a value just past it is barely tinted. An '=' rule is "
+                "solid on every release.",
+    ),
+    GatedField(
+        # A rule painting its own metric (6.1's popover stores that by default) paints the
+        # same cells everywhere, so only another column or the row counts.
+        "apply_to", "6.1.0", "warn",
+        "paints the rule's own metric cells instead (none, where that column is hidden)",
+        "columnFormatting read at 6.1.0 plugin-chart-table/src/TableChart.tsx:984-1007, passed "
+        "through getColorFormatters.ts:321; 4.1.4 :763, 5.0.0 :768 and 6.0.0 :905 paint only "
+        "the cells of the rule's own column",
+        _rules(lambda r: r.apply_to not in (None, r.metric), ("table",)),
+    ),
+    GatedField(
+        "paint", "6.1.0", "warn",
+        "fills the cell with the text colour instead",
+        "objectFormatting TEXT_COLOR read at 6.1.0 plugin-chart-table/src/TableChart.tsx:966-970 "
+        "and plugin-chart-pivot-table/src/react-pivottable/TableRenderers.tsx:192-194; 4.1.4, "
+        "5.0.0 and 6.0.0 set only the cell background (TableChart.tsx:770 and "
+        "TableRenderers.jsx:710 at 4.1.4)",
+        _rules(lambda r: r.paint == "text"),
+        warning="paint: text on {where} colours the text from Superset {since}; {runs}, and {that} "
+                "fills the cell with that colour instead, under the cell's own dark text, so a "
+                "dark colour (green, amber and red's text shades are) leaves the value hard to "
+                "read. paint: cell reads on every release.",
+    ),
+    GatedField(
+        "color", "6.1.0", "warn",
+        "keeps its own dark cell text on the fill",
+        "getTextColorForBackground (6.1.0 superset-ui-chart-controls/src/utils/"
+        "getColorFormatters.ts:385) picks the cell text at plugin-chart-table/src/"
+        "TableChart.tsx:1024 and react-pivottable/TableRenderers.tsx:219; absent at 4.1.4, "
+        "5.0.0 and 6.0.0",
+        _dark_fills,
+        warning="color on {where} fills cells darker than their text can read on: Superset "
+                "{since} turns such a cell's text white; {runs}, and {that} keeps its own dark "
+                "cell text, under 3:1 contrast on that fill. A lighter colour (green, amber and "
+                "red are) reads on every release.",
     ),
 )
 

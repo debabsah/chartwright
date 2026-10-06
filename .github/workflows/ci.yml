@@ -57,6 +57,11 @@ jobs:
       - name: Dashboard-controls apply + slice-id stability
         if: ${{ !cancelled() }}
         run: python tools/ci_live_check.py --base-url http://localhost:8098 --spec tests/fixtures/live_dashboard_controls.json
+      # A waterfall bridge on a virtual dataset made for it: built and read back on
+      # 6.1.0; refused before 6.1.0, where the plain waterfalls are built instead.
+      - name: Waterfall bridge apply + round trip
+        if: ${{ !cancelled() }}
+        run: python tools/ci_live_waterfall.py --base-url http://localhost:8098 --spec tests/fixtures/live_waterfall.json
       # A chart added in Superset: re-apply takes it off the dashboard (4.1.4 and 5.0.0
       # merge chart links on import), never deletes it, and restores match their backups.
       - name: UI-added chart taken off on re-apply
@@ -86,6 +91,16 @@ jobs:
       - name: Locked text visible on the rendered dashboard
         if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
         run: python tools/ci_live_visible.py --base-url http://localhost:8098
+      # Markdown blocks at the height advise --fix gives them show every line with
+      # Windows-style scrollbars on, and a block size.markdown-fit calls cut off is.
+      - name: Markdown blocks fit at the height advise gives them
+        if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
+        run: python tools/ci_live_markdown_fit.py --base-url http://localhost:8098
+      # The type sizes the readability rules model (table and pivot cells, titles,
+      # ECharts labels, big numbers by height) are what this release draws.
+      - name: Type sizes match the readability model
+        if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
+        run: python tools/record_readability_measurements.py --check --base-url http://localhost:8098
       # Saved queries captured from Superset's own frontend, so CSV reports work.
       - name: Chart queries saved for reports
         if: ${{ !cancelled() && steps.visual.outcome == 'success' }}

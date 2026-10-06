@@ -88,6 +88,20 @@ def test_the_registry_gates_the_unsafe_fields_and_warns_for_the_ignored_ones():
         "subtitle": ("6.0.0", "warn"),
         "column_headers": ("6.0.0", "warn"),
         "show_value": ("6.0.0", "warn"),  # on a stacked mixed query: only_total's labels
+        "x_order": ("6.1.0", "warn"),  # a heatmap value order: by total from 6.1.0
+        "y_order": ("6.1.0", "warn"),
+        "steps": ("6.1.0", "error"),  # a bridge needs show_total: false (6.1.0)
+        "total_label": ("6.1.0", "warn"),
+        "increase_label": ("6.1.0", "warn"),
+        "decrease_label": ("6.1.0", "warn"),
+        "row_limit": ("6.0.0", "warn"),  # a box plot's: the 4.1.4 and 5.0.0 panel has none
+        "cell_bars": ("6.1.0", "warn"),  # beside colour rules: no bars before 6.1.0
+        # Colour rules and the table (test_format_rule_gating.py): older plugins ignore them.
+        "hidden": ("6.0.0", "warn"),
+        "conditional_formatting": ("6.1.0", "warn"),  # a solid band: useGradient
+        "apply_to": ("6.1.0", "warn"),
+        "paint": ("6.1.0", "warn"),
+        "color": ("6.1.0", "warn"),  # a dark fill: 6.1 turns the cell text white
     }
     schema = json.dumps(json_schema())
     for g in GATED_FIELDS:
@@ -161,6 +175,17 @@ def test_fields_older_releases_ignore_warn_and_never_block():
     assert unknown.ok and len(unknown.warnings) == 4
 
 
+def test_a_heatmaps_label_step_is_no_later_release_field():
+    """A heatmap's x_label_every is its own xscale_interval, which every release reads
+    (Heatmap/controlPanel.tsx at 4.1.4, 5.0.0 and 6.1.0); only an axis chart's needs 6.1.0."""
+    heatmap = {"name": "Heat", "type": "heatmap", "x_column": "region", "y_column": "city",
+               "metric": "SUM(amount)", "dataset": DS, "x_label_every": 2, "y_label_every": 1,
+               "left_margin": 16}
+    assert check_spec_version(spec(charts=[heatmap]), "4.1.4").warnings == []
+    out = check_spec_version(spec(charts=[heatmap, {**LINE, "x_label_every": True}]), "4.1.4")
+    assert [(w["field"], w["chart"]) for w in out.warnings] == [("x_label_every", "Line")]
+
+
 def test_stacked_value_labels_warn_on_what_the_author_wrote():
     """only_total defaults to true, so the warning names show_value on the stacked
     query, which the author wrote, and says what the older release draws."""
@@ -172,6 +197,36 @@ def test_stacked_value_labels_warn_on_what_the_author_wrote():
     [w] = check_spec_version(spec(charts=[stacked]), None).warnings
     assert "a release before 6.0.0 labels every segment" in w["detail"]
     assert check_spec_version(spec(charts=[stacked]), "6.0.0").warnings == []
+
+
+HEATMAP = {"name": "Heat", "type": "heatmap", "x_column": "region", "y_column": "city",
+           "metric": "SUM(amount)", "dataset": DS}
+
+
+def test_a_heatmap_value_order_warns_before_6_1():
+    """Every release takes sort_x_axis and sort_y_axis, but only 6.1.0 sorts each axis
+    itself (sortAxisValues, a label's total); before, the labels come in the order the
+    query sorts the cells. Label orders mean the same everywhere and never warn."""
+    by_value = {**HEATMAP, "x_order": "value_desc", "y_order": "value_asc"}
+    for version in ("4.1.4", "5.0.0", "6.0.0"):
+        out = check_spec_version(spec(charts=[by_value]), version)
+        assert out.ok and [(w["field"], w["chart"], w["since"]) for w in out.warnings] == [
+            ("x_order", "Heat", "6.1.0"), ("y_order", "Heat", "6.1.0")]
+        assert f"this instance runs {version}" in out.warnings[0]["detail"]
+        assert "largest or smallest cell" in out.warnings[0]["detail"]
+    assert check_spec_version(spec(charts=[by_value]), "6.1.0").warnings == []
+    by_label = {**HEATMAP, "x_order": "z_to_a", "y_order": "a_to_z"}
+    assert check_spec_version(spec(charts=[by_label]), "4.1.4").warnings == []
+
+
+def test_rolling_and_mixed_areas_need_no_release():
+    """rolling_type/rolling_periods/min_periods (BigNumberWithTrendline) and area/opacity
+    per query (MixedTimeseries) are in every supported release's control panel."""
+    trend = {**TREND, "time_grain": "P1M", "rolling_type": "sum", "rolling_periods": 12,
+             "compare_lag": 12}
+    area = {**MIXED, "a": {**MIXED["a"], "kind": "area", "opacity": 1}}
+    out = check_spec_version(spec(charts=[trend, area]), "4.1.4")
+    assert out.ok and out.warnings == []
 
 
 def test_only_total_warns_only_where_older_releases_differ():

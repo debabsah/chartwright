@@ -14,12 +14,18 @@ from dataclasses import dataclass, field
 import yaml
 
 from .client import SupersetClient
-from .compiler import compile_bundle, filter_id
-from .decompile import decompile_live
+from .compiler import _metric_payload, compile_bundle, filter_id, grid_rows, spec_units
+from .decompile import _metric_to_spec, decompile_live
 from .spec import (
-    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
-    without_superset_defaults,
+    BAR_SWITCHES, DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, FORMAT_COLOR_HEX,
+    FORMAT_TEXT_HEX, DashboardSpec, load_spec, named_hex, row_items, without_superset_defaults,
 )
+
+# Colour fields that take green, amber or red or a #RRGGBB: a name and its own hex paint
+# the same, and decompile reads that hex back as the name, so plan compares the hex.
+NAMED_COLOUR_FIELDS = ("trend_color", "increase_color", "decrease_color", "total_color")
+# A table's fields that list labels (hidden columns, the cell-bar switches).
+TABLE_LABEL_LISTS = ("hidden", *BAR_SWITCHES)
 
 # Dashboard settings `plan` compares one by one (dashboard_settings_changed).
 DASHBOARD_SETTINGS = (
@@ -110,23 +116,95 @@ def _normalize_tags(holder: dict) -> None:
         holder.pop("tags", None)
 
 
+def _canonical_metric(metric: str) -> str:
+    """A metric as decompile reads back what compile writes for it, so two spellings of
+    one stored metric compare equal: `SQL(COUNT(*)) AS N` and `COUNT(*) AS N`, or
+    `SUM(x)  AS  N` and `SUM(x) AS N`, which differ only in a key Superset never shows."""
+    return _metric_to_spec(_metric_payload(metric, "", ""), [], "") or metric
+
+
+def _canonical_metrics(chart: dict) -> None:
+    """Every metric a chart names (spec.chart_metrics), in its canonical spelling."""
+    for holder in (chart, chart.get("a"), chart.get("b")):
+        if not isinstance(holder, dict):
+            continue
+        for key in ("metric", "series_limit_metric"):
+            if isinstance(holder.get(key), str):
+                holder[key] = _canonical_metric(holder[key])
+        if holder.get("metrics"):
+            holder["metrics"] = [_canonical_metric(m) for m in holder["metrics"]]
+    if chart["type"] == "table" and chart.get("sort_by") and not chart.get("columns"):
+        chart["sort_by"] = _canonical_metric(chart["sort_by"])  # a metric in aggregate mode
+
+
+def _canonical_colours(chart: dict) -> None:
+    """A named shade's own hex reads as the name: compile paints both alike, and
+    decompile names the shade (_rgb_to_spec, _format_to_spec, _big_number_rules_to_spec)."""
+    text_names = {v.upper(): k for k, v in FORMAT_TEXT_HEX.items()}
+    cell_names = {v.upper(): k for k, v in FORMAT_COLOR_HEX.items()}
+    if isinstance(chart.get("trend_color"), str):
+        chart["trend_color"] = text_names.get(chart["trend_color"].upper(), chart["trend_color"])
+    # A big number's rules colour the number, which is text: a name paints its text shade.
+    number = chart.get("type") == "big_number_total"
+    for rule in chart.get("conditional_formatting") or []:
+        names = text_names if number or rule.get("paint") == "text" else cell_names
+        rule["color"] = names.get(str(rule["color"]).upper(), rule["color"])
+
+
+def _drop_blank_text(model, data: dict) -> None:
+    """Blank text in an optional field (a description of "  ") reads as unset, as
+    decompile reads it back: Superset shows nothing for it either."""
+    for key, value in list(data.items()):
+        f = type(model).model_fields.get(key)
+        if isinstance(value, str) and not value.strip() and f is not None and not f.is_required():
+            del data[key]
+
+
 def _normalize(spec: DashboardSpec) -> dict:
     """Canonical form for comparison: validated model dump with every
     compiler default materialized, so spec-with-defaults-omitted and
     decompiled-with-defaults-present compare equal. Chart identity is the
     name, so chart list order is canonicalized by name. A written Superset default
-    compares equal to the omitted field, which is all decompile can read back."""
+    compares equal to the omitted field, which is all decompile can read back, and
+    any other spelling compile stores alike compares as the one decompile reads."""
     data = without_superset_defaults(spec).model_dump(exclude_none=True, by_alias=True)
-    for chart in data["charts"]:
+    _drop_blank_text(spec.dashboard, data["dashboard"])
+    for model, chart in zip(spec.charts, data["charts"]):
+        _drop_blank_text(model, chart)
         chart["width"] = spec.resolved_item_width(chart["name"])
-        chart["height"] = spec.resolved_height(chart["name"])
+        # On the grid compile writes: whole 8 px rows, read back in fifths (4.65 -> 4.6).
+        chart["height"] = spec_units(grid_rows(spec.resolved_height(chart["name"])))
         if chart["type"] in DEFAULT_ROW_LIMIT:
             chart.setdefault("row_limit", DEFAULT_ROW_LIMIT[chart["type"]])
+        if chart["type"] == "table":
+            # Label lists (hidden, the bar switches) are per-column settings, kept in
+            # column_config by label: their order changes nothing, and decompile reads
+            # them back in column_config's order, not the author's.
+            order = {k: i for i, k in enumerate(model.labels())}
+            for key in TABLE_LABEL_LISTS:
+                if isinstance(chart.get(key), list):
+                    chart[key] = sorted(chart[key], key=lambda k: order.get(k, len(order)))
         if chart["type"] in ("timeseries_line", "timeseries_bar", "timeseries_area",
                              "timeseries_scatter", "big_number_trend"):
             chart.setdefault("time_grain", DEFAULT_TIME_GRAIN)
+        for field in NAMED_COLOUR_FIELDS:
+            if chart.get(field):
+                chart[field] = named_hex(chart[field])
+        if chart["type"] == "table":
+            # An empty list compiles as the omitted one, which is how decompile reads it.
+            for key in ("metrics", "groupby"):
+                if chart.get(key) == []:
+                    del chart[key]
+        _canonical_metrics(chart)
+        _canonical_colours(chart)
         _normalize_tags(chart)
     data["charts"].sort(key=lambda c: c["name"])
+    for model, f in zip(spec.filters, data.get("filters") or []):
+        _drop_blank_text(model, f)
+        if f.get("time_range") == "No filter":
+            # A pre-filter over every time is no pre-filter, which is how decompile reads it.
+            f.pop("time_range")
+            f.pop("time_column", None)
     _normalize_tags(data["dashboard"])
     # Owners are names in a spec and ids live; plan compares them as ids, apart.
     data["dashboard"].pop("owners", None)
@@ -141,18 +219,38 @@ def _normalize(spec: DashboardSpec) -> dict:
                     ditem["width"] = spec.resolved_item_width(mitem)
                     ditem.setdefault("height", 4)
 
-    def sketch_as_rows(holder) -> list[list]:
+    def sketch_as_rows(holder) -> list:
         """Sketch -> rows of chart names, a stacked COLUMN as a nested list, so a
         sketch spec and its live state compare equal: decompile reads a dashboard
-        with columns back as a sketch, and one without as rows of the same names."""
+        with columns back as a sketch, and one without as rows of the same names.
+        Blocks read as they do in rows: a header across the sketch is a header row,
+        a markdown block a {markdown, width, height} item; a header elsewhere sits in
+        its column (alone, a column of its own) with the column's width."""
+        from .sketch import SketchBlock, SketchColumn
+
+        def item(sc, width: int):
+            if not isinstance(sc, SketchBlock):
+                return sc.name
+            entry = holder.sketch_block(sc)
+            if sc.kind == "header":
+                return {**entry.model_dump(), "width": width}
+            return {"markdown": entry.markdown, "width": width,
+                    "height": holder.sketch_block_height(sc)}
+
         rows = []
         for srow in holder.parsed_sketch():
+            band = srow.header_band
+            if band is not None:
+                rows.append(holder.sketch_block(band).model_dump())
+                continue
             row = []
             for child in srow.children:
-                if hasattr(child, "children"):
-                    row.append([sc.name for sc in child.children])
+                if isinstance(child, SketchColumn):
+                    row.append([item(sc, child.width) for sc in child.children])
+                elif isinstance(child, SketchBlock) and child.kind == "header":
+                    row.append([item(child, child.width)])
                 else:
-                    row.append(child.name)
+                    row.append(item(child, child.width))
             rows.append(row)
         return rows
 

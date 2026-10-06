@@ -18,17 +18,22 @@ from typing import Callable, get_args
 import yaml
 
 from .compiler import (
-    BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
-    LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
+    BACKGROUND, BAR_SWITCH_KEYS, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX,
+    FORMAT_OPERATOR, HEADER_PREFIX, HEADER_SIZE, HEATMAP_X_SORT, HEATMAP_Y_SORT, LEGEND_TYPES,
+    METRIC_OPTION_PREFIX, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
+    WHISKER_OPTIONS, bridge_totals_sql, parse_steps_order_sql, spec_units,
 )
 from .spec import (
-    ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES,
-    HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, TREND_DEFAULT_HEX, FilterOp, LabelType,
-    PivotAggregate, SequentialScheme, metric_label, row_items,
+    ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX,
+    FORMAT_RANGE_OPERATORS, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES, HEATMAP_DEFAULT_SCHEME,
+    HEX_COLOUR_RE, PIVOT_ORDER, SUPERSET_DEFAULTS, TICK_LAYOUTS, TREND_DEFAULT_HEX,
+    WATERFALL_DEFAULT_HEX, FilterOp, LabelType, PivotAggregate, SequentialScheme, metric_label,
+    parse_metric, row_items,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
 _FILTER_OPS = set(get_args(FilterOp))
+_FORMAT_OPERATOR_BACK = {v: k for k, v in FORMAT_OPERATOR.items()} | {"between": "between"}
 
 # Cosmetic / behavioral params we knowingly discard without a loss entry.
 _IGNORABLE = {
@@ -57,7 +62,18 @@ _IGNORABLE = {
     "left_margin", "show_percentage", "show_values", "value_bounds",
     "xscale_interval", "yscale_interval", "column", "bins", "normalize",
     "show_value", "slice_id", "url_params", "percent_calculation_type",
-    "show_tooltip_labels", "tooltip_label_type", SDC_BAR_MARKER,
+    "show_tooltip_labels", "tooltip_label_type", "show_total", "x_ticks_layout", "zoomable",
+    "series_limit", "series_limit_metric", SDC_BAR_MARKER,
+    # A mixed chart's query B twins of the above (createCustomizeSection 'B',
+    # createAdvancedAnalyticsSection and createQuerySection '_b', MixedTimeseries
+    # controlPanel.tsx at 4.1.4, 5.0.0 and 6.1.0), with the same stored defaults.
+    "markerSizeB", "comparison_type_b", "truncate_metric_b", "rolling_type_b",
+    "sort_series_typeB",
+    # The big numbers' "Force date format" (BigNumberTotal/controlPanel.ts and
+    # BigNumberWithTrendline/controlPanel.tsx, default false at all three tags).
+    "force_timestamp_formatting",
+    # A table's stored defaults (below).
+    "allow_render_html", "allow_rearrange_columns", "server_pagination", "percent_metrics",
 }
 
 # Of the keys above, those a user changes from the value an untouched chart stores:
@@ -99,6 +115,20 @@ _STORED_DEFAULTS: dict[str, tuple] = {
     "bottom_margin": ("auto",), "left_margin": ("auto",), "xscale_interval": (-1,),
     "yscale_interval": (-1,), "value_bounds": ([None, None], [], None),
     "normalize": (False,),
+    "markerSizeB": (6,), "comparison_type_b": ("values",), "truncate_metric_b": (True,),
+    "rolling_type_b": (None, "None", ""), "sort_series_typeB": ("sum",),
+    "force_timestamp_formatting": (False, None),
+    # Waterfall/controlPanel.tsx: a closing total (show_total, 6.1.0 :134) and Superset's
+    # own tick layout (x_ticks_layout, 4.1.4 :130, 6.1.0 :210).
+    "show_total": (True,), "x_ticks_layout": ("auto",),
+    # sharedControls.tsx: data zoom off (zoomable, 6.1.0 :422) and no series limit
+    # (series_limit and series_limit_metric, the box plot's at all three releases).
+    "zoomable": (False,), "series_limit": (None, "", 0), "series_limit_metric": (None, "", [], {}),
+    # Table controlPanel.tsx: HTML rendered and columns fixed (4.1.4 :449-454, :433-438;
+    # 5.0.0 :468-473, :452-457; 6.1.0 :543-548, :527-532), client-side paging (4.1.4
+    # :317-324, 5.0.0 :351-358, 6.1.0 :387-394), no percentage metrics.
+    "allow_render_html": (True,), "allow_rearrange_columns": (False,),
+    "server_pagination": (False,), "percent_metrics": ([], None),
 }
 # A currency format has no default: unset reads as {} or every part empty.
 _UNSET_WHEN_EMPTY = {"currency_format"}
@@ -106,15 +136,19 @@ _UNSET_WHEN_EMPTY = {"currency_format"}
 _STORED_DEFAULT_WHEN = {
     "only_total": lambda p: bool(p.get("show_value")) and bool(p.get("stack")),
     "comparison_type": lambda p: bool(p.get("time_compare")),
+    "comparison_type_b": lambda p: bool(p.get("time_compare_b")),
     "x_axis_title_margin": lambda p: bool(p.get("x_axis_title")),
     "y_axis_title_margin": lambda p: bool(p.get("y_axis_title")),
     "y_axis_title_position": lambda p: bool(p.get("y_axis_title")),
     "innerRadius": lambda p: bool(p.get("donut")),
+    # Percentage metrics join the query in aggregate mode only (Table buildQuery.ts: 4.1.4
+    # :131-142, 5.0.0 :120-131, 6.1.0 :129-146), so a raw table's leftovers are inert.
+    "percent_metrics": lambda p: not (p.get("query_mode") == "raw" or p.get("all_columns")),
 }
 
 # Spec chart types with a color_scheme field (spec._ColorSchemeMixin).
 _COLOR_SCHEME_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter",
-                       "bar", "pie", "histogram", "funnel", "treemap", "mixed")
+                       "bar", "pie", "histogram", "funnel", "treemap", "mixed", "box_plot")
 _REVERSE_HEADER_SIZE = {v: k for k, v in HEADER_SIZE.items()}
 _REVERSE_OPACITY = {"opacityLow": "low", "opacityMedium": "medium", "opacityHigh": "high"}
 
@@ -123,6 +157,43 @@ _AXIS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseri
                "bar", "mixed")
 _X_LABEL_KEYS = {"x_axis_time_format", "xAxisLabelRotation", "force_max_interval",
                  "xAxisLabelInterval"}
+
+
+def _bar_switch(p: dict, key: str, own: dict[str, bool], labels: list[str], default: bool):
+    """One cell-bar switch as the spec writes it, from the table-wide param `key` and each
+    column's own value (`own`), which Superset reads first: the table-wide bool while no
+    column of `labels` differs from it (None when the chart leaves it unset), else the
+    labels it is on for (False when none). A column's value that matches the table's, or
+    sits on a column that draws no bar, changes nothing and is dropped. A stored null is
+    a false: only an absent key takes the panel's default (applyDefaultFormData)."""
+    table = bool(p[key]) if key in p else default
+    if all(own.get(k, table) == table for k in labels):
+        return table if key in p else None
+    return [k for k in labels if own.get(k, table)] or False
+
+
+def _bar_switches_to_spec(p: dict, out: dict, switches: dict[str, dict]) -> None:
+    """cell_bars, color_by_sign and absolute_bars from show_cell_bars, color_pn and align_pn
+    and the columns' own showCellBars, colorPositiveNegative and alignPositiveNegative. A
+    stored Superset default reads as unset (color_pn true, align_pn false: the panel's
+    defaults); show_cell_bars reads back as stored, as it always has. Colour and alignment
+    count only on the columns that draw a bar, and are read back only where they can show,
+    so the spec validates."""
+    if out.get("columns"):
+        capable = list(out["columns"])
+    else:
+        capable = [metric_label(m) for m in out.get("metrics") or []]
+    bars = _bar_switch(p, "show_cell_bars", switches["cell_bars"], capable, True)
+    if bars is not None:
+        out["cell_bars"] = bars
+    barred = [] if bars is False else capable if bars in (None, True) else bars
+    for spec_field, key, default in (("color_by_sign", "color_pn", True),
+                                     ("absolute_bars", "align_pn", False)):
+        value = _bar_switch(p, key, switches[spec_field], barred, default)
+        if value is True and not barred:
+            value = None  # asks for bars the table doesn't draw: it shows nothing
+        if value is not None and value != default:
+            out[spec_field] = value
 
 
 def _x_labels_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
@@ -155,10 +226,24 @@ _STACK_ALLOWED = {"timeseries_bar": (True,), "bar": (True,),
                   "timeseries_area": (True, "stream", "expand")}  # others: True, "stream"
 _CONTRIBUTION_SPEC = {v: k for k, v in CONTRIBUTION_VALUES.items()}
 _PIVOT_ORDER_SPEC = {v: k for k, v in PIVOT_ORDER.items()}
+_HEATMAP_X_ORDER = {v: k for k, v in HEATMAP_X_SORT.items()}     # alpha_asc -> a_to_z
+_HEATMAP_Y_ORDER = {v: k for k, v in HEATMAP_Y_SORT.items()}     # alpha_asc -> z_to_a
 _LABEL_TYPES = set(get_args(LabelType))
 _PIVOT_AGGREGATES = set(get_args(PivotAggregate))
 _SEQUENTIAL_SCHEMES = set(get_args(SequentialScheme))
 _COLUMN_CONFIG_SPEC = {v: k for k, v in COLUMN_CONFIG_KEYS.items()}  # d3NumberFormat -> number_formats
+
+
+# SortSeriesType (superset-ui-chart-controls types.ts, 4.1.4 :503, 6.1.0 :549): what a bar
+# with several series sorts its categories by.
+_SERIES_SORTS = ("name", "sum", "min", "max", "avg")
+
+
+def _stored_label(m) -> str | None:
+    """A stored metric's label, as getMetricLabel reads it: a saved metric is its name."""
+    if isinstance(m, str):
+        return m
+    return m.get("label") if isinstance(m, dict) else None
 
 
 def _number(v) -> float | int | None:
@@ -279,18 +364,165 @@ def _line_style_to_spec(p: dict, out: dict, spec_type: str) -> set[str]:
     return {"markerEnabled", "markerSize", "area", "opacity"}
 
 
-def _rgb_to_spec(colour) -> str | None:
-    """A color_picker {r, g, b} as the spec writes it: a named shade, a hex, or None
-    for Superset's own default teal."""
+def _rolling_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
+    """A trendline KPI's rolling window. rollingWindowOperator reads a missing window as
+    1 and missing min periods as 0 (ensureIsInt, operators/rollingWindowOperator.ts at
+    4.1.4, 5.0.0 and 6.1.0), and a cumulative sum reads neither."""
+    kind = p.get("rolling_type")
+    if kind in (None, "", "None"):
+        return
+    if kind not in ("sum", "mean", "std", "cumsum"):
+        losses.append(Loss(name, f"rolling_type {kind!r} not preserved (no rolling window on re-apply)"))
+        return
+    out["rolling_type"] = kind
+    if kind == "cumsum":
+        return
+    periods = _number(p.get("rolling_periods"))
+    periods = periods if isinstance(periods, int) and periods >= 1 else 1
+    out["rolling_periods"] = periods
+    least = _number(p.get("min_periods"))
+    least = least if isinstance(least, int) and least >= 0 else 0
+    if least > periods:
+        losses.append(Loss(name, f"min_periods {least} above the {periods}-step window not "
+                                 f"preserved (whole windows only on re-apply)"))
+    elif least != periods:
+        out["rolling_min_periods"] = least
+
+
+def _rgb_to_spec(colour, default: str = TREND_DEFAULT_HEX) -> str | None:
+    """A colour picker's {r, g, b} as the spec writes it: a named shade, a hex, or None
+    for Superset's own default (a trendline's teal unless another is given)."""
     if not isinstance(colour, dict):
         return None
     try:
         hexed = "#{:02X}{:02X}{:02X}".format(*(int(colour[k]) for k in "rgb"))
     except (KeyError, TypeError, ValueError):
         return None
-    if hexed == TREND_DEFAULT_HEX:
+    if hexed == default:
         return None
     return {v.upper(): k for k, v in FORMAT_TEXT_HEX.items()}.get(hexed, hexed)
+
+
+_TICK_LAYOUT_SPEC = {v: k for k, v in TICK_LAYOUTS.items()} | {"staggered": 45}  # drawn at 45°
+
+
+def _tick_layout_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
+    # "staggered" is rotated -45 degrees exactly like "45°" (transformProps.ts, waterfall
+    # and box plot, all three releases), so it reads back as 45.
+    layout = p.get("x_ticks_layout")
+    if layout in _TICK_LAYOUT_SPEC:
+        out["x_label_rotation"] = _TICK_LAYOUT_SPEC[layout]
+    elif layout not in (None, "", "auto"):
+        losses.append(Loss(name, f"x_ticks_layout {layout!r} not preserved (auto on re-apply)"))
+
+
+def _waterfall_to_spec(p: dict, out: dict, losses: list, name: str, metric_one) -> set[str] | None:
+    """A waterfall's params into out; the params it read, or None when the chart can't
+    be a spec chart. A bridge's x axis is the steps_order_sql the compiler writes."""
+    m = metric_one(p.get("metric"))
+    x = p.get("x_axis")
+    groupby = [g for g in (p.get("groupby") or []) if isinstance(g, str)]
+    if m is None or not x:
+        losses.append(Loss(name, "waterfall needs metric + x_axis; chart skipped"))
+        return None
+    out["metric"] = m
+    read = {"x_axis_label", "y_axis_label", "increase_color", "decrease_color", "total_color",
+            "increase_label", "decrease_label", "total_label", "show_legend", "x_ticks_layout"}
+    bridge = parse_steps_order_sql(x.get("sqlExpression")) if isinstance(x, dict) else None
+    if bridge is not None:
+        column, steps, closing, opening = bridge
+        raw = p.get("groupby") or []
+        if opening is None:
+            ours = groupby == [column] and p.get("total_label") == closing
+        else:
+            ours = (len(raw) == 1 and isinstance(raw[0], dict) and p.get("total_label") == BRIDGE_TOTAL
+                    and raw[0].get("sqlExpression") == bridge_totals_sql(column, opening, closing))
+        if not ours or p.get("show_total") is not False:
+            losses.append(Loss(name, "waterfall bridge order changed outside the spec (breakdown, "
+                                     "show_total or total_label); chart skipped"))
+            return None
+        out.update({"x_column": column, "steps": steps, "closing": closing})
+        if opening is not None:
+            out["opening"] = opening
+        read.add("show_total")
+    elif isinstance(x, str):
+        out["x_column"] = x
+        if len(groupby) > 1:
+            losses.append(Loss(name, f"multiple breakdowns {groupby}; kept first only"))
+        if groupby:
+            out["groupby"] = groupby[0]
+        if p.get("time_grain_sqla"):
+            out["time_grain"] = p["time_grain_sqla"]
+        if isinstance(p.get("total_label"), str) and p["total_label"].strip():
+            out["total_label"] = p["total_label"]
+    else:
+        losses.append(Loss(name, f"waterfall x axis {x!r} is SQL the spec can't express; chart skipped"))
+        return None
+    for field, stock in WATERFALL_DEFAULT_HEX.items():
+        colour = _rgb_to_spec(p.get(field), stock)
+        if colour:
+            out[field] = colour
+    for field in ("increase_label", "decrease_label"):
+        if isinstance(p.get(field), str) and p[field].strip():
+            out[field] = p[field]
+    if p.get("show_value") is True:
+        out["show_value"] = True
+    if p.get("show_legend") is True:
+        out["show_legend"] = True
+    if p.get("y_axis_format") not in (None, "", "SMART_NUMBER"):
+        out["number_format"] = p["y_axis_format"]
+    for key, field in (("x_axis_label", "x_axis_title"), ("y_axis_label", "y_axis_title")):
+        if isinstance(p.get(key), str) and p[key].strip():
+            out[field] = p[key]
+    _tick_layout_to_spec(p, out, losses, name)
+    if p.get("x_axis_time_format") not in (None, "", "smart_date"):
+        out["x_label_format"] = p["x_axis_time_format"]
+    if p.get("row_limit"):
+        out["row_limit"] = p["row_limit"]
+    return read
+
+
+_WHISKER_SPEC = {v: k for k, v in WHISKER_OPTIONS.items()}
+_PERCENTILES = re.compile(r"^(\d+)/(\d+) percentiles$")  # the boxplot operator's own reading
+
+
+def _box_plot_to_spec(p: dict, out: dict, losses: list, name: str, metric_one) -> set[str] | None:
+    """A box plot's params into out; the params it read, or None when the chart can't be
+    a spec chart (an observation or group the spec can't name: a SQL column)."""
+    ms = [m for m in (metric_one(m) for m in (p.get("metrics") or [])) if m]
+    across, groupby = p.get("columns") or [], p.get("groupby") or []
+    if not ms or not across:
+        losses.append(Loss(name, "box plot needs metrics + distribute across; chart skipped"))
+        return None
+    if not all(isinstance(c, str) for c in [*across, *groupby]):
+        losses.append(Loss(name, "box plot over SQL columns the spec can't express; chart skipped"))
+        return None
+    out.update({"metrics": ms, "distribute_across": list(across)})
+    if groupby:
+        out["groupby"] = list(groupby)
+    whiskers = p.get("whiskerOptions") or "Tukey"
+    percentiles = _PERCENTILES.match(whiskers) if isinstance(whiskers, str) else None
+    if whiskers in _WHISKER_SPEC:
+        if whiskers != "Tukey":
+            out["whiskers"] = _WHISKER_SPEC[whiskers]
+    elif percentiles and int(percentiles.group(1)) < int(percentiles.group(2)) <= 100:
+        out["whiskers"] = [int(percentiles.group(1)), int(percentiles.group(2))]
+    else:
+        losses.append(Loss(name, f"whisker option {whiskers!r} not preserved (Tukey on re-apply)"))
+    if p.get("time_grain_sqla"):
+        out["time_grain"] = p["time_grain_sqla"]
+    if p.get("number_format") not in (None, "", "SMART_NUMBER"):
+        out["number_format"] = p["number_format"]
+    if p.get("date_format") not in (None, "", "smart_date"):
+        out["x_label_format"] = p["date_format"]
+    for key in ("x_axis_title", "y_axis_title"):
+        if isinstance(p.get(key), str) and p[key].strip():
+            out[key] = p[key]
+    _tick_layout_to_spec(p, out, losses, name)
+    if p.get("row_limit"):
+        out["row_limit"] = p["row_limit"]
+    return {"columns", "whiskerOptions", "date_format", "x_axis_title", "y_axis_title",
+            "x_ticks_layout"}
 
 
 def _annotations_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
@@ -398,19 +630,37 @@ DatasetLookup = Callable[[str], dict | None]
 """dataset_uuid -> {'database','schema','table'} or None."""
 
 
-def _format_to_spec(cf: dict) -> dict | None:
-    """Superset conditional_formatting entry -> FormatRule dict, None if outside surface."""
-    text = cf.get("objectFormatting") == "TEXT_COLOR"
-    palette = FORMAT_TEXT_HEX if text else FORMAT_COLOR_HEX
+def _band_colour(cf: dict, palette: dict[str, str]) -> str | None:
+    """A rule's colour as the spec writes it: a named shade of `palette` reads back as
+    its name, any other #RRGGBB as itself; None for anything else (a 6.1 theme token)."""
     scheme = cf.get("colorScheme") if isinstance(cf.get("colorScheme"), str) else ""
-    # A named shade for this paint reads back as its name; any other #RRGGBB as itself.
     color = {v.upper(): k for k, v in palette.items()}.get(scheme.upper())
     if color is None and HEX_COLOUR_RE.fullmatch(scheme):
         color = scheme.upper()
-    # '< x <' is Superset's range comparator; the bare "between" older
-    # chartwright builds wrote (and Superset never matched) reads back the same.
-    op = {"< x <": "between"}.get(cf.get("operator"), cf.get("operator"))
-    if not color or not cf.get("column") or op not in ("<", ">", "=", "between"):
+    return color
+
+
+def _band_targets(cf: dict, op: str) -> dict | None:
+    """A rule's threshold(s) as spec fields, None when Superset's entry lacks them."""
+    if op in FORMAT_RANGE_OPERATORS:
+        left, right = cf.get("targetValueLeft"), cf.get("targetValueRight")
+        return None if left is None or right is None else {"target_left": left, "target_right": right}
+    return None if cf.get("targetValue") is None else {"target": cf["targetValue"]}
+
+
+def _band_operator(cf: dict) -> str | None:
+    # Superset's comparators back to the spec's operators; the bare "between" older
+    # chartwright builds wrote (and Superset never matched) reads back as between too. The
+    # half-open ranges ('≤ x <', '< x ≤') have no spec operator and stay outside.
+    return _FORMAT_OPERATOR_BACK.get(cf.get("operator"))
+
+
+def _format_to_spec(cf: dict) -> dict | None:
+    """Superset conditional_formatting entry -> FormatRule dict, None if outside surface."""
+    text = cf.get("objectFormatting") == "TEXT_COLOR"
+    color = _band_colour(cf, FORMAT_TEXT_HEX if text else FORMAT_COLOR_HEX)
+    op = _band_operator(cf)
+    if not color or not cf.get("column") or op is None:
         return None
     if cf.get("toTextColor") or cf.get("objectFormatting") not in (None, "BACKGROUND_COLOR", "TEXT_COLOR"):
         return None  # legacy text flag / cell bars: outside the surface
@@ -420,16 +670,29 @@ def _format_to_spec(cf: dict) -> dict | None:
     target_col = cf.get("columnFormatting") or ("ENTIRE_ROW" if cf.get("toAllRow") else None)
     if target_col:
         rule["apply_to"] = "row" if target_col == "ENTIRE_ROW" else target_col
-    if op == "between":
-        rule["target_left"] = cf.get("targetValueLeft")
-        rule["target_right"] = cf.get("targetValueRight")
-        if rule["target_left"] is None or rule["target_right"] is None:
-            return None
-    else:
-        rule["target"] = cf.get("targetValue")
-        if rule["target"] is None:
-            return None
-    return rule
+    targets = _band_targets(cf, op)
+    return None if targets is None else rule | targets
+
+
+def _big_number_rules_to_spec(p: dict, losses: list, name: str) -> list[dict]:
+    """A big number's conditional_formatting as BigNumberFormatRule dicts. The plugin
+    paints the number from every rule whose column is set, whichever column it names,
+    always solid and never by cell or row (BigNumberViz.tsx; getColorFormatters.ts
+    4.1.4 and 5.0.0 :199, 6.1.0 :309), so the column, the gradient and the cell options
+    say nothing about the number; a rule without a column paints nothing."""
+    rules = []
+    for cf in p.get("conditional_formatting") or []:
+        cf = cf if isinstance(cf, dict) else {}
+        color, op = _band_colour(cf, FORMAT_TEXT_HEX), _band_operator(cf)
+        targets = _band_targets(cf, op) if op else None
+        if not cf.get("column"):
+            losses.append(Loss(name, f"conditional format with no column, which Superset never "
+                                     f"paints, dropped: {cf}"))
+        elif color is None or targets is None:
+            losses.append(Loss(name, f"conditional format not representable, dropped: {cf}"))
+        else:
+            rules.append({"operator": op, "color": color, **targets})
+    return rules
 
 
 def _rules_to_spec(p: dict, losses: list, name: str, labels: set[str],
@@ -454,6 +717,12 @@ def _rules_to_spec(p: dict, losses: list, name: str, labels: set[str],
                                      "no longer queries, dropped"))
         else:
             rules.append(rule)
+            # 6.1's popover turns the gradient on for a new rule (FormattingPopoverContent.tsx
+            # :250-252 at 6.1.0); a rule is a solid band in the spec. An '=' rule is solid either way.
+            if cf.get("useGradient") is True and rule["operator"] != "=":
+                losses.append(Loss(name, f"conditional format on {rule['metric']!r} fades by "
+                                         "distance from its threshold (gradient), not preserved: "
+                                         "apply paints it one solid colour"))
     return rules
 
 
@@ -482,10 +751,23 @@ def _metric_to_spec(m, losses: list[Loss], chart: str) -> str | None:
             if agg in ADHOC_AGGREGATES and col:
                 if m.get("hasCustomLabel") and m.get("label"):
                     return f"{agg}({col}) AS {m['label']}"
+                # The label is the series name Superset shows; compile stores the spec's
+                # own spelling there (`SUM( sales )`), so that spelling reads back.
+                spelled = m.get("label")
+                parsed = parse_metric(spelled) if isinstance(spelled, str) else None
+                if parsed and parsed.get("sql") is None and not parsed["label"] \
+                        and (parsed["aggregate"], parsed["column"]) == (agg, col):
+                    return spelled
                 return f"{agg}({col})"
         if m.get("expressionType") == "SQL":
             sql = (m.get("sqlExpression") or "").strip()
             match = re.fullmatch(r"(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\(\s*(\*|\w+)\s*\)", sql, re.I)
+            if match and str(m.get("optionName") or "").startswith(METRIC_OPTION_PREFIX):
+                # The tool's own metric. It writes an aggregate as SQL only for `AGG(*)`, in
+                # exactly that spelling (compile _metric_payload); any other was the spec's
+                # `SQL(MAX(col)) AS Label` and reads back as written, so `plan` matches it.
+                # One built in the UI still reads as the simpler AGG(col).
+                match = match if sql in {f"{a}(*)" for a in ADHOC_AGGREGATES} else None
             if match:
                 base = f"{match.group(1).upper()}({match.group(2)})"
                 if m.get("hasCustomLabel") and m.get("label"):
@@ -595,8 +877,20 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             else p.get("subheader")
         if text:
             out["subtitle"] = text
-        if p.get("y_axis_format"):
+        fmt = p.get("time_format") if isinstance(p.get("time_format"), str) else None
+        if p.get("force_timestamp_formatting") is True:
+            # Forced, the number shows as a date whatever its type, so number_format is inert.
+            out["date_format"] = fmt or "smart_date"
+        elif fmt not in (None, "", "smart_date"):
+            # Unforced, the format applies only when the metric itself is a date or a string,
+            # which the spec can't tell offline; date_format would force it on a number too.
+            losses.append(Loss(name, f"time_format {fmt!r} without Force date format not "
+                                     f"preserved; set date_format to keep it"))
+        if p.get("y_axis_format") not in (None, "", "SMART_NUMBER") and "date_format" not in out:
             out["number_format"] = p["y_axis_format"]
+        rules = _big_number_rules_to_spec(p, losses, name)
+        if rules:
+            out["conditional_formatting"] = rules
     elif spec_type == "big_number_trend":
         m = metric_one(p.get("metric"))
         x = p.get("x_axis")
@@ -607,7 +901,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         out["time_column"] = x
         if p.get("time_grain_sqla"):
             out["time_grain"] = p["time_grain_sqla"]
-        if p.get("y_axis_format"):
+        if p.get("y_axis_format") not in (None, "", "SMART_NUMBER"):
             out["number_format"] = p["y_axis_format"]
         lag = _number(p.get("compare_lag"))
         if isinstance(lag, int) and lag >= 1:
@@ -619,6 +913,10 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         colour = _rgb_to_spec(p.get("color_picker"))
         if colour:
             out["trend_color"] = colour
+        # "Start y-axis at 0" unticked (an unset key is the control's default, true).
+        if p.get("start_y_axis_at_zero") is False:
+            out["y_axis_truncate"] = True
+        _rolling_to_spec(p, out, losses, name)
     elif spec_type in ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"):
         ms = [metric_one(m) for m in (p.get("metrics") or [])]
         ms = [m for m in ms if m]
@@ -655,12 +953,37 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         # series: x_axis_sort from 6.0.0, x_axis_sort_series at 4.1.4 and 5.0.0).
         several = bool(p.get("groupby")) or len(ms) > 1
         sort, stored_asc = p.get("x_axis_sort"), p.get("x_axis_sort_asc")
-        if several and sort in (None, "") and p.get("x_axis_sort_series") == "name":
-            sort, stored_asc = "name", p.get("x_axis_sort_series_ascending", True)
+        if several and sort in (None, "") and p.get("x_axis_sort_series") in _SERIES_SORTS:
+            sort = p["x_axis_sort_series"]
+            stored_asc = p.get("x_axis_sort_series_ascending", True)
         if sort == x or (several and sort == "name"):
             # In reading order (the horizontal axis runs bottom-up).
             ascending = bool(stored_asc) != (p.get("orientation") == "horizontal")
             out["category_sort"] = "asc" if ascending else "desc"
+        elif sort not in (None, ""):
+            # A ranking by a measure, largest first (on top of a horizontal bar): the
+            # series' sum ("total"), or a metric, which compile also makes the query's
+            # "Sort query by" (timeseries_limit_metric), drawn or not.
+            ranked = p.get("timeseries_limit_metric")
+            first = metric_label(ms[0])
+            if several and sort == "sum":
+                out["sort_by"] = "total"
+            elif several and sort in _SERIES_SORTS:
+                losses.append(Loss(name, f"bars ranked by the series' {sort!r} value not "
+                                         "preserved (the first metric on re-apply)"))
+            elif ranked and _stored_label(ranked) == sort and not p.get("groupby"):
+                m = metric_one(ranked)
+                if m:
+                    out["sort_by"] = m
+            elif sort != first and not p.get("groupby"):
+                m = next((m for m in ms if metric_label(m) == sort), None)
+                if m:
+                    out["sort_by"] = m
+            largest_first = p.get("orientation") == "horizontal"
+            if stored_asc is not None and bool(stored_asc) != largest_first and (
+                    "sort_by" in out or sort == first):
+                losses.append(Loss(name, "bars ranked smallest first not preserved "
+                                         "(largest first on re-apply)"))
         if p.get("y_axis_format") not in (None, "SMART_NUMBER"):
             out["number_format"] = p["y_axis_format"]
         gb = _groupby_one(p, losses, name)
@@ -720,6 +1043,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             out["conditional_formatting"] = rules
         hidden: list = []
         per_label: dict[str, dict] = {spec_key: {} for spec_key in COLUMN_CONFIG_KEYS}
+        switches: dict[str, dict] = {spec_key: {} for spec_key in BAR_SWITCH_KEYS}
         for label, cfg in (p.get("column_config") or {}).items():
             cfg = cfg if isinstance(cfg, dict) else {}
             if label not in labels:
@@ -740,7 +1064,12 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
                 per_label["column_widths"][label] = width
             if isinstance(cfg.get("customColumnName"), str) and cfg["customColumnName"].strip():
                 per_label["column_headers"][label] = cfg["customColumnName"]
-            extra = sorted(k for k in cfg if k not in ("visible", *_COLUMN_CONFIG_SPEC))
+            for spec_field, key in BAR_SWITCH_KEYS.items():
+                if key in cfg:
+                    # Superset tests `=== undefined`, so a stored null is a false.
+                    switches[spec_field][label] = bool(cfg[key])
+            extra = sorted(k for k in cfg if k not in ("visible", *_COLUMN_CONFIG_SPEC,
+                                                       *BAR_SWITCH_KEYS.values()))
             if extra:
                 losses.append(Loss(name, f"column_config {label!r} settings not preserved: {extra}"))
         if hidden:
@@ -748,6 +1077,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         for spec_field, values in per_label.items():
             if values:
                 out[spec_field] = values
+        _bar_switches_to_spec(p, out, switches)
         page = _number(p.get("page_length"))
         if isinstance(page, int) and page >= 0:
             out["page_length"] = page
@@ -755,8 +1085,6 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             out["show_totals"] = True
         if p.get("include_search") is True:
             out["search_box"] = True
-        if "show_cell_bars" in p:
-            out["cell_bars"] = bool(p["show_cell_bars"])
         if p.get("table_timestamp_format") not in (None, "", "smart_date"):
             out["date_format"] = p["table_timestamp_format"]
         keep_row_limit()
@@ -832,6 +1160,29 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             out["number_format"] = p["y_axis_format"]
         if p.get("show_legend") is False:
             out["show_legend"] = False
+        # Unset (5.0.0 and later have no default) reads as the tool's alpha_asc.
+        for key, field, orders in (("sort_x_axis", "x_order", _HEATMAP_X_ORDER),
+                                   ("sort_y_axis", "y_order", _HEATMAP_Y_ORDER)):
+            order = orders.get(p.get(key) or "alpha_asc")
+            if order is None:
+                losses.append(Loss(name, f"heatmap {key} {p[key]!r} not preserved (axis "
+                                         f"ascending on re-apply)"))
+            elif order != SUPERSET_DEFAULTS["heatmap"][field]:
+                out[field] = order
+        # Superset's own values (-1 = automatic spacing, 'auto' = no margin) map to nothing.
+        for key, spec_field in (("xscale_interval", "x_label_every"),
+                                ("yscale_interval", "y_label_every")):
+            every = _number(p.get(key))
+            if isinstance(every, int) and 1 <= every <= 50:
+                out[spec_field] = every
+            elif every not in (None, -1):
+                losses.append(Loss(name, f"heatmap {key} {p[key]!r} not preserved (automatic on re-apply)"))
+        margin = _number(p.get("left_margin"))
+        if isinstance(margin, int) and 0 <= margin <= 200:
+            out["left_margin"] = margin
+        elif p.get("left_margin") not in (None, "", "auto"):
+            losses.append(Loss(name, f"heatmap left_margin {p['left_margin']!r} not preserved "
+                                     "(none on re-apply)"))
         keep_row_limit()
     elif spec_type == "histogram":
         col = p.get("column")
@@ -893,12 +1244,23 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
                 losses.append(Loss(name, f"mixed chart query {key.upper()} has no representable metrics; chart skipped"))
                 return None
             series: dict = {"metrics": ms}
-            kind = p.get(kind_key) or "line"  # the plugin's own default series type
-            if kind not in ("bar", "line"):
-                losses.append(Loss(name, f"query {key.upper()} series type {kind!r} not preserved (line on re-apply)"))
-                kind = "line"
+            stored = p.get(kind_key) or "line"  # the plugin's own default series type
+            # transformSeries draws 'bar' as bars, and scatter, smooth and the steps their
+            # own way; any other value, the old echarts_timeseries_* names included, as a
+            # straight line (Timeseries/transformers.ts:237-243 at 4.1.4, :306-312 at 6.1.0).
+            kind = "bar" if stored == "bar" else "line"
+            if stored in ("scatter", "smooth", "start", "middle", "end"):
+                losses.append(Loss(name, f"query {key.upper()} series type {stored!r} not "
+                                         f"preserved (a straight line on re-apply)"))
+            disp = kind_key.replace("seriesType", "")  # "" for query A, "B" for query B
+            # "Area chart" fills under a line; a bar draws no area, so there it does nothing.
+            if kind == "line" and p.get(f"area{disp}") is True:
+                kind = "area"
             if kind != "bar":
                 series["kind"] = kind
+            opacity = _number(p.get(f"opacity{disp}"))
+            if kind == "area" and opacity is not None and 0 <= opacity <= 1 and opacity != 0.2:
+                series["opacity"] = opacity
             if p.get(axis_key) == 1:
                 series["axis"] = "secondary"
             gb = [g for g in (p.get(f"groupby{sfx}") or []) if isinstance(g, str)]
@@ -906,7 +1268,6 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
                 losses.append(Loss(name, f"query {key.upper()}: multiple groupby {gb}; kept first only"))
             if gb:
                 series["groupby"] = gb[0]
-            disp = kind_key.replace("seriesType", "")  # "" for query A, "B" for query B
             if p.get(f"markerEnabled{disp}"):
                 series["markers"] = True
             if p.get(f"show_value{disp}") is True:
@@ -926,16 +1287,26 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         if p.get("y_axis_format_secondary") not in (None, "SMART_NUMBER"):
             out["number_format_secondary"] = p["y_axis_format_secondary"]
         keep_row_limit()
+    elif spec_type == "waterfall":
+        waterfall_read = _waterfall_to_spec(p, out, losses, name, metric_one)
+        if waterfall_read is None:
+            return None
+    elif spec_type == "box_plot":
+        box_plot_read = _box_plot_to_spec(p, out, losses, name, metric_one)
+        if box_plot_read is None:
+            return None
 
     mapped_here = {"combineMetric", "conditional_formatting", "rowTotals", "colTotals", "colSubTotals"} if spec_type == "pivot_table" else (
         {"order_by_cols", "timeseries_limit_metric", "series_limit_metric",
          "conditional_formatting", "column_config"}
         if spec_type == "table" else set())
     if spec_type == "mixed":
-        mapped_here = {"metrics_b", "groupby_b", "adhoc_filters_b", "row_limit_b", "seriesTypeB",
+        mapped_here = {"metrics_b", "groupby_b", "adhoc_filters_b", "row_limit_b", "seriesType",
+                       "seriesTypeB",
                        "yAxisIndex", "yAxisIndexB", "y_axis_format_secondary",
                        "markerEnabled", "markerEnabledB"}
-        mapped_here |= {f"{k}{s}" for k in ("show_value", "stack", "only_total") for s in ("", "B")}
+        mapped_here |= {f"{k}{s}" for k in ("show_value", "stack", "only_total", "area", "opacity")
+                        for s in ("", "B")}
         mapped_here |= {f"{k}{s}" for k in ("limit", "timeseries_limit_metric", "order_desc")
                         for s in ("", "_b")}
     if p.get("time_range") not in (None, "", "No filter"):
@@ -947,17 +1318,31 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
     if spec_type in LEGEND_TYPES:
         mapped_here = mapped_here | _legend_to_spec(p, out, spec_type)
     if spec_type == "big_number_trend":
-        mapped_here = mapped_here | {"compare_lag", "compare_suffix", "subtitle", "color_picker"}
+        # conditional_formatting: the trendline plugin never reads it (no control, and no
+        # colour rules in its transformProps at 4.1.4, 5.0.0 and 6.1.0), so rules left from
+        # a Big Number the chart was switched from colour nothing.
+        mapped_here = mapped_here | {"compare_lag", "compare_suffix", "subtitle", "color_picker",
+                                     "rolling_type", "rolling_periods", "min_periods",
+                                     "start_y_axis_at_zero", "conditional_formatting"}
     if spec_type == "big_number_total":
-        mapped_here = mapped_here | {"subtitle"}
+        mapped_here = mapped_here | {"subtitle", "time_format", "force_timestamp_formatting",
+                                     "conditional_formatting"}
     if spec_type == "table":
-        mapped_here = mapped_here | {"page_length", "show_totals", "include_search"}
+        mapped_here = mapped_here | {"page_length", "show_totals", "include_search", "color_pn",
+                                     "align_pn"}
     if spec_type == "pivot_table":
         mapped_here = mapped_here | {"rowSubTotals", "transposePivot"}
     if spec_type == "histogram":
         mapped_here = mapped_here | {"x_axis_title", "y_axis_title"}
     if spec_type == "pie":
         mapped_here = mapped_here | {"show_total"}
+    if spec_type == "heatmap":
+        mapped_here = mapped_here | {"sort_x_axis", "sort_y_axis", "xscale_interval", "yscale_interval",
+                                   "left_margin"}
+    if spec_type == "waterfall":
+        mapped_here = mapped_here | waterfall_read
+    if spec_type == "box_plot":
+        mapped_here = mapped_here | box_plot_read
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
         mapped_here = mapped_here | _axis_to_spec(p, out, losses, name, spec_type)
@@ -1217,6 +1602,29 @@ def _geo(meta: dict) -> dict:
     return geo
 
 
+def _header_to_spec(meta: dict) -> dict | None:
+    """A HEADER node's meta as a spec header block; None when it has no text."""
+    text = meta.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    header: dict = {"header": text}
+    # Superset draws a header with no stored size as small (Header.tsx).
+    size = _REVERSE_HEADER_SIZE.get(meta.get("headerSize") or "SMALL_HEADER", "small")
+    if size != "medium":
+        header["size"] = size
+    if meta.get("background") == BACKGROUND["white"]:
+        header["background"] = "white"
+    return header
+
+
+def _markdown_height(meta: dict) -> int | float | None:
+    """A MARKDOWN node's height in spec units: exact, since text blocks take fifths."""
+    if not meta.get("height"):
+        return None
+    h = int(meta["height"]) / ROW_UNITS_PER_SPEC_UNIT
+    return int(h) if h.is_integer() else round(h, 1)
+
+
 def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                losses: list[Loss], geometry: dict[str, dict]) -> list:
     """Convert grid- or tab-level nodes into spec rows: ROWs (chart names +
@@ -1248,9 +1656,8 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                         block: dict = {"markdown": meta.get("code") or ""}
                         if meta.get("width"):
                             block["width"] = max(1, min(12, int(meta["width"])))
-                        if meta.get("height"):
-                            h = int(meta["height"]) / ROW_UNITS_PER_SPEC_UNIT  # exact: text blocks take fifths
-                            block["height"] = int(h) if h.is_integer() else round(h, 1)
+                        if _markdown_height(meta) is not None:
+                            block["height"] = _markdown_height(meta)
                         if block["markdown"]:
                             row.append(block)
                         else:
@@ -1272,18 +1679,10 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                     rows.append([nm])
                     geometry[nm] = _geo(meta)
             elif t == "HEADER" and depth == 0:
-                meta = node.get("meta") or {}
-                text = meta.get("text")
-                if not isinstance(text, str) or not text.strip():
+                header = _header_to_spec(node.get("meta") or {})
+                if header is None:
                     losses.append(Loss("layout", "empty HEADER dropped"))
                     continue
-                header: dict = {"header": text}
-                # Superset draws a header with no stored size as small (Header.tsx).
-                size = _REVERSE_HEADER_SIZE.get(meta.get("headerSize") or "SMALL_HEADER", "small")
-                if size != "medium":
-                    header["size"] = size
-                if meta.get("background") == BACKGROUND["white"]:
-                    header["background"] = "white"
                 rows.append(header)
             elif t == "DIVIDER" and depth == 0:
                 rows.append({"divider": True})
@@ -1365,58 +1764,201 @@ def _sketch_from(position: dict, children: list[str], kept_names: set[str],
     """A section of rows holding charts and COLUMNs of charts, as a sketch: the only
     spec layout that stacks charts beside a taller one (triage J). Each chart keeps its
     exact height as an explicit `height`, which wins over the sketch's line height, so
-    a line per stacked chart is enough. None when the section holds anything a sketch
-    can't (markdown, a header, a divider, a white row, a chart decompile can't keep),
-    and the caller walks it as rows instead."""
-    from math import lcm
+    a line per stacked chart is enough; a markdown block keeps its own the same way.
+    Markdown and headers in the rows and columns become legend blocks, a header
+    between the rows a header across the sketch, each header one line. None when the
+    section holds anything a sketch can't (a divider, a white row, a chart outside a
+    row, a chart decompile can't keep, an empty block), and the caller walks it as
+    rows instead."""
+    from .sketch import BlockRef, SketchError, parse_sketch
 
-    rows: list[list[tuple[int, list[str]]]] = []
-    for row_id in children:
-        node = position.get(row_id) or {}
+    def entry(node: dict):
+        """('chart', name) | ('markdown', block) | ('header', block), or None."""
+        meta = node.get("meta") or {}
+        t = node.get("type")
+        if t == "CHART":
+            return ("chart", meta.get("sliceName")) if meta.get("sliceName") in kept_names else None
+        if t == "MARKDOWN":
+            if not (meta.get("code") or "").strip():
+                return None
+            block: dict = {"markdown": meta["code"]}
+            if _markdown_height(meta) is not None:
+                block["height"] = _markdown_height(meta)
+            return ("markdown", block)
+        if t == "HEADER":
+            header = _header_to_spec(meta)
+            return ("header", header) if header else None
+        return None
+
+    bands: list = []   # ("header", block) | ("row", [(width, [entry, ...]), ...])
+    for node_id in children:
+        node = position.get(node_id) or {}
+        if node.get("type") == "HEADER":
+            found = entry(node)
+            if found is None:
+                return None
+            bands.append(("header", found[1]))
+            continue
         if node.get("type") != "ROW" or (node.get("meta") or {}).get("background") == BACKGROUND["white"]:
             return None
-        items: list[tuple[int, list[str]]] = []
+        items: list[tuple[int, list]] = []
         for ch_id in node.get("children", []):
             ch = position.get(ch_id) or {}
-            if ch.get("type") == "CHART":
+            if ch.get("type") in ("CHART", "MARKDOWN"):
                 stack = [ch]
             elif ch.get("type") == "COLUMN":
                 stack = [position.get(x) or {} for x in ch.get("children", [])]
-                if not stack or any(x.get("type") != "CHART" for x in stack):
+                if not stack:
                     return None
             else:
                 return None
-            names = [(x.get("meta") or {}).get("sliceName") for x in stack]
-            if any(n not in kept_names for n in names):
+            entries = [entry(x) for x in stack]
+            if any(e is None for e in entries):
                 return None
             width = int((ch.get("meta") or {}).get("width") or 0)
             if width < 1:
                 return None
-            items.append((width, names))
+            items.append((width, entries))
         if not items or sum(w for w, _ in items) > 12:
             return None
-        rows.append(items)
-    names = [n for items in rows for _, stack in items for n in stack]
-    if not rows or len(names) != len(set(names)) or len(names) > len(_SKETCH_SYMBOLS):
+        bands.append(("row", items))
+    names = [e[1] for kind, band in bands if kind == "row"
+             for _, stack in band for e in stack if e[0] == "chart"]
+    blocks = sum(1 if kind == "header" else sum(1 for _, stack in band for e in stack
+                                                if e[0] != "chart")
+                 for kind, band in bands)
+    if not bands or len(names) != len(set(names)) or len(names) + blocks > len(_SKETCH_SYMBOLS):
         return None
-    symbol = {n: _SKETCH_SYMBOLS[i] for i, n in enumerate(names)}
+    symbols = iter(_SKETCH_SYMBOLS)
+    symbol = {n: next(symbols) for n in names}
+    legend: dict = {symbol[n]: n for n in names}
+
+    def sym(e) -> str:
+        if e[0] == "chart":
+            return symbol[e[1]]
+        s = next(symbols)
+        legend[s] = e[1]
+        return s
+
     lines: list[str] = []
-    for items in rows:
-        depth = lcm(*(len(stack) for _, stack in items))
-        for line in range(depth):
-            cells = "".join(symbol[stack[line * len(stack) // depth]] * width
-                            for width, stack in items)
-            lines.append(cells.ljust(12, "."))
+    for kind, band in bands:
+        if kind == "header":
+            lines.append(sym(("header", band)) * 12)
+            continue
+        stacks = [(width, [(e[0], sym(e)) for e in stack]) for width, stack in band]
+        span, counts = _band_lines([[k for k, _ in stack] for _, stack in stacks])
+        drawn = []
+        for (width, stack), per_item in zip(stacks, counts):
+            cells: list[str] = []
+            for count, (_, s) in zip(per_item, stack):
+                cells += [s * width] * count
+            cells += ["." * width] * (span - len(cells))  # a stack that ends early
+            drawn.append(cells)
+        for line in range(span):
+            lines.append("".join(cells[line] for cells in drawn).ljust(12, "."))
+    try:
+        # A band no drawing keeps whole (a header alone beside a stacked column) splits
+        # into bands, and the next one would open on the dots below the header.
+        parse_sketch(lines, {s: v if isinstance(v, str)
+                             else BlockRef("header" if "header" in v else "markdown")
+                             for s, v in legend.items()}, 2)
+    except SketchError:
+        return None
     for row_id in children:
-        for ch_id in (position.get(row_id) or {}).get("children", []):
+        node = position.get(row_id) or {}
+        for ch_id in node.get("children", []) if node.get("type") == "ROW" else []:
             ch = position.get(ch_id) or {}
-            for x in ([ch] if ch.get("type") == "CHART" else
+            for x in ([ch] if ch.get("type") != "COLUMN" else
                       [position.get(c) or {} for c in ch.get("children", [])]):
+                if x.get("type") != "CHART":
+                    continue
                 meta = x.get("meta") or {}
                 geo = _geo(meta)
                 geo.pop("width", None)  # the sketch holds widths
                 geometry[meta.get("sliceName")] = geo
-    return {"sketch": lines, "legend": {symbol[n]: n for n in names}}
+    return {"sketch": lines, "legend": legend}
+
+
+def _band_lines(stacks: list[list[str]]) -> tuple[int, list[list[int]]]:
+    """(lines, lines per item of each stack) to draw one band of stacks (each stack: its
+    items' kinds) so that the sketch parser reads it back as ONE band: it cuts a band
+    at every line boundary no item spans, so each boundary inside the band must fall
+    inside an item of some stack. A header takes one line. First the even drawing: the
+    stacks' items share the lines evenly (without headers, over the least common
+    multiple of the stack sizes); where that leaves a boundary no item spans, a
+    staggered one (_stagger)."""
+    from math import lcm
+
+    sizes = [sum(1 for k in stack if k != "header") for stack in stacks]
+    heads = [len(stack) - n for stack, n in zip(stacks, sizes)]
+    if not any(heads):
+        span = lcm(*sizes)
+    else:
+        need = max(h + n for h, n in zip(heads, sizes))
+        span = next((n_ for n_ in range(need, need + lcm(1, *(n for n in sizes if n)) + 1)
+                     if all(n == 0 or (n_ - h) % n == 0 for h, n in zip(heads, sizes))), need)
+    even = [_stack_lines(stack, span) for stack in stacks]
+    if _one_band(even, span):
+        return span, even
+    return _stagger(stacks)
+
+
+def _one_band(counts: list[list[int]], span: int) -> bool:
+    """Whether every line boundary inside the band falls inside some item."""
+    inside: set[int] = set()
+    for per_item in counts:
+        top = 0
+        for n in per_item:
+            inside.update(range(top + 1, top + n))
+            top += n
+    return all(r in inside for r in range(1, span))
+
+
+def _stagger(stacks: list[list[str]]) -> tuple[int, list[list[int]]]:
+    """A drawing that offsets the stacks' item boundaries, line by line: an item ends
+    after its line (a header always does), each stack's last item runs to the end of the
+    band, and where every item would end together, the stack with the most lines to
+    spare runs its item on to span the boundary. The band ends once each stack has
+    drawn its last item. A boundary only headers or a lone stack reach is a cut no
+    drawing avoids; the rows it makes lay the items out as the one row did."""
+    k = len(stacks)
+    item, drawn = [0] * k, [0] * k
+    counts: list[list[int]] = [[] for _ in stacks]
+    lines = 0
+    while True:
+        lines += 1
+        live = [s for s in range(k) if item[s] < len(stacks[s])]
+        for s in live:
+            drawn[s] += 1
+        if all(item[s] == len(stacks[s]) - 1 for s in live):
+            for s in live:
+                counts[s].append(drawn[s])
+            return lines, counts
+        ending = [s for s in live
+                  if stacks[s][item[s]] == "header" or item[s] < len(stacks[s]) - 1]
+        if len(ending) == len(live) > 1:
+            spare = [s for s in ending if stacks[s][item[s]] != "header"]
+            if spare:
+                ending.remove(max(spare, key=lambda s: (item[s] - len(stacks[s]), -s)))
+        for s in ending:
+            counts[s].append(drawn[s])
+            item[s] += 1
+            drawn[s] = 0
+
+
+def _stack_lines(kinds: list[str], span: int) -> list[int]:
+    """Lines per item of one stack over `span` lines: a header one, the others the
+    rest, evenly (earlier items take any remainder); a stack of headers alone ends early."""
+    n = sum(1 for k in kinds if k != "header")
+    base, extra = divmod(span - (len(kinds) - n), n) if n else (0, 0)
+    out, seen = [], 0
+    for k in kinds:
+        if k == "header":
+            out.append(1)
+        else:
+            out.append(base + (1 if seen < extra else 0))
+            seen += 1
+    return out
 
 
 def _section(position: dict, children: list[str], kept_names: set[str],
@@ -1433,7 +1975,8 @@ def _section(position: dict, children: list[str], kept_names: set[str],
 
 
 def _section_rows(section: dict) -> list:
-    """A section's rows, a sketch read as one row of its charts in reading order."""
+    """A section's rows, a sketch read as one row of its charts and blocks in reading
+    order."""
     if "sketch" in section:
         return [list(section["legend"][ch] for ch in dict.fromkeys(
             c for line in section["sketch"] for c in line if c in section["legend"]))]
@@ -1592,10 +2135,16 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
         if geo.get("width"):
             c["width"] = max(1, min(12, int(geo["width"])))
         if geo.get("height"):
-            h = max(1, round(int(geo["height"]) / ROW_UNITS_PER_SPEC_UNIT))
-            c["height"] = h
-            if int(geo["height"]) != h * ROW_UNITS_PER_SPEC_UNIT:
-                losses.append(Loss(name, f"height {geo['height']} rounded to {h * ROW_UNITS_PER_SPEC_UNIT} row units"))
+            # Exact, in fifths: a chart's height is whole grid rows (8 px), so 23 rows read
+            # back as 4.6, as compile, absorb and a text block's height have it. Rounding to
+            # whole units made every fifth-unit height a change `plan` reported after apply.
+            rows = int(geo["height"])
+            c["height"] = spec_units(max(rows, ROW_UNITS_PER_SPEC_UNIT))
+            if rows < ROW_UNITS_PER_SPEC_UNIT:
+                # The spec's floor is one unit, Superset's own resize floor (GRID_MIN_ROW_UNITS
+                # = 5, dashboard/util/constants.ts:42 at 4.1.4, 5.0.0 and 6.1.0).
+                losses.append(Loss(name, f"height {geo['height']} row units raised to "
+                                         f"{ROW_UNITS_PER_SPEC_UNIT}, the spec's minimum"))
         if geo.get("display_name"):
             c["display_name"] = geo["display_name"]
 

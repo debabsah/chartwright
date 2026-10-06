@@ -126,7 +126,21 @@ running the tool against real instances of all three releases.
   allows a HEADER or DIVIDER under the grid, a tab or a column, and a row
   holds only charts, markdown and columns (`src/dashboard/util/isValidChild.ts:64-104`,
   all three releases). The spec therefore places a header or divider as a
-  row of its own.
+  row of its own. A sketch's header drawn across the page compiles the same
+  way; any other header in a sketch sits in a COLUMN, stacked with the charts
+  and notes it shares a slot with, or alone in a column of its own. Superset
+  styles a header inside a column for exactly that
+  (`dashboard/components/gridComponents/Header.jsx:105` at 4.1.4 and 5.0.0,
+  `Header/Header.tsx:149` at 6.1.0). Verified live on 4.1.4, 5.0.0 and 6.1.0:
+  such a sketch imports, renders, decompiles without a loss and plans clean.
+- **Heights are whole grid rows of 8 px.** A chart or text block stores its
+  height as a count of grid rows; one spec unit is 5 of them, so a height in
+  fifths (4.6 = 23 rows, as `absorb` writes after a resize in the UI) is
+  exact, and decompile reads 23 rows back as 4.6. A height between fifths
+  compiles to the nearest whole row, so `plan` compares heights on that grid.
+  Superset won't resize a chart below 5 rows (`GRID_MIN_ROW_UNITS`,
+  `src/dashboard/util/constants.ts:42`, all three releases), the spec's
+  floor of 1 unit; decompile reads a shorter stored height as 1 and says so.
 - **The server normalizes what it stores and accepts dangling references.**
   Omitted settings are filled with defaults on write (4.1.4
   `superset/daos/dashboard.py:258-265`), and filter scopes pointing at
@@ -255,8 +269,9 @@ running the tool against real instances of all three releases.
   development build reports 0.0.0, which counts as unknown.
 - **A field a release can't take is refused before anything is written.**
   `chartwright/versions.py` lists each version-gated field with the first
-  release that takes it: `tags` and `theme` (6.0.0) and
-  `show_chart_timestamps` (6.1.0), for the reasons above. Against an older instance, the spec gets
+  release that takes it: `tags` and `theme` (6.0.0), and
+  `show_chart_timestamps` and a waterfall's `steps` (6.1.0), for the reasons above
+  and in "A waterfall" below. Against an older instance, the spec gets
   a `superset_version_too_old` error at the resolve stage, so `apply` stops
   before its backup, import or any update; remove the field for that
   instance. When the instance doesn't report its version, the error is
@@ -290,8 +305,80 @@ running the tool against real instances of all three releases.
   (`MixedTimeseries/transformProps.ts`, 6.0.0 `:178-179`, 6.1.0
   `:186-187`). That warning names `show_value`, the field the spec wrote,
   since `only_total` is on by default; `only_total: false` asks for every
-  segment on every release, so it raises nothing. These come back in
-  `version_warnings`, and the dashboard still builds.
+  segment on every release, so it raises nothing. A waterfall's
+  `total_label`, `increase_label` and `decrease_label` are 6.1.0 controls;
+  older releases name the bars Total, Increase and Decrease. A box plot's
+  `row_limit` is a 6.0.0 control (see "A box plot's row limit" below). A
+  table that asks for cell bars (`cell_bars` true or a list, `color_by_sign`
+  or `absolute_bars`) beside colour rules warns before 6.1.0, the first
+  release to draw both ("Colour rules and cell bars", below). A table's
+  `hidden` columns warn before 6.0.0, and four colour-rule effects before
+  6.1.0 ("Colour rules draw differently before 6.1.0", below). These come
+  back in `version_warnings`, and the dashboard still builds.
+- **A field a release reads another way warns too.** Every release takes a
+  heatmap's `x_order` and `y_order`, but only 6.1.0 sorts each axis itself
+  and ranks a label by its total for a value order (`sortAxisValues`,
+  `Heatmap/transformProps.ts:88-145`). Before, the axes list labels in the
+  order the query sorts the cells (`Heatmap/buildQuery.ts:39-48` at 4.1.4,
+  `:39-52` at 5.0.0 and 6.0.0), so by value a label's place follows its
+  largest or smallest cell, and with both axes by value the first axis's
+  direction decides both. A value order warns before 6.1.0; a label order
+  means the same on every release and raises nothing. Seen live on 4.1.4:
+  `y_order: "value_desc"` with `x_order: "value_desc"` put the largest row
+  at the bottom.
+- **Colour rules draw differently before 6.1.0.** 6.1.0 added the rule keys
+  the tool writes, and the 4.1.4, 5.0.0 and 6.0.0 table and pivot plugins
+  read none of them; their own rule popover never offers them either. Each
+  warns, naming what the older release draws (verified live on 4.1.4, 5.0.0
+  and 6.1.0 with screenshots and measured cell colours):
+  - `apply_to` (`columnFormatting`, read at 6.1.0
+    `plugin-chart-table/src/TableChart.tsx:984-1007`): an older table paints
+    the rule's own metric cells instead (`TableChart.tsx:763` at 4.1.4,
+    `:768` at 5.0.0, `:905` at 6.0.0), so a status rule meant for the number
+    beside it colours the status column, or nothing once that column is
+    hidden. A rule whose `apply_to` names its own metric draws the same
+    everywhere and raises nothing.
+  - `paint: "text"` (`objectFormatting`, read at 6.1.0 `TableChart.tsx:966-970`
+    and `react-pivottable/TableRenderers.tsx:192-194`): an older table or
+    pivot fills the cell with the colour instead, under its own dark text
+    (`TableChart.tsx:770`, `TableRenderers.jsx:710` at 4.1.4). The named
+    colours' text shades are dark, so the value is hard to read where the
+    fill is full: 3.0:1 on a 4.1.4 table, and 1.0:1 on a pivot, whose text is
+    teal, so the number vanishes. `paint: "cell"` reads on every release.
+  - A solid band (`useGradient: false`, read at 6.1.0
+    `superset-ui-chart-controls/src/utils/getColorFormatters.ts:273-276`): an
+    older release scales every colour but an `=` rule's by the value's
+    distance from the threshold (`getOpacity`, `:180` at 4.1.4 and 5.0.0,
+    `:189` at 6.0.0), from 0.05 opacity at the threshold to full at the
+    column's extreme, so a value just past it is barely tinted. Keyed on
+    `conditional_formatting` with any operator but `=`.
+  - A dark fill: 6.1.0 turns a painted cell's text white or black, whichever
+    reads (`getTextColorForBackground`, `getColorFormatters.ts:385`, used at
+    `TableChart.tsx:1024` and `TableRenderers.tsx:219`); older releases keep
+    their own cell text, near-black on a table and teal on a pivot
+    (`react-pivottable/Styles.js:105` at 4.1.4 and 5.0.0). `color` warns for
+    a cell-painted hex under 3:1 against that text (`#0057B8` reads at
+    2.8:1 on a 4.1.4 table); green, amber and red's cell shades all clear it.
+
+  These are warnings, not errors, text paint's included. The error tier is
+  for a bundle a release rejects or a dashboard it then can't save, and
+  stops `apply` before anything is written; here the dashboard imports and
+  saves, and every value reaches the table. An error would also stop a spec
+  deployed to instances on several releases from reaching the older ones at
+  all, with no way to write one spec for both, where the warning names what
+  the older release draws and the setting that reads on every release.
+- **Every release has the same colour-rule comparators.** `>`, `<`, `=`,
+  `>=` (`≥`), `<=` (`≤`), `!=` (`≠`), `between` (`< x <`) and
+  `between_inclusive` (`≤ x ≤`) each have a case in `getColorFunction`
+  (`getColorFormatters.ts`, `≥` at 4.1.4 and 5.0.0 `:113`, 6.0.0 `:122`,
+  6.1.0 `:141`; `≤ x ≤` at `:153`, `:162`, `:191`) and an entry in the rule
+  popover (`FormattingPopoverContent.tsx:55-60` at 4.1.4,
+  `ConditionalFormattingControl/constants.ts:26-31` at 6.1.0). Decompile
+  reads them all back; the half-open ranges `≤ x <` and `< x ≤` have no spec
+  operator and are named losses, and so is a rule 6.1.0's popover saved with
+  its gradient on (its default), which the spec paints solid. A big number's
+  rules take the same comparators: its `transformProps.ts` builds them with
+  the same `getColorFormatters` (4.1.4 and 5.0.0 `:99`, 6.1.0 `:121`).
 - **6.0.x is checked against its source, not tested live.** Each field's
   first release, 6.0.0 or 6.1.0, was read from the 6.0.0 tag, so `check`,
   `apply` and `plan` hold a 6.0.x instance to what that release takes. 6.0.x
@@ -315,7 +402,10 @@ running the tool against real instances of all three releases.
   controls the tool does not emit yet; `--check` fails when the JSON no
   longer matches the source. Among the controls 6.1.0 declares and 5.0.0
   does not are `only_total` and `only_totalB`, both new in 6.0.0
-  (`MixedTimeseries/controlPanel.tsx:204` at 6.0.0).
+  (`MixedTimeseries/controlPanel.tsx:204` at 6.0.0). The `waterfall` and `box_plot` entries
+  are extracted the same way by `tools/extract_panel_contract.py`, from
+  `Waterfall/controlPanel.tsx` (and the `showValueControl` it imports) and
+  `BoxPlot/controlPanel.ts` (and its title section).
 - **Formula annotation layers draw the same way in every release.** The line,
   bar, area, scatter and mixed panels all include the annotation section
   (`chart-controls/src/sections/annotationsAndLayers.tsx:31`), and both
@@ -323,7 +413,29 @@ running the tool against real instances of all three releases.
   (`plugin-chart-echarts/src/Timeseries/transformers.ts`, 4.1.4 `:356`,
   5.0.0 `:362`, 6.1.0 `:457`, the same body in each). Its colour, opacity,
   width and line style (solid, dashed or dotted) reach the chart; a formula
-  layer has no on-chart label, so the tool offers none.
+  layer has no on-chart label, so the tool offers none. On a horizontal bar
+  each point becomes `[y, x]` (4.1.4 `:381-383`, 5.0.0 `:387-389`, 6.1.0
+  `:482-484`), so a `value` lands on the value axis, which runs across, and
+  the line stands upright at it: a 1.0x threshold or a 4-hour limit over a
+  ranked list. Seen live on all three releases. On either orientation the
+  line runs from the first category to the last, not the full plot.
+- **A mixed chart's lines take no width or dash of their own, on any
+  release.** Each query's display controls are its series type, stacking,
+  area fill and that fill's opacity, values on the marks, markers and their
+  size, and its axis (`createCustomizeSection` in
+  `MixedTimeseries/controlPanel.tsx`, 4.1.4 and 5.0.0 `:132-262`; 6.1.0
+  `:137-313` adds `only_total` and a series sort). Neither query gets a line
+  style from `transformProps` (`transformSeries` for queries A and B,
+  4.1.4 `:382,429`, 5.0.0 `:384,432`, 6.1.0 `:457,530`). The one-query
+  Timeseries chart dashes only time-comparison series
+  (`Timeseries/transformProps.ts`, 4.1.4 `:285-296`, 6.1.0 `:400-422`), and
+  the mixed chart has no such pass. 6.1.0's "ECharts Options" can't style one
+  series either: the merge replaces arrays whole
+  (`utils/mergeCustomEChartOptions.ts:70-72`), so a `series` entry would drop
+  the chart's own. The spec therefore has no line style for a mixed query.
+  Tell a ghost line from the ink line by colour: `dashboard.label_colors`
+  pins a pale grey to the ghost's series label. A fixed level can be an
+  annotation, which does take `style`, `width` and `opacity`.
 - **Options genuinely differ by release.** 6.0.0 renamed the big-number
   subtitle field (`subheader` became `subtitle`) and removed sort controls
   that older releases still have. The tool emits only options valid on all
@@ -353,10 +465,17 @@ running the tool against real instances of all three releases.
 - **A written Superset default draws the same chart as an omitted field.**
   Writing Superset's own value (`legend_position: "top"`, `legend_type:
   "scroll"`, a pie's `label_type: "key_percent"`, a funnel's `"key"`, a
-  treemap's `"key_value"`, `marker_size: 6`, `opacity: 0.2`, the teal
-  `trend_color` `#007A87`, a heatmap's `superset_seq_1`, or a dashboard's
-  `refresh_frequency: 0` and `filter_bar_orientation: "vertical"`) changes
-  nothing Superset draws. The spec keeps the value as written, so an author's
+  treemap's `"key_value"`, `marker_size: 6`, `opacity: 0.2` (a mixed
+  query's area too), the teal `trend_color` `#007A87`, a heatmap's
+  `superset_seq_1`, any chart's `time_range: "No filter"`,
+  `number_format: "SMART_NUMBER"` (and the mixed chart's
+  `number_format_secondary`), `x_label_format: "smart_date"` and
+  `x_label_rotation: 0`, a table's `date_format: "smart_date"`, or a
+  dashboard's `refresh_frequency: 0` and `filter_bar_orientation:
+  "vertical"`) changes nothing Superset draws. The same holds for the two
+  orders the tool always wrote, a heatmap's `x_order: "a_to_z"` and
+  `y_order: "z_to_a"`, and for a trendline's `rolling_min_periods` equal to
+  its `rolling_periods`. The spec keeps the value as written, so an author's
   choice survives validation; `compile` builds the same bundle as for the
   omitted field, and `plan` reads the two as equal. A decompiled spec leaves
   Superset's defaults out, since the stored chart can't say which one the
@@ -373,12 +492,85 @@ running the tool against real instances of all three releases.
   panel shows the bounds only while Truncate Y Axis is on; the tool writes
   them without turning truncation on, so the side without a bound still
   includes zero unless the spec sets `y_axis_truncate`.
+- **A table's cell bars are three switches, each set for the whole table and
+  per column.** `show_cell_bars`, `color_pn` and `align_pn` set them for the
+  table; a column's own `showCellBars`, `colorPositiveNegative` and
+  `alignPositiveNegative` in `column_config` win where set
+  (`plugin-chart-table/src/TableChart.tsx`, 4.1.4 `:694-701`, `:718-720`,
+  5.0.0 `:699-706`, `:723-725`, 6.1.0 `:886-893`, `:906`). A bar is drawn on a
+  metric, or on any numeric column of a raw table, never on a dimension
+  (4.1.4 `:721`, 6.1.0 `:910`). Left unset, a dashboard draws bars coloured by
+  sign and not aligned: the panel's defaults are true, true and false
+  (`controlPanel.tsx`, 4.1.4 `:495`, `:523`, `:509`; 5.0.0 `:544`, `:572`,
+  `:558`; 6.1.0 `:664`, `:692`, `:678`), which `applyDefaultFormData` fills in.
+  - Colour by sign colours the bar, never the number (`cellBackground`, 4.1.4
+    and 5.0.0 `:159-168`, 6.1.0 `:202-219`). From 6.0.0 a bar is green above
+    zero and red below, and the theme's grey without it; 4.1.4 and 5.0.0 draw
+    every bar grey and colour only the negative ones red. Verified live: an
+    untouched 6.1.0 table draws its revenue bars green.
+  - Align +/- sizes each bar by its absolute value from the cell's left edge
+    (`cellWidth`, `cellOffset` and `getValueRange`, 6.1.0 `:130-148`,
+    `:180-196`, `:398-410`). Without it, a column with negative values draws
+    them left of a zero line placed by the column's range.
+  - The spec's `cell_bars`, `color_by_sign` and `absolute_bars` take true or
+    false for the whole table, or a list of labels, which turns the table's
+    switch off and each listed column's on. Colour and alignment draw on a
+    bar, so each label they list must have one. `color_by_sign: true` and
+    `absolute_bars: false` are Superset's own values and compile as omitted.
+- **Colour rules and cell bars behave differently by release.** On 4.1.4,
+  5.0.0 and 6.0.0 a table with any colour rule draws no cell bar on a numeric
+  column (`TableChart.tsx`, 4.1.4 `:705-717`, 5.0.0 `:710-722`, 6.0.0
+  `:844-858`). From 6.1.0 the bars stay: a rule that paints a cell's
+  background hides that cell's bar only, and a text colour keeps it (6.1.0
+  `:958-980`, `:1048`). Verified live on all three releases. `check`,
+  `apply` and `plan` warn before 6.1.0 when a spec asks for bars beside
+  colour rules.
 - **A table's page size is `page_length`.** Superset reads
   `server_page_length` only with server pagination on, and `page_length`
   otherwise (`plugin-chart-table/src/transformProps.ts`, 4.1.4 `:631`, 5.0.0
   `:699`, 6.1.0 `:789`). The tool never turns server pagination on, so it
   writes no `server_page_length` (0.3.0 and earlier wrote Superset's stored
   default, 10, which changed nothing). `page_length` in the spec sets the page.
+  Any `page_length` above 0 draws the page-size picker, on a table of one page
+  too, and the pager joins it from a second page (`hasPagination`,
+  `DataTable/DataTable.tsx:123` and `:407` at 4.1.4 and 5.0.0, `:173` and
+  `:616` at 6.1.0); `search_box` adds the search bar beside the picker (`:383`
+  at 4.1.4 and 5.0.0, `:593` at 6.1.0). The design brain adds neither to a
+  table whose rows all show in its panel (DESIGN-BRAIN.md §16).
+- **A big number's colour rules colour the number, on every release.** The
+  Big Number declares `conditional_formatting` at 4.1.4, 5.0.0 and 6.1.0
+  (`BigNumber/BigNumberTotal/controlPanel.ts`, 4.1.4 and 5.0.0 `:94`, 6.1.0
+  `:85`), so the field needs no version gate. Its `transformProps.ts` builds the
+  rules with no alpha (4.1.4 and 5.0.0 `:98-100`, 6.1.0 `:120-122`), so each is a
+  solid colour (`getColorFormatters.ts`, 4.1.4 and 5.0.0 `:180`, 6.1.0 `:279`),
+  and `BigNumberViz.tsx` sets it as the number's text colour (4.1.4 `:137-153`,
+  5.0.0 `:138-154`, 6.1.0 `:209-225`). What follows from that code:
+  - The number is text, so `green`, `amber` and `red` compile to the darker text
+    shades a table's `"paint": "text"` uses; a hex is used as written.
+  - Every rule is tested against the one number, and the last rule that matches
+    wins. A rule's column only has to be set (`getColorFormatters.ts`, 4.1.4 and
+    5.0.0 `:199`, 6.1.0 `:309`); the tool writes the metric's label, as the
+    panel does.
+  - A value of exactly 0 is never coloured: the number is tested only when it is
+    truthy (`bigNumber ? getColorFromValue(...) : false`, 4.1.4 `:144`, 5.0.0
+    `:145`, 6.1.0 `:216`). Apply's data check warns when a coloured big number
+    is 0 and a rule would have coloured it.
+  - The trendline KPI has no colour rules: `BigNumberWithTrendline` declares no
+    such control and its `transformProps.ts` passes none, at all three tags, so
+    the spec refuses the field there. Rules a chart kept after being switched to
+    the trendline in Superset colour nothing, and decompile drops them without a
+    loss.
+  - Decompile reads a named text shade back as its name and any other hex as
+    itself. 6.1.0's picker stores theme tokens (`colorSuccess`, `colorWarning`,
+    `colorError`, `ConditionalFormattingControl/constants.ts:68-72`), which the
+    spec can't hold, so a rule made there is a named loss, as on tables.
+  - Verified live on 4.1.4, 5.0.0 and 6.1.0: each number took its rule's
+    colour (a name's text shade, a hex as written), a number at 0 and one no
+    rule matched kept the default, `plan` was clean after `apply`, and a rule
+    changed through the chart API showed up in `plan`.
+  - Superset's development branch (read 2026-10-05, not a release) colours 0 but
+    lets every rule overwrite the colour, matched or not, so only the last rule
+    would count. Recheck multi-rule KPIs when the next release ships.
 - **A bar sorts its categories two ways.** With one series a post-processing
   sort orders the returned rows on the x column (`operators/sortOperator.ts`,
   which skips any chart with a groupby, 4.1.4 and 5.0.0 `:46`, 6.1.0 `:45`);
@@ -387,6 +579,40 @@ running the tool against real instances of all three releases.
   6.1.0 `:335`) and
   `x_axis_sort_series` at 4.1.4 and 5.0.0 (`:243` at 4.1.4, `:246` at 5.0.0).
   `category_sort` writes whichever applies.
+- **A bar ranks by a measure two ways, and its default ranking holds for one
+  series only.** Unsorted by category, a bar writes its first metric as
+  `x_axis_sort`. With one series, or several metrics and no groupby on 6.0.0
+  and later, that ranks the bars by it. With several series the plugin
+  re-sorts the rows itself (`sortRows`, `utils/series.ts`): at 4.1.4 and
+  5.0.0 by `x_axis_sort_series`, whose panel default is the category name
+  (`DEFAULT_XAXIS_SORT_SERIES_DATA`, `constants.ts:77-80`), which a dashboard
+  fills in for an unset key; with a groupby, `sortOperator.ts` adds no sort
+  on any release and the categories keep the order the pivot gives them
+  (pandas `pivot_table`, which sorts its index:
+  `superset/utils/pandas_postprocessing/pivot.py:92` at 6.1.0). Seen
+  live: two stacked metrics read A to Z on 4.1.4, and a grouped bar A to Z
+  on all three releases. `sort_by` ranks them on purpose:
+  - `"total"` is Superset's "Total value" (`SortSeriesType.Sum`), the sum of
+    each category's series (`sortRows`, 4.1.4 `:200-208`, 6.1.0 `:564-572`),
+    read from `x_axis_sort` from 6.0.0 (`Timeseries/transformProps.ts:335-336`
+    at 6.1.0) and `x_axis_sort_series` at 4.1.4 and 5.0.0 (`:243-246`,
+    `:246-249`); the tool writes both. The query stays ordered by the first
+    metric, so a row limit cuts by it before the bars are ranked, and
+    `advise` warns (`data.top-n-sort`).
+  - A metric is the post-processing sort (`sortOperator.ts`, which needs no
+    groupby) and the query's "Sort query by" (`timeseries_limit_metric`), so
+    a row limit keeps the top bars by it. A metric the chart doesn't draw is
+    queried but not drawn: `extractExtraMetrics.ts:35` adds it because its
+    label is `x_axis_sort`, and `extractSeries` leaves it out of the series.
+    With several metrics, 4.1.4 and 5.0.0 would then re-sort by the name
+    default, so the tool writes `x_axis_sort_series: null`, which
+    `extractSeries` reads as no sort (`isDefined`, 4.1.4 `:296-307`, 5.0.0
+    `:302-313`); 6.0.0 dropped the control.
+  Verified live on 4.1.4, 5.0.0 and 6.1.0, with `plan` clean after each
+  apply. A grouped bar can't rank by one metric (the plugin sorts by name,
+  sum, minimum, maximum or mean of the series), so `sort_by` refuses a
+  metric there; Superset's minimum, maximum and average have no spec value,
+  and `decompile` names them, and a ranking reversed to smallest first.
 - **Which rows a bar's row limit keeps is set by the query's ORDER BY, not by
   that sort.** The bar's query takes its ORDER BY from `normalizeOrderBy`
   (`Timeseries/buildQuery.ts:93` at all three releases): the "Sort query by"
@@ -410,6 +636,213 @@ running the tool against real instances of all three releases.
   With `series_limit` the same control ranks the series, so the tool leaves
   it to the series limit; there a `row_limit` still keeps the largest values,
   and `advise` warns about it (`data.top-n-sort`).
+- **A trendline KPI's rolling window feeds both its number and its
+  comparison.** The panel's rolling window (`rolling_type`, `rolling_periods`,
+  `min_periods`, `BigNumberWithTrendline/controlPanel.tsx:179-228` at 4.1.4
+  and 5.0.0, `:252-301` at 6.1.0) runs in the query's post-processing
+  (`rollingWindowOperator`), so the number is the latest rolled point and
+  `compare_lag` counts rolled points back (`transformProps.ts:110-128` at
+  4.1.4 and 5.0.0, `:189-210` at 6.1.0). The backend drops the first
+  `min_periods - 1` rows (`utils/pandas_postprocessing/rolling.py:99-100`,
+  the same at all three releases), and Superset's own `min_periods` is 0,
+  which shows partial windows; the tool writes `min_periods` equal to the
+  window unless `rolling_min_periods` says otherwise, so every point is a
+  whole window. Seen live on 4.1.4 and 6.1.0 over the example sales data: a
+  trailing-12-month total of $5.20M, +30.4% against the 12 months before.
+- **A big number shows a date through its date format.** `date_format`
+  writes the panel's "Date format" and ticks "Force date format"
+  (`time_format` and `force_timestamp_formatting`,
+  `BigNumberTotal/controlPanel.ts:66` and `:80` at 4.1.4 and 5.0.0, `:57` and
+  `:71` at 6.1.0). The number is formatted with the time format when the
+  metric's type is temporal or a string, or when forced, so a number of epoch
+  milliseconds shows as a date too, and `y_axis_format` then does nothing
+  (`BigNumberTotal/transformProps.ts:87-92` at 4.1.4 and 5.0.0, `:109-114` at
+  6.1.0). Unforced, Superset's smart date shows a `MAX` of a timestamp as its
+  day alone, "Tue 31". Seen live on 4.1.4, 5.0.0 and 6.1.0: `MAX(order_date)`
+  with `%a %-d %b %Y` shows "Tue 31 May 2005". The trendline KPI declares the
+  same pair (`BigNumberWithTrendline/controlPanel.tsx:139` and `:153` at
+  4.1.4 and 5.0.0, `:212` and `:226` at 6.1.0), but there `time_format` also
+  formats the trendline's tooltip dates (and, at 6.1.0, its optional x axis),
+  so the spec offers `date_format` on the plain big number only.
+- **A mixed chart's area is a line with "Area chart" ticked.** `kind:
+  "area"` writes `seriesType` `line` and `area` (query B: `areaB`), and its
+  `opacity` (`opacityB`) scales the fill only; the edge line stays at full
+  strength (`transformSeries`, `Timeseries/transformers.ts` at all three
+  releases). At opacity 1 the edge disappears into the fill. A line draws
+  over an area whichever query holds it: seen live on 4.1.4, 5.0.0 and
+  6.1.0. Any `seriesType` other than bar, scatter, smooth or a step,
+  including the older `echarts_timeseries_line` and `echarts_timeseries_bar`
+  names, draws a straight line (`Timeseries/transformers.ts:237-243` at
+  4.1.4, `:306-312` at 6.1.0), so decompile reads it as `kind: "line"`.
+- **A mixed chart draws every line solid, at one width.** `transformSeries`
+  takes a series' line style only from its caller
+  (`Timeseries/transformers.ts:273-276` at 4.1.4, `:287-290` at 5.0.0,
+  `:356-359` at 6.1.0), and the Mixed Chart hands it none, for either query
+  (`MixedTimeseries/transformProps.ts:382-411` and `:429-460` at 4.1.4, `:384`
+  and `:432` at 5.0.0, `:457-493` and `:530-567` at 6.1.0). Its panel has no
+  width or dash for a query or a metric, so the spec offers none. 6.1.0's
+  ECharts Options can't single out a series either: they replace the chart's
+  list of series whole (`utils/mergeCustomEChartOptions.ts:64-73`), and a
+  theme's `echartsOptionsOverridesByChartType` merges one style into every
+  series (`components/Echart.tsx:254-273`, `utils/themeOverrides.ts:69-89`).
+  To draw a reference series lighter, such as list price under price paid,
+  put it in its own query and give it a pale colour with the dashboard's
+  `label_colors`, or make it an area with a low `opacity`. Seen live on 4.1.4,
+  5.0.0 and 6.1.0: a pale grey list price beside a blue price paid, both
+  2 px solid. Superset dashes a line only
+  for a line chart's time comparison (`time_compare`: `Timeseries/transformProps.ts:285-297`
+  at 4.1.4, `:288-295` at 5.0.0, and `:401-423` at 6.1.0 while "Match time
+  shift color" is ticked, its default), which the spec doesn't write yet;
+  until it does, a second metric in its own query is the way to draw a
+  comparison.
+- **An area chart's edges have no width.** The Area panel declares the fill's
+  `opacity` (`Timeseries/Area/controlPanel.tsx:92` at 4.1.4, `:93` at 5.0.0,
+  `:97` at 6.1.0), which the spec writes as `opacity`, but no line width, so
+  each area keeps a full-strength edge. On 6.1.0 a theme can thin the edges of
+  every area chart on the dashboards that use it, with
+  `"echartsOptionsOverridesByChartType": {"echarts_area": {"series":
+  {"lineStyle": {"width": 1}}}}` at the top of the theme's JSON
+  (`superset-core/src/theme/Theme.tsx:119-137`); that was read from the
+  source, not tried live.
+- **A line, bar, area or scatter chart has one number format for its axis
+  and its values.** The panel's "Axis Format" (`y_axis_format`,
+  `Timeseries/Regular/Bar/controlPanel.tsx:192-195` at 4.1.4 and 5.0.0,
+  `:228-231` at 6.1.0) formats the value axis, the values on the marks and
+  the tooltip (`Timeseries/transformProps.ts` 4.1.4 `:268-270`, `:318-324`
+  and `:515-521`; 5.0.0 `:271-273`, `:316-322` and `:515-521`; 6.1.0
+  `:365-370`, `:490-496` and `:961-967`). 6.1.0's `x_axis_number_format`
+  formats a numeric x axis only (`:189-196`). So `number_format` sets all
+  three, and a format with decimals puts them on the axis too. A `~` drops
+  trailing zeros: seen live on 4.1.4, 5.0.0 and 6.1.0, `,.1~f` labels the
+  axis in whole numbers (0, 20, 40) and a bar 47.2, where `.1f` labels the
+  axis 0.0, 20.0, 40.0; a value that is a whole number then shows without its
+  decimal too.
+- **A trendline KPI's line starts at zero unless `y_axis_truncate`.** The
+  panel's "Start y-axis at 0" (`start_y_axis_at_zero`,
+  `BigNumberWithTrendline/controlPanel.tsx:96` at 4.1.4 and 5.0.0, `:107` at
+  6.1.0, default true) becomes the trendline's `yAxis.scale:
+  !startYAxisAtZero` (`transformProps.ts:219` at 4.1.4 and 5.0.0, `:326` at
+  6.1.0), and the tool always wrote true. `y_axis_truncate: true` writes
+  false, so the line spans the card from its lowest value to its highest. Seen
+  live on 4.1.4, 5.0.0 and 6.1.0: a trailing-12-month total of $5.20M, a flat
+  line over a solid block from zero, rises across the card fitted.
+- **A heatmap's y axis runs from the bottom up.** Both axes are ECharts
+  category axes, which put the first label at the left and at the bottom
+  (`Heatmap/transformProps.ts:227-240` at 4.1.4, `:431-447` at 6.1.0). The
+  spec's `y_order` reads top to bottom, so `a_to_z` writes `sort_y_axis:
+  alpha_desc`; the omitted field writes `alpha_asc` on both axes, as the
+  tool always did, which reads Z to A from the top. Before 6.1.0 the axes
+  take the order of the query's rows, so a y label missing from the first
+  x column lands out of order, after the labels that column holds.
+- **A waterfall draws its bars in the order of its query.** The plugin
+  queries the x axis and then the breakdown, each ascending
+  (`Waterfall/buildQuery.ts:27-35`, all three releases), stacks each bar on
+  the running total and colours it by sign. Its stock colours are increase
+  `rgb(90,193,137)`, decrease `rgb(224,67,85)` and total `rgb(102,102,102)`
+  (`Waterfall/controlPanel.tsx`, 4.1.4 and 5.0.0 `:72`, `:81`, `:90`; 6.1.0
+  `:78`, `:108`, `:150`), and the spec's three colours replace them on every
+  release. Without a breakdown, every x value is a step and the plugin adds a
+  closing total, named by `total_label` from 6.1.0 (`controlPanel.tsx:159`,
+  read at `transformProps.ts:201`) and Total before. The step order is the x
+  column's own, so labels read A to Z.
+- **A bridge in its own order needs 6.1.0.** With a breakdown, a bar is
+  labelled by the breakdown's value, and a row whose breakdown is the total's
+  name is drawn as the running total under its x value
+  (`transformProps.ts:240-254`, `:326-330` at 6.1.0). The compiler builds
+  `steps` on that: the x axis is a CASE over the step column giving each step a
+  key (`'0000'`, `'0001'`, ...), and the `closing` row its own name; the
+  breakdown is the step column, `total_label` the closing, and `show_total`
+  false, a 6.1.0 control (`controlPanel.tsx:134`, read at `:126` and `:148`)
+  that stops the plugin adding a running total after every step. 4.1.4, 5.0.0
+  and 6.0.0 always add one (`transformProps.ts:120-124` at 4.1.4; seen drawn
+  on 4.1.4), so `check`, `apply` and `plan` refuse `steps` there. Every key
+  starts with `0`, which sorts before a letter or a digit 1-9 in binary and
+  linguistic collations alike, so the spec holds `closing` to that first
+  character. The column goes into the SQL as it is when it is a lowercase
+  identifier, and double-quoted (ANSI) otherwise. Verified live on 6.1.0: the
+  bars drew in order, the closing grey under its name, and `plan` was clean.
+- **Without `opening`, the opening rises from zero in the increase colour.**
+  The value axis doesn't keep zero on it (`defaultYAxis` `scale: true`,
+  `defaults.ts:25-28`, all three releases) and the panel has no axis bounds;
+  the first bar, a step, is what keeps zero there. Drawn as a total, the opening
+  floats the axis up to the smallest total and disappears (seen on 6.1.0).
+- **`opening` draws it as a total, under a theme that keeps zero.** A 6.x
+  theme's JSON can set ECharts options per chart type
+  (`echartsOptionsOverridesByChartType`, `superset-core/src/theme/types.ts:161`
+  at 6.1.0), which the chart merges over its own
+  (`plugin-chart-echarts/src/components/Echart.tsx`, `mergeEchartsThemeOverrides`),
+  so `{"waterfall": {"yAxis": {"scale": false}}}` keeps zero on the axis. With
+  `opening`, both ends are total rows: the breakdown is a CASE marking them
+  Total (`total_label`), a total at the first index adds to the running total
+  and a later one shows it (`transformProps.ts:241-250` at 6.1.0), and the x
+  axis keys each step after the opening's name (`FY2025 000`, ...), so the spec
+  holds the opening to sort before the closing, byte by byte and letter by
+  letter. `check` and `apply` read the dashboard theme's JSON on the instance
+  and refuse `opening` when it doesn't keep zero (`waterfall_opening_axis`).
+  Verified live on 6.1.0: both ends grey under their own names, the steps in
+  order, and `plan` clean.
+- **A waterfall's time grain is written as the spec says.** The backend
+  buckets a temporal x axis and leaves a categorical one as it is (seen on
+  4.1.4 and 6.1.0), so `time_grain` round-trips whatever the column's type.
+- **A waterfall's axis titles have no margin control.** The plugin sets both
+  mid-axis with ECharts' default gap and a fixed pad
+  (`transformProps.ts:445-464` at 6.1.0, the same at 4.1.4), so a y title
+  can sit under wide tick labels and rotated labels hang over an x title (seen
+  on 4.1.4 and 6.1.0); `advise` says so (`chart.waterfall-axis-titles`).
+- **A box plot's observations are its query's rows.** The plugin queries the
+  Distribute across columns and then the Dimensions, and its boxplot
+  post-processing step groups the rows by the Dimensions into median,
+  quartiles, whiskers and outliers (`BoxPlot/buildQuery.ts:29-57`;
+  `superset/utils/pandas_postprocessing/boxplot.py`, the groups sorted by value
+  at `aggregate.py:43`; all three releases). A time column is bucketed by the
+  grain only where the stored `temporal_columns_lookup` marks it
+  (`buildQuery.ts:38-50`), a control Explore fills from the dataset, so the
+  compiler writes it for the time columns of `distribute_across`. Without
+  `whiskerOptions` the plugin adds no boxplot step, so the compiler always
+  writes it, Tukey included.
+- **Whiskers take any two percentiles on every release.** The panel's select is
+  free-form (`BoxPlot/controlPanel.ts:87` at 4.1.4, `:88` at 6.1.0) and the
+  operator reads any `lo/hi percentiles` (`operators/boxplotOperator.ts:28`,
+  all three releases), so `[5, 95]` works on 4.1.4, whose choices list only
+  2/98 and 9/91 (seen drawn).
+- **A box plot's row limit is a 6.0.0 control, and it cuts observations.**
+  6.0.0 adds Row limit to the panel (`BoxPlot/controlPanel.ts:81`), and a
+  dashboard fills an unset one with its default, 10,000
+  (`sharedControls.tsx:236` at 6.1.0); 4.1.4 and 5.0.0 have no such control,
+  so the query falls back to the server's `ROW_LIMIT` (50,000,
+  `superset/config.py:156` at 4.1.4). A stored `row_limit` still reaches a
+  4.1.4 dashboard's query, since `buildQueryObject.ts:117-120` reads it, but
+  Explore's query there leaves it out (both seen on 4.1.4 and 5.0.0), so the
+  field warns before 6.0.0. Rows past the limit are observations the boxes
+  miss, so `apply`'s data check warns when the query reaches it.
+- **Superset colours each box by its group.** The plugin paints a box with the
+  colour scheme's colour for its group label (`BoxPlot/transformProps.ts:113`
+  at 6.1.0, `:112` at 4.1.4), so `dashboard.label_colors` pins it: one colour
+  for every label draws every box alike (seen on 4.1.4 and 6.1.0). On 6.1.0 the
+  chart also shows a "boxplot / outlier" legend: the ECharts theme Superset
+  merges into every chart has a legend entry
+  (`plugin-chart-echarts/src/components/Echart.tsx:212`) and the box plot has
+  no control to hide it; a dashboard theme's
+  `{"echartsOptionsOverridesByChartType": {"box_plot": {"legend": {"show":
+  false}}}}` does (seen on 6.1.0).
+- **A heatmap's axes take the same three controls on every release.**
+  `xscale_interval` and `yscale_interval` (-1 for automatic, 1 to 50) and the
+  free-form `left_margin` (`Heatmap/controlPanel.tsx`, 4.1.4 `:130,148,166`,
+  5.0.0 `:128,146,164`, 6.1.0 `:155,173,191`). The plugin hands interval
+  N - 1 to the category axis, so N labels every Nth value from the first
+  (`Heatmap/transformProps.ts`, 4.1.4 `:231,238`, 5.0.0 `:234,241`, 6.1.0
+  `:436,445`); `x_label_every` and `y_label_every` write them, with no
+  release gate. The grid holds its labels (`containLabel`) and its left
+  edge is `left_margin`, `auto` being the card's edge (4.1.4 `:166-169`,
+  6.1.0 `:354-357`). On 6.1.0 the longest y label is drawn wider than that
+  room and loses its first letters at the edge; seen live, 8 px cleared a
+  95 px label and 16 px a 150 px one, while 4.1.4 and 5.0.0 drew them whole.
+  A theme can't reach it: 6.1.0's `Heatmap.tsx:25` renders `<Echart>`
+  without `vizType`, so `echartsOptionsOverridesByChartType` never applies
+  (`components/Echart.tsx:255-257`). `left_margin` is the spec's field for
+  it, and `advise --fix` fills 16 (`default.heatmap-label-room`).
+  `bottom_margin` is declared too but nothing was seen to need it, so the
+  spec leaves it to Superset, and `decompile` names a changed one.
 - **On 4.1.4, heatmap and histogram exist twice** (a legacy plugin and a
   current one, with different options). The tool builds the current ones;
   decompiling a dashboard built on the legacy ones reports them as named
@@ -421,6 +854,18 @@ running the tool against real instances of all three releases.
   way. Custom SQL in a spec runs with the profile's rights during apply's
   data check, which queries each chart once through `/api/v1/chart/data`
   signed in as that profile.
+- **An aggregate reads back as it was written.** `MAX(col) AS Label` is
+  stored as a column aggregate, which Superset quotes as a column, and
+  `SQL(MAX(col)) AS Label` as SQL, run as written; the two can differ on a
+  database with case-sensitive names, so they stay two spellings. Every
+  metric the tool writes has an `optionName` starting `metric_sdc_`, and
+  Superset's metric popover names its own `metric_<random>_<random>` and
+  keeps a stored one (`src/explore/components/controls/MetricControl/`
+  `AdhocMetric.js:84-88` at 4.1.4 and 5.0.0, `AdhocMetric.ts:122-126` at
+  6.1.0). So decompile reads the tool's SQL aggregate back as `SQL(MAX(col))
+  AS Label`, and custom SQL typed in the UI as the simpler `MAX(col) AS
+  Label`. Spellings stored alike apart from that key (`COUNT(*) AS N` and
+  `SQL(COUNT(*)) AS N`, extra spaces around `AS`) compare equal in `plan`.
 
 ## Differences the tool absorbs
 

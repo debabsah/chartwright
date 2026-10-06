@@ -57,9 +57,11 @@ def test_temporal_type_error_and_unknown_skips():
     rep = advise(spec, resolution=resolution(ts=1), overlay=EMPTY)  # ts is a string
     f = next(f for f in rep.findings if f.rule == "chart.temporal-type")
     assert f.severity == "error" and not rep.ok
-    assert not advise(spec, resolution=resolution(ts=2), overlay=EMPTY).findings
+    assert not [f for f in advise(spec, resolution=resolution(ts=2), overlay=EMPTY).findings
+                if f.rule != "chart.axis-titles"]
     # no type metadata -> no verdict
-    assert not advise(spec, resolution=resolution(ts=None), overlay=EMPTY).findings
+    assert not [f for f in advise(spec, resolution=resolution(ts=None), overlay=EMPTY).findings
+                if f.rule != "chart.axis-titles"]
 
 
 def test_data_aware_rules_skipped_offline():
@@ -123,7 +125,8 @@ def test_grid_fit_probes_row_dimension():
     assert "~12 rendered rows" in f.detail and f.fix["set"]["height"] == 12
     rep = advise(spec, resolution=res, prober=FakeProber({"region": 5}), overlay=EMPTY)
     assert not any(f.rule == "size.grid-fit" for f in rep.findings)
-    # multi-dim pivots are out of honest scope for per-column probes
+    # a multi-dim pivot needs every dimension counted (a lower bound, tests/test_grid_rows.py):
+    # a failed probe of one sizes nothing
     pivot["rows"] = ["region", "store"]
     rep = advise(mk([pivot]), resolution=res, prober=FakeProber({"region": 50}), overlay=EMPTY)
     assert not any(f.rule == "size.grid-fit" for f in rep.findings)

@@ -19,6 +19,14 @@ def _guideline(name: str) -> str:
     return (resources.files("chartwright.design") / "guidelines" / name).read_text(encoding="utf-8")
 
 
+def _kpi_units(kind: str, p) -> str:
+    """The height readability.kpi-text asks of a big number with a line under its value."""
+    from .readability import KPI_MAX_HEIGHT, kpi_units
+
+    units = kpi_units(kind, True, p)
+    return str(units) if units else f"more than {KPI_MAX_HEIGHT}"
+
+
 def render_brief(audience: str, overlay: Overlay | None = None) -> str:
     overlay = overlay if overlay is not None else load_overlay()
     p = params_for(audience, overlay)
@@ -37,14 +45,18 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "## Budgets and sizes (1 height unit = 40 px; widths are twelfths of the page)",
         "",
         f"- Height budget per tab: {p.fold_units} units (~{p.fold_units * 40}px). Over budget -> tabs or prune.",
-        f"- KPI band: {p.kpi_row_min}-{p.kpi_row_max} big numbers, {p.kpi_height} units tall, first band on the page.",
-        f"- Axis charts (timeseries/bar/heatmap/histogram): >= {p.min_axis_height} units tall, 8 is the comfortable default.",
+        f"- KPI band: {p.kpi_row_min}-{p.kpi_row_max} big numbers, {p.kpi_height} units tall, first band on the page; "
+        f"Superset sizes their text by height, so a subtitle needs {_kpi_units('big_number_total', p)} "
+        f"units, a trendline KPI's comparison {_kpi_units('big_number_trend', p)}.",
+        f"- Axis charts (timeseries/bar/heatmap/histogram/waterfall/box_plot): >= {p.min_axis_height} units tall, 8 is the comfortable default.",
         f"- At most {p.max_row_charts} axis charts per row; below 3/12 width a chart is unreadable.",
         "- Pie/donut: >= 5/12 wide, >= 8 tall. Heatmap: >= 5/12 wide (7/12 when many columns), >= 6 tall.",
         f"- Vertical bars: <= {p.vbar_max_categories} categories, then flip horizontal; an ordered axis "
         f"(hours, ranks) stays vertical with category_sort and x_label_every. Pies: <= {p.pie_max_slices} slices.",
         f"- Timeseries: <= {p.series_max} grouped series (series_limit keeps the top N). Tables: height should "
-        f"show >= {p.table_visible_ratio:.0%} of row_limit (~0.8 units/row), or one page with page_length.",
+        f"show {'every row' if p.table_visible_ratio >= 1 else f'>= {p.table_visible_ratio:.0%}'} of "
+        f"row_limit (~0.75 units/row + 2.5), or one page with page_length. Pivots: a row per distinct "
+        f"row-dimension value (~0.65 units/row + ~4 to 6 for headers and totals), never per row_limit.",
         "- Charts sharing a row share a height; Superset sizes the row to its tallest child.",
     ]
     if p.recommended_heights:
@@ -88,8 +100,9 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "",
         "## Design defaults: `advise --fix` fills these, so leave them unset unless the user asks",
         "",
-        "- x_label_format, compare_suffix, number_format of COUNT metrics, and on tables cell_bars,",
-        "  page_length and search_box; show_legend on a single named series; show_value on few bars.",
+        "- x_label_format, compare_suffix, number_format of COUNT metrics, date_format on a big",
+        "  number of a date column, and on tables cell_bars, page_length and search_box;",
+        "  show_legend on a single named series; show_value on few bars; a heatmap's left_margin.",
         "  Set one yourself only when the user asks for it, and say so in your reply.",
         "- Run `chartwright advise <spec> --fix` (MCP: fix_spec) before you build. It writes each value",
         "  into the spec file and records it in design.filled; its `fixed` entries say kind \"fill\" and why.",
@@ -97,7 +110,7 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "  A filled value you change or delete is yours from then on (kind \"release\"); never edit design.filled,",
         "  except to rename a chart's entry when you rename the chart, so its fills stay the brain's.",
         "- Never filled, set them only on request: category_sort, y_axis_truncate, compare_lag,",
-        "  series_limit, show_totals, and currency formats.",
+        "  rolling_type, series_limit, show_totals, and currency formats.",
     ]
 
     lines += ["", _guideline("chart-choice.md").strip(), "", _guideline("composition.md").strip()]

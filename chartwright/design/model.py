@@ -26,13 +26,54 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "7" = fills keep a null record when the author edits one (an edit later deleted stays
 # deleted), and default.stale-record: a fixable finding for a renamed or removed chart's
 # design.filled entry, which now validates. Both change what `--fix` writes.
-DESIGN_BRAIN_VERSION = "7"
+# "8" = one height question for tables and pivots (sec.15.42): table_visible_ratio 1 and
+# every-row targets in size.table-window, size.pivot-window reading pivot rows instead of
+# row_limit, size.grid-fit counting every pivot layout. No new rule, but a table can
+# newly warn (and block a strict gate) and `--fix` writes different heights.
+# "9" = data.rolling-window-span, a new warn-severity rule for a rolling trendline KPI
+# whose time range can't hold its window and comparison; default.compare-suffix writes
+# 'vs prior 12 months' between trailing windows; chart.ordinal-order leaves a heatmap axis
+# ordered by value alone; default.date-tile fills date_format on a big number of a date
+# column (data-aware), and a big number shown as a date gets no number format from
+# narrative.big-number-format, default.count-format or a standard.
+# Also "9", the waterfall: chart.waterfall-additive and chart.waterfall-steps (warn) can
+# newly block a strict gate, chart.waterfall-order, chart.waterfall-colors and
+# chart.waterfall-axis-titles are new findings, and default.value-labels and
+# default.count-format now fill a waterfall's show_value and number_format. The box
+# plot: chart.box-plot-observations and chart.box-plot-groups (warn), and
+# chart.ordinal-order now reads a box plot's groups.
+# "10" = no DataTables chrome on a table whose rows all show: default.search-box fills only
+# a paged table whose rows outgrow its panel (and --fix removes a box it filled on one
+# whose rows all show), and size.table-chrome, a new info rule, names an author's page
+# size or search box there.
+# "11" = size.markdown-fit, a new warn-severity rule for markdown text cut off by its
+# block in a 1440 px window, under the dashboard's own CSS, and layout.markdown-height
+# fixes a one-line block to the height its line takes (1.6 to 2.4 units) instead of 2,
+# from the same estimate.
+# "12" = default.heatmap-label-room, a fill (left_margin on every heatmap, which 6.1.0
+# otherwise draws with its longest y label cut off); it changes what `--fix` writes.
+# With it, a bar's sort_by: data.top-n-sort warns on a row_limit under sort_by "total"
+# (the query is still ordered by the first metric), and chart.ordinal-order leaves a
+# bar ranked by sort_by alone.
+# "14" = big-number colour rules: chart.format-bands reads them (and no longer counts an
+# '=' band as everything above it), chart.color-contrast (warn) and
+# narrative.kpi-thresholds (info). A new warn rule can newly block a strict gate.
+# "15" = chart.format-bands reads each colour rule's own range: the new >=, <=, != and
+# between_inclusive operators take their bounds in, and an '=' rule stays one value.
+# Findings change, no rule is added.
+# "16" = the readability.* family (sec.17, "Type sizes"): table-text and chart-text warn
+# when the dashboard's CSS or theme sets text below its floor, so a strict gate can newly
+# block, and kpi-text raises a big number's height until its value and subtitle reach
+# theirs, which changes what `--fix` writes.
+# "17" = chart.axis-titles and layout.thin-subtabs (info), and default.value-labels now
+# labels grouped bars too, which changes what `--fix` writes.
+DESIGN_BRAIN_VERSION = "17"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
-AXIS_TYPES = TIMESERIES_TYPES | {"bar", "heatmap", "histogram", "mixed"}
+AXIS_TYPES = TIMESERIES_TYPES | {"bar", "heatmap", "histogram", "mixed", "waterfall", "box_plot"}
 # Charts that are neither KPI nor axis-bearing; a contract test asserts the
-# three sets exactly cover CHART_TYPES, so a 15th chart type fails CI until
+# three sets exactly cover CHART_TYPES, so a new chart type fails CI until
 # someone consciously classifies it (and reviews which rules apply).
 STANDALONE_TYPES = {"pie", "table", "pivot_table", "funnel", "treemap"}
 
@@ -414,15 +455,24 @@ def _bands_from_rows(spec: DashboardSpec, rows) -> list[Band]:
 
 
 def _bands_from_sketch(spec: DashboardSpec, holder) -> list[Band]:
+    from ..sketch import SketchBlock, SketchColumn
+
+    def height(sc) -> float:
+        # A header counts nothing, as a header row does in rows mode.
+        if isinstance(sc, SketchBlock):
+            return holder.sketch_block_height(sc) if sc.kind == "markdown" else 0.0
+        return spec.resolved_height(sc.name)
+
     bands = []
     for srow in holder.parsed_sketch():
+        if srow.header_band is not None:
+            continue  # a section title between bands holds no charts, as in rows
         items = []
         for child in srow.children:
-            if hasattr(child, "children"):  # SketchColumn: a stack of charts
-                names = [sc.name for sc in child.children]
-                total = sum(spec.resolved_height(n) for n in names)
-                items.append(BandItem(child.width, total, names))
-            else:
-                items.append(BandItem(child.width, spec.resolved_height(child.name), [child.name]))
+            stack = child.children if isinstance(child, SketchColumn) else [child]
+            names = [sc.name for sc in stack if not isinstance(sc, SketchBlock)]
+            # A slot of blocks only (a note, a header) reads as markdown does in rows.
+            items.append(BandItem(child.width, sum(height(sc) for sc in stack), names,
+                                  is_markdown=not names))
         bands.append(Band(items))
     return bands

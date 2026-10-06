@@ -1,0 +1,865 @@
+{
+ "about": "What headless Chromium computed at a 1440 x 900 window for a table, a pivot, a big number and a line chart under each stylesheet in css, and for big numbers at heights 2 to 10 (kpi); written by tools/record_readability_measurements.py.",
+ "css": {
+  "cells": ".superset-chart-table td { font-size: 14px; }\n.superset-chart-table th { font-size: 13px; }\n.pivot_table_v_2 td { font-size: 14px; }\n.pivot_table_v_2 th { font-size: 13px; }\n",
+  "container": ".superset-chart-table { font-size: 16px; }\n.pivot_table_v_2 table { font-size: 15px !important; }\n.subheader-line, .subtitle-line { font-size: 13px !important; }\n",
+  "default": "",
+  "spacing": ".superset-chart-table td, .superset-chart-table th { padding: 2px; line-height: 1.2; }\n.pivot_table_v_2 td, .pivot_table_v_2 th { padding: 2px; line-height: 1.2; }\n.header-title { font-size: 13px; }\n",
+  "table-level": ".superset-chart-table table { font-size: 15px; }\n.pivot_table_v_2 table { font-size: 15px; }\n",
+  "tie": ".table-condensed { font-size: 15px; }\n.superset-chart-table table.table-condensed { font-size: 16px; }\n.pivot_table_v_2 table.pvtTable thead tr th, .pivot_table_v_2 table.pvtTable tbody tr th { font-size: 13px; }\n"
+ },
+ "releases": {
+  "4.1.4": {
+   "cells": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 28.6,
+     "row_label": 12,
+     "td": 14,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 29.2,
+     "row": 30.6,
+     "row_label": null,
+     "td": 14,
+     "th": 13,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "container": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 30,
+     "row_label": 12,
+     "td": 15,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 27.8,
+     "row": 27.8,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Orders": {
+     "label": 13,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "default": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 25.8,
+     "row_label": 12,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 27.8,
+     "row": 27.8,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "kpi": {
+    "total 10": {
+     "label": 41,
+     "title": 16,
+     "value": 109
+    },
+    "total 2": {
+     "label": 2,
+     "title": 16,
+     "value": 6
+    },
+    "total 3": {
+     "label": 6,
+     "title": 16,
+     "value": 18
+    },
+    "total 4": {
+     "label": 11,
+     "title": 16,
+     "value": 31
+    },
+    "total 5": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "total 6": {
+     "label": 22,
+     "title": 16,
+     "value": 57
+    },
+    "total 7": {
+     "label": 26,
+     "title": 16,
+     "value": 70
+    },
+    "total 8": {
+     "label": 31,
+     "title": 16,
+     "value": 84
+    },
+    "total 9": {
+     "label": 36,
+     "title": 16,
+     "value": 97
+    },
+    "trend 10": {
+     "label": 29,
+     "title": 16,
+     "value": 76
+    },
+    "trend 2": {
+     "label": 2,
+     "title": 16,
+     "value": 5
+    },
+    "trend 3": {
+     "label": 4,
+     "title": 16,
+     "value": 12
+    },
+    "trend 4": {
+     "label": 8,
+     "title": 16,
+     "value": 22
+    },
+    "trend 5": {
+     "label": 11,
+     "title": 16,
+     "value": 31
+    },
+    "trend 6": {
+     "label": 14,
+     "title": 16,
+     "value": 39
+    },
+    "trend 7": {
+     "label": 19,
+     "title": 16,
+     "value": 50
+    },
+    "trend 8": {
+     "label": 22,
+     "title": 16,
+     "value": 59
+    },
+    "trend 9": {
+     "label": 26,
+     "title": 16,
+     "value": 68
+    }
+   },
+   "spacing": {
+    "Country pivot": {
+     "head": 24.4,
+     "row": 23.4,
+     "row_label": 12,
+     "td": 12,
+     "th": 12,
+     "title": 13
+    },
+    "Order lines": {
+     "head": 27.8,
+     "row": 27.8,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 13
+    },
+    "Orders": {
+     "label": 18,
+     "title": 13,
+     "value": 45
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 13
+    }
+   },
+   "table-level": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 25.8,
+     "row_label": 12,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 32,
+     "row": 32,
+     "row_label": null,
+     "td": 15,
+     "th": 15,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "tie": {
+    "Country pivot": {
+     "head": 28.2,
+     "row": 27.2,
+     "row_label": 13,
+     "td": 12,
+     "th": 13,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 33.4,
+     "row": 33.4,
+     "row_label": null,
+     "td": 16,
+     "th": 16,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   }
+  },
+  "5.0.0": {
+   "cells": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 28.6,
+     "row_label": 12,
+     "td": 14,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 29.2,
+     "row": 30.6,
+     "row_label": null,
+     "td": 14,
+     "th": 13,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "container": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 30,
+     "row_label": 12,
+     "td": 15,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 27.8,
+     "row": 27.8,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Orders": {
+     "label": 13,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "default": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 25.8,
+     "row_label": 12,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 27.8,
+     "row": 27.8,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "kpi": {
+    "total 10": {
+     "label": 41,
+     "title": 16,
+     "value": 109
+    },
+    "total 2": {
+     "label": 2,
+     "title": 16,
+     "value": 6
+    },
+    "total 3": {
+     "label": 6,
+     "title": 16,
+     "value": 18
+    },
+    "total 4": {
+     "label": 11,
+     "title": 16,
+     "value": 31
+    },
+    "total 5": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "total 6": {
+     "label": 22,
+     "title": 16,
+     "value": 57
+    },
+    "total 7": {
+     "label": 26,
+     "title": 16,
+     "value": 70
+    },
+    "total 8": {
+     "label": 31,
+     "title": 16,
+     "value": 84
+    },
+    "total 9": {
+     "label": 36,
+     "title": 16,
+     "value": 97
+    },
+    "trend 10": {
+     "label": 29,
+     "title": 16,
+     "value": 76
+    },
+    "trend 2": {
+     "label": 2,
+     "title": 16,
+     "value": 5
+    },
+    "trend 3": {
+     "label": 4,
+     "title": 16,
+     "value": 12
+    },
+    "trend 4": {
+     "label": 8,
+     "title": 16,
+     "value": 22
+    },
+    "trend 5": {
+     "label": 11,
+     "title": 16,
+     "value": 31
+    },
+    "trend 6": {
+     "label": 14,
+     "title": 16,
+     "value": 39
+    },
+    "trend 7": {
+     "label": 19,
+     "title": 16,
+     "value": 50
+    },
+    "trend 8": {
+     "label": 22,
+     "title": 16,
+     "value": 59
+    },
+    "trend 9": {
+     "label": 26,
+     "title": 16,
+     "value": 68
+    }
+   },
+   "spacing": {
+    "Country pivot": {
+     "head": 24.4,
+     "row": 23.4,
+     "row_label": 12,
+     "td": 12,
+     "th": 12,
+     "title": 13
+    },
+    "Order lines": {
+     "head": 27.8,
+     "row": 27.8,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 13
+    },
+    "Orders": {
+     "label": 18,
+     "title": 13,
+     "value": 45
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 13
+    }
+   },
+   "table-level": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 25.8,
+     "row_label": 12,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 32,
+     "row": 32,
+     "row_label": null,
+     "td": 15,
+     "th": 15,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "tie": {
+    "Country pivot": {
+     "head": 28.2,
+     "row": 27.2,
+     "row_label": 13,
+     "td": 12,
+     "th": 13,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 33.4,
+     "row": 33.4,
+     "row_label": null,
+     "td": 16,
+     "th": 16,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial",
+      "12px sans-serif",
+      "bold 12px sans-serif"
+     ],
+     "title": 16
+    }
+   }
+  },
+  "6.1.0": {
+   "cells": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 28.6,
+     "row_label": 12,
+     "td": 14,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 31,
+     "row": 32.6,
+     "row_label": null,
+     "td": 14,
+     "th": 13,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "subtitle": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial, sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "container": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 30,
+     "row_label": 12,
+     "td": 15,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 29.4,
+     "row": 29.4,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Orders": {
+     "label": 13,
+     "subtitle": 13,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial, sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "default": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 25.8,
+     "row_label": 12,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 29.4,
+     "row": 29.4,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "subtitle": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial, sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "kpi": {
+    "total 10": {
+     "label": 41,
+     "subtitle": 41,
+     "title": 16,
+     "value": 109
+    },
+    "total 2": {
+     "label": 2,
+     "subtitle": 2,
+     "title": 16,
+     "value": 6
+    },
+    "total 3": {
+     "label": 6,
+     "subtitle": 6,
+     "title": 16,
+     "value": 18
+    },
+    "total 4": {
+     "label": 11,
+     "subtitle": 11,
+     "title": 16,
+     "value": 31
+    },
+    "total 5": {
+     "label": 17,
+     "subtitle": 17,
+     "title": 16,
+     "value": 43
+    },
+    "total 6": {
+     "label": 22,
+     "subtitle": 22,
+     "title": 16,
+     "value": 57
+    },
+    "total 7": {
+     "label": 26,
+     "subtitle": 26,
+     "title": 16,
+     "value": 70
+    },
+    "total 8": {
+     "label": 31,
+     "subtitle": 31,
+     "title": 16,
+     "value": 84
+    },
+    "total 9": {
+     "label": 36,
+     "subtitle": 36,
+     "title": 16,
+     "value": 97
+    },
+    "trend 10": {
+     "label": 29,
+     "subtitle": 29,
+     "title": 16,
+     "value": 76
+    },
+    "trend 2": {
+     "label": 2,
+     "subtitle": 2,
+     "title": 16,
+     "value": 5
+    },
+    "trend 3": {
+     "label": 4,
+     "subtitle": 5,
+     "title": 16,
+     "value": 12
+    },
+    "trend 4": {
+     "label": 8,
+     "subtitle": 8,
+     "title": 16,
+     "value": 22
+    },
+    "trend 5": {
+     "label": 11,
+     "subtitle": 11,
+     "title": 16,
+     "value": 31
+    },
+    "trend 6": {
+     "label": 15,
+     "subtitle": 15,
+     "title": 16,
+     "value": 40
+    },
+    "trend 7": {
+     "label": 19,
+     "subtitle": 19,
+     "title": 16,
+     "value": 50
+    },
+    "trend 8": {
+     "label": 22,
+     "subtitle": 22,
+     "title": 16,
+     "value": 59
+    },
+    "trend 9": {
+     "label": 26,
+     "subtitle": 26,
+     "title": 16,
+     "value": 68
+    }
+   },
+   "spacing": {
+    "Country pivot": {
+     "head": 24.4,
+     "row": 23.4,
+     "row_label": 12,
+     "td": 12,
+     "th": 12,
+     "title": 13
+    },
+    "Order lines": {
+     "head": 25,
+     "row": 25,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 13
+    },
+    "Orders": {
+     "label": 18,
+     "subtitle": 18,
+     "title": 13,
+     "value": 45
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial, sans-serif"
+     ],
+     "title": 13
+    }
+   },
+   "table-level": {
+    "Country pivot": {
+     "head": 26.8,
+     "row": 25.8,
+     "row_label": 12,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 29.4,
+     "row": 29.4,
+     "row_label": null,
+     "td": 12,
+     "th": 12,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "subtitle": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial, sans-serif"
+     ],
+     "title": 16
+    }
+   },
+   "tie": {
+    "Country pivot": {
+     "head": 28.2,
+     "row": 27.2,
+     "row_label": 13,
+     "td": 12,
+     "th": 13,
+     "title": 16
+    },
+    "Order lines": {
+     "head": 35.7,
+     "row": 35.7,
+     "row_label": null,
+     "td": 16,
+     "th": 16,
+     "title": 16
+    },
+    "Orders": {
+     "label": 17,
+     "subtitle": 17,
+     "title": 16,
+     "value": 43
+    },
+    "Sales by line": {
+     "canvas_fonts": [
+      "12px Inter, Helvetica, Arial, sans-serif"
+     ],
+     "title": 16
+    }
+   }
+  }
+ }
+}

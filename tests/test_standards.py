@@ -34,7 +34,8 @@ DATA = {
     "spec_version": "1",
     "dashboard": {"title": "T", "slug": "t"},
     "charts": [{"type": "timeseries_line", "name": "L", "dataset": DS,
-                "metrics": ["COUNT(*)"], "time_column": "ts", "height": 4}],
+                "metrics": ["COUNT(*)"], "time_column": "ts", "height": 4,
+                "x_axis_title": "Day", "y_axis_title": "Rows"}],
     "filters": [{"type": "time_range", "name": "Date", "default": "Last month"}],
     "layout": {"rows": [["L"]]},
 }
@@ -497,7 +498,7 @@ def test_the_standards_disable_list_is_reported_as_ignored(repo, capsys):
 def test_explain_names_the_standard_chain(repo, capsys):
     spec = write_spec(repo / "specs" / "s.json", standard="finance")
     text = run_ok(capsys, "explain", str(spec))
-    assert text.splitlines()[0] == ("Design defaults (design brain 7, audience analytical, "
+    assert text.splitlines()[0] == ("Design defaults (design brain 17, audience analytical, "
                                     "standard org -> finance)")
     payload = run_ok(capsys, "explain", str(spec), "--json")
     assert payload["standard"] == {"name": "finance", "chain": ["org", "finance"],
@@ -889,7 +890,7 @@ def test_no_standards_directory_changes_nothing(tmp_path, capsys):
     assert all("layer" not in f and "locked" not in f for f in payload["findings"])
     assert payload == advise(load_spec(DATA)).payload()
     text = run_ok(capsys, "explain", str(spec))
-    assert text.splitlines()[0] == "Design defaults (design brain 7, audience analytical)"
+    assert text.splitlines()[0] == "Design defaults (design brain 17, audience analytical)"
 
 
 def _bundle_hash(data: dict) -> str:

@@ -105,7 +105,7 @@ def test_undefaulted_picker_is_reported_exactly_once_by_the_other_rule():
     """No double-reporting of one remedy at two severities."""
     # number_format written: a COUNT line with none would also be offered a design default
     got = rules_of(mk([ts("A", number_format=",.0f")], [{"type": "time_range", "name": "D"}]))
-    assert got == ["filters.time-default"]
+    assert [r for r in got if r != "chart.axis-titles"] == ["filters.time-default"]
 
 
 def test_shipped_example_still_advises_clean():
@@ -115,9 +115,11 @@ def test_shipped_example_still_advises_clean():
     ex = json.loads((Path(__file__).resolve().parent.parent / "examples"
                      / "nyc_taxi_operations.json").read_text(encoding="utf-8"))
     rep = advise(load_spec(ex), overlay=EMPTY)
-    # Only design defaults advise --fix would fill (the example stays as written).
+    # Only what advise --fix would write (the example stays as written): design
+    # defaults, and the KPI heights readability.kpi-text raises (brain 16).
     assert rep.counts["error"] == rep.counts["warn"] == 0, [f.key for f in rep.findings]
-    assert all(f.kind == "fill" and f.fix for f in rep.findings), [f.key for f in rep.findings]
+    assert all(f.fix and (f.kind == "fill" or f.rule == "readability.kpi-text")
+               for f in rep.findings), [f.key for f in rep.findings]
 
 
 # -- 1.1: advise --strict names its gate ------------------------------------------

@@ -2,6 +2,8 @@
 ranking sort, ordinal order, format consistency, color bands, and the
 markdown-height fix."""
 
+import pytest
+
 from chartwright.design import advise, advise_and_fix
 from chartwright.design.presets import Overlay
 from chartwright.spec import load_spec
@@ -46,7 +48,11 @@ def pivot(name, **kw):
 
 
 def test_pivot_window_and_row_limit_intent():
-    fired = rules_fired(mk([pivot("P", row_limit=1000, height=6, columns=["month"])]))
+    # row_limit counts records, not pivot rows: one row at 6 units fits beside the
+    # header, and offline nothing says how many 'region' values there are.
+    assert "size.pivot-window" not in rules_fired(
+        mk([pivot("P", row_limit=1000, height=6, columns=["month"])]))
+    fired = rules_fired(mk([pivot("P", row_limit=1000, height=5, columns=["month"])]))
     assert "size.pivot-window" in fired
     assert "data.row-limit-intent" in rules_fired(mk([pivot("Q")]))
 
@@ -148,6 +154,70 @@ def test_ordinal_order():
     assert "chart.ordinal-order" in rules_fired(mk([b]))
 
 
+def test_ordinal_order_leaves_a_heatmap_axis_ordered_by_value_alone():
+    hm = {"type": "heatmap", "name": "Busy Hours", "dataset": DS, "x_column": "hour",
+          "y_column": "weekday", "metric": "COUNT(*)", "width": 8, "height": 8}
+    hits = [f.detail for f in run(mk([hm])).findings if f.rule == "chart.ordinal-order"]
+    assert hits and "'hour'" in hits[0] and "'weekday'" in hits[0]
+    hits = [f.detail for f in run(mk([{**hm, "y_order": "value_desc"}])).findings
+            if f.rule == "chart.ordinal-order"]
+    assert hits and "'hour'" in hits[0] and "'weekday'" not in hits[0]
+    fired = rules_fired(mk([{**hm, "x_order": "value_asc", "y_order": "value_desc"}]))
+    assert "chart.ordinal-order" not in fired
+
+
+# -- data.rolling-window-span -------------------------------------------------------
+
+
+def ttm(name="TTM", **kw):
+    return {"type": "big_number_trend", "name": name, "dataset": DS, "metric": "SUM(v)",
+            "time_column": "ts", "time_grain": "P1M", "number_format": ",.0f",
+            "rolling_type": "sum", "rolling_periods": 12, "compare_lag": 12, **kw}
+
+
+def window_findings(data):
+    return [f for f in run(data).findings if f.rule == "data.rolling-window-span"]
+
+
+def test_a_trailing_window_needs_a_range_that_holds_it_and_its_comparison():
+    """'Last year' at P1M is about 13 monthly buckets: a 12-month window keeps 2 of them
+    and the comparison 12 back needs 13, so the KPI shows no change at all."""
+    (f,) = window_findings(mk([ttm(time_range="Last year")]))
+    assert f.severity == "warn" and f.chart == "TTM"
+    assert "'Last year'" in f.detail and "needs 24" in f.detail and "draws 2 point" in f.detail
+    assert "no change shows" in f.detail
+    assert window_findings(mk([ttm(time_range="Last 2 years")])) == []
+    assert window_findings(mk([ttm(time_range="Last year", compare_lag=1)])) == []
+    # without a comparison a line still needs two points
+    assert window_findings(mk([ttm(time_range="Last year", compare_lag=None)])) == []
+    assert window_findings(mk([ttm(time_range="Last 11 months", compare_lag=None)]))
+
+
+def test_the_window_counts_from_rolling_min_periods():
+    assert window_findings(mk([ttm(time_range="Last year", rolling_min_periods=0)])) == []
+    assert window_findings(mk([ttm(time_range="Last year", rolling_min_periods=6)]))
+
+
+def test_a_defaulted_time_filter_in_scope_sets_the_range_the_kpi_loads_with():
+    filters = [{"type": "time_range", "name": "Window", "default": "Last quarter"}]
+    (f,) = window_findings(mk([ttm()], filters=filters))
+    assert "the time_range filter 'Window'" in f.detail and "filter's `charts`" in f.detail
+    # the filter replaces the chart's own range on load
+    assert window_findings(mk([ttm(time_range="Last 3 years")], filters=filters))
+    other = {"type": "big_number_total", "name": "Orders", "dataset": DS,
+             "metric": "COUNT(*)", "number_format": ",.0f"}
+    scoped = [{**filters[0], "charts": ["Orders"]}]
+    assert window_findings(mk([ttm(time_range="Last 3 years"), other], filters=scoped)) == []
+
+
+def test_no_window_no_span_no_finding():
+    assert window_findings(mk([ttm()])) == []                          # all history
+    cum = ttm(time_range="Last month", rolling_type="cumsum", rolling_periods=None)
+    assert window_findings(mk([cum])) == []                            # a running total
+    plain = ttm(time_range="Last month", rolling_type=None, rolling_periods=None)
+    assert window_findings(mk([plain])) == []
+
+
 def test_format_consistency():
     k1 = {"type": "big_number_total", "name": "Sales", "dataset": DS,
           "metric": "SUM(v)", "number_format": ",.0f"}
@@ -181,13 +251,30 @@ def test_treemap_vs_bar():
 
 
 def test_markdown_height_fix():
+    # A level-2 heading takes 81.4 px on 4.1.4 and 5.0.0 (80 on 6.1.0): 2.2 units.
     data = mk([line("L")],
               layout={"rows": [[{"markdown": "## Section", "height": 6}], ["L"]]})
     fixed, rep = advise_and_fix(data, overlay=EMPTY)
     entry = next(e for e in rep.fixed if e["rule"] == "layout.markdown-height")
-    assert entry["set"] == {"height": 2} and entry["was"] == {"height": 6}
-    assert fixed["layout"]["rows"][0][0]["height"] == 2
+    assert entry["set"] == {"height": 2.2} and entry["was"] == {"height": 6}
+    assert fixed["layout"]["rows"][0][0]["height"] == 2.2
     load_spec(fixed)
+
+
+@pytest.mark.parametrize("markdown,fits", [
+    ("# Network performance", 2.4), ("## Section", 2.2), ("### Delay causes", 1.8),
+    ("Figures refresh nightly at 02:00 UTC.", 1.6),
+])
+def test_markdown_height_fits_the_line_it_holds(markdown, fits):
+    """The fix is the height the line takes on every release (tests/fixtures/markdown_fit),
+    and a block already that short, or shorter than 3 units, is left alone."""
+    for height, fired in ((6, True), (3, True), (fits, False), (2.8, False)):
+        data = mk([line("L")], layout={"rows": [[{"markdown": markdown, "height": height}], ["L"]]})
+        found = [f for f in run(data).findings if f.rule == "layout.markdown-height"]
+        assert bool(found) is fired, (markdown, height)
+        if fired:
+            assert found[0].fix["set"] == {"height": fits}
+            assert found[0].detail == f"one-line markdown block at {height} units; {fits:g} fits it"
 
 
 def test_markdown_height_fix_reaches_sub_tabs_and_footer():
@@ -200,8 +287,8 @@ def test_markdown_height_fix_reaches_sub_tabs_and_footer():
     where = sorted(e["md"][0] if e["md"][0] == "footer" else "sub" for e in rep.fixed
                    if e["rule"] == "layout.markdown-height")
     assert where == ["footer", "sub"]
-    assert fixed["layout"]["tabs"][0]["tabs"][0]["rows"][0][0]["height"] == 2
-    assert fixed["layout"]["footer"][0][0]["height"] == 2
+    assert fixed["layout"]["tabs"][0]["tabs"][0]["rows"][0][0]["height"] == 2.2
+    assert fixed["layout"]["footer"][0][0]["height"] == 2.2
     load_spec(fixed)
 
 

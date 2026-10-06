@@ -1,0 +1,64 @@
+{
+  "spec_version": "1",
+  "dashboard": {"title": "CI Waterfall", "slug": "cw-live-waterfall", "theme": "chartwright CI bridge axis"},
+  "charts": [
+    {
+      "name": "Energy Bridge",
+      "type": "waterfall",
+      "dataset": {"database": "examples", "table": "chartwright_ci_bridge"},
+      "x_column": "step",
+      "metric": "SUM(amount)",
+      "opening": "FY2025",
+      "steps": ["Solar", "Demand", "Wind", "Hydro"],
+      "closing": "FY2026",
+      "increase_color": "green",
+      "decrease_color": "red",
+      "total_color": "#5B6770",
+      "increase_label": "Gain",
+      "decrease_label": "Loss",
+      "show_value": true,
+      "number_format": ",.0f",
+      "y_axis_title": "GWh",
+      "width": 6,
+      "height": 9
+    },
+    {
+      "name": "Energy Steps",
+      "type": "waterfall",
+      "dataset": {"database": "examples", "table": "chartwright_ci_bridge"},
+      "x_column": "step",
+      "metric": "SUM(amount)",
+      "steps": ["FY2025", "Solar", "Demand", "Wind", "Hydro"],
+      "closing": "FY2026",
+      "show_value": true,
+      "width": 6,
+      "height": 9
+    },
+    {
+      "name": "Sales by Year",
+      "type": "waterfall",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "order_date",
+      "time_grain": "P1Y",
+      "metric": "SUM(sales)",
+      "total_label": "All years",
+      "increase_color": "#1F6FB2",
+      "total_color": "#5B6770",
+      "show_value": true,
+      "number_format": "$.3s",
+      "x_label_format": "%Y",
+      "width": 6
+    },
+    {
+      "name": "Sales by Status",
+      "type": "waterfall",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "status",
+      "metric": "SUM(sales)",
+      "x_label_rotation": 45,
+      "row_limit": 10,
+      "width": 6
+    }
+  ],
+  "layout": {"rows": [["Energy Bridge", "Energy Steps"], ["Sales by Year", "Sales by Status"]]}
+}

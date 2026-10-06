@@ -264,6 +264,34 @@
       "number_format_secondary": ",.2f",
       "x_label_format": "%b %y",
       "x_label_every": true
+    },
+    {
+      "name": "Sales by Status",
+      "type": "waterfall",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "x_column": "status",
+      "metric": "SUM(sales)"
+    },
+    {
+      "name": "Daily Sales by Month",
+      "type": "box_plot",
+      "dataset": {
+        "database": "examples",
+        "table": "cleaned_sales_data"
+      },
+      "metrics": [
+        "SUM(sales)"
+      ],
+      "distribute_across": [
+        "order_date"
+      ],
+      "time_grain": "P1D",
+      "groupby": [
+        "month"
+      ]
     }
   ],
   "layout": {
@@ -315,6 +343,10 @@
           ],
           [
             "Sales and Price by Month"
+          ],
+          [
+            "Sales by Status",
+            "Daily Sales by Month"
           ]
         ]
       }

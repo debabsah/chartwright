@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 364" width="480" height="364">
+<rect x="0" y="0" width="480" height="364" fill="#f8fafc" rx="8"/>
+<text x="9.0" y="32.3" font-family="-apple-system, Segoe UI, sans-serif" font-size="19" font-weight="600" fill="#1e3a5f">Sales at a glance</text>
+<rect x="3.0" y="55.0" width="154" height="46" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="80.0" y="77.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#1e3a5f">Total Orders</text>
+<text x="80.0" y="92.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">1/3 wide</text>
+<rect x="163.0" y="55.0" width="154" height="46" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="240.0" y="77.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#1e3a5f">Total Sales</text>
+<text x="240.0" y="92.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">1/3 wide</text>
+<rect x="323.0" y="55.0" width="154" height="46" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="400.0" y="77.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#1e3a5f">Average Order Value</text>
+<text x="400.0" y="92.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">1/3 wide</text>
+<text x="9.0" y="135.3" font-family="-apple-system, Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#1e3a5f">Monthly sales</text>
+<rect x="3.0" y="159.0" width="314" height="150" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="160.0" y="233.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#1e3a5f">Sales Over Time</text>
+<text x="160.0" y="248.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">2/3 wide</text>
+<rect x="323.0" y="107.0" width="154" height="98" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="400.0" y="155.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#1e3a5f">Sales by Deal Size</text>
+<text x="400.0" y="170.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">1/3 wide</text>
+<rect x="323.0" y="211.0" width="154" height="46" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="400.0" y="233.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#1e3a5f">Top Products</text>
+<text x="400.0" y="248.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">1/3 wide</text>
+<rect x="323.0" y="263.0" width="154" height="46" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="400.0" y="285.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" font-style="italic" fill="#475569">Top products by revenue</text>
+<text x="400.0" y="300.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">markdown, 1/3 wide</text>
+<rect x="3.0" y="315.0" width="474" height="46" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="240.0" y="337.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" font-style="italic" fill="#475569">Source: the sales ledger, refreshed nightly</text>
+<text x="240.0" y="352.0" text-anchor="middle" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#64748b">markdown, full width</text>
+</svg>
