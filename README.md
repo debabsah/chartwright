@@ -4,6 +4,10 @@
 
 Each Superset dashboard is defined by a spec file listing its charts, filters, layout and the datasets they read. Chartwright creates or updates the dashboard on your Superset instances from that file, reports where the live dashboard differs from it, and can generate a spec from a dashboard that already exists. Specs can be written by hand or by an AI agent, and both go through identical validation before anything changes in Superset.
 
+![The Sundown dashboard's Overview in five palettes, then the dashboard scrolling through its Overview, Evening ramp, Storage and Supply tabs, then About](docs/images/sundown.webp)
+
+*Sundown, a six-tab dashboard built using Chartwright.*
+
 | You can | Instead of (Superset up to 6.1.0, [cited to source](docs/CONTRACTS.md)) | How it works |
 |---|---|---|
 | Move dashboards between dev, staging, prod or another instance, including ones built in the UI | Re-importing dashboard exports in the UI, which update the dashboard but not the charts already in it ([#34879](https://github.com/apache/superset/issues/34879), fixed after 6.1.0, not yet released) | [MOVE-BETWEEN-INSTANCES.md](docs/MOVE-BETWEEN-INSTANCES.md) |
@@ -14,10 +18,6 @@ Each Superset dashboard is defined by a spec file listing its charts, filters, l
 | Roll back any change, chart settings included, from a backup saved automatically before every apply | Remembering to export before each change, then re-importing, which restores the dashboard but not its charts' settings ([#34879](https://github.com/apache/superset/issues/34879), fixed after 6.1.0, not yet released); re-importing deleted assets can also fail ([#44309](https://github.com/apache/superset/issues/44309)) | [HISTORY-AND-ROLLBACK.md](docs/HISTORY-AND-ROLLBACK.md) |
 | Rebuild your dashboards on a new Superset version from the same specs | Checking and repairing charts by hand when an upgrade leaves them blank in the editor ([#32725](https://github.com/apache/superset/discussions/32725)) | [SUPERSET-VERSIONS.md](docs/SUPERSET-VERSIONS.md) |
 | Create dashboards from code without reverse-engineering Superset's JSON | Working out the undocumented layout JSON, `position_json` ([#32970](https://github.com/apache/superset/discussions/32970)) | [DASHBOARDS-FROM-CODE.md](docs/DASHBOARDS-FROM-CODE.md) |
-
-![The Sundown dashboard's Overview in five palettes, then the dashboard scrolling through its Overview, Evening ramp, Storage and Supply tabs, then About](docs/images/sundown.webp)
-
-*Sundown, a six-tab dashboard built from [one spec](examples/sundown/sundown.json).*
 
 ## Install
 
