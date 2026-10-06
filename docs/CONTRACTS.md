@@ -126,7 +126,13 @@ running the tool against real instances of all three releases.
   allows a HEADER or DIVIDER under the grid, a tab or a column, and a row
   holds only charts, markdown and columns (`src/dashboard/util/isValidChild.ts:64-104`,
   all three releases). The spec therefore places a header or divider as a
-  row of its own.
+  row of its own. A sketch's header drawn across the page compiles the same
+  way; any other header in a sketch sits in a COLUMN, stacked with the charts
+  and notes it shares a slot with, or alone in a column of its own. Superset
+  styles a header inside a column for exactly that
+  (`dashboard/components/gridComponents/Header.jsx:105` at 4.1.4 and 5.0.0,
+  `Header/Header.tsx:149` at 6.1.0). Verified live on 4.1.4, 5.0.0 and 6.1.0:
+  such a sketch imports, renders, decompiles without a loss and plans clean.
 - **The server normalizes what it stores and accepts dangling references.**
   Omitted settings are filled with defaults on write (4.1.4
   `superset/daos/dashboard.py:258-265`), and filter scopes pointing at

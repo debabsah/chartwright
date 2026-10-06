@@ -60,6 +60,7 @@ into one. Everything below works from that one file.
 - **ASCII Layout Design**: Draw the layout straight from the terminal: `"KKKK LLLLLLLL"` is a KPI card beside a wide line chart.
     - Sizes are ratios drawn as text: more letters make a chart wider, more lines of text make it taller.
     - Stack letters vertically for columns; `.` marks deliberate empty space.
+    - Draw section headers and notes too: a legend letter can stand for `{"header": "Monthly sales"}` or `{"markdown": "Source: the ledger"}`. A header drawn across the page titles the band below it; drawn above a chart, it heads that chart's column.
     - An unclear sketch gets a message saying exactly what to fix, never a guess.
     - Every rule drawn and compiled: [the layout guide](LAYOUT-GUIDE.md).
 - **Precise Sizing**: Set exact widths and heights per chart (markdown blocks down to one 8 px grid row: `"height": 1.6` is 64 px), or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
@@ -133,7 +134,7 @@ into one. Everything below works from that one file.
     - `chartwright adopt` writes a spec that updates that same dashboard, keeping its address, id and chart ids, so links and embeds keep pointing at it.
     - Before anything changes, adopt lists what the first apply resets because a spec can't hold it, and refuses until you pass `--accept-reset`; `plan` then names each chart whose stored options the first apply rewrites. Charts a spec can't hold come off the dashboard and stay under Charts.
     - `chartwright decompile` turns any dashboard into a spec you build as a copy at a new slug. What it can't carry over is listed, including chart settings changed from Superset's defaults (a rolling sum, a forecast, a legend margin) and filters scoped to some tabs; compare before you retire the original.
-- **Lossless Round-Trips**: Tool-built dashboards with `rows` or `tabs` layouts decompile back with nothing lost; a `sketch` comes back as rows, or as a sketch when it stacks charts beside a taller one, and so does a dashboard built in the UI with stacked charts.
+- **Lossless Round-Trips**: Tool-built dashboards with `rows` or `tabs` layouts decompile back with nothing lost; a `sketch` comes back as rows, or as a sketch when it stacks charts beside a taller one, with its headers and notes, and so does a dashboard built in the UI with stacked charts.
 - **Targeted Edits**: Replace, rename, resize, or remove one chart and re-apply; old charts are cleaned up, never orphaned.
 - **Stable Identity**: Chart ids never change across re-applies, so links, scopes, and open browser tabs stay valid.
 

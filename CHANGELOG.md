@@ -21,6 +21,13 @@ while the major version is 0, minor bumps may include breaking changes and say s
   - Applied: a select's default values, or with `default_to_first` its first value, which the check reads with the query Superset's filter sends (its pre-filter and the defaults of the filters it depends on included); a range's bounds; a time range, on the chart's time axis or main time column; a time grain, on the chart's time axis.
   - Each chart's result names the defaults it ran with (`with the dashboard's filter defaults: Carrier = All carriers`), and lists them under `filter_defaults` in the apply report, present only when there are some. A default the check can't apply is named as not applied: a time column filter's, or a first value it could not read.
   - A chart the dashboard shows empty on load, such as one under a default time range the data doesn't reach, is now named empty.
+### Added
+
+- A sketch can hold section headers and notes. A legend letter stands for a chart's name as before, or for a header (`{"header": "Monthly sales", "size": "large"}`) or a markdown block (`{"markdown": "Source: the ledger", "height": 1.6}`), drawn like a chart. A header is one line: drawn across the whole sketch it titles the band below it, as a header row does in `rows`; drawn above or below charts it sits in their column, and alone in a narrower slot it gets a column of its own. A markdown block takes its drawn width and height, or its own `height` in fifths of a unit. `decompile` (and so `adopt` and `plan`) reads headers and text blocks in a section of stacked charts back into its sketch, where it used to flatten the columns. Specs without blocks compile to the same bytes. See [the layout guide](docs/LAYOUT-GUIDE.md#section-headers-and-notes).
+
+### Fixed
+
+- `decompile` (and so `adopt`) reads columns of stacked charts side by side, such as two columns of two charts each, back as one row of columns. Before, the sketch it drew for them split into one row per level of the stacks, so a copy laid them out as rows.
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 ### Upgrading from 0.5

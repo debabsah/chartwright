@@ -111,6 +111,40 @@ def test_the_schema_file_matches_the_schema_command():
         "regenerate: chartwright schema > schema/dashboard_spec.schema.json")
 
 
+def test_every_layout_guide_example_compiles():
+    """docs/LAYOUT-GUIDE.md says every example on the page compiles as shown: each
+    ```json layout there validates and compiles, its charts stubbed by name."""
+    from chartwright.compiler import compile_bundle
+    from chartwright.spec import load_spec
+    from chartwright.testing import stub_resolution
+
+    guide = (REPO / "docs" / "LAYOUT-GUIDE.md").read_text(encoding="utf-8")
+    blocks = re.findall(r"```json\n(.*?)```", guide, re.S)
+    assert len(blocks) >= 5, "the guide lost its json examples"
+
+    def names(node) -> list[str]:
+        if isinstance(node, str):
+            return [node]
+        if isinstance(node, list):
+            return [n for x in node for n in names(x)]
+        if isinstance(node, dict) and "row" in node:
+            return names(node["row"])
+        return []
+
+    for block in blocks:
+        layout = json.loads("{" + block + "}")["layout"]
+        holders = [layout, *layout.get("tabs", [])]
+        charts = {v for h in holders for v in (h.get("legend") or {}).values() if isinstance(v, str)}
+        charts |= {n for h in holders for key in ("rows", "header", "footer")
+                   for n in names(h.get(key) or [])}
+        spec = load_spec({
+            "spec_version": "1", "dashboard": {"title": "Guide", "slug": "sdc-guide"},
+            "charts": [{"name": n, "type": "big_number_total", "metric": "COUNT(*)",
+                        "dataset": {"database": "examples", "table": "t"}} for n in sorted(charts)],
+            "layout": layout})
+        assert compile_bundle(spec, stub_resolution(spec))
+
+
 def test_package_version_matches_pyproject():
     """__version__ said 0.1.0 while pyproject.toml said 0.2.0."""
     import tomllib

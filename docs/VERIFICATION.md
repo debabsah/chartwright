@@ -120,6 +120,13 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   back as its header; the critic advises header rows in place, spends the
   header in every tab's fold budget, and fixes header markdown by its own
   address.
+- **Sketch blocks** (`test_sketch.py`): header and markdown legend entries
+  parse like charts, a header one line; a header across the sketch compiles
+  to a HEADER between rows and any other to one in a COLUMN; each placement
+  round-trips through decompile to the same layout tree and plans clean; a
+  header, note or column width changed live is layout drift; a chart-only
+  sketch compiles to the bytes it always did; every example in the layout
+  guide compiles (`test_docs.py`).
 - **Standards** (`test_standards.py`): `extends` merges each key as
   documented and records the layer behind it; cycles, unknown parents, a
   fourth file, unknown rule ids and parameters, and every way a lower file

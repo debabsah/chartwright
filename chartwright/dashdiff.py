@@ -141,18 +141,38 @@ def _normalize(spec: DashboardSpec) -> dict:
                     ditem["width"] = spec.resolved_item_width(mitem)
                     ditem.setdefault("height", 4)
 
-    def sketch_as_rows(holder) -> list[list]:
+    def sketch_as_rows(holder) -> list:
         """Sketch -> rows of chart names, a stacked COLUMN as a nested list, so a
         sketch spec and its live state compare equal: decompile reads a dashboard
-        with columns back as a sketch, and one without as rows of the same names."""
+        with columns back as a sketch, and one without as rows of the same names.
+        Blocks read as they do in rows: a header across the sketch is a header row,
+        a markdown block a {markdown, width, height} item; a header elsewhere sits in
+        its column (alone, a column of its own) with the column's width."""
+        from .sketch import SketchBlock, SketchColumn
+
+        def item(sc, width: int):
+            if not isinstance(sc, SketchBlock):
+                return sc.name
+            entry = holder.sketch_block(sc)
+            if sc.kind == "header":
+                return {**entry.model_dump(), "width": width}
+            return {"markdown": entry.markdown, "width": width,
+                    "height": holder.sketch_block_height(sc)}
+
         rows = []
         for srow in holder.parsed_sketch():
+            band = srow.header_band
+            if band is not None:
+                rows.append(holder.sketch_block(band).model_dump())
+                continue
             row = []
             for child in srow.children:
-                if hasattr(child, "children"):
-                    row.append([sc.name for sc in child.children])
+                if isinstance(child, SketchColumn):
+                    row.append([item(sc, child.width) for sc in child.children])
+                elif isinstance(child, SketchBlock) and child.kind == "header":
+                    row.append([item(child, child.width)])
                 else:
-                    row.append(child.name)
+                    row.append(item(child, child.width))
             rows.append(row)
         return rows
 

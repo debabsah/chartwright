@@ -1291,6 +1291,29 @@ def _geo(meta: dict) -> dict:
     return geo
 
 
+def _header_to_spec(meta: dict) -> dict | None:
+    """A HEADER node's meta as a spec header block; None when it has no text."""
+    text = meta.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    header: dict = {"header": text}
+    # Superset draws a header with no stored size as small (Header.tsx).
+    size = _REVERSE_HEADER_SIZE.get(meta.get("headerSize") or "SMALL_HEADER", "small")
+    if size != "medium":
+        header["size"] = size
+    if meta.get("background") == BACKGROUND["white"]:
+        header["background"] = "white"
+    return header
+
+
+def _markdown_height(meta: dict) -> int | float | None:
+    """A MARKDOWN node's height in spec units: exact, since text blocks take fifths."""
+    if not meta.get("height"):
+        return None
+    h = int(meta["height"]) / ROW_UNITS_PER_SPEC_UNIT
+    return int(h) if h.is_integer() else round(h, 1)
+
+
 def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                losses: list[Loss], geometry: dict[str, dict]) -> list:
     """Convert grid- or tab-level nodes into spec rows: ROWs (chart names +
@@ -1322,9 +1345,8 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                         block: dict = {"markdown": meta.get("code") or ""}
                         if meta.get("width"):
                             block["width"] = max(1, min(12, int(meta["width"])))
-                        if meta.get("height"):
-                            h = int(meta["height"]) / ROW_UNITS_PER_SPEC_UNIT  # exact: text blocks take fifths
-                            block["height"] = int(h) if h.is_integer() else round(h, 1)
+                        if _markdown_height(meta) is not None:
+                            block["height"] = _markdown_height(meta)
                         if block["markdown"]:
                             row.append(block)
                         else:
@@ -1346,18 +1368,10 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                     rows.append([nm])
                     geometry[nm] = _geo(meta)
             elif t == "HEADER" and depth == 0:
-                meta = node.get("meta") or {}
-                text = meta.get("text")
-                if not isinstance(text, str) or not text.strip():
+                header = _header_to_spec(node.get("meta") or {})
+                if header is None:
                     losses.append(Loss("layout", "empty HEADER dropped"))
                     continue
-                header: dict = {"header": text}
-                # Superset draws a header with no stored size as small (Header.tsx).
-                size = _REVERSE_HEADER_SIZE.get(meta.get("headerSize") or "SMALL_HEADER", "small")
-                if size != "medium":
-                    header["size"] = size
-                if meta.get("background") == BACKGROUND["white"]:
-                    header["background"] = "white"
                 rows.append(header)
             elif t == "DIVIDER" and depth == 0:
                 rows.append({"divider": True})
@@ -1439,58 +1453,201 @@ def _sketch_from(position: dict, children: list[str], kept_names: set[str],
     """A section of rows holding charts and COLUMNs of charts, as a sketch: the only
     spec layout that stacks charts beside a taller one (triage J). Each chart keeps its
     exact height as an explicit `height`, which wins over the sketch's line height, so
-    a line per stacked chart is enough. None when the section holds anything a sketch
-    can't (markdown, a header, a divider, a white row, a chart decompile can't keep),
-    and the caller walks it as rows instead."""
-    from math import lcm
+    a line per stacked chart is enough; a markdown block keeps its own the same way.
+    Markdown and headers in the rows and columns become legend blocks, a header
+    between the rows a header across the sketch, each header one line. None when the
+    section holds anything a sketch can't (a divider, a white row, a chart outside a
+    row, a chart decompile can't keep, an empty block), and the caller walks it as
+    rows instead."""
+    from .sketch import BlockRef, SketchError, parse_sketch
 
-    rows: list[list[tuple[int, list[str]]]] = []
-    for row_id in children:
-        node = position.get(row_id) or {}
+    def entry(node: dict):
+        """('chart', name) | ('markdown', block) | ('header', block), or None."""
+        meta = node.get("meta") or {}
+        t = node.get("type")
+        if t == "CHART":
+            return ("chart", meta.get("sliceName")) if meta.get("sliceName") in kept_names else None
+        if t == "MARKDOWN":
+            if not (meta.get("code") or "").strip():
+                return None
+            block: dict = {"markdown": meta["code"]}
+            if _markdown_height(meta) is not None:
+                block["height"] = _markdown_height(meta)
+            return ("markdown", block)
+        if t == "HEADER":
+            header = _header_to_spec(meta)
+            return ("header", header) if header else None
+        return None
+
+    bands: list = []   # ("header", block) | ("row", [(width, [entry, ...]), ...])
+    for node_id in children:
+        node = position.get(node_id) or {}
+        if node.get("type") == "HEADER":
+            found = entry(node)
+            if found is None:
+                return None
+            bands.append(("header", found[1]))
+            continue
         if node.get("type") != "ROW" or (node.get("meta") or {}).get("background") == BACKGROUND["white"]:
             return None
-        items: list[tuple[int, list[str]]] = []
+        items: list[tuple[int, list]] = []
         for ch_id in node.get("children", []):
             ch = position.get(ch_id) or {}
-            if ch.get("type") == "CHART":
+            if ch.get("type") in ("CHART", "MARKDOWN"):
                 stack = [ch]
             elif ch.get("type") == "COLUMN":
                 stack = [position.get(x) or {} for x in ch.get("children", [])]
-                if not stack or any(x.get("type") != "CHART" for x in stack):
+                if not stack:
                     return None
             else:
                 return None
-            names = [(x.get("meta") or {}).get("sliceName") for x in stack]
-            if any(n not in kept_names for n in names):
+            entries = [entry(x) for x in stack]
+            if any(e is None for e in entries):
                 return None
             width = int((ch.get("meta") or {}).get("width") or 0)
             if width < 1:
                 return None
-            items.append((width, names))
+            items.append((width, entries))
         if not items or sum(w for w, _ in items) > 12:
             return None
-        rows.append(items)
-    names = [n for items in rows for _, stack in items for n in stack]
-    if not rows or len(names) != len(set(names)) or len(names) > len(_SKETCH_SYMBOLS):
+        bands.append(("row", items))
+    names = [e[1] for kind, band in bands if kind == "row"
+             for _, stack in band for e in stack if e[0] == "chart"]
+    blocks = sum(1 if kind == "header" else sum(1 for _, stack in band for e in stack
+                                                if e[0] != "chart")
+                 for kind, band in bands)
+    if not bands or len(names) != len(set(names)) or len(names) + blocks > len(_SKETCH_SYMBOLS):
         return None
-    symbol = {n: _SKETCH_SYMBOLS[i] for i, n in enumerate(names)}
+    symbols = iter(_SKETCH_SYMBOLS)
+    symbol = {n: next(symbols) for n in names}
+    legend: dict = {symbol[n]: n for n in names}
+
+    def sym(e) -> str:
+        if e[0] == "chart":
+            return symbol[e[1]]
+        s = next(symbols)
+        legend[s] = e[1]
+        return s
+
     lines: list[str] = []
-    for items in rows:
-        depth = lcm(*(len(stack) for _, stack in items))
-        for line in range(depth):
-            cells = "".join(symbol[stack[line * len(stack) // depth]] * width
-                            for width, stack in items)
-            lines.append(cells.ljust(12, "."))
+    for kind, band in bands:
+        if kind == "header":
+            lines.append(sym(("header", band)) * 12)
+            continue
+        stacks = [(width, [(e[0], sym(e)) for e in stack]) for width, stack in band]
+        span, counts = _band_lines([[k for k, _ in stack] for _, stack in stacks])
+        drawn = []
+        for (width, stack), per_item in zip(stacks, counts):
+            cells: list[str] = []
+            for count, (_, s) in zip(per_item, stack):
+                cells += [s * width] * count
+            cells += ["." * width] * (span - len(cells))  # a stack that ends early
+            drawn.append(cells)
+        for line in range(span):
+            lines.append("".join(cells[line] for cells in drawn).ljust(12, "."))
+    try:
+        # A band no drawing keeps whole (a header alone beside a stacked column) splits
+        # into bands, and the next one would open on the dots below the header.
+        parse_sketch(lines, {s: v if isinstance(v, str)
+                             else BlockRef("header" if "header" in v else "markdown")
+                             for s, v in legend.items()}, 2)
+    except SketchError:
+        return None
     for row_id in children:
-        for ch_id in (position.get(row_id) or {}).get("children", []):
+        node = position.get(row_id) or {}
+        for ch_id in node.get("children", []) if node.get("type") == "ROW" else []:
             ch = position.get(ch_id) or {}
-            for x in ([ch] if ch.get("type") == "CHART" else
+            for x in ([ch] if ch.get("type") != "COLUMN" else
                       [position.get(c) or {} for c in ch.get("children", [])]):
+                if x.get("type") != "CHART":
+                    continue
                 meta = x.get("meta") or {}
                 geo = _geo(meta)
                 geo.pop("width", None)  # the sketch holds widths
                 geometry[meta.get("sliceName")] = geo
-    return {"sketch": lines, "legend": {symbol[n]: n for n in names}}
+    return {"sketch": lines, "legend": legend}
+
+
+def _band_lines(stacks: list[list[str]]) -> tuple[int, list[list[int]]]:
+    """(lines, lines per item of each stack) to draw one band of stacks (each stack: its
+    items' kinds) so that the sketch parser reads it back as ONE band: it cuts a band
+    at every line boundary no item spans, so each boundary inside the band must fall
+    inside an item of some stack. A header takes one line. First the even drawing: the
+    stacks' items share the lines evenly (without headers, over the least common
+    multiple of the stack sizes); where that leaves a boundary no item spans, a
+    staggered one (_stagger)."""
+    from math import lcm
+
+    sizes = [sum(1 for k in stack if k != "header") for stack in stacks]
+    heads = [len(stack) - n for stack, n in zip(stacks, sizes)]
+    if not any(heads):
+        span = lcm(*sizes)
+    else:
+        need = max(h + n for h, n in zip(heads, sizes))
+        span = next((n_ for n_ in range(need, need + lcm(1, *(n for n in sizes if n)) + 1)
+                     if all(n == 0 or (n_ - h) % n == 0 for h, n in zip(heads, sizes))), need)
+    even = [_stack_lines(stack, span) for stack in stacks]
+    if _one_band(even, span):
+        return span, even
+    return _stagger(stacks)
+
+
+def _one_band(counts: list[list[int]], span: int) -> bool:
+    """Whether every line boundary inside the band falls inside some item."""
+    inside: set[int] = set()
+    for per_item in counts:
+        top = 0
+        for n in per_item:
+            inside.update(range(top + 1, top + n))
+            top += n
+    return all(r in inside for r in range(1, span))
+
+
+def _stagger(stacks: list[list[str]]) -> tuple[int, list[list[int]]]:
+    """A drawing that offsets the stacks' item boundaries, line by line: an item ends
+    after its line (a header always does), each stack's last item runs to the end of the
+    band, and where every item would end together, the stack with the most lines to
+    spare runs its item on to span the boundary. The band ends once each stack has
+    drawn its last item. A boundary only headers or a lone stack reach is a cut no
+    drawing avoids; the rows it makes lay the items out as the one row did."""
+    k = len(stacks)
+    item, drawn = [0] * k, [0] * k
+    counts: list[list[int]] = [[] for _ in stacks]
+    lines = 0
+    while True:
+        lines += 1
+        live = [s for s in range(k) if item[s] < len(stacks[s])]
+        for s in live:
+            drawn[s] += 1
+        if all(item[s] == len(stacks[s]) - 1 for s in live):
+            for s in live:
+                counts[s].append(drawn[s])
+            return lines, counts
+        ending = [s for s in live
+                  if stacks[s][item[s]] == "header" or item[s] < len(stacks[s]) - 1]
+        if len(ending) == len(live) > 1:
+            spare = [s for s in ending if stacks[s][item[s]] != "header"]
+            if spare:
+                ending.remove(max(spare, key=lambda s: (item[s] - len(stacks[s]), -s)))
+        for s in ending:
+            counts[s].append(drawn[s])
+            item[s] += 1
+            drawn[s] = 0
+
+
+def _stack_lines(kinds: list[str], span: int) -> list[int]:
+    """Lines per item of one stack over `span` lines: a header one, the others the
+    rest, evenly (earlier items take any remainder); a stack of headers alone ends early."""
+    n = sum(1 for k in kinds if k != "header")
+    base, extra = divmod(span - (len(kinds) - n), n) if n else (0, 0)
+    out, seen = [], 0
+    for k in kinds:
+        if k == "header":
+            out.append(1)
+        else:
+            out.append(base + (1 if seen < extra else 0))
+            seen += 1
+    return out
 
 
 def _section(position: dict, children: list[str], kept_names: set[str],
@@ -1507,7 +1664,8 @@ def _section(position: dict, children: list[str], kept_names: set[str],
 
 
 def _section_rows(section: dict) -> list:
-    """A section's rows, a sketch read as one row of its charts in reading order."""
+    """A section's rows, a sketch read as one row of its charts and blocks in reading
+    order."""
     if "sketch" in section:
         return [list(section["legend"][ch] for ch in dict.fromkeys(
             c for line in section["sketch"] for c in line if c in section["legend"]))]

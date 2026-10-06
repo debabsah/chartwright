@@ -46,7 +46,9 @@ approximate it with a different mechanism.
    to scope any of them), dashboard settings (colour scheme, description,
    certification, draft, refresh, `owners` by username or email, the
    email on 4.1.4 and 5.0.0), layout as `rows`, `tabs`, or an
-   ASCII `sketch` with a `legend`, markdown blocks in rows, `{"header": ...}`
+   ASCII `sketch` with a `legend` (a symbol names a chart, or stands for a
+   `{"header": ...}` or `{"markdown": ...}` block drawn in place), markdown
+   blocks in rows, `{"header": ...}`
    and `{"divider": true}` entries between rows, an optional
    `layout.header` and `layout.footer` (rows above and below everything,
    shown on every tab), an optional
@@ -153,7 +155,10 @@ approximate it with a different mechanism.
 Each sketch line adds `line` height units (default `line: 2`, one unit =
 40 px). KPI rows: 2 sketch lines. Axis charts (timeseries, bar, heatmap,
 histogram): 4-5 lines; fewer renders flattened with labels dropped.
-Pie/donut: 4+ lines and >= 5 of 12 width. The brief carries the full sizing
+Pie/donut: 4+ lines and >= 5 of 12 width. A header is one line: across
+the sketch it titles the band below, above a chart it heads that chart's
+column. A markdown note takes the lines drawn for it, or its own `height`
+in fifths (1.6 is a 64 px strip). The brief carries the full sizing
 table; `CW advise` checks the result.
 
 Heights the user polished by hand in the UI come back via
