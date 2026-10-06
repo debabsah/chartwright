@@ -18,8 +18,8 @@
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
 > text. A verified multi-lens review of the first implementation produced the
-> ranked roadmap in [DESIGN-BRAIN-V2.md](DESIGN-BRAIN-V2.md) (36 of 37 items
-> in the v2 batch, the last closed afterwards (see that page's status note);
+> ranked roadmap (36 of 37 items landed in the v2 batch, the last closed
+> afterwards);
 > a later full review of core + brain produced the version-3 changes recorded
 > in §15.11 onward. §7's rule table is now genuinely generated
 > (`tools/gen_rule_table.py`, checked by `tests/test_docs.py`). The v2 claim
@@ -311,8 +311,8 @@ error-driven, so those rules can fail a run while advertising `warn`.
 "data" marks rules that only run with a live resolution (`--profile`);
 several offline rules additionally sharpen or stand down when probes are
 available (noted in their text). `since` is the design-brain version that
-introduced the rule: "2" the post-review batch
-(docs/DESIGN-BRAIN-V2.md), "3" the review burn-down (§15.11 onward), "4"
+introduced the rule: "2" the post-review batch,
+"3" the review burn-down (§15.11 onward), "4"
 the colour-scheme check, "5" the design defaults (§16), "9" the waterfall and
 the box plot, "14" the big-number colour rules (a colour that reads on the
 white card, and a KPI that says what its colours mean), "16" the type floors
