@@ -81,12 +81,16 @@ running the tool against real instances of all three releases.
   6.1.0, `hydrate.js:222-226` at 4.1.4 and 5.0.0), and each tab set starts on
   the child on that path (`gridComponents/Tabs/Tabs.tsx:135-140` at 6.1.0,
   `Tabs.jsx:190-193` at 4.1.4 and `:139-142` at 5.0.0). A hash change on the
-  open page is not read, so the link is the full URL and a click loads the
-  dashboard again: filter selections not saved in the URL reset. A bare
-  title names a top tab, or else a sub-tab; validation lists the targets for
-  an unknown title and asks for `Parent/Child` when two sub-tabs share one. A
-  top tab titled like a sub-tab's `Parent/Child` path is refused as ambiguous,
-  and decompile leaves a link to either as its URL.
+  open page is not read, so the link is the full URL. A signed-in viewer's URL
+  carries a `native_filters_key` query, which Superset adds on every load, so a
+  click loads the dashboard again and filter selections not saved in the URL
+  reset (seen live on 6.1.0, 2026-10-06). Where Superset can't save the
+  viewer's filter state, the URL has no query, a click only changes the hash,
+  and the tab stays. A bare title names a top tab, or else a sub-tab;
+  validation lists the targets for an unknown title and asks for
+  `Parent/Child` when two sub-tabs share one. A top tab titled like a
+  sub-tab's `Parent/Child` path is refused as ambiguous, and decompile leaves
+  a link to either as its URL.
   Decompile turns links to this dashboard's tabs back into `tab:` form, and
   `plan` compares links by the tab they open, so `tab:Trend` and
   `tab:Sales/Trend` are the same link.
