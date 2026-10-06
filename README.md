@@ -15,9 +15,7 @@ Each Superset dashboard is defined by a spec file listing its charts, filters, l
 | Rebuild your dashboards on a new Superset version from the same specs | Checking and repairing charts by hand when an upgrade leaves them blank in the editor ([#32725](https://github.com/apache/superset/discussions/32725)) | [SUPERSET-VERSIONS.md](docs/SUPERSET-VERSIONS.md) |
 | Create dashboards from code without reverse-engineering Superset's JSON | Working out the undocumented layout JSON, `position_json` ([#32970](https://github.com/apache/superset/discussions/32970)) | [DASHBOARDS-FROM-CODE.md](docs/DASHBOARDS-FROM-CODE.md) |
 
-![Sundown, a grid-siting dashboard: KPI cards with coloured changes over a siting table whose rows are tinted by status](docs/images/sundown-hero.png)
-
-*Sundown, a six-tab dashboard built from [one spec](examples/sundown/sundown.json) with `chartwright apply`. [See every tab](examples/sundown/README.md).*
+> [VISUAL: The dashboard the example spec below builds: Revenue by Month, one line per region, on the left two-thirds; Revenue and Orders stacked on the right; the Order date filter in the filter bar. Format: screenshot, light and dark variants. Caption: "Built from orders.json below with `chartwright apply`."]
 
 ## Install
 
@@ -67,10 +65,6 @@ chartwright apply orders.json --profile dev     # checks every reference, builds
 ```
 
 The `sketch` draws the layout: a run of the same letter is one chart, and its length sets the chart's width, so Revenue by Month fills two-thirds of the row with Revenue and Orders stacked beside it.
-
-![The Sundown dashboard in five colour palettes, side by side](docs/images/sundown-palettes.png)
-
-*One dashboard in five palettes. Its colours are spec fields (the dashboard CSS, label colours and colour rules), so a new palette is a change to one file that you review like any other. The Superset theme the spec names is created outside Chartwright.*
 
 ## Requirements and limits
 
