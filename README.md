@@ -17,7 +17,7 @@ Each Superset dashboard is defined by a spec file listing its charts, filters, l
 
 ![The Sundown dashboard's Overview in five palettes, then the dashboard scrolling through its Overview, Evening ramp, Storage and Supply tabs, then About](docs/images/sundown.webp)
 
-*Sundown, a six-tab dashboard built from [one spec](examples/sundown/sundown.json) with `chartwright apply`.*
+*Sundown, a six-tab dashboard built from [one spec](examples/sundown/sundown.json).*
 
 ## Install
 
