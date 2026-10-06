@@ -100,6 +100,20 @@ def test_text_paint_uses_the_dark_palette_and_round_trips():
     assert _normalize(load_spec(result.spec))["charts"] == _normalize(spec)["charts"]
 
 
+def test_hidden_labels_plan_clean_in_any_order():
+    # Two rule-only columns hidden in the reverse of the order decompile reads them in.
+    rules = [{"metric": "b_flag", "operator": "=", "target": 1, "color": "#9AA3AE", "paint": "text",
+              "apply_to": "Trend"},
+             {"metric": "a_flag", "operator": "=", "target": 1, "color": "#E7ECF5", "apply_to": "row"}]
+    chart = aggregate(metrics=["MAX(txt) AS Trend", "MAX(a) AS a_flag", "MAX(b) AS b_flag"],
+                      hidden=["b_flag", "a_flag"], conditional_formatting=rules)
+    spec = mk(chart)
+    result = decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _lookup(spec))
+    assert result.losses == [], result.losses_json()
+    assert sorted(result.spec["charts"][0]["hidden"]) == ["a_flag", "b_flag"]
+    assert _normalize(load_spec(result.spec))["charts"] == _normalize(spec)["charts"]
+
+
 def test_axis_number_format_round_trips():
     from test_table_sort import DS
     for chart in (
