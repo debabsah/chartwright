@@ -43,6 +43,7 @@ NEW_KEYS = {
     "include_search", "rowSubTotals", "transposePivot", "show_values", "show_percentage",
     "number_format", "show_total", "labels_outside", "markerEnabled", "area", "areaB",
     "opacityB", "rolling_periods", "min_periods", "time_format", "force_timestamp_formatting",
+    "xscale_interval", "yscale_interval", "left_margin",
 }
 
 
@@ -111,6 +112,10 @@ def _display_params() -> dict[str, dict]:
                         "stack": "Stack",
                         "contributionMode": "column", "limit": 3, "legendOrientation": "right",
                         "time_range": "Last year", "xAxisLabelInterval": "0"}),
+    ("Countries by Deal Size", {"x_axis_sort": "sum", "x_axis_sort_asc": True,
+                                "x_axis_sort_series": "sum",
+                                "x_axis_sort_series_ascending": True}),
+    ("Lines by Quantity", {"x_axis_sort": "SUM(quantity_ordered)", "x_axis_sort_asc": True}),
     ("Share by Line", {"label_type": "value_percent", "number_format": ",.0f",
                        "show_total": True, "labels_outside": False,
                        "legendOrientation": "left", "legendType": "plain"}),
@@ -124,7 +129,8 @@ def _display_params() -> dict[str, dict]:
                            "y_axis_format": ",.0f", "show_percentage": False,
                            "normalize_across": "y", "show_legend": False,
                            # x by value, largest first; y A to Z from the TOP (bottom-up axis)
-                           "sort_x_axis": "value_desc", "sort_y_axis": "alpha_desc"}),
+                           "sort_x_axis": "value_desc", "sort_y_axis": "alpha_desc",
+                           "xscale_interval": 2, "yscale_interval": 1, "left_margin": 16}),
     ("Trailing Revenue", {"rolling_type": "sum", "rolling_periods": 12, "min_periods": 6,
                           "compare_lag": 12, "start_y_axis_at_zero": False}),
     ("Revenue KPI", {"start_y_axis_at_zero": True}),  # the trendline starts at zero unless truncated
@@ -246,6 +252,86 @@ def test_a_grouped_bar_sorted_by_name_on_4_1_decompiles_as_category_sort():
     assert "category_sort" not in _decompile(spec, edit).spec["charts"][0]
 
 
+def test_sort_by_total_ranks_several_series_by_their_sum_on_every_release():
+    """SortSeriesType.Sum: read from x_axis_sort from 6.0.0 and x_axis_sort_series at
+    4.1.4 and 5.0.0, largest first (on top of the bottom-up horizontal axis). "sum" is
+    no label, so sortOperator adds no sort and the query keeps its own order."""
+    bar = {"name": "B", "type": "bar", "dataset": DS, "x_column": "zone",
+           "metrics": ["SUM(first_4h)", "SUM(beyond_4h)"], "stack": True, "sort_by": "total"}
+    for orientation, asc in (("vertical", False), ("horizontal", True)):
+        for extra in ({}, {"metrics": ["SUM(x)"], "groupby": "region"}):
+            p = _params(_spec({**bar, **extra, "orientation": orientation}))["B"]
+            assert (p["x_axis_sort"], p["x_axis_sort_asc"]) == ("sum", asc)
+            assert (p["x_axis_sort_series"], p["x_axis_sort_series_ascending"]) == ("sum", asc)
+            assert "timeseries_limit_metric" not in p and "order_desc" not in p
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"echarts_timeseries_bar": set(p)}) == [], version
+
+
+def test_sort_by_a_metric_sorts_and_orders_the_query_by_it_drawn_or_not():
+    """sortOperator sorts the rows by x_axis_sort; as "Sort query by" the metric orders
+    the query (a row limit keeps the top bars by it), and one not drawn is queried as an
+    extra metric because its label is x_axis_sort (extractExtraMetrics.ts:35)."""
+    bar = {"name": "B", "type": "bar", "dataset": DS, "x_column": "zone",
+           "metrics": ["COUNT(*)"], "orientation": "horizontal", "row_limit": 10}
+    p = _params(_spec({**bar, "sort_by": "SUM(revenue)"}))["B"]
+    assert (p["x_axis_sort"], p["x_axis_sort_asc"]) == ("SUM(revenue)", True)
+    assert p["timeseries_limit_metric"]["label"] == "SUM(revenue)"
+    assert p["timeseries_limit_metric"]["column"] == {"column_name": "revenue"}
+    assert "order_desc" not in p and "x_axis_sort_series" not in p  # descending: the top bars
+    # A drawn metric of several: at 4.1.4 and 5.0.0 the plugin would re-sort the rows by
+    # its x_axis_sort_series default (the name); null leaves sortOperator's order.
+    two = {**bar, "metrics": ["SUM(a)", "SUM(b)"], "sort_by": "SUM(b)", "orientation": "vertical"}
+    p = _params(_spec(two))["B"]
+    assert (p["x_axis_sort"], p["x_axis_sort_asc"]) == ("SUM(b)", False)
+    assert p["timeseries_limit_metric"] == p["metrics"][1]
+    assert "x_axis_sort_series" in p and p["x_axis_sort_series"] is None
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"echarts_timeseries_bar": set(p)}) == [], version
+
+
+@pytest.mark.parametrize("spec_fields", [
+    {"sort_by": "total", "metrics": ["SUM(a)", "SUM(b)"]},
+    {"sort_by": "total", "groupby": "region", "series_limit": 3},
+    {"sort_by": "SUM(hidden)"},
+    {"sort_by": "SUM(b)", "metrics": ["SUM(a)", "SUM(b)"], "stack": True},
+    {"sort_by": "COUNT(*)"},
+])
+def test_sort_by_round_trips_without_a_loss(spec_fields, monkeypatch):
+    bar = {"name": "B", "type": "bar", "dataset": DS, "x_column": "zone", "metrics": ["COUNT(*)"],
+           "orientation": "horizontal", **spec_fields}
+    spec = _spec(bar)
+    out = _decompile(spec)
+    assert out.losses == [], out.losses_json()
+    assert out.spec["charts"][0]["sort_by"] == spec_fields["sort_by"]
+    assert _normalize(load_spec(out.spec)) == _normalize(spec)
+    assert _plan(spec, None, monkeypatch)["clean"] is True
+
+
+def test_a_bar_ranked_in_the_ui_decompiles_as_sort_by_or_a_named_loss():
+    """4.1.4 and 5.0.0 store a several-series sort in x_axis_sort_series; Superset's
+    'Total value' is sort_by "total", its minimum, maximum and average are no spec value,
+    and a ranking reversed to smallest first is named too."""
+    spec = _spec({"name": "B", "type": "bar", "dataset": DS, "x_column": "zone",
+                  "metrics": ["COUNT(*)"], "groupby": "region"})
+    out = _decompile(spec, _edit_params("B", x_axis_sort=None, x_axis_sort_series="sum",
+                                        x_axis_sort_series_ascending=False))
+    assert out.spec["charts"][0]["sort_by"] == "total" and out.losses == []
+    out = _decompile(spec, _edit_params("B", x_axis_sort="max"))
+    assert "sort_by" not in out.spec["charts"][0]
+    assert any("'max'" in l.what for l in out.losses)
+    out = _decompile(spec, _edit_params("B", x_axis_sort="sum", x_axis_sort_asc=True))
+    assert any("smallest first" in l.what for l in out.losses)
+    one = _spec({"name": "B", "type": "bar", "dataset": DS, "x_column": "zone",
+                 "metrics": ["COUNT(*)"]})
+    out = _decompile(one, _edit_params("B", x_axis_sort_asc=True))  # vertical: largest left
+    assert "sort_by" not in out.spec["charts"][0]
+    assert any("smallest first" in l.what for l in out.losses)
+    assert _decompile(one).losses == []
+
+
 def test_y_axis_max_is_a_bound_on_every_release_not_echart_options():
     line = {"name": "L", "type": "timeseries_line", "dataset": DS, "metrics": ["MAX(share)"],
             "time_column": "ts", "y_axis_max": 1}
@@ -262,6 +348,56 @@ def test_heatmap_scheme_and_defaults_are_unchanged_when_omitted():
     p = _params(_spec(hm))["H"]
     assert p["linear_color_scheme"] == "superset_seq_1" and p["normalize_across"] == "heatmap"
     assert "show_percentage" not in p and "show_values" not in p
+    assert not {"xscale_interval", "yscale_interval", "left_margin"} & set(p)
+
+
+def test_heatmap_label_steps_and_left_margin():
+    """xscale_interval / yscale_interval N label every Nth category from the first
+    (transformProps hands ECharts interval N - 1); left_margin is the grid's left edge.
+    The same controls at 4.1.4, 5.0.0 and 6.1.0 (Heatmap/controlPanel.tsx)."""
+    hm = {"name": "H", "type": "heatmap", "dataset": DS, "x_column": "hour",
+          "y_column": "weekday", "metric": "COUNT(*)"}
+    p = _params(_spec({**hm, "x_label_every": 6, "y_label_every": 1, "left_margin": 16}))["H"]
+    assert (p["xscale_interval"], p["yscale_interval"], p["left_margin"]) == (6, 1, 16)
+    # true labels every value, as on a bar; false is Superset's automatic spacing
+    spec = _spec({**hm, "x_label_every": True, "y_label_every": False})
+    assert (spec.charts[0].x_label_every, spec.charts[0].y_label_every) == (1, None)
+    p = _params(spec)["H"]
+    assert p["xscale_interval"] == 1 and "yscale_interval" not in p
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"heatmap_v2": set(p)}) == [], version
+
+
+@pytest.mark.parametrize("field, value, needle", [
+    ("x_label_every", 0, "greater than or equal to 1"),
+    ("y_label_every", 51, "less than or equal to 50"),  # the control's range, 1-50
+    ("left_margin", -1, "greater than or equal to 0"),
+    ("left_margin", 201, "less than or equal to 200"),
+])
+def test_heatmap_label_fields_hold_to_the_controls_range(field, value, needle):
+    hm = {"name": "H", "type": "heatmap", "dataset": DS, "x_column": "a", "y_column": "b",
+          "metric": "COUNT(*)", field: value}
+    with pytest.raises(ValidationError, match=needle):
+        _spec(hm)
+
+
+def test_heatmap_label_fields_decompile_from_what_superset_stores():
+    """The UI stores the interval as a number and a typed margin as text ('30');
+    Superset's own -1 and 'auto' read as omitted, anything else is a named loss."""
+    hm = {"name": "H", "type": "heatmap", "dataset": DS, "x_column": "a", "y_column": "b",
+          "metric": "COUNT(*)"}
+    spec = _spec(hm)
+    out = _decompile(spec, _edit_params("H", xscale_interval=3, yscale_interval=-1,
+                                        left_margin="30"))
+    chart = out.spec["charts"][0]
+    assert (chart["x_label_every"], chart["left_margin"]) == (3, 30) and "y_label_every" not in chart
+    assert out.losses == []
+    out = _decompile(spec, _edit_params("H", xscale_interval=-1, left_margin="auto"))
+    assert not {"x_label_every", "left_margin"} & set(out.spec["charts"][0]) and out.losses == []
+    out = _decompile(spec, _edit_params("H", xscale_interval=80, left_margin="5%"))
+    text = " ".join(l.what for l in out.losses)
+    assert "xscale_interval 80" in text and "left_margin '5%'" in text
 
 
 # -- version gating ------------------------------------------------------------------
@@ -448,6 +584,10 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Top Customers", {"column_config": {}}),
     ("Sales Pivot", {"transposePivot": False}),
     ("Line by Deal Size", {"show_percentage": True}),
+    ("Countries by Deal Size", {"x_axis_sort": "name"}),
+    ("Lines by Quantity", {"x_axis_sort": "SUM(sales)"}),
+    ("Line by Deal Size", {"xscale_interval": -1}),
+    ("Line by Deal Size", {"left_margin": "auto"}),
     ("Revenue KPI", {"compare_lag": 3}),
     ("Orders This Quarter", {"time_range": "Last month"}),
     ("Revenue and Orders", {"limit_b": 9}),
@@ -475,6 +615,7 @@ LINE = {"name": "L", "type": "timeseries_line", "dataset": DS, "metrics": ["SUM(
         "time_column": "ts"}
 TREND = {"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
          "time_column": "ts"}
+BAR = {"name": "B", "type": "bar", "dataset": DS, "x_column": "c", "metrics": ["SUM(x)"]}
 
 
 @pytest.mark.parametrize("chart, message", [
@@ -524,6 +665,11 @@ TREND = {"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUN
     ({"name": "M", "type": "mixed", "dataset": DS, "x_column": "ts", "y_axis_min_secondary": 3,
       "y_axis_max_secondary": 2, "a": {"metrics": ["SUM(x)"]}, "b": {"metrics": ["SUM(y)"]}},
      "y_axis_min_secondary (3) must be below y_axis_max_secondary (2)"),
+    ({**BAR, "sort_by": "SUM(y)", "category_sort": "asc"}, "set category_sort or sort_by, not both"),
+    ({**BAR, "sort_by": "total"}, "one series already ranks by its metric"),
+    ({**BAR, "sort_by": "SUM(y)", "groupby": "g"}, "Superset ranks grouped bars by their series only"),
+    ({**BAR, "sort_by": "total", "groupby": "g", "contribution": "row"},
+     "sort_by ranks by values, and contribution plots shares"),
 ])
 def test_wrong_combinations_are_named(chart, message):
     with pytest.raises(ValidationError) as err:
@@ -561,6 +707,25 @@ def test_series_limit_metric_is_resolved_like_any_metric():
         res = Resolution()
         _check_chart_fields(_spec(chart).charts[0], ds, res)
         assert [(e.code, e.ref) for e in res.errors] == [("metric_not_found", "no_such_metric")]
+
+
+def test_a_bars_sort_metric_is_resolved_and_queried_by_smoke():
+    """A sort metric the bar doesn't draw is still in its query, so check names it and
+    the smoke query carries it (a bad one fails the chart, not just its order)."""
+    from chartwright.smoke import _query_for
+
+    ds = ResolvedDataset(id=1, uuid="u", table="t", schema=None, database_name="examples",
+                         columns=["c", "x"], metrics=["revenue"])
+    res = Resolution()
+    _check_chart_fields(_spec({**BAR, "sort_by": "SUM(no_such_column)"}).charts[0], ds, res)
+    assert [(e.code, e.ref) for e in res.errors] == [("column_not_found", "no_such_column")]
+    res = Resolution()
+    _check_chart_fields(_spec({**BAR, "sort_by": "revenue"}).charts[0], ds, res)
+    assert res.errors == []
+    spec = _spec({**BAR, "sort_by": "revenue"})
+    assert _query_for(spec.charts[0], spec)["metrics"][1] == "revenue"
+    spec = _spec({**BAR, "metrics": ["SUM(x)", "COUNT(*)"], "sort_by": "total"})
+    assert len(_query_for(spec.charts[0], spec)["metrics"]) == 2
 
 
 # -- a written Superset default --------------------------------------------------------

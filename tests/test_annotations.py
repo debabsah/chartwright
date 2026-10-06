@@ -46,6 +46,21 @@ def test_a_goal_line_compiles_to_a_formula_layer(chart_type):
     }
 
 
+def test_a_threshold_on_a_horizontal_bar_is_the_same_layer_drawn_upright():
+    """transformFormulaAnnotation maps each point to [y, x] on a horizontal chart
+    (Timeseries/transformers.ts, 4.1.4 :381-383, 5.0.0 :387-389, 6.1.0 :482-484), so a
+    value lands on the value axis, which runs across: the line stands upright at 1.0x.
+    Seen live on 4.1.4, 5.0.0 and 6.1.0. The layer itself is unchanged."""
+    threshold = {"name": "Break-even", "value": 1, "style": "dashed", "color": "#B3261E"}
+    data = one_chart("bar", annotations=[threshold], orientation="horizontal")
+    p = chart_doc(load_spec(data), "Trend")["params"]
+    assert p["orientation"] == "horizontal"
+    vertical = layers(one_chart("bar", annotations=[threshold]))
+    assert p["annotation_layers"] == vertical and vertical[0]["value"] == "1"
+    out = assert_lossless(load_spec(data))
+    assert out.spec["charts"][0]["annotations"] == [threshold]
+
+
 def test_a_formula_and_the_optional_settings():
     (layer,) = layers(one_chart(annotations=[
         {"name": "Trend line", "formula": " 0.5*x + 3 ", "style": "dotted", "opacity": "low", "width": 1.5}]))

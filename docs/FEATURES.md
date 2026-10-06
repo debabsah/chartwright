@@ -31,7 +31,7 @@ into one. Everything below works from that one file.
     - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own.
     - Values written on bars and points, stacked series, 100% stacks, and the top N series of a breakdown.
     - Legends hidden, or placed at the bottom, left or right.
-    - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value.
+    - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value; stacked or grouped bars ranked by their total; or bars ranked by another metric, drawn or not, so two charts share one order.
     - A time range per chart, such as a "Last 30 days" KPI on a dashboard that shows all time.
     - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
     - A trendline KPI over a rolling window: a trailing-12-month total compared with the 12 months before ("+30% vs prior 12 months"), a 3-month average, or a running total.
@@ -40,11 +40,11 @@ into one. Everything below works from that one file.
     - A big number shown as a date, such as the latest order date as "Sat 3 Oct 2026".
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
-    - Heatmap values and colour scheme; what pie, funnel and treemap labels show, and their number format.
+    - Heatmap values and colour scheme, a label on every Nth row or column (hours read 0, 6, 12, 18), and room left of the row labels, which Superset 6.1 otherwise cuts off; what pie, funnel and treemap labels show, and their number format.
     - Heatmap axes in label order, such as a cohort triangle with its oldest cohort on top, or by value.
     - Waterfalls: the rising, falling and total bar colours (green, amber, red or any hex), each step's value on its bar, and a breakdown per period. On Superset 6.1+, list a bridge's steps in its own order and name the rows that open and close it, each drawn as a total under its own name (an opening total needs a dashboard theme that keeps zero on the axis; `check` says when it doesn't); on earlier releases the steps draw in label order, closed by a total named Total. `apply`'s data check says when a step or the closing has no row, or the closing doesn't equal the steps added up.
     - Box plots: the columns whose rows are the observations (a date at a daily grain), the groups that get a box each, and the whiskers: Tukey's, the lowest and highest values, or any two percentiles such as 5 and 95. `apply`'s data check says when the observations reach the row limit, so the boxes miss some.
-- **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend.
+- **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend. On a horizontal bar the line stands upright at its value, such as a 1.0x threshold across a ranked list.
 - **Dashboard and Chart Settings**: Set the dashboard's own settings and each chart's in the spec, so a change made in the UI shows up in `plan`.
     - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).
     - Chart: colour scheme, description (viewers open it from the chart menu), certification badge, cache timeout, and a shorter title shown on the dashboard.

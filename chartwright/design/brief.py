@@ -92,7 +92,7 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "",
         "- x_label_format, compare_suffix, number_format of COUNT metrics, date_format on a big",
         "  number of a date column, and on tables cell_bars, page_length and search_box;",
-        "  show_legend on a single named series; show_value on few bars.",
+        "  show_legend on a single named series; show_value on few bars; a heatmap's left_margin.",
         "  Set one yourself only when the user asks for it, and say so in your reply.",
         "- Run `chartwright advise <spec> --fix` (MCP: fix_spec) before you build. It writes each value",
         "  into the spec file and records it in design.filled; its `fixed` entries say kind \"fill\" and why.",

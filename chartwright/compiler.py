@@ -369,6 +369,36 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
                     "hasCustomLabel": False,
                 }
                 p["order_desc"] = chart.category_sort == "desc"
+        elif chart.sort_by:
+            # Largest first, as the default ranking: on top of the bottom-up horizontal axis.
+            ascending = chart.orientation == "horizontal"
+            sort_metric = chart.sort_metric()
+            if sort_metric is None:
+                # "total": the plugin sorts the categories by the sum of their series
+                # (SortSeriesType.Sum, utils/series.ts sortRows: 4.1.4 :200-208, 6.1.0
+                # :564-572), reading x_axis_sort from 6.0.0 (Timeseries/transformProps.ts
+                # 6.1.0 :335-336) and x_axis_sort_series at 4.1.4 and 5.0.0 (:243-246,
+                # :246-249). "sum" is no label, so sortOperator.ts adds no sort of its own.
+                p["x_axis_sort"] = "sum"
+                p["x_axis_sort_series"] = "sum"
+                p["x_axis_sort_series_ascending"] = ascending
+            else:
+                # A metric: sortOperator.ts sorts the rows by it (no groupby, all three
+                # releases). As the "Sort query by" metric it also orders the query, so a
+                # row limit keeps the top bars by it (normalizeOrderBy, descending), and
+                # one that is not drawn is queried but never drawn: extractExtraMetrics.ts:35
+                # adds it because its label is x_axis_sort, and extractSeries skips it.
+                payload = metric(sort_metric)
+                p["x_axis_sort"] = payload["label"] if isinstance(payload, dict) else payload
+                p["timeseries_limit_metric"] = payload
+                if chart.several_series():
+                    # Several series at 4.1.4 and 5.0.0: the plugin re-sorts the rows by
+                    # x_axis_sort_series, whose panel default is the category name, unless
+                    # it is unset (isDefined, utils/series.ts extractSeries, 4.1.4
+                    # :296-307, 5.0.0 :302-313). Null keeps sortOperator's order there;
+                    # 6.0.0 dropped the control.
+                    p["x_axis_sort_series"] = None
+            p["x_axis_sort_asc"] = ascending
         else:
             # Rankings read sorted by their measure, not by label order. The
             # horizontal axis renders bottom-up, so ascending puts the largest
@@ -538,6 +568,18 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["show_percentage"] = False  # the control's default is true
         if chart.number_format:
             p["y_axis_format"] = chart.number_format  # the cell values' format
+        # xscale_interval / yscale_interval: transformProps hands interval N - 1 to the
+        # category axis, so N labels every Nth value from the first (Heatmap/transformProps.ts
+        # 4.1.4 :231,238, 5.0.0 :234,241, 6.1.0 :436,445). left_margin is the grid's left
+        # edge, labels inside it (containLabel, :166-169, :168-171, :354-357); 'auto' is 0.
+        # On 6.1.0 Heatmap.tsx:25 renders <Echart> without vizType, so a theme's per-type
+        # overrides never reach it and these are the only way to set the axes.
+        if chart.x_label_every is not None:
+            p["xscale_interval"] = chart.x_label_every
+        if chart.y_label_every is not None:
+            p["yscale_interval"] = chart.y_label_every
+        if chart.left_margin is not None:
+            p["left_margin"] = chart.left_margin
     elif t == "histogram":
         p["column"] = chart.column
         p["bins"] = chart.bins

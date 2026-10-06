@@ -168,6 +168,17 @@ def test_fields_older_releases_ignore_warn_and_never_block():
     assert unknown.ok and len(unknown.warnings) == 4
 
 
+def test_a_heatmaps_label_step_is_no_later_release_field():
+    """A heatmap's x_label_every is its own xscale_interval, which every release reads
+    (Heatmap/controlPanel.tsx at 4.1.4, 5.0.0 and 6.1.0); only an axis chart's needs 6.1.0."""
+    heatmap = {"name": "Heat", "type": "heatmap", "x_column": "region", "y_column": "city",
+               "metric": "SUM(amount)", "dataset": DS, "x_label_every": 2, "y_label_every": 1,
+               "left_margin": 16}
+    assert check_spec_version(spec(charts=[heatmap]), "4.1.4").warnings == []
+    out = check_spec_version(spec(charts=[heatmap, {**LINE, "x_label_every": True}]), "4.1.4")
+    assert [(w["field"], w["chart"]) for w in out.warnings] == [("x_label_every", "Line")]
+
+
 def test_stacked_value_labels_warn_on_what_the_author_wrote():
     """only_total defaults to true, so the warning names show_value on the stacked
     query, which the author wrote, and says what the older release draws."""

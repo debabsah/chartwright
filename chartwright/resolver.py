@@ -368,6 +368,8 @@ def _check_chart_fields(chart, ds: ResolvedDataset, res: Resolution) -> None:
     elif t == "bar":
         for m in chart.metrics:
             _check_metric(m, chart.name, ds, res)
+        if chart.sort_metric() and chart.sort_metric() not in chart.metrics:
+            _check_metric(chart.sort_metric(), chart.name, ds, res)
         _check_column(chart.x_column, chart.name, ds, res, "x_column")
         if chart.groupby:
             _check_column(chart.groupby, chart.name, ds, res, "groupby")

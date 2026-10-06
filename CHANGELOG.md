@@ -60,6 +60,20 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - `plan` reads alike the spellings `apply` stores alike, so none of them shows as a change after apply: Superset's own defaults written out (`"time_range": "No filter"`, `"number_format": "SMART_NUMBER"`, `"x_label_format": "smart_date"`, `"x_label_rotation": 0`, a table's `"date_format": "smart_date"`), `COUNT(*) AS N` and `SQL(COUNT(*)) AS N`, a named colour's hex (`"#1B7F3B"` for a green trendline), a height between fifths, an empty `metrics` or `groupby` list on a table, a filter's pre-filter time range of `"No filter"`, and blank text. `decompile` leaves a big number's `SMART_NUMBER` format out, as it does on every other chart.
 - `plan` compares a table's `hidden` labels as a set. Decompile reads them back in the order Superset stores them, not the spec's, so a table hiding two or more columns showed as changed after every apply.
 
+### Added
+
+- `sort_by` on a categorical bar ranks it by something other than its first metric, largest first, on every supported release. `"total"` ranks stacked or grouped bars by their sum. Before, Superset drew several series in name order: two stacked metrics on 4.1.4 and 5.0.0, and a grouped bar on every release. A metric (`"sort_by": "SUM(revenue)"`) ranks by its value and orders the query too, so a `row_limit` keeps the top bars by it; it need not be drawn, so two charts can share one order. `advise` warns when a `row_limit` cuts a bar ranked by `"total"`, since the query is still ordered by the first metric.
+- A threshold on a horizontal bar: `annotations` there now say what Superset draws, a line standing upright at its value (a 1.0x threshold, a 4-hour limit), seen on every supported release, and the live CI fixture builds one.
+- Heatmap axes: `x_label_every` and `y_label_every` label every Nth column or row, counted from the first, so an hour axis with `"x_label_every": 6` reads 0, 6, 12, 18 instead of Superset's uneven automatic spacing. `left_margin` leaves room, in px, left of the row labels. Every supported release takes all three; `decompile` reads them back and `plan` reports a change made in the UI.
+
+### Changed
+
+- Documented: no supported release gives one line of a mixed chart its own width or dash. The plugin has no such control and its transform passes none, and 6.1's ECharts Options replace the series list whole. Set a ghost line apart by colour with `dashboard.label_colors`, or draw a fixed level as an annotation.
+- Design brain 12: `advise --fix` fills `left_margin: 16` on every heatmap (`default.heatmap-label-room`). On Superset 6.1.0 a heatmap's longest row label lost its first letters at the card's edge, and a theme can't reach the heatmap there. Write `left_margin` yourself, or ignore the rule for a chart, to keep your own value.
+
+### Fixed
+
+- `decompile` names a bar ranked by its series' minimum, maximum or average, or ranked smallest first; before, apply quietly put the largest-first ranking back.
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 ### Upgrading from 0.5
 

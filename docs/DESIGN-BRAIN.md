@@ -1,19 +1,13 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 8** (4 added `narrative.color-scheme`; 5 the
+> **Status: SHIPPED, design brain 12** (4 added `narrative.color-scheme`; 5 the
 > design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
 > a null record after an edit, and `default.stale-record`; 8 one height question
-> for tables and pivots, §15.42). This page is both the design and the
-> **Status: SHIPPED, design brain 9** (4 added `narrative.color-scheme`; 5 the
-> design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
-> a null record after an edit, and `default.stale-record`; 9 the waterfall's and
-> the box plot's rules and fills, §7 "Waterfalls" and "Box plots"). This page is
-> both the design and the
-> **Status: SHIPPED, design brain 10** (4 added `narrative.color-scheme`; 5 the
-> design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
-> a null record after an edit, and `default.stale-record`; 9 rolling trendline
-> windows and date tiles; 10 no page-size picker, pager or search box on a table
-> whose rows all show, and `size.table-chrome`). This page is both the design and the
+> for tables and pivots, §15.42; 9 rolling trendline windows, date tiles, and the
+> waterfall's and the box plot's rules and fills, §7 "Waterfalls" and "Box plots";
+> 10 no page-size picker, pager or search box on a table whose rows all show, and
+> `size.table-chrome`; 11 `size.markdown-fit`; 12 `default.heatmap-label-room`, and
+> `data.top-n-sort` on a bar ranked by `sort_by: "total"`). This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -348,6 +342,7 @@ fails when it drifts.
 | `default.compare-suffix` | info | ✔ | - | 5 | a trendline KPI's change says what it compares against ('vs previous month'; 'vs prior 12 months' between trailing windows) |
 | `default.count-format` | info | ✔ | - | 5 | counts read as whole numbers with thousands separators (',.0f') |
 | `default.date-tile` | info | ✔ | - | 9 | a big number of a date column's MIN or MAX reads as a whole date ('Sat 3 Oct 2026'); needs the column's type (--profile) |
+| `default.heatmap-label-room` | info | ✔ | - | 12 | a heatmap keeps 16 px left of its y labels, where Superset 6.1.0 cuts off the longest one's first letters |
 | `default.page-length` | info | ✔ | - | 5 | a table whose row_limit outgrows its panel pages by the rows that fit beside its page controls |
 | `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows that outgrow its panel, and so page, gets a search box; one whose rows all show gets none (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
@@ -1210,7 +1205,8 @@ thresholds; those marked judgement are usability choices, not pixel facts.
 | `default.page-length` | `page_length` | the whole rows that fit beside the page-size bar and the pager | a table with an explicit `row_limit` larger than the rows that fit on one page, and a page of at least `page_min_rows` (3, judgement). The one grid model `size.table-window` reads, so the fill can never make that rule ask for more height |
 | `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, judgement) that outgrows its panel and pages (`page_length` above 0 and below `row_limit`), so the box sits in the bar the page-size picker already draws and hides no row. Never on a table whose rows all show (brain 10; brain 5 to 9 also filled one there when every row still fit beside it) |
 | `default.single-series-legend` | `show_legend` | `false` | a timeseries chart or categorical bar with one metric, no groupby, no series limit, no goal lines and no legend placement written, whose shown title or `y_axis_title` contains the metric's label, and that label is at least 3 characters long. Never a heatmap, whose legend is the colour scale |
-| `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17). A waterfall with no breakdown and at most 12 bars counting the total (its `steps` and closing, or an explicit `row_limit` and the total), at least 6/12 wide: a bridge is read by its steps' changes |
+| `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17) |
+| `default.heatmap-label-room` | `left_margin` | `16` | every heatmap (brain 12). With no margin, a heatmap's grid starts at the card's edge, and Superset 6.1.0 draws the longest y label wider than the room the grid gave it, cutting off its first letters: seen live on `Trucks and Buses` (95 px) and `Australian Gift Network, Co` (150 px). 8 px cleared the first and 16 px both; 4.1.4 and 5.0.0 drew them whole and only gain 16 px of space. A theme can't fix it, since 6.1.0 renders the heatmap without its chart type and no per-type override reaches it |
 
 `narrative.big-number-format` stands down where `default.count-format`
 offers the same remedy with a fix: one remedy, one finding.

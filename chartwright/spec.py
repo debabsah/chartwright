@@ -422,12 +422,17 @@ ANNOTATION_STYLES = ("solid", "dashed", "dotted")
 class Annotation(BaseModel):
     """A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal
     line at y = 80. Superset draws it as a series named ``name`` (in the legend
-    and tooltip); formula layers have no on-chart label in any release."""
+    and tooltip); formula layers have no on-chart label in any release. On a
+    horizontal bar the value axis runs across, so the line stands upright at its
+    value (transformFormulaAnnotation swaps the point to [y, x] there)."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, description="Series name in the legend and tooltip, e.g. \"Goal\"")
-    value: float | None = Field(default=None, description="A flat line at this y value, e.g. 80")
+    value: float | None = Field(
+        default=None,
+        description="A line at this value on the value axis, e.g. 80: flat across most charts, "
+                    "upright across a horizontal bar (a 1.0x threshold, a 4-hour limit)")
     formula: str | None = Field(
         default=None, min_length=1,
         description="Instead of value: a formula in x, e.g. \"2*x + 10\" (x is the "
@@ -633,7 +638,8 @@ class _AxisChart(_ChartBase):
     annotations: list[Annotation] = Field(
         default_factory=list,
         description="Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, "
-                    "\"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+                    "\"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a "
+                    "horizontal bar a value stands upright across the bars",
     )
 
     @model_validator(mode="after")
@@ -807,13 +813,56 @@ class BarChart(_SeriesDisplay, _Legend, _AxisChart, _ColorSchemeMixin):
                     "stays ordered by the series ranking (Superset has one \"Sort query by\" "
                     "control for both), so there a row_limit keeps the largest values",
     )
+    sort_by: str | None = Field(
+        default=None, min_length=1,
+        description="Rank the bars by something other than the first metric, largest first "
+                    "(on the left, or on top of a horizontal bar). \"total\" ranks stacked or "
+                    "grouped bars by their sum; a metric, written like any metric, ranks them "
+                    "by its value and orders the query by it, so a row_limit keeps the top "
+                    "bars by it. The metric need not be drawn: two charts sorted by the same "
+                    "one share an order. A metric needs no groupby; with \"total\" a row_limit "
+                    "keeps the rows with the largest first metric, so for a top N by total "
+                    "write the total as a metric, e.g. \"SQL(SUM(a) + SUM(b)) AS Total\"",
+    )
+
+    TOTAL: ClassVar[str] = "total"
 
     @model_validator(mode="after")
     def _display(self) -> "BarChart":
         self._check_legend()
         self._check_y_axis()
         self._check_series_display((False, True))
+        self._check_sort_by()
         return self
+
+    def several_series(self) -> bool:
+        return bool(self.groupby) or len(self.metrics) > 1
+
+    def sort_metric(self) -> str | None:
+        """The metric sort_by ranks by, or None (unset, or "total")."""
+        return self.sort_by if self.sort_by not in (None, self.TOTAL) else None
+
+    def _check_sort_by(self) -> None:
+        if self.sort_by is None:
+            return
+        name = self.name
+        if self.category_sort:
+            raise ValueError(f"chart {name!r}: set category_sort or sort_by, not both "
+                             "(one orders the bars by label, the other by a measure)")
+        if self.contribution:
+            raise ValueError(f"chart {name!r}: sort_by ranks by values, and contribution plots "
+                             "shares (a sort metric would count in each bar's share)")
+        if self.sort_by == self.TOTAL:
+            if not self.several_series():
+                raise ValueError(f"chart {name!r}: sort_by \"total\" ranks several series by "
+                                 "their sum; one series already ranks by its metric")
+        elif self.groupby:
+            # sortOperator.ts skips a chart with a groupby (4.1.4 and 5.0.0 :46, 6.1.0 :45):
+            # the plugin then sorts the categories by name or by a sum, min, max or mean
+            # of the series (SortSeriesType), never by one metric.
+            raise ValueError(f"chart {name!r}: Superset ranks grouped bars by their series "
+                             f"only; use sort_by \"total\", or drop the groupby to rank by "
+                             f"{self.sort_by!r}")
 
 
 class PieChart(_Legend, _ChartBase, _ColorSchemeMixin):
@@ -1104,6 +1153,30 @@ class HeatmapChart(_ChartBase):
                     "which reads z_to_a. A value order ranks each label by its total from "
                     "Superset 6.1.0; before, by its largest or smallest cell",
     )
+    # Heatmap controlPanel.tsx xscale_interval / yscale_interval (-1 auto, 1-50) and
+    # left_margin ('auto' or px, free-form) at 4.1.4, 5.0.0 and 6.1.0.
+    x_label_every: int | None = Field(
+        default=None, ge=1, le=50,
+        description="A label every N x values, counted from the first: 6 on an hour axis "
+                    "reads 0, 6, 12, 18, and 1 (or true) labels every value. Omit for "
+                    "Superset's automatic spacing, which drops labels that would collide",
+    )
+    y_label_every: int | None = Field(
+        default=None, ge=1, le=50, description="As x_label_every, down the y axis")
+    left_margin: int | None = Field(
+        default=None, ge=0, le=200,
+        description="Room, in px, left of the y-axis labels. Superset 6.1.0 draws them wider "
+                    "than it measures them and cuts the longest label's first letters off "
+                    "at the card's edge; 16 clears them. Omit for none. Leave it unset unless "
+                    "asked: `advise --fix` fills it",
+    )
+
+    @field_validator("x_label_every", "y_label_every", mode="before")
+    @classmethod
+    def _label_every(cls, v):
+        # A bar's x_label_every is true or false; here true is 1 (every value) and
+        # false is Superset's automatic spacing, so both spellings read the same.
+        return None if v is False else v
 
 
 class HistogramChart(_ChartBase, _ColorSchemeMixin):
@@ -1157,11 +1230,11 @@ class TreemapChart(_ChartBase, _ColorSchemeMixin):
 
 class MixedSeries(BaseModel):
     """One of a mixed chart's two queries: its metrics, drawn as bars, a line or a
-    filled area, on the primary (left) or secondary (right) value axis. Superset draws
-    every line of a mixed chart solid at one width: it has no line width or dash for a
-    query or a metric. To draw a reference series lighter, such as last year under this
-    year, put it in its own query and give it a pale colour with the dashboard's
-    label_colors, or make it an area with a low opacity."""
+    filled area, on the primary (left) or secondary (right) value axis. No release gives
+    a query's line a width or dash of its own (docs/CONTRACTS.md). To draw a reference
+    series lighter, such as last year under this year, put it in its own query and give
+    it a pale colour with the dashboard's label_colors, or make it an area with a low
+    opacity."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -2148,7 +2221,7 @@ class DashboardMeta(BaseModel):
 
 # The chart fields the design brain may fill with a design default (`advise --fix`,
 # docs/DESIGN-BRAIN.md section 16). design.filled may list only these.
-BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "date_format", "number_format",
+BRAIN_FILLABLE_FIELDS = ("cell_bars", "compare_suffix", "date_format", "left_margin", "number_format",
                          "page_length", "search_box", "show_legend", "show_value",
                          "x_label_format")
 
@@ -2646,7 +2719,8 @@ class DashboardSpec(BaseModel):
 
 def chart_metrics(chart) -> list[str]:
     """Every metric string a chart names: its metric(s), a mixed chart's two
-    queries, an aggregate table's sort metric and the metric ranking a series limit."""
+    queries, an aggregate table's or a bar's sort metric and the metric ranking a
+    series limit."""
     out: list[str] = []
     if getattr(chart, "metric", None):
         out.append(chart.metric)
@@ -2658,6 +2732,8 @@ def chart_metrics(chart) -> list[str]:
         out += [s.series_limit_metric for s in (chart.a, chart.b) if s.series_limit_metric]
     if chart.type == "table" and chart.sort_by and not chart.columns:
         out.append(chart.sort_by)
+    if chart.type == "bar" and chart.sort_metric():
+        out.append(chart.sort_metric())
     return out
 
 

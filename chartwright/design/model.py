@@ -49,7 +49,12 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "11" = size.markdown-fit, a new warn-severity rule for markdown text cut off by its
 # block, and layout.markdown-height fixes a one-line block to the height its line takes
 # (1.6 to 2.4 units) instead of 2, from the same estimate.
-DESIGN_BRAIN_VERSION = "11"
+# "12" = default.heatmap-label-room, a fill (left_margin on every heatmap, which 6.1.0
+# otherwise draws with its longest y label cut off); it changes what `--fix` writes.
+# With it, a bar's sort_by: data.top-n-sort warns on a row_limit under sort_by "total"
+# (the query is still ordered by the first metric), and chart.ordinal-order leaves a
+# bar ranked by sort_by alone.
+DESIGN_BRAIN_VERSION = "12"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

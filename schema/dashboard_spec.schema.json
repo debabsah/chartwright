@@ -33,7 +33,7 @@
     },
     "Annotation": {
       "additionalProperties": false,
-      "description": "A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal\nline at y = 80. Superset draws it as a series named ``name`` (in the legend\nand tooltip); formula layers have no on-chart label in any release.",
+      "description": "A FORMULA annotation layer: a line drawn from a formula in x, e.g. a goal\nline at y = 80. Superset draws it as a series named ``name`` (in the legend\nand tooltip); formula layers have no on-chart label in any release. On a\nhorizontal bar the value axis runs across, so the line stands upright at its\nvalue (transformFormulaAnnotation swaps the point to [y, x] there).",
       "properties": {
         "name": {
           "description": "Series name in the legend and tooltip, e.g. \"Goal\"",
@@ -51,7 +51,7 @@
             }
           ],
           "default": null,
-          "description": "A flat line at this y value, e.g. 80",
+          "description": "A line at this value on the value axis, e.g. 80: flat across most charts, upright across a horizontal bar (a 1.0x threshold, a 4-hour limit)",
           "title": "Value"
         },
         "formula": {
@@ -387,7 +387,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -595,6 +595,20 @@
           "default": null,
           "description": "Order the bars by their category (x_column) instead of by the first metric: \"asc\" reads A to Z or 0 to 9 (hours, ranks, '1-Mon'), left to right or top to bottom on a horizontal bar; \"desc\" reverses it. The query is ordered by the category too, so a row_limit keeps the first categories in that order, not the largest values. With series_limit the query stays ordered by the series ranking (Superset has one \"Sort query by\" control for both), so there a row_limit keeps the largest values",
           "title": "Category Sort"
+        },
+        "sort_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rank the bars by something other than the first metric, largest first (on the left, or on top of a horizontal bar). \"total\" ranks stacked or grouped bars by their sum; a metric, written like any metric, ranks them by its value and orders the query by it, so a row_limit keeps the top bars by it. The metric need not be drawn: two charts sorted by the same one share an order. A metric needs no groupby; with \"total\" a row_limit keeps the rows with the largest first metric, so for a top N by total write the total as a metric, e.g. \"SQL(SUM(a) + SUM(b)) AS Total\"",
+          "title": "Sort By"
         }
       },
       "required": [
@@ -2643,6 +2657,51 @@
           "default": null,
           "description": "The y labels, top to bottom: a_to_z puts the first label on top, e.g. a cohort triangle's oldest cohort; value_asc or value_desc by the metric. Omitted, Superset draws the labels A to Z from the bottom up, which reads z_to_a. A value order ranks each label by its total from Superset 6.1.0; before, by its largest or smallest cell",
           "title": "Y Order"
+        },
+        "x_label_every": {
+          "anyOf": [
+            {
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A label every N x values, counted from the first: 6 on an hour axis reads 0, 6, 12, 18, and 1 (or true) labels every value. Omit for Superset's automatic spacing, which drops labels that would collide",
+          "title": "X Label Every"
+        },
+        "y_label_every": {
+          "anyOf": [
+            {
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "As x_label_every, down the y axis",
+          "title": "Y Label Every"
+        },
+        "left_margin": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Room, in px, left of the y-axis labels. Superset 6.1.0 draws them wider than it measures them and cuts the longest label's first letters off at the card's edge; 16 clears them. Omit for none. Leave it unset unless asked: `advise --fix` fills it",
+          "title": "Left Margin"
         }
       },
       "required": [
@@ -3447,7 +3506,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -3622,7 +3681,7 @@
     },
     "MixedSeries": {
       "additionalProperties": false,
-      "description": "One of a mixed chart's two queries: its metrics, drawn as bars, a line or a\nfilled area, on the primary (left) or secondary (right) value axis. Superset draws\nevery line of a mixed chart solid at one width: it has no line width or dash for a\nquery or a metric. To draw a reference series lighter, such as last year under this\nyear, put it in its own query and give it a pale colour with the dashboard's\nlabel_colors, or make it an area with a low opacity.",
+      "description": "One of a mixed chart's two queries: its metrics, drawn as bars, a line or a\nfilled area, on the primary (left) or secondary (right) value axis. No release gives\na query's line a width or dash of its own (docs/CONTRACTS.md). To draw a reference\nseries lighter, such as last year under this year, put it in its own query and give\nit a pale colour with the dashboard's label_colors, or make it an area with a low\nopacity.",
       "properties": {
         "metrics": {
           "items": {
@@ -5669,7 +5728,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -6174,7 +6233,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -6643,7 +6702,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },
@@ -7154,7 +7213,7 @@
           "title": "X Label Rotation"
         },
         "annotations": {
-          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers)",
+          "description": "Formula lines over the chart, e.g. a goal: [{\"name\": \"Goal\", \"value\": 80, \"style\": \"dashed\"}] (Superset's FORMULA annotation layers); on a horizontal bar a value stands upright across the bars",
           "items": {
             "$ref": "#/$defs/Annotation"
           },

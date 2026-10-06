@@ -128,6 +128,27 @@
       "time_range": "Last year"
     },
     {
+      "name": "Countries by Deal Size",
+      "type": "bar",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "country",
+      "metrics": ["SUM(sales)"],
+      "groupby": "deal_size",
+      "orientation": "horizontal",
+      "stack": true,
+      "sort_by": "total"
+    },
+    {
+      "name": "Lines by Quantity",
+      "type": "bar",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "product_line",
+      "metrics": ["SUM(sales)"],
+      "orientation": "horizontal",
+      "sort_by": "SUM(quantity_ordered)",
+      "annotations": [{"name": "Target", "value": 1000000, "style": "dashed", "color": "#B3261E"}]
+    },
+    {
       "name": "Share by Line",
       "type": "pie",
       "dataset": {"database": "examples", "table": "cleaned_sales_data"},
@@ -207,7 +228,10 @@
       "normalize_across": "y",
       "show_legend": false,
       "x_order": "value_desc",
-      "y_order": "a_to_z"
+      "y_order": "a_to_z",
+      "x_label_every": 2,
+      "y_label_every": 1,
+      "left_margin": 16
     },
     {
       "name": "Price Spread",
@@ -302,6 +326,7 @@
       ["Sales by Line", "Monthly Orders"],
       ["Quantity Area", "Price vs Time"],
       ["Orders by Hour", "Share by Line"],
+      ["Countries by Deal Size", "Lines by Quantity"],
       ["Order Funnel", "Sales Treemap"],
       ["Top Customers"],
       ["Sales Pivot"],
