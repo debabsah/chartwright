@@ -13,7 +13,8 @@
   question otherwise ("Orders by week"); never just a column name. Filtered
   charts name their scope in the title.
 - Tabs when sections answer different questions; scrolling when one question
-  deepens. Never a tab with a single lonely chart.
+  deepens. Never a tab with a single lonely chart; a sub-tab of one or two
+  charts belongs on its parent page under a header row.
 - Whitespace is markdown's job, sparingly: a one-line section header beats an
   empty band (2 units is plenty for a header). Consistent number formats per
   measure across KPI cards and axes (`number_format` on KPIs, timeseries and

@@ -492,6 +492,53 @@ def section_headers(ctx: RuleContext):
 # -- chart: encoding choice ----------------------------------------------------
 
 
+# A sub-tab is a click: it earns one when its question needs several charts. A sub-tab
+# holding one or two reads better as a section of one scrolling page under a header row.
+THIN_SUBTAB_CHARTS = 2
+
+
+@rule("layout.thin-subtabs", "info",
+      f"a sub-tab holding {THIN_SUBTAB_CHARTS} charts or fewer reads better as a section of one page",
+      since="8")
+def thin_subtabs(ctx: RuleContext):
+    for sec in ctx.body_sections:
+        if not sec.title or " > " not in sec.title:
+            continue
+        n = sum(len(b.chart_names) for b in sec.bands)
+        kpis = sum(1 for b in sec.bands for name in b.chart_names if ctx.charts[name].type in KPI_TYPES)
+        if n - kpis <= THIN_SUBTAB_CHARTS:
+            parent = sec.title.split(" > ")[0]
+            yield Finding(
+                "layout.thin-subtabs", "info", None, sec.label,
+                f"holds {n - kpis} chart(s) besides KPIs; readers click for little. Put tab "
+                f"{parent!r}'s sub-tabs on one scrolling page, each under a header row",
+            )
+
+
+# Every axis chart names what its axes measure: the value axis its measure and unit, the
+# category or time axis its dimension. Superset draws neither unless the chart sets it, and a
+# reader of a screenshot or an export can't hover for the unit. The heatmap has no title
+# control (Heatmap/controlPanel.tsx at 4.1.4, 5.0.0 and 6.1.0), and a waterfall's steps name
+# themselves while its y title collides with its labels (chart.waterfall-axis-titles).
+@rule("chart.axis-titles", "info", "axis charts name their axes: the measure and unit, and the dimension",
+      since="8")
+def axis_titles(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type not in AXIS_TYPES or c.type == "heatmap" or not hasattr(c, "y_axis_title"):
+            continue
+        if not c.y_axis_title:
+            yield Finding(
+                "chart.axis-titles", "info", c.name, ctx.where(c.name),
+                "no y_axis_title: name the measure and its unit (e.g. \"GW\", \"Share of supply\"), "
+                "so the axis reads without the title or a tooltip",
+            )
+        if not c.x_axis_title:
+            yield Finding(
+                "chart.axis-titles", "info", c.name, ctx.where(c.name),
+                "no x_axis_title: name the dimension (e.g. \"Month\", \"Grid operator\")",
+            )
+
+
 @rule("chart.vbar-categories", "warn", "vertical bars drop labels past ~8 categories; rank with horizontal bars", fixable=True)
 def vbar_categories(ctx: RuleContext):
     p = ctx.params

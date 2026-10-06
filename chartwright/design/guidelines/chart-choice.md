@@ -27,6 +27,9 @@
   order-encoded label column (labels prefixed with a sort index: '1-Mon')
   if the dataset has one, and give a bar `category_sort: "asc"`. An ordered
   axis such as hours stays vertical: add `x_label_every` so every label shows.
+- Title every axis: `y_axis_title` names the measure and unit ("GW", "Share of
+  supply"), `x_axis_title` the dimension ("Month", "Grid operator"). Bars carry
+  their values (`show_value`; `only_total` on a stack) wherever they fit.
 - A paged table (`page_length`) needs room for one page and its pager, not
   for every row; a timeseries with many groups keeps the top few with
   `series_limit`.

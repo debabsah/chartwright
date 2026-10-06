@@ -5,6 +5,14 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ## Unreleased
 
+### Added
+
+- `advise` asks every axis chart to name its axes (design brain 8). `chart.axis-titles` notes a chart with no `y_axis_title` (the measure and its unit) or no `x_axis_title` (the dimension); Superset draws neither unless the chart sets it, and a screenshot or export can't show a tooltip. The heatmap, which has no title setting, and the waterfall, whose steps name themselves, are left out. The brief now tells authors to title every axis.
+
+- `layout.thin-subtabs` notes a sub-tab holding two charts or fewer besides its KPIs: readers click for little, and the sub-tabs read better as sections of one page under header rows.
+
+- The value-label design default now covers grouped bars: a bar chart with several metrics side by side gets `show_value` when its bars (rows times metrics) fit the same 12-bar and spacing limits as a single series. Stacked metrics and grouped series stay unlabelled.
+
 ### Fixed
 
 - A horizontal bar chart's axis titles now sit where they belong. Superset lays the titles out for a vertical chart and then swaps the axes, so the value-axis title ran past the right end of the bottom axis and was cut off, and the category title sat on top of the category labels. The value title is now centred under the bottom axis, and the category title clears labels of about 8 characters.

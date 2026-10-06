@@ -64,8 +64,9 @@ def clean_spec():
         [kpi("Total Orders"), kpi("Total Sales", metric="SUM(amount)"),
          kpi("Average Order Value", metric="AVG(amount)"),
          # The design defaults a clean spec carries, written (design brain 5).
-         line("Orders Over Time", number_format=",.0f"),
-         hbar("Top Products", number_format=",.0f", show_value=True)],
+         line("Orders Over Time", number_format=",.0f", x_axis_title="Month", y_axis_title="Orders"),
+         hbar("Top Products", number_format=",.0f", show_value=True, x_axis_title="Product",
+              y_axis_title="Orders")],
         layout={"rows": [
             ["Total Orders", "Total Sales", "Average Order Value"],
             ["Orders Over Time"],

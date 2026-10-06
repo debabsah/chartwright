@@ -368,19 +368,24 @@ HBAR_LABEL_UNITS = 0.4125
 
 
 @_fill("default.value-labels", "show_value", {"bar"},
-       "few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or "
-       "tall enough to space the labels (horizontal)",
+       "few bars carry their values: <= 12 bars (row_limit x metrics for grouped bars), on a "
+       "panel >= 6/12 wide (vertical) or tall enough to space the labels (horizontal)",
        superset=False, superset_text="no values on the bars",
        override="write show_value: false")
 def _value_labels(ctx: RuleContext, c):
-    if len(c.metrics) != 1 or c.groupby:
-        return None, "more than one series, so labels would crowd"
+    # Grouped bars (several metrics side by side) label every bar, so they count as
+    # row_limit x metrics; a groupby's series count is unknown, and a stack's labels
+    # land on each segment.
+    if c.groupby:
+        return None, "a series per group value, so the number of bars is unknown"
+    if c.stack and len(c.metrics) > 1:
+        return None, "stacked series, so each segment would carry a label"
     if c.contribution:
         return None, "contribution plots shares"
     if not ctx.written(c, "row_limit"):
         return None, "row_limit is not set, so the number of bars is unknown"
     most, min_w = ctx.params.value_label_max_bars, ctx.params.value_label_min_width
-    n = c.row_limit
+    n = c.row_limit * len(c.metrics)
     if n > most:
         return None, f"up to {n} bars, more than {most}"
     if c.orientation == "horizontal":

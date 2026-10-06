@@ -105,7 +105,7 @@ def test_undefaulted_picker_is_reported_exactly_once_by_the_other_rule():
     """No double-reporting of one remedy at two severities."""
     # number_format written: a COUNT line with none would also be offered a design default
     got = rules_of(mk([ts("A", number_format=",.0f")], [{"type": "time_range", "name": "D"}]))
-    assert got == ["filters.time-default"]
+    assert [r for r in got if r != "chart.axis-titles"] == ["filters.time-default"]
 
 
 def test_shipped_example_still_advises_clean():

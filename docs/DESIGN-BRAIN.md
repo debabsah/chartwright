@@ -1,8 +1,9 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 7** (4 added `narrative.color-scheme`; 5 the
+> **Status: SHIPPED, design brain 8** (4 added `narrative.color-scheme`; 5 the
 > design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
-> a null record after an edit, and `default.stale-record`). This page is both the design and the
+> a null record after an edit, and `default.stale-record`; 8 `chart.axis-titles`,
+> `layout.thin-subtabs`, and value labels on grouped bars). This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -304,6 +305,7 @@ fails when it drifts.
 
 | id | sev | fix | data | since | rule |
 |---|---|---|---|---|---|
+| `chart.axis-titles` | info | - | - | 8 | axis charts name their axes: the measure and unit, and the dimension |
 | `chart.dupe` | info | - | - | 1 | two charts answering the identical question is redundancy |
 | `chart.format-bands` | warn/info | - | - | 2 | conditional-formatting bands must tell one coherent story per metric |
 | `chart.funnel-stages` | warn | - | ⚡ | 1 | funnels need 3-8 ordered stages |
@@ -331,7 +333,7 @@ fails when it drifts.
 | `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows gets a search box, when its rows still fit beside it (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
 | `default.stale-record` | info | ✔ | - | 7 | design.filled names only charts and fields the spec has |
-| `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or tall enough to space the labels (horizontal) |
+| `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars (row_limit x metrics for grouped bars), on a panel >= 6/12 wide (vertical) or tall enough to space the labels (horizontal) |
 | `default.x-label-format` | info | ✔ | - | 5 | a time axis labels its points in its grain's own format ('Sep 2026' by month); day and week labels only over a year or less |
 | `filters.count` | warn | - | - | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
 | `filters.duplicate-column` | info | - | - | 2 | two filters on the same column fight each other |
@@ -348,6 +350,7 @@ fails when it drifts.
 | `layout.row-fill` | warn/info | - | - | 1 | a row should fill the 12-column grid |
 | `layout.section-headers` | info | - | - | 1 | large flat dashboards need section headers (header rows or markdown) |
 | `layout.tab-balance` | info | - | - | 1 | tabs should carry comparable weight |
+| `layout.thin-subtabs` | info | - | - | 8 | a sub-tab holding 2 charts or fewer reads better as a section of one page |
 | `narrative.big-number-format` | info | - | - | 1 | hero numbers deserve a number format |
 | `narrative.color-scheme` | warn | - | - | 4 | a colour scheme Superset doesn't ship draws the default palette unless your deployment registers it |
 | `narrative.filtered-title` | info | - | - | 1 | a filtered chart's title should say what it shows |
