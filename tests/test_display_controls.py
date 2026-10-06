@@ -392,6 +392,12 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Top Customers", {"page_length": 50}),
     ("Top Customers", {"column_config": {}}),
     ("Sales Pivot", {"transposePivot": False}),
+    # a colour rule's '≤' changed to '<' in the UI
+    ("Sales Pivot", {"conditional_formatting": [
+        {"column": "COUNT(*)", "colorScheme": "#EFA1AA", "operator": "<", "targetValue": 5,
+         "useGradient": False},
+        {"column": "COUNT(*)", "colorScheme": "#ACE1C4", "operator": "≥", "targetValue": 20,
+         "useGradient": False}]}),
     ("Line by Deal Size", {"show_percentage": True}),
     ("Revenue KPI", {"compare_lag": 3}),
     ("Orders This Quarter", {"time_range": "Last month"}),

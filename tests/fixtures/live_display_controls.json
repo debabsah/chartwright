@@ -150,7 +150,15 @@
       "number_formats": {"SUM(sales)": "$,.0f"},
       "column_align": {"customer_name": "left", "SUM(sales)": "right"},
       "column_widths": {"customer_name": 220},
-      "column_headers": {"SUM(sales)": "Revenue", "customer_name": "Customer"}
+      "column_headers": {"SUM(sales)": "Revenue", "customer_name": "Customer"},
+      "conditional_formatting": [
+        {"metric": "SUM(sales)", "operator": ">=", "target": 200000, "color": "green"},
+        {"metric": "SUM(sales)", "operator": "between_inclusive", "target_left": 100000,
+         "target_right": 199999, "color": "amber"},
+        {"metric": "SUM(sales)", "operator": "<=", "target": 50000, "color": "red", "paint": "text"},
+        {"metric": "SUM(sales)", "operator": "!=", "target": 0, "color": "#5B6F82",
+         "apply_to": "customer_name", "paint": "text"}
+      ]
     },
     {
       "name": "Sales Pivot",
@@ -165,7 +173,11 @@
       "row_subtotals": true,
       "transpose": true,
       "metrics_layout": "rows",
-      "row_limit": 500
+      "row_limit": 500,
+      "conditional_formatting": [
+        {"metric": "COUNT(*)", "operator": "<=", "target": 5, "color": "red"},
+        {"metric": "COUNT(*)", "operator": ">=", "target": 20, "color": "green"}
+      ]
     },
     {
       "name": "Line by Deal Size",

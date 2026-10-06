@@ -23,8 +23,8 @@ into one. Everything below works from that one file.
     - Scope any filter to specific charts, the time range included.
     - Cascading filters: a city picker lists only the cities of the region picked (`"dependencies": ["Region"]`).
     - Value pickers can pre-filter their list, sort it by a saved metric, search every value in the database, or exclude what is picked; every filter takes a description, shown as its tooltip.
-    - Solid colour rules on pivot and table cells: green, amber or red (Superset's own picker colours), or any hex colour such as `#0057B8`.
-    - On Superset 6.1+, a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it.
+    - Colour rules on pivot and table cells: green, amber or red (Superset's own picker colours), or any hex colour such as `#0057B8`, for values `<`, `>`, `=`, `>=`, `<=` or `!=` a threshold, or in a range with its bounds left out (`between`) or taken in (`between_inclusive`).
+    - On Superset 6.1+, each band is one solid colour, a rule can colour the text instead of the cell, and a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it. Older releases fade each band toward its threshold and fill only the cell that was tested; on those, `check`, `apply` and `plan` warn for each such rule, naming what that release draws instead.
     - A fixed ascending table sort, d3 number and date formats, and on Superset 6.0+ hidden table columns.
 - **Chart Options**: Set the common options of Superset's chart panels in the spec; an option changed in the UI shows up in `plan`.
     - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own.

@@ -290,8 +290,60 @@ running the tool against real instances of all three releases.
   (`MixedTimeseries/transformProps.ts`, 6.0.0 `:178-179`, 6.1.0
   `:186-187`). That warning names `show_value`, the field the spec wrote,
   since `only_total` is on by default; `only_total: false` asks for every
-  segment on every release, so it raises nothing. These come back in
-  `version_warnings`, and the dashboard still builds.
+  segment on every release, so it raises nothing. A table's `hidden` columns
+  warn before 6.0.0, and four colour-rule effects before 6.1.0 (next point).
+  These come back in `version_warnings`, and the dashboard still builds.
+- **Colour rules draw differently before 6.1.0.** 6.1.0 added the rule keys
+  the tool writes, and the 4.1.4, 5.0.0 and 6.0.0 table and pivot plugins
+  read none of them; their own rule popover never offers them either. Each
+  warns, naming what the older release draws (verified live on 4.1.4, 5.0.0
+  and 6.1.0 with screenshots and measured cell colours):
+  - `apply_to` (`columnFormatting`, read at 6.1.0
+    `plugin-chart-table/src/TableChart.tsx:984-1007`): an older table paints
+    the rule's own metric cells instead (`TableChart.tsx:763` at 4.1.4,
+    `:768` at 5.0.0, `:905` at 6.0.0), so a status rule meant for the number
+    beside it colours the status column, or nothing once that column is
+    hidden. A rule whose `apply_to` names its own metric draws the same
+    everywhere and raises nothing.
+  - `paint: "text"` (`objectFormatting`, read at 6.1.0 `TableChart.tsx:966-970`
+    and `react-pivottable/TableRenderers.tsx:192-194`): an older table or
+    pivot fills the cell with the colour instead, under its own dark text
+    (`TableChart.tsx:770`, `TableRenderers.jsx:710` at 4.1.4). The named
+    colours' text shades are dark, so the value is hard to read where the
+    fill is full: 3.0:1 on a 4.1.4 table, and 1.0:1 on a pivot, whose text is
+    teal, so the number vanishes. `paint: "cell"` reads on every release.
+  - A solid band (`useGradient: false`, read at 6.1.0
+    `superset-ui-chart-controls/src/utils/getColorFormatters.ts:273-276`): an
+    older release scales every colour but an `=` rule's by the value's
+    distance from the threshold (`getOpacity`, `:180` at 4.1.4 and 5.0.0,
+    `:189` at 6.0.0), from 0.05 opacity at the threshold to full at the
+    column's extreme, so a value just past it is barely tinted. Keyed on
+    `conditional_formatting` with any operator but `=`.
+  - A dark fill: 6.1.0 turns a painted cell's text white or black, whichever
+    reads (`getTextColorForBackground`, `getColorFormatters.ts:385`, used at
+    `TableChart.tsx:1024` and `TableRenderers.tsx:219`); older releases keep
+    their own cell text, near-black on a table and teal on a pivot
+    (`react-pivottable/Styles.js:105` at 4.1.4 and 5.0.0). `color` warns for
+    a cell-painted hex under 3:1 against that text (`#0057B8` reads at
+    2.8:1 on a 4.1.4 table); green, amber and red's cell shades all clear it.
+
+  These are warnings, not errors, text paint's included. The error tier is
+  for a bundle a release rejects or a dashboard it then can't save, and
+  stops `apply` before anything is written; here the dashboard imports and
+  saves, and every value reaches the table. An error would also stop a spec
+  deployed to instances on several releases from reaching the older ones at
+  all, with no way to write one spec for both, where the warning names what
+  the older release draws and the setting that reads on every release.
+- **Every release has the same colour-rule comparators.** `>`, `<`, `=`,
+  `>=` (`≥`), `<=` (`≤`), `!=` (`≠`), `between` (`< x <`) and
+  `between_inclusive` (`≤ x ≤`) each have a case in `getColorFunction`
+  (`getColorFormatters.ts`, `≥` at 4.1.4 and 5.0.0 `:113`, 6.0.0 `:122`,
+  6.1.0 `:141`; `≤ x ≤` at `:153`, `:162`, `:191`) and an entry in the rule
+  popover (`FormattingPopoverContent.tsx:55-60` at 4.1.4,
+  `ConditionalFormattingControl/constants.ts:26-31` at 6.1.0). Decompile
+  reads them all back; the half-open ranges `≤ x <` and `< x ≤` have no spec
+  operator and are named losses, and so is a rule 6.1.0's popover saved with
+  its gradient on (its default), which the spec paints solid.
 - **6.0.x is checked against its source, not tested live.** Each field's
   first release, 6.0.0 or 6.1.0, was read from the 6.0.0 tag, so `check`,
   `apply` and `plan` hold a 6.0.x instance to what that release takes. 6.0.x

@@ -18,17 +18,18 @@ from typing import Callable, get_args
 import yaml
 
 from .compiler import (
-    BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
-    LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
+    BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, FORMAT_OPERATOR, HEADER_PREFIX,
+    HEADER_SIZE, LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
 )
 from .spec import (
-    ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES,
-    HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, TREND_DEFAULT_HEX, FilterOp, LabelType,
-    PivotAggregate, SequentialScheme, metric_label, row_items,
+    ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_RANGE_OPERATORS,
+    FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES, HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER,
+    TREND_DEFAULT_HEX, FilterOp, LabelType, PivotAggregate, SequentialScheme, metric_label, row_items,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
 _FILTER_OPS = set(get_args(FilterOp))
+_FORMAT_OPERATOR_BACK = {v: k for k, v in FORMAT_OPERATOR.items()} | {"between": "between"}
 
 # Cosmetic / behavioral params we knowingly discard without a loss entry.
 _IGNORABLE = {
@@ -407,10 +408,11 @@ def _format_to_spec(cf: dict) -> dict | None:
     color = {v.upper(): k for k, v in palette.items()}.get(scheme.upper())
     if color is None and HEX_COLOUR_RE.fullmatch(scheme):
         color = scheme.upper()
-    # '< x <' is Superset's range comparator; the bare "between" older
-    # chartwright builds wrote (and Superset never matched) reads back the same.
-    op = {"< x <": "between"}.get(cf.get("operator"), cf.get("operator"))
-    if not color or not cf.get("column") or op not in ("<", ">", "=", "between"):
+    # Superset's comparators back to the spec's operators; the bare "between" older
+    # chartwright builds wrote (and Superset never matched) reads back as between too. The
+    # half-open ranges ('≤ x <', '< x ≤') have no spec operator and stay outside.
+    op = _FORMAT_OPERATOR_BACK.get(cf.get("operator"))
+    if not color or not cf.get("column") or op is None:
         return None
     if cf.get("toTextColor") or cf.get("objectFormatting") not in (None, "BACKGROUND_COLOR", "TEXT_COLOR"):
         return None  # legacy text flag / cell bars: outside the surface
@@ -420,7 +422,7 @@ def _format_to_spec(cf: dict) -> dict | None:
     target_col = cf.get("columnFormatting") or ("ENTIRE_ROW" if cf.get("toAllRow") else None)
     if target_col:
         rule["apply_to"] = "row" if target_col == "ENTIRE_ROW" else target_col
-    if op == "between":
+    if op in FORMAT_RANGE_OPERATORS:
         rule["target_left"] = cf.get("targetValueLeft")
         rule["target_right"] = cf.get("targetValueRight")
         if rule["target_left"] is None or rule["target_right"] is None:
@@ -454,6 +456,12 @@ def _rules_to_spec(p: dict, losses: list, name: str, labels: set[str],
                                      "no longer queries, dropped"))
         else:
             rules.append(rule)
+            # 6.1's popover turns the gradient on for a new rule (FormattingPopoverContent.tsx
+            # :250-252 at 6.1.0); a rule is a solid band in the spec. An '=' rule is solid either way.
+            if cf.get("useGradient") is True and rule["operator"] != "=":
+                losses.append(Loss(name, f"conditional format on {rule['metric']!r} fades by "
+                                         "distance from its threshold (gradient), not preserved: "
+                                         "apply paints it one solid colour"))
     return rules
 
 

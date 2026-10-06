@@ -5,7 +5,25 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ## Unreleased
 
+### Added
+
+- Colour rules take `>=`, `<=`, `!=` and `between_inclusive` (a range with its bounds taken in), besides `<`, `>`, `=` and `between`. Every supported release has these comparators, so they draw the same everywhere. `decompile` reads them back from rules made in Superset, where before they were dropped as losses.
+
 ### Fixed
+
+- `check`, `apply` and `plan` (and the MCP tools) warn when a table or pivot uses something its Superset release draws differently. Before, the dashboard came out different from the spec with no word. On 4.1.4, 5.0.0 and 6.0.0:
+  - a table rule's `apply_to` paints the rule's own column instead;
+  - `paint: "text"` fills the cell with the dark text shade instead, under the cell's own dark text, so the value is hard to read;
+  - each band fades by the value's distance from its threshold instead of one solid colour (an `=` rule stays solid);
+  - a dark `color` fill keeps the cell's dark text, where 6.1 turns it white.
+
+  On 4.1.4 and 5.0.0, a table's `hidden` columns show. Each warning says what that release draws.
+
+- `plan` no longer reports a table or pivot changed after every apply when a colour rule's `color` is a named colour's own hex (such as `#ACE1C4` for green).
+
+- `decompile` names a colour rule that Superset 6.1 fades by distance (its rule editor turns the gradient on by default). The spec paints a rule one solid colour, so the next apply changes how it looks.
+
+- The design brain is version 16: `chart.format-bands` reads an `=` rule as one value, so two status codes in different colours no longer count as overlapping bands. It reads the new operators' bounds the same way.
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 

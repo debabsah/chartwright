@@ -20,6 +20,7 @@ from datetime import date
 from ..spec import (
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
+    FORMAT_RANGE_OPERATORS,
     SUPERSET_COLOR_SCHEMES,
     HeaderBlock,
     _ColorSchemeMixin,
@@ -717,6 +718,29 @@ def pivot_columns(ctx: RuleContext):
             )
 
 
+def _rule_ranges(r) -> list[tuple[float, bool, float, bool]]:
+    """The values a colour rule colours, as (low, low included, high, high included)
+    intervals: "=" is one point, "!=" everything either side of it."""
+    inf = float("inf")
+    if r.operator in FORMAT_RANGE_OPERATORS:
+        closed = r.operator == "between_inclusive"
+        return [(r.target_left, closed, r.target_right, closed)]
+    t = r.target
+    return {"<": [(-inf, False, t, False)], "<=": [(-inf, False, t, True)],
+            ">": [(t, False, inf, False)], ">=": [(t, True, inf, False)],
+            "=": [(t, True, t, True)],
+            "!=": [(-inf, False, t, False), (t, False, inf, False)]}[r.operator]
+
+
+def _overlap(a, b) -> bool:
+    """Whether two such intervals share a value; a shared bound counts only when both
+    take it in (>= 80 and <= 80 share 80, > 80 and <= 80 share nothing)."""
+    (a0, ai, a1, aj), (b0, bi, b1, bj) = a, b
+    lo, lo_in = (a0, ai) if a0 > b0 else (b0, bi) if b0 > a0 else (a0, ai and bi)
+    hi, hi_in = (a1, aj) if a1 < b1 else (b1, bj) if b1 < a1 else (a1, aj and bj)
+    return lo < hi or (lo == hi and lo_in and hi_in)
+
+
 @rule("chart.format-bands", "warn", "conditional-formatting bands must tell one coherent story per metric",
       since="2", severities=("warn", "info"))
 def format_bands(ctx: RuleContext):
@@ -725,16 +749,13 @@ def format_bands(ctx: RuleContext):
             continue
         by_metric: dict[str, list] = {}
         for r in c.conditional_formatting:
-            lo, hi = ((r.target_left, r.target_right) if r.operator == "between"
-                      else (float("-inf"), r.target) if r.operator == "<"
-                      else (r.target, float("inf")))
             # compared by the shade painted, so "green" and its own hex agree
-            by_metric.setdefault(r.metric, []).append((lo, hi, r.color, r.paint_hex()))
+            by_metric.setdefault(r.metric, []).append((_rule_ranges(r), r.color, r.paint_hex()))
         for metric, bands in by_metric.items():
             for i in range(len(bands)):
                 for j in range(i + 1, len(bands)):
-                    (a0, a1, ca, ha), (b0, b1, cb, hb) = bands[i], bands[j]
-                    if a0 < b1 and b0 < a1 and ha != hb:
+                    (ra, ca, ha), (rb, cb, hb) = bands[i], bands[j]
+                    if ha != hb and any(_overlap(a, b) for a in ra for b in rb):
                         yield Finding(
                             "chart.format-bands", "warn", c.name, ctx.where(c.name),
                             f"metric {metric!r}: {ca} and {cb} bands overlap "
@@ -744,7 +765,7 @@ def format_bands(ctx: RuleContext):
             if len(bands) == 1:
                 yield Finding(
                     "chart.format-bands", "info", c.name, ctx.where(c.name),
-                    f"metric {metric!r} has a single {bands[0][2]} band: one color is "
+                    f"metric {metric!r} has a single {bands[0][1]} band: one color is "
                     f"decoration, not a signal; band the full green/amber/red story "
                     f"or drop it",
                 )

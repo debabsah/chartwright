@@ -116,6 +116,11 @@ FORMAT_COLOR_HEX = {"green": "#ACE1C4", "amber": "#FDE380", "red": "#EFA1AA"}
 # Text needs darker shades of the same three: each is >= 4.5:1 on white (WCAG AA).
 FORMAT_TEXT_HEX = {"green": "#1B7F3B", "amber": "#8A6100", "red": "#B3261E"}
 HEX_COLOUR_RE = re.compile(r"#[0-9A-F]{6}", re.IGNORECASE)
+# A colour rule's test. Every one is a Superset comparator at 4.1.4, 5.0.0, 6.0.0 and
+# 6.1.0 (compiler.FORMAT_OPERATOR); "between" leaves both bounds out, as Superset's
+# "< x <" does, and "between_inclusive" takes them in ("≤ x ≤").
+FormatOperator = Literal["<", ">", "=", ">=", "<=", "!=", "between", "between_inclusive"]
+FORMAT_RANGE_OPERATORS = ("between", "between_inclusive")
 
 FilterOp = Literal["==", "!=", ">", ">=", "<", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL"]
 _LIST_OPS = ("IN", "NOT IN")
@@ -672,25 +677,32 @@ class FormatRule(BaseModel):
     #RRGGBB. A pivot colours a cell by its OWN value only, so band a
     normalized metric (e.g. a %-of-goal ratio) when thresholds differ per
     row. A table can read one column and paint another (apply_to): colour a
-    number by a status column beside it."""
+    number by a status column beside it. Solid bands, apply_to and text paint
+    take effect from Superset 6.1.0; check, apply and plan warn on an older
+    instance (version_warnings)."""
 
     model_config = ConfigDict(extra="forbid")
 
     metric: str = Field(description="Display label of the metric (table: or column) whose value is tested")
-    operator: Literal["<", ">", "=", "between"]
-    target: float | None = Field(default=None, description="Threshold for <, > or =")
-    target_left: float | None = Field(default=None, description="Lower bound for 'between'")
-    target_right: float | None = Field(default=None, description="Upper bound for 'between'")
+    operator: FormatOperator = Field(
+        description="<, >, =, >=, <=, != against target; 'between' (bounds excluded) or "
+                    "'between_inclusive' (bounds included) against target_left and target_right")
+    target: float | None = Field(default=None, description="Threshold for <, >, =, >=, <= or !=")
+    target_left: float | None = Field(default=None, description="Lower bound for 'between' or 'between_inclusive'")
+    target_right: float | None = Field(default=None, description="Upper bound for 'between' or 'between_inclusive'")
     color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = Field(
         description="green, amber or red (Superset's own picker colours; text paint uses a darker "
                     "shade of each), or any #RRGGBB, used as written for cell and text",
     )
     apply_to: str | None = Field(
         default=None,
-        description="Table only: the label of the column to paint, or \"row\"; default the metric's own cells",
+        description="Table only: the label of the column to paint, or \"row\"; default the metric's "
+                    "own cells (Superset 6.1.0 or later; older releases paint the metric's own cells)",
     )
     paint: Literal["cell", "text"] = Field(
-        default="cell", description="Paint the cell background (default) or the text, e.g. an arrow")
+        default="cell",
+        description="Paint the cell background (default) or the text, e.g. an arrow (text: Superset "
+                    "6.1.0 or later; older releases fill the cell with the text colour)")
 
     @field_validator("color", mode="before")
     @classmethod
@@ -711,9 +723,9 @@ class FormatRule(BaseModel):
 
     @model_validator(mode="after")
     def _target_shape(self) -> "FormatRule":
-        if self.operator == "between":
+        if self.operator in FORMAT_RANGE_OPERATORS:
             if self.target is not None or self.target_left is None or self.target_right is None:
-                raise ValueError("'between' needs target_left + target_right (and no target)")
+                raise ValueError(f"{self.operator!r} needs target_left + target_right (and no target)")
         elif self.target is None or self.target_left is not None or self.target_right is not None:
             raise ValueError(f"operator {self.operator!r} needs target (and no target_left/right)")
         return self

@@ -1505,7 +1505,7 @@
     },
     "FormatRule": {
       "additionalProperties": false,
-      "description": "One solid colour band on one metric: green / amber / red, or any\n#RRGGBB. A pivot colours a cell by its OWN value only, so band a\nnormalized metric (e.g. a %-of-goal ratio) when thresholds differ per\nrow. A table can read one column and paint another (apply_to): colour a\nnumber by a status column beside it.",
+      "description": "One solid colour band on one metric: green / amber / red, or any\n#RRGGBB. A pivot colours a cell by its OWN value only, so band a\nnormalized metric (e.g. a %-of-goal ratio) when thresholds differ per\nrow. A table can read one column and paint another (apply_to): colour a\nnumber by a status column beside it. Solid bands, apply_to and text paint\ntake effect from Superset 6.1.0; check, apply and plan warn on an older\ninstance (version_warnings).",
       "properties": {
         "metric": {
           "description": "Display label of the metric (table: or column) whose value is tested",
@@ -1513,11 +1513,16 @@
           "type": "string"
         },
         "operator": {
+          "description": "<, >, =, >=, <=, != against target; 'between' (bounds excluded) or 'between_inclusive' (bounds included) against target_left and target_right",
           "enum": [
             "<",
             ">",
             "=",
-            "between"
+            ">=",
+            "<=",
+            "!=",
+            "between",
+            "between_inclusive"
           ],
           "title": "Operator",
           "type": "string"
@@ -1532,7 +1537,7 @@
             }
           ],
           "default": null,
-          "description": "Threshold for <, > or =",
+          "description": "Threshold for <, >, =, >=, <= or !=",
           "title": "Target"
         },
         "target_left": {
@@ -1545,7 +1550,7 @@
             }
           ],
           "default": null,
-          "description": "Lower bound for 'between'",
+          "description": "Lower bound for 'between' or 'between_inclusive'",
           "title": "Target Left"
         },
         "target_right": {
@@ -1558,7 +1563,7 @@
             }
           ],
           "default": null,
-          "description": "Upper bound for 'between'",
+          "description": "Upper bound for 'between' or 'between_inclusive'",
           "title": "Target Right"
         },
         "color": {
@@ -1589,12 +1594,12 @@
             }
           ],
           "default": null,
-          "description": "Table only: the label of the column to paint, or \"row\"; default the metric's own cells",
+          "description": "Table only: the label of the column to paint, or \"row\"; default the metric's own cells (Superset 6.1.0 or later; older releases paint the metric's own cells)",
           "title": "Apply To"
         },
         "paint": {
           "default": "cell",
-          "description": "Paint the cell background (default) or the text, e.g. an arrow",
+          "description": "Paint the cell background (default) or the text, e.g. an arrow (text: Superset 6.1.0 or later; older releases fill the cell with the text colour)",
           "enum": [
             "cell",
             "text"

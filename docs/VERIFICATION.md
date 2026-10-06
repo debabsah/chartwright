@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1564 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1591 tests, 68 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -89,12 +89,24 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   the shape Superset saves, compiles to the earlier output when omitted,
   decompiles back, shows up in `plan` when changed live, and names a bad
   value.
-- **Release-specific fields** (`test_superset_version.py`): with the
+- **Release-specific fields** (`test_superset_version.py`,
+  `test_format_rule_gating.py`): with the
   instance's answer mocked, `check`, `apply` and `plan` refuse tags before
   6.0.0 and chart timestamps before 6.1.0 ahead of any write, warn for the
-  fields older releases ignore, and read the version from `/version` (6.1.0)
+  fields older releases ignore (a table's hidden columns before 6.0.0; a
+  colour rule's `apply_to`, text paint, solid band and dark fill before
+  6.1.0, each warning naming what the older release draws instead), and
+  read the version from `/version` (6.1.0)
   or the sign-in page (4.1.4, 5.0.0); `compile --superset-version` gives
-  the same answers and the same bundle.
+  the same answers and the same bundle, and the MCP `check_spec` the same
+  warnings.
+- **Colour-rule operators** (`test_format_rule_gating.py`,
+  `test_display_controls.py`): `>=`, `<=`, `!=`, `between` and
+  `between_inclusive` compile to Superset's own comparators, round-trip on
+  tables and pivots, read back from rules made in the UI (a half-open range
+  stays a named loss, as does a gradient), show up in `plan` when changed in
+  the UI, and `chart.format-bands` reads each one's range, bounds included
+  or not.
 - **The design brain** (`test_design*.py`, `test_calibrate.py`,
   `test_redesign.py`): every rule table-driven against violating and clean
   specs; fix-loop convergence, idempotence, and the no-fractional-heights
@@ -217,7 +229,8 @@ filter bar with two value pickers and a time range, plus markdown and tabs.
 second-writer and fault-injection runs.) The same check then runs on two
 more specs, `tests/fixtures/live_display_controls.json` (every chart display
 control: legends, axis titles and bounds, stacking, labels, table and pivot
-options) and `tests/fixtures/live_dashboard_controls.json` (dashboard
+options, colour rules with every operator, `apply_to` and text paint) and
+`tests/fixtures/live_dashboard_controls.json` (dashboard
 settings and owners, colour schemes, goal lines, a header and footer
 outside the tabs, header rows inside them, cascading and
 pre-filtered native filters, time grain and time column filters). They are
@@ -304,7 +317,7 @@ second-writer scenarios, and fault injection.
 
 ## Defect ledger: what each layer caught
 
-Twenty-two real defects found by these layers, none of which the original
+Twenty-four real defects found by these layers, none of which the original
 unit suite could see. The layer that caught each one is the reason that
 layer exists.
 
@@ -332,6 +345,8 @@ layer exists.
 | 20 | A labeled `COUNT(*)` metric lost its label on decompile, so `plan` reported drift forever on clean dashboards | the same `plan` run, after #19 was fixed |
 | 21 | The client treated a rate-limited response (HTTP 429) as fatal instead of backing off, and PUT requests skipped the typed-error wrapper entirely | live CI: Superset rate-limited a burst of decompile lookups |
 | 22 | Charts drawn on a time axis (line, bar, area, scatter, trendline KPI, mixed over time) ignored both their own `time_range` and the dashboard time filter, on every release: they had no time-range filter on their axis | live calibration: a line chart limited to March 2004 to March 2005 still drew 2003 to 2005 |
+| 23 | A colour rule's `apply_to`, text paint and solid band, and the white text on a dark fill, take effect only on 6.1.0, and a hidden column only from 6.0.0; 4.1.4 and 5.0.0 painted the tested column, filled cells with the dark text shade (1.0:1 on a pivot), faded bands and showed the hidden column, with no warning | building a table colour feature; screenshots on 4.1.4 and 6.1.0 |
+| 24 | `plan` reported a table changed after every apply when a rule's colour was written as a named shade's hex | the live check for #23 |
 
 ## Reproduce everything
 

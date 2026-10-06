@@ -17,8 +17,8 @@ from .client import SupersetClient
 from .compiler import compile_bundle, filter_id
 from .decompile import decompile_live
 from .spec import (
-    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, DashboardSpec, load_spec, row_items,
-    without_superset_defaults,
+    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX,
+    DashboardSpec, load_spec, row_items, without_superset_defaults,
 )
 
 # Dashboard settings `plan` compares one by one (dashboard_settings_changed).
@@ -125,6 +125,11 @@ def _normalize(spec: DashboardSpec) -> dict:
         if chart["type"] in ("timeseries_line", "timeseries_bar", "timeseries_area",
                              "timeseries_scatter", "big_number_trend"):
             chart.setdefault("time_grain", DEFAULT_TIME_GRAIN)
+        for rule in chart.get("conditional_formatting") or []:
+            # A named shade written as its hex paints the same cell, and decompile reads
+            # it back as the name.
+            shades = FORMAT_TEXT_HEX if rule.get("paint") == "text" else FORMAT_COLOR_HEX
+            rule["color"] = {v: k for k, v in shades.items()}.get(rule["color"], rule["color"])
         _normalize_tags(chart)
     data["charts"].sort(key=lambda c: c["name"])
     _normalize_tags(data["dashboard"])

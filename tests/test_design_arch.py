@@ -80,7 +80,9 @@ def test_every_rule_carries_a_known_since_version():
     assert all(r.since in known for r in RULES.values()), {
         r.id: r.since for r in RULES.values() if r.since not in known}
     assert any(r.since == "2" for r in RULES.values())
-    assert any(r.since == DESIGN_BRAIN_VERSION for r in RULES.values())
+    # A bump may correct rules without adding one (16: chart.format-bands reads each
+    # operator's range), so the newest rule can trail the constant, never lead it.
+    assert any(r.since == "7" for r in RULES.values())
 
 
 def test_golden_dogfood_example_advises_clean():

@@ -88,6 +88,12 @@ def test_the_registry_gates_the_unsafe_fields_and_warns_for_the_ignored_ones():
         "subtitle": ("6.0.0", "warn"),
         "column_headers": ("6.0.0", "warn"),
         "show_value": ("6.0.0", "warn"),  # on a stacked mixed query: only_total's labels
+        # Colour rules and the table (test_format_rule_gating.py): older plugins ignore them.
+        "hidden": ("6.0.0", "warn"),
+        "conditional_formatting": ("6.1.0", "warn"),  # a solid band: useGradient
+        "apply_to": ("6.1.0", "warn"),
+        "paint": ("6.1.0", "warn"),
+        "color": ("6.1.0", "warn"),  # a dark fill: 6.1 turns the cell text white
     }
     schema = json.dumps(json_schema())
     for g in GATED_FIELDS:
