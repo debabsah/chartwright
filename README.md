@@ -35,7 +35,7 @@ pip install "chartwright[visual]"  # for chartwright save-queries (CSV reports o
 A dev or test instance is ideal. Add a profile to `~/.config/chartwright/profiles.toml`; it names the instance and where the password comes from, never the password itself:
 
 ```toml
-[dev]
+[dev]  # <profile> identifier
 base_url = "https://superset-dev.example.com"
 username = "chartwright"
 password_env = "SUPERSET_DEV_PASSWORD"
