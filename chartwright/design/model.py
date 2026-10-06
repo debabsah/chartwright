@@ -47,8 +47,9 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # whose rows all show), and size.table-chrome, a new info rule, names an author's page
 # size or search box there.
 # "11" = size.markdown-fit, a new warn-severity rule for markdown text cut off by its
-# block, and layout.markdown-height fixes a one-line block to the height its line takes
-# (1.6 to 2.4 units) instead of 2, from the same estimate.
+# block in a 1440 px window, under the dashboard's own CSS, and layout.markdown-height
+# fixes a one-line block to the height its line takes (1.6 to 2.4 units) instead of 2,
+# from the same estimate.
 # "12" = default.heatmap-label-room, a fill (left_margin on every heatmap, which 6.1.0
 # otherwise draws with its longest y label cut off); it changes what `--fix` writes.
 # With it, a bar's sort_by: data.top-n-sort warns on a row_limit under sort_by "total"
