@@ -115,9 +115,11 @@ def test_shipped_example_still_advises_clean():
     ex = json.loads((Path(__file__).resolve().parent.parent / "examples"
                      / "nyc_taxi_operations.json").read_text(encoding="utf-8"))
     rep = advise(load_spec(ex), overlay=EMPTY)
-    # Only design defaults advise --fix would fill (the example stays as written).
+    # Only what advise --fix would write (the example stays as written): design
+    # defaults, and the KPI heights readability.kpi-text raises (brain 16).
     assert rep.counts["error"] == rep.counts["warn"] == 0, [f.key for f in rep.findings]
-    assert all(f.kind == "fill" and f.fix for f in rep.findings), [f.key for f in rep.findings]
+    assert all(f.fix and (f.kind == "fill" or f.rule == "readability.kpi-text")
+               for f in rep.findings), [f.key for f in rep.findings]
 
 
 # -- 1.1: advise --strict names its gate ------------------------------------------

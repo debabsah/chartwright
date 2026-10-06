@@ -61,7 +61,11 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "15" = chart.format-bands reads each colour rule's own range: the new >=, <=, != and
 # between_inclusive operators take their bounds in, and an '=' rule stays one value.
 # Findings change, no rule is added.
-DESIGN_BRAIN_VERSION = "15"
+# "16" = the readability.* family (sec.17, "Type sizes"): table-text and chart-text warn
+# when the dashboard's CSS or theme sets text below its floor, so a strict gate can newly
+# block, and kpi-text raises a big number's height until its value and subtitle reach
+# theirs, which changes what `--fix` writes.
+DESIGN_BRAIN_VERSION = "16"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

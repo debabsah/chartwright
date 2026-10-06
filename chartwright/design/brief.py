@@ -19,6 +19,14 @@ def _guideline(name: str) -> str:
     return (resources.files("chartwright.design") / "guidelines" / name).read_text(encoding="utf-8")
 
 
+def _kpi_units(kind: str, p) -> str:
+    """The height readability.kpi-text asks of a big number with a line under its value."""
+    from .readability import KPI_MAX_HEIGHT, kpi_units
+
+    units = kpi_units(kind, True, p)
+    return str(units) if units else f"more than {KPI_MAX_HEIGHT}"
+
+
 def render_brief(audience: str, overlay: Overlay | None = None) -> str:
     overlay = overlay if overlay is not None else load_overlay()
     p = params_for(audience, overlay)
@@ -37,7 +45,9 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         "## Budgets and sizes (1 height unit = 40 px; widths are twelfths of the page)",
         "",
         f"- Height budget per tab: {p.fold_units} units (~{p.fold_units * 40}px). Over budget -> tabs or prune.",
-        f"- KPI band: {p.kpi_row_min}-{p.kpi_row_max} big numbers, {p.kpi_height} units tall, first band on the page.",
+        f"- KPI band: {p.kpi_row_min}-{p.kpi_row_max} big numbers, {p.kpi_height} units tall, first band on the page; "
+        f"Superset sizes their text by height, so a subtitle needs {_kpi_units('big_number_total', p)} "
+        f"units, a trendline KPI's comparison {_kpi_units('big_number_trend', p)}.",
         f"- Axis charts (timeseries/bar/heatmap/histogram/waterfall/box_plot): >= {p.min_axis_height} units tall, 8 is the comfortable default.",
         f"- At most {p.max_row_charts} axis charts per row; below 3/12 width a chart is unreadable.",
         "- Pie/donut: >= 5/12 wide, >= 8 tall. Heatmap: >= 5/12 wide (7/12 when many columns), >= 6 tall.",

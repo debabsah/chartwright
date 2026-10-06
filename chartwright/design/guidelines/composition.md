@@ -6,8 +6,7 @@
 - Group by question, not by chart type: a trend and its breakdown belong side
   by side; two unrelated charts sharing a row invite false comparison.
 - A row's charts share their time window and grain, or the title says why not.
-- One message per chart. A chart needing a paragraph to explain wants to be
-  two charts, or a table.
+- One message per chart: a chart needing a paragraph is two charts, or a table.
 - Titles state the answer where possible ("Orders fell 12% WoW"), the
   question otherwise ("Orders by week"); never just a column name. Filtered
   charts name their scope in the title.

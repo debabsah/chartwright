@@ -96,6 +96,11 @@ jobs:
       - name: Markdown blocks fit at the height advise gives them
         if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
         run: python tools/ci_live_markdown_fit.py --base-url http://localhost:8098
+      # The type sizes the readability rules model (table and pivot cells, titles,
+      # ECharts labels, big numbers by height) are what this release draws.
+      - name: Type sizes match the readability model
+        if: ${{ !cancelled() && steps.visual.outcome == 'success' }}
+        run: python tools/record_readability_measurements.py --check --base-url http://localhost:8098
       # Saved queries captured from Superset's own frontend, so CSV reports work.
       - name: Chart queries saved for reports
         if: ${{ !cancelled() && steps.visual.outcome == 'success' }}

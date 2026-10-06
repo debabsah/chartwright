@@ -84,6 +84,11 @@ into one. Everything below works from that one file.
     - No legend on a single series the title already names, values written on a few bars.
     - A field you write is never touched. A filled value is kept up to date as the chart changes until you edit or delete it; then it is yours, and a deleted one stays deleted. To keep Superset's default from the start, add the rule to `design.ignore`.
     - The bundle depends on the spec alone: compile, `plan` and decompile never add a value of their own.
+- **Readable Type**: `advise` checks that every text on the dashboard is large enough to read on a laptop, and names the CSS selector or theme token to set when it isn't ([floors and evidence](DESIGN-BRAIN.md#type-sizes)).
+    - Table and pivot cells at 14 px or more: Superset draws them at 12 px, so `advise` gives you the CSS that enlarges them on every release.
+    - Headers, axis labels and legends at 12 px, chart titles at 14 px, checked against your dashboard CSS and, with `--profile`, your Superset theme's tokens and chart text settings.
+    - Superset sizes a big number's text by the card's height, so `--fix` raises a card until its value and subtitle read, together with the cards beside it.
+    - The floors are design parameters: tune or lock them in `design.yaml` or a standard.
 - **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
 - **House Style**: A `design.yaml` overlay on your machine tunes thresholds, disables rules, and appends your guidance to the brief, without forking the rulebook.
     - Strict gates (`advise --strict`, `--design strict`) set it aside, so a gate passes or fails the same on every machine.

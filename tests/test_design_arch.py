@@ -92,12 +92,19 @@ def test_golden_dogfood_example_advises_clean():
         .read_text(encoding="utf-8"))
     rep = advise(load_spec(example), overlay=EMPTY)
     # The example is the spec behind the README screenshot, kept as the AI wrote it,
-    # so the design defaults brain 5 offers are pending fills. Nothing else fires,
-    # and once advise --fix writes the fills nothing is left at all.
-    assert [f.key for f in rep.findings if f.kind != "fill"] == []
+    # so the design defaults brain 5 offers are pending fills. Brain 16 adds one repair:
+    # its four KPI cards draw their subtitles at 11 px at 4 units, and 5 units lift them
+    # to the 12 px floor. Nothing else fires, and once advise --fix writes both nothing
+    # is left at all.
+    assert [f.key for f in rep.findings if f.kind != "fill"] == [
+        f"readability.kpi-text@{n}" for n in
+        ("Average Fare", "Average Trip Distance", "Total Revenue", "Total Trips")]
     fixed, rep2 = advise_and_fix(example, overlay=EMPTY)
     assert rep2.findings == [], [f.key for f in rep2.findings]
-    assert rep2.fixed and {e["kind"] for e in rep2.fixed} == {"fill"}
+    assert {e["kind"] for e in rep2.fixed} == {"fill", "repair"}
+    assert {e["chart"]: e["set"] for e in rep2.fixed if e["kind"] == "repair"} == {
+        n: {"height": 5} for n in
+        ("Average Fare", "Average Trip Distance", "Total Revenue", "Total Trips")}
 
 
 def test_advise_never_raises_on_mutated_specs():
