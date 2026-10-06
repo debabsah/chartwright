@@ -15,7 +15,7 @@ import yaml
 
 from .client import SupersetClient
 from .compiler import (_metric_payload, axis_title_defaults, compile_bundle, filter_id, grid_rows,
-                       spec_units)
+                       link_tabs, spec_units)
 from .decompile import _metric_to_spec, decompile_live
 from .spec import (
     BAR_SWITCHES, DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, FORMAT_COLOR_HEX,
@@ -226,6 +226,8 @@ def _normalize(spec: DashboardSpec) -> dict:
                 if not isinstance(mitem, str):
                     ditem["width"] = spec.resolved_item_width(mitem)
                     ditem.setdefault("height", 4)
+                    # tab links compare by the tab they open: tab:Trend == tab:Sales/Trend
+                    ditem["markdown"] = link_tabs(spec, ditem["markdown"])
 
     def sketch_as_rows(holder) -> list:
         """Sketch -> rows of chart names, a stacked COLUMN as a nested list, so a
@@ -242,7 +244,7 @@ def _normalize(spec: DashboardSpec) -> dict:
             entry = holder.sketch_block(sc)
             if sc.kind == "header":
                 return {**entry.model_dump(), "width": width}
-            block = {"markdown": entry.markdown, "width": width,
+            block = {"markdown": link_tabs(spec, entry.markdown), "width": width,
                      "height": holder.sketch_block_height(sc)}
             return {**block, "id": entry.id} if entry.id else block
 

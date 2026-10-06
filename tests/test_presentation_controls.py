@@ -327,3 +327,82 @@ def test_ui_minted_markdown_ids_are_not_names():
             dst.writestr(n, src.read(n).replace(b"MARKDOWN-refresh-note", b"MARKDOWN-V1StGXR8_Z5jdHi6B-myT"))
     block = decompile_bundle(out.getvalue(), _lookup(spec)).spec["layout"]["rows"][0][0]
     assert "id" not in block and block["markdown"] == NOTE["markdown"]
+
+
+# -- markdown links to a tab -------------------------------------------------------------
+
+PIE = {"name": "By segment", "type": "pie", "dataset": DS, "metric": "SUM(revenue)", "groupby": "segment"}
+TABLE = {"name": "Top customers", "type": "table", "dataset": DS, "groupby": ["customer"],
+         "metrics": ["SUM(revenue)"]}
+LINKS = "[the trend](tab:Trend) · [customers](tab:Customers) · [the mix](tab:Sales/Mix)"
+
+
+def _with_links(markdown=LINKS, sketch=False):
+    customers = ({"title": "Customers", "sketch": ["TTTTTTTT nnnn"],
+                  "legend": {"T": "Top customers", "n": {"markdown": markdown}}} if sketch
+                 else {"title": "Customers", "rows": [["Top customers"]]})
+    return _spec([LINE, PIE, TABLE], layout={
+        "tabs": [{"title": "Sales", "tabs": [{"title": "Trend", "rows": [["Revenue"]]},
+                                             {"title": "Mix", "rows": [["By segment"]]}]},
+                 customers],
+        **({} if sketch else {"footer": [[{"markdown": markdown, "width": 12, "height": 1}]]})})
+
+
+def _tab_ids_by_title(dash) -> dict:
+    return {n["meta"]["text"]: k for k, n in dash["position"].items()
+            if isinstance(n, dict) and n.get("type") == "TAB"}
+
+
+def _codes(dash) -> list[str]:
+    return [n["meta"]["code"] for n in dash["position"].values()
+            if isinstance(n, dict) and n.get("type") == "MARKDOWN"]
+
+
+def test_tab_links_compile_to_the_dashboard_url_with_the_tab_in_the_hash():
+    """Superset opens the tab named in the URL hash on load: getLocationHash (util/
+    getLocationHash.ts:20) -> directPathToChild (actions/hydrate.ts:287-294 at 6.1.0,
+    hydrate.js:222-226 at 4.1.4 / 5.0.0) -> each Tabs starts on the child on that path
+    (gridComponents/Tabs/Tabs.tsx:135-140; Tabs.jsx:190-193 / :139-142)."""
+    for sketch in (False, True):
+        dash = _dashboard(_with_links(sketch=sketch))
+        tab = _tab_ids_by_title(dash)
+        assert _codes(dash) == [f"[the trend](/superset/dashboard/sales/#{tab['Trend']}) · "
+                                f"[customers](/superset/dashboard/sales/#{tab['Customers']}) · "
+                                f"[the mix](/superset/dashboard/sales/#{tab['Mix']})"]
+        assert dash["position"][tab["Trend"]]["parents"][-1].startswith("TABS-")  # a sub-tab
+    assert _codes(_dashboard(_with_links("[plain](https://example.com)"))) == ["[plain](https://example.com)"]
+
+
+def test_tab_links_round_trip_and_plan(monkeypatch):
+    spec = _with_links()
+    result = _round_trips(spec)  # tab:Trend and its canonical tab:Sales/Trend open the same tab
+    assert result.spec["layout"]["footer"][0][0]["markdown"] == (
+        "[the trend](tab:Sales/Trend) · [customers](tab:Customers) · [the mix](tab:Sales/Mix)")
+    assert _plan(spec, spec, monkeypatch)["clean"]
+    moved = _with_links(LINKS.replace("tab:Trend", "tab:Customers"))
+    assert _plan(spec, moved, monkeypatch)["layout_changed"]
+
+
+def test_tab_link_validation():
+    with pytest.raises(ValidationError, match=r"no such tab; link one of \['Sales', 'Sales/Trend'"):
+        _with_links("[x](tab:Nope)")
+
+    def ambiguous(md):  # two sub-tabs titled Trend: the bare title is ambiguous, Parent/Child is not
+        return _spec([LINE, PIE], layout={"tabs": [
+            {"title": "North", "tabs": [{"title": "Trend", "rows": [["Revenue"]]}]},
+            {"title": "South", "tabs": [{"title": "Trend", "rows": [["By segment"]]}]}],
+            "footer": [[{"markdown": md}]]})
+
+    with pytest.raises(ValidationError, match="is ambiguous: 2 sub-tabs .* write tab:Parent/Child"):
+        ambiguous("[x](tab:Trend)")
+    position = _dashboard(ambiguous("[x](tab:South/Trend)"))["position"]
+    assert _codes({"position": position}) == ["[x](/superset/dashboard/sales/#TAB-sdc-2-1)"]
+    assert position["TAB-sdc-2-1"]["meta"]["text"] == "Trend" and position["TAB-sdc-2"]["meta"]["text"] == "South"
+    with pytest.raises(ValidationError, match=r"no such tab; link one of \[\]"):
+        _spec(layout={"rows": [[{"markdown": "[x](tab:Sales)"}], ["Orders"], ["Revenue"]]})
+
+
+def test_links_to_other_dashboards_stay_as_written():
+    other = "[elsewhere](/superset/dashboard/other/#TAB-sdc-1)"
+    result = _round_trips(_with_links(other))
+    assert result.spec["layout"]["footer"][0][0]["markdown"] == other

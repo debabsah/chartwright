@@ -29,6 +29,7 @@ from .spec import (
     OPENING_KEY_GAP,
     OPENING_OTHER_KEY,
     PIVOT_ORDER,
+    TAB_LINK_RE,
     TICK_LAYOUTS,
     DashboardSpec,
     DividerBlock,
@@ -1199,7 +1200,7 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
                     "children": [],
                     "parents": [*parents, row_id],
                     "meta": {
-                        "code": item.markdown,
+                        "code": link_tabs(spec, item.markdown),
                         "width": spec.resolved_item_width(item),
                         "height": grid_rows(item.height or 4),
                     },
@@ -1249,7 +1250,7 @@ def _header_meta(entry: HeaderBlock) -> dict:
             "background": BACKGROUND[entry.background]}
 
 
-def _sketch_block_node(pos, holder, sb, width, node_id, parents) -> str:
+def _sketch_block_node(pos, spec, holder, sb, width, node_id, parents) -> str:
     """Emit one MARKDOWN or HEADER node from a sketch block; a markdown block's own
     height wins over the drawn one, as a chart's does."""
     entry = holder.sketch_block(sb)
@@ -1257,7 +1258,7 @@ def _sketch_block_node(pos, holder, sb, width, node_id, parents) -> str:
         meta = _header_meta(entry)
         node_id = f"HEADER-{node_id}"
     else:
-        meta = {"code": entry.markdown, "width": width,
+        meta = {"code": link_tabs(spec, entry.markdown), "width": width,
                 "height": int(round(holder.sketch_block_height(sb) * ROW_UNITS_PER_SPEC_UNIT))}
         node_id = f"MARKDOWN-{entry.id or node_id}"  # a named block is a CSS target, as in rows
     pos[node_id] = {"type": "HEADER" if sb.kind == "header" else "MARKDOWN", "id": node_id,
@@ -1292,7 +1293,7 @@ def _sketch_into(pos, holder, spec, parents: list[str], prefix: str, counter: li
                 items = child.children if isinstance(child, SketchColumn) else [child]
                 # A list of its own per node: a shared one is a YAML alias in the bundle.
                 col_children = [
-                    _sketch_block_node(pos, holder, sc, child.width, f"{slot}-{k + 1}",
+                    _sketch_block_node(pos, spec, holder, sc, child.width, f"{slot}-{k + 1}",
                                        [*parents, row_id, col_id])
                     if isinstance(sc, SketchBlock) else
                     _sketch_chart_node(pos, spec, sc, child.width, [*parents, row_id, col_id], counter)
@@ -1308,7 +1309,7 @@ def _sketch_into(pos, holder, spec, parents: list[str], prefix: str, counter: li
                 child_ids.append(col_id)
             elif isinstance(child, SketchBlock):
                 child_ids.append(
-                    _sketch_block_node(pos, holder, child, child.width, slot, [*parents, row_id]))
+                    _sketch_block_node(pos, spec, holder, child, child.width, slot, [*parents, row_id]))
             else:
                 child_ids.append(
                     _sketch_chart_node(pos, spec, child, child.width, [*parents, row_id], counter)
@@ -1322,6 +1323,24 @@ def _sketch_into(pos, holder, spec, parents: list[str], prefix: str, counter: li
         }
         row_ids.append(row_id)
     return row_ids
+
+
+def tab_component_id(position: tuple[int, ...]) -> str:
+    """The id _position gives the tab at `position` (Layout.tabs_titled): TAB-sdc-<k>[-<j>]."""
+    return "TAB-sdc-" + "-".join(str(i + 1) for i in position)
+
+
+def link_tabs(spec: DashboardSpec, text: str) -> str:
+    """[words](tab:Title) -> [words](/superset/dashboard/<slug>/#<tab id>). Superset opens
+    the tab named in the URL hash on load: hydrate turns the hash into directPathToChild
+    (dashboard/actions/hydrate.ts:287-294 at 6.1.0, hydrate.js:222-226 at 4.1.4 / 5.0.0)
+    and each Tabs component starts on the child on that path (Tabs.tsx:135-140 at 6.1.0,
+    Tabs.jsx:190-193 / :139-142). A same-page hash change does not, hence the full URL."""
+    def url(m) -> str:
+        (position,) = spec.layout.tabs_titled(m.group(1))  # validated: exactly one
+        return f"](/superset/dashboard/{spec.dashboard.slug}/#{tab_component_id(position)})"
+
+    return TAB_LINK_RE.sub(url, text)
 
 
 def _position(spec: DashboardSpec) -> dict:
@@ -1354,7 +1373,7 @@ def _position(spec: DashboardSpec) -> dict:
             return into(pos, tab if tab.sketch else tab.rows, spec, parents, prefix, counter)
 
         for k, tab in enumerate(spec.layout.tabs or []):
-            tab_id = f"TAB-sdc-{k + 1}"
+            tab_id = tab_component_id((k,))
             tab_parents = ["ROOT_ID", "GRID_ID", tabs_id]
             if tab.tabs:
                 # sub-tabs: a TABS node inside this TAB (its own id space, so it can
@@ -1363,7 +1382,7 @@ def _position(spec: DashboardSpec) -> dict:
                 sub_parents = [*tab_parents, tab_id, sub_tabs_id]
                 sub_ids = []
                 for j, sub in enumerate(tab.tabs):
-                    sub_id = f"TAB-sdc-{k + 1}-{j + 1}"
+                    sub_id = tab_component_id((k, j))
                     row_ids = content_into(sub, [*sub_parents, sub_id], f"sdc-t{k + 1}-{j + 1}-")
                     pos[sub_id] = tab_node(sub_id, sub.title, row_ids, sub_parents)
                     sub_ids.append(sub_id)

@@ -72,6 +72,22 @@ running the tool against real instances of all three releases.
   (`dashboard/util/newComponentFactory.ts:74` at 6.1.0), which decompile
   never reads as a name; it reads `MARKDOWN-<id>` back as the block's `id`,
   so `plan` reports a renamed block as a layout change.
+- **A link to a tab is the dashboard's URL with the tab's id in the hash.**
+  In markdown, `[words](tab:Title)` or `(tab:Parent/Child)` compiles to
+  `/superset/dashboard/<slug>/#<tab id>`. Superset opens the tab the hash
+  names when the dashboard loads: `getLocationHash`
+  (`dashboard/util/getLocationHash.ts:20`) feeds `directPathToChild`, the
+  component's parents plus itself (`dashboard/actions/hydrate.ts:287-294` at
+  6.1.0, `hydrate.js:222-226` at 4.1.4 and 5.0.0), and each tab set starts on
+  the child on that path (`gridComponents/Tabs/Tabs.tsx:135-140` at 6.1.0,
+  `Tabs.jsx:190-193` at 4.1.4 and `:139-142` at 5.0.0). A hash change on the
+  open page is not read, so the link is the full URL and a click loads the
+  dashboard again: filter selections not saved in the URL reset. A bare
+  title names a top tab, or else a sub-tab; validation lists the targets for
+  an unknown title and asks for `Parent/Child` when two sub-tabs share one.
+  Decompile turns links to this dashboard's tabs back into `tab:` form, and
+  `plan` compares links by the tab they open, so `tab:Trend` and
+  `tab:Sales/Trend` are the same link.
 - **Tags import on 6.0.0 or later, and only with tagging turned on.** The
   dashboard and chart import schemas gain `tags` at 6.0.0
   (`superset/dashboards/schemas.py:502`, `superset/charts/schemas.py:1589`;

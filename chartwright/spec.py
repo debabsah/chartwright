@@ -2054,6 +2054,9 @@ class MarkdownBlock(BaseModel):
 
 RowItem = Union[str, MarkdownBlock]
 
+# A markdown link to a tab of the same dashboard: [words](tab:Title) or (tab:Parent/Child).
+TAB_LINK_RE = re.compile(r"\]\(tab:([^)]+)\)")
+
 
 class HeaderBlock(BaseModel):
     """A full-width section title between rows (Superset's Header component).
@@ -2629,6 +2632,13 @@ class Layout(_SketchHolder):
         """The tabs that hold content: each top tab, or its sub-tabs."""
         return [leaf for tab in (self.tabs or []) for leaf in (tab.tabs or [tab])]
 
+    def tabs_titled(self, target: str) -> list[tuple[int, ...]]:
+        """Positions of the tabs a link's target names: a top tab by its title (top
+        titles are unique), else a sub-tab by its title or 'Parent/Child'."""
+        tops = [(k,) for k, t in enumerate(self.tabs or []) if t.title == target]
+        return tops or [(k, j) for k, t in enumerate(self.tabs or []) for j, s in enumerate(t.tabs or [])
+                        if target in (s.title, f"{t.title}/{s.title}")]
+
     def all_rows(self) -> list[list[RowItem]]:
         """Every row of charts and markdown (headers and dividers skipped)."""
         body = self.rows or [row for tab in self.leaf_tabs() for row in (tab.rows or [])]
@@ -2826,6 +2836,20 @@ class DashboardSpec(BaseModel):
                         f"chart {c.name!r}: metric {m!r} looks like a custom-SQL metric but is not "
                         "one; write SQL(<expression>) AS <Label>, e.g. "
                         "\"SQL(100.0 * SUM(a) / NULLIF(SUM(b), 0)) AS Rate\"")
+        return self
+
+    @model_validator(mode="after")
+    def _tab_links_resolve(self) -> "DashboardSpec":
+        valid = [t.title if s is None else f"{t.title}/{s.title}"
+                 for t in self.layout.tabs or [] for s in [None, *(t.tabs or [])]]
+        for block in self.layout.markdown_blocks():
+            for target in TAB_LINK_RE.findall(block.markdown):
+                found = self.layout.tabs_titled(target)
+                if not found:
+                    raise ValueError(f"markdown link 'tab:{target}': no such tab; link one of {valid}")
+                if len(found) > 1:
+                    raise ValueError(f"markdown link 'tab:{target}' is ambiguous: {len(found)} sub-tabs "
+                                     f"have that title; write tab:Parent/Child, one of {valid}")
         return self
 
     @model_validator(mode="after")

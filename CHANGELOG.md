@@ -12,6 +12,7 @@ while the major version is 0, minor bumps may include breaking changes and say s
   - a big number's `header_font_size` and `subtitle_font_size`, and a trendline's `header_font_size` and `trend_date_format`;
   - an axis chart's `x_axis_title_margin`, `y_axis_title_margin` and `y_axis_title_position`;
   - a markdown block's `id`.
+- A markdown link written `[words](tab:Title)` is a plain, dead link when chartwright 0.6 builds the spec: it doesn't know the form.
 - `decompile` now reads a titled chart's stored title spacing back when it differs from the tool's own (`y_axis_title_position: "Left"`, Superset's default, for one), so `adopt` and `plan` keep it instead of resetting it to "Top".
 
 ### Added
@@ -23,6 +24,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - An axis chart sets its titles' spacing: `x_axis_title_margin`, `y_axis_title_margin` (pixels) and `y_axis_title_position` (`"Left"`, along the axis, or `"Top"`). Unset, the spacing chartwright writes stays as it was (30 px under the axis, 15 px above it). Each needs its title; a mixed chart's secondary title shares the y pair.
 
 - A markdown block takes an `id`, a lowercase slug unique in the layout: the block's component id becomes `MARKDOWN-<id>`, which Superset renders as its DOM id, so the dashboard's `css` can style that one block (`#MARKDOWN-legend`). In rows, header and footer rows, and sketch legends; decompile reads it back.
+
+- A markdown link can open a tab of the same dashboard: `[definitions](tab:Definitions)`, or `tab:Sales/Trend` for a sub-tab, compiles to the dashboard's URL with the tab in its hash, which Superset opens on load. An unknown or ambiguous title fails validation and lists the tabs a link can name. Decompile turns such links back into `tab:` form, and `plan` compares two links by the tab they open. The link reloads the dashboard, so filter selections not saved in the URL reset.
 
 ## 0.6.0 (2026-10-05)
 

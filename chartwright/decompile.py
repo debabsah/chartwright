@@ -1815,6 +1815,43 @@ def _leaf_tabs(layout: dict) -> list[dict]:
     return [leaf for tab in layout.get("tabs") or [] for leaf in (tab.get("tabs") or [tab])]
 
 
+def _tab_links_to_spec(layout: dict, position: dict, slug: str) -> None:
+    """Links to this dashboard's tabs (/superset/dashboard/<slug>/#<tab id>, as compile
+    writes them) back to [words](tab:Title) / (tab:Parent/Child), when the decompiled
+    layout holds that tab; any other link stays as written."""
+    titles = {t["title"]: {s["title"] for s in t.get("tabs") or []} for t in layout.get("tabs") or []}
+    targets: dict[str, str] = {}
+    for tab_id, node in position.items():
+        if not isinstance(node, dict) or node.get("type") != "TAB":
+            continue
+        title = (node.get("meta") or {}).get("text")
+        outer = [((position.get(p) or {}).get("meta") or {}).get("text") for p in node.get("parents") or []
+                 if (position.get(p) or {}).get("type") == "TAB"]
+        if not outer and title in titles:
+            targets[tab_id] = title
+        elif len(outer) == 1 and title in titles.get(outer[0], ()):
+            targets[tab_id] = f"{outer[0]}/{title}"
+    if not targets:
+        return
+    link = re.compile(rf"\]\(/superset/dashboard/{re.escape(slug)}/#(TAB-[A-Za-z0-9_-]+)\)")
+
+    def unlink(block: dict) -> None:
+        block["markdown"] = link.sub(
+            lambda m: f"](tab:{targets[m.group(1)]})" if m.group(1) in targets else m.group(0),
+            block["markdown"])
+
+    holders = [layout, *_leaf_tabs(layout)]
+    rows = [r for h in holders for key in ("rows", "header", "footer") for r in h.get(key) or []]
+    for items in (row_items(r) for r in rows):
+        for item in items or []:
+            if isinstance(item, dict):
+                unlink(item)
+    for h in holders:
+        for entry in (h.get("legend") or {}).values():
+            if isinstance(entry, dict) and "markdown" in entry:
+                unlink(entry)
+
+
 _SKETCH_SYMBOLS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
 
@@ -2233,6 +2270,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
                 ordered_names.append(x)
     ordered = [charts_by_name[n] for n in ordered_names]
 
+    _tab_links_to_spec(layout, position, slug)
     label_colors = (dash.get("metadata") or {}).get("label_colors") or {}
     css = dash.get("css") if isinstance(dash.get("css"), str) else ""
     spec = {
