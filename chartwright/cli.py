@@ -1,11 +1,11 @@
-"""CLI: the deterministic back-half the LLM front-end drives.
+"""Manage Apache Superset dashboards as code, from JSON spec files.
 
-    chartwright schema                          print the JSON Schema the LLM must satisfy
+    chartwright schema                          print the JSON Schema a spec must satisfy
     chartwright validate spec.json              schema-validate only (no network)
     chartwright compile spec.json -o out.zip    compile bundle with a stub resolution (golden/debug)
     chartwright check spec.json --profile P     pre-flight referential resolution
-    chartwright apply spec.json --profile P     check -> compile -> import -> smoke
-    chartwright brief                           the design brief to read BEFORE authoring a spec
+    chartwright apply spec.json --profile P     check, build or update, then query every chart
+    chartwright brief                           the design brief to read before writing a spec
     chartwright advise spec.json                design review (add --profile for data-aware rules)
     chartwright explain spec.json               where each design-default field comes from, and why
     chartwright redesign <slug> --profile P     decompile + audit + safe fixes -> redesigned spec
@@ -190,7 +190,7 @@ def _main(argv: list[str] | None = None) -> None:
                       help=_VERSION_HELP + " (default: no check; the bundle is the same either way)")
 
     subhelp = {"check": "pre-flight referential resolution against the live instance",
-               "apply": "check -> compile -> import -> verify -> smoke",
+               "apply": "check the spec, build or update the dashboard, then confirm each chart and run its query",
                "plan": "diff the spec against the live dashboard (drift detection)"}
     for name in ("check", "apply", "plan"):
         p = sub.add_parser(name, help=subhelp[name])
@@ -322,7 +322,7 @@ def _main(argv: list[str] | None = None) -> None:
     stv.add_argument("--screenshot", default=None, metavar="PNG",
                      help="also save a full-page screenshot of the dashboard here")
 
-    br = sub.add_parser("brief", help="the design brief to read BEFORE authoring a spec")
+    br = sub.add_parser("brief", help="the design brief to read before writing a spec")
     br.add_argument("--audience", choices=AUDIENCE_NAMES, default="analytical")
 
     rd = sub.add_parser("redesign",
@@ -358,7 +358,7 @@ def _main(argv: list[str] | None = None) -> None:
                      help="adopt even if some charts also sit on other dashboards (apply updates "
                           "those charts everywhere they appear)")
 
-    ab = sub.add_parser("absorb", help="patch LIVE UI height polish back into the spec (heights only)")
+    ab = sub.add_parser("absorb", help="copy chart heights set in Superset back into the spec (heights only)")
     ab.add_argument("spec")
     ab.add_argument("--profile", required=True)
     ab.add_argument("--dry-run", action="store_true", help="report without writing the spec file")
