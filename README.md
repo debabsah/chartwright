@@ -22,12 +22,13 @@ Chartwright is a command-line tool that manages Apache Superset dashboards as co
 ## Install
 
 ```bash
-pip install chartwright    # Python 3.11 or newer
-```
+pip install chartwright            # Python 3.11 or newer
 
-Two optional extras, only if you need them:
-- `pip install "chartwright[mcp]"` adds an MCP server, so an AI agent can run Chartwright's commands for you ([AI-AGENTS.md](docs/AI-AGENTS.md)).
-- `pip install "chartwright[visual]"` adds a headless browser. `chartwright save-queries` uses it so Superset's CSV and text reports work on the charts Chartwright builds, and one standards check uses it too. After installing it, run `playwright install chromium`.
+# OPTIONAL
+pip install "chartwright[mcp]"     # adds the MCP server for AI clients, chartwright-mcp
+pip install "chartwright[visual]"  # for chartwright save-queries (CSV reports on built charts);
+                                   # then run: playwright install chromium
+```
 
 ## Try it on your Superset
 
