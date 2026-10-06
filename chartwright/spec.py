@@ -1162,7 +1162,8 @@ class HeatmapChart(_ChartBase):
                     "Superset's automatic spacing, which drops labels that would collide",
     )
     y_label_every: int | None = Field(
-        default=None, ge=1, le=50, description="As x_label_every, down the y axis")
+        default=None, ge=1, le=50,
+        description="As x_label_every, counted up the y axis from its bottom label (ECharts steps from index 0, the bottom): with y_order \"a_to_z\", whose first label is on top, a step of 6 on 24 hours labels 23, 17, 11, 05; leave y_order unset to read 00, 06, 12, 18 upward")
     left_margin: int | None = Field(
         default=None, ge=0, le=200,
         description="Room, in px, left of the y-axis labels. Superset 6.1.0 draws them wider "
