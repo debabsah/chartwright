@@ -248,10 +248,12 @@ def test_bars_beside_colour_rules_warn_before_6_1(chart, warned):
     for version in ("4.1.4", "5.0.0", "6.0.0"):
         out = check_spec_version(spec, version)
         assert out.ok
-        got = [(w["field"], w["chart"], w["since"]) for w in out.warnings]
+        # Only the bar warning: a '>' rule also warns for its fade (test_format_rule_gating.py).
+        bars = [w for w in out.warnings if w["field"] == "cell_bars"]
+        got = [(w["field"], w["chart"], w["since"]) for w in bars]
         assert got == ([("cell_bars", "Movers", "6.1.0")] if warned else []), version
         if warned:
-            assert "draws no cell bar on a table with any colour rule" in out.warnings[0]["detail"]
+            assert "draws no cell bar on a table with any colour rule" in bars[0]["detail"]
     assert check_spec_version(spec, "6.1.0").warnings == []
 
 

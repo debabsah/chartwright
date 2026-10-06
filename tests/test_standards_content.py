@@ -1467,7 +1467,7 @@ def test_explain_has_a_dashboard_section(repo, capsys):
         "released", "bnbColors", "supersetColors")
     assert scheme["override"].startswith("it is yours")
     text = run_ok(capsys, "explain", str(path))
-    assert text.splitlines()[0].startswith("Design defaults (design brain 14")
+    assert text.splitlines()[0].startswith("Design defaults (design brain 15")
     assert "Dashboard content (standard org -> finance, via design.standard)" in text
     # A chart field the standard wrote says so in the chart section too.
     k = next(c for c in payload["charts"] if c["chart"] == "K")

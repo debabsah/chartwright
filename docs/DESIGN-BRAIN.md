@@ -1,6 +1,6 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 14** (4 added `narrative.color-scheme`; 5 the
+> **Status: SHIPPED, design brain 15** (4 added `narrative.color-scheme`; 5 the
 > design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
 > a null record after an edit, and `default.stale-record`; 8 one height question
 > for tables and pivots, §15.42; 9 rolling trendline windows, date tiles, and the
@@ -9,7 +9,9 @@
 > `size.table-chrome`; 11 `size.markdown-fit`; 12 `default.heatmap-label-room`, and
 > `data.top-n-sort` on a bar ranked by `sort_by: "total"`; 14 the big-number colour
 > rules: `chart.format-bands` on a KPI, `chart.color-contrast` and
-> `narrative.kpi-thresholds`). This page is both the design and the
+> `narrative.kpi-thresholds`; 15 `chart.format-bands` reading each colour rule's own
+> range, so `>=`, `<=`, `!=` and `between_inclusive` take their bounds in). This page
+> is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design

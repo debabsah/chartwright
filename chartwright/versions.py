@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Literal
 
-from .spec import DashboardSpec
+from .spec import FORMAT_COLOR_HEX, DashboardSpec
 
 Release = tuple[int, int, int]
 
@@ -73,6 +73,33 @@ def _tags(spec: DashboardSpec) -> list[str | None]:
 
 def _charts(predicate) -> Callable[[DashboardSpec], list[str | None]]:
     return lambda spec: [c.name for c in spec.charts if predicate(c)]
+
+
+def _rules(predicate, types=("table", "pivot_table")) -> Callable[[DashboardSpec], list[str | None]]:
+    """Tables and pivots with a colour rule that matches."""
+    return _charts(lambda c: c.type in types and any(predicate(r) for r in c.conditional_formatting))
+
+
+# The cell text a rule's fill sits under before 6.1.0: the table's rgba(0, 0, 0, 0.85),
+# measured on 4.1.4 and 5.0.0 (6.0.0 sets theme.colorText, TableChart.tsx:930, Ant
+# Design's near-black by default), and the pivot's primary.dark2 #156378
+# (react-pivottable/Styles.js:105 at 4.1.4 and 5.0.0, measured on both).
+_CELL_TEXT_BEFORE_6_1 = {"table": (0, 0, 0, 0.85), "pivot_table": (0x15, 0x63, 0x78)}
+_HARD_TO_READ = 3.0  # WCAG's floor for large text; green, amber and red's cell shades clear it
+
+
+def _dark_fills(spec: DashboardSpec) -> list[str | None]:
+    """Charts with a cell-painted hex too dark for the release's own cell text."""
+    from .visible import contrast
+
+    def dark(chart_type, rule) -> bool:
+        if rule.paint != "cell" or rule.color in FORMAT_COLOR_HEX:
+            return False
+        fill = tuple(int(rule.color[i:i + 2], 16) for i in (1, 3, 5))
+        return contrast(_CELL_TEXT_BEFORE_6_1[chart_type], fill) < _HARD_TO_READ
+
+    return [c.name for c in spec.charts if c.type in _CELL_TEXT_BEFORE_6_1
+            and any(dark(c.type, r) for r in c.conditional_formatting)]
 
 
 GATED_FIELDS: tuple[GatedField, ...] = (
@@ -219,6 +246,62 @@ GATED_FIELDS: tuple[GatedField, ...] = (
         warning="{where} asks for cell bars beside colour rules (conditional_formatting), which "
                 "Superset draws together from {since}; {runs}, and {that} draws no cell bar on "
                 "a table with any colour rule.",
+    ),
+    GatedField(
+        "hidden", "6.0.0", "warn",
+        "ignores it: the table shows the column",
+        "column_config visible read at 6.0.0 plugin-chart-table/src/TableChart.tsx:1182 "
+        "(6.1.0 :743); absent at 4.1.4 and 5.0.0",
+        _charts(lambda c: c.type == "table" and c.hidden),
+    ),
+    GatedField(
+        # Every colour but an '=' rule's: Equal's cutoff is its extreme, so getOpacity is 1.
+        "conditional_formatting", "6.1.0", "warn",
+        "fades each colour by the value's distance from its threshold",
+        "useGradient read at 6.1.0 superset-ui-chart-controls/src/utils/getColorFormatters.ts"
+        ":273-276; 4.1.4 and 5.0.0 (:180) and 6.0.0 (:189) always scale the colour by "
+        "getOpacity, from 0.05 at the threshold to 1 at the column's extreme",
+        _rules(lambda r: r.operator != "="),
+        warning="conditional_formatting on {where} paints each band in one solid colour from "
+                "Superset {since}; {runs}, and {that} fades a colour by the value's distance "
+                "from its threshold, so a value just past it is barely tinted. An '=' rule is "
+                "solid on every release.",
+    ),
+    GatedField(
+        # A rule painting its own metric (6.1's popover stores that by default) paints the
+        # same cells everywhere, so only another column or the row counts.
+        "apply_to", "6.1.0", "warn",
+        "paints the rule's own metric cells instead (none, where that column is hidden)",
+        "columnFormatting read at 6.1.0 plugin-chart-table/src/TableChart.tsx:984-1007, passed "
+        "through getColorFormatters.ts:321; 4.1.4 :763, 5.0.0 :768 and 6.0.0 :905 paint only "
+        "the cells of the rule's own column",
+        _rules(lambda r: r.apply_to not in (None, r.metric), ("table",)),
+    ),
+    GatedField(
+        "paint", "6.1.0", "warn",
+        "fills the cell with the text colour instead",
+        "objectFormatting TEXT_COLOR read at 6.1.0 plugin-chart-table/src/TableChart.tsx:966-970 "
+        "and plugin-chart-pivot-table/src/react-pivottable/TableRenderers.tsx:192-194; 4.1.4, "
+        "5.0.0 and 6.0.0 set only the cell background (TableChart.tsx:770 and "
+        "TableRenderers.jsx:710 at 4.1.4)",
+        _rules(lambda r: r.paint == "text"),
+        warning="paint: text on {where} colours the text from Superset {since}; {runs}, and {that} "
+                "fills the cell with that colour instead, under the cell's own dark text, so a "
+                "dark colour (green, amber and red's text shades are) leaves the value hard to "
+                "read. paint: cell reads on every release.",
+    ),
+    GatedField(
+        "color", "6.1.0", "warn",
+        "keeps its own dark cell text on the fill",
+        "getTextColorForBackground (6.1.0 superset-ui-chart-controls/src/utils/"
+        "getColorFormatters.ts:385) picks the cell text at plugin-chart-table/src/"
+        "TableChart.tsx:1024 and react-pivottable/TableRenderers.tsx:219; absent at 4.1.4, "
+        "5.0.0 and 6.0.0",
+        _dark_fills,
+        warning="color on {where} fills cells darker than their text can read on: Superset "
+                "{since} turns such a cell's text white; {runs}, and {that} keeps its own dark "
+                "cell text, under 3:1 contrast on that fill. A lighter colour (green, amber and "
+                "red are) reads on every release.",
     ),
 )
 

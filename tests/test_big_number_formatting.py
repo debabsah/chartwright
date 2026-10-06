@@ -124,7 +124,7 @@ def test_cell_options_are_refused(extra, message):
 @pytest.mark.parametrize("bad, message", [
     ({"operator": "between", "target": 1}, "'between' needs target_left"),
     ({"operator": "<"}, "needs target"),
-    ({"operator": ">=", "target": 1}, "operator"),
+    ({"operator": "=>", "target": 1}, "operator"),
     ({"operator": "<", "target": 1, "color": "teal"}, "green, amber, red or #RRGGBB"),
 ])
 def test_rule_shapes_are_checked_as_on_tables(bad, message):
@@ -177,7 +177,8 @@ def test_decompile_reads_what_the_number_shows_and_names_the_rest():
         base | {"colorScheme": "#ACE1C4"},                           # the cell pastel: a hex
         base | {"colorScheme": "#B3261E", "column": "Old label"},    # any column paints
         base | {"colorScheme": "colorSuccess"},                      # 6.1 theme token
-        base | {"colorScheme": "#B3261E", "operator": "≥"},          # outside the operators
+        base | {"colorScheme": "#B3261E", "operator": "≤ x <",       # a half-open range:
+                "targetValueLeft": 1, "targetValueRight": 2},        # outside the operators
         {"colorScheme": "#B3261E", "operator": ">", "targetValue": 1},  # no column: never paints
     ]
     out = roundtrip(mk(coloured()), edit_rules(rules))
@@ -230,6 +231,46 @@ def test_smoke_warns_when_a_zero_number_loses_its_colour(value, rules, warns):
         assert warning and "never colours" in warning and warns in warning
     assert _zero_colour_warning(mk(kpi()).charts[0], [{"data": [{"Variance": 0}]}]) is None
     assert _zero_colour_warning(spec.charts[0], [{"data": []}]) is None
+
+
+INCLUSIVE = [{"operator": "<=", "target": -0.02, "color": "red"},
+             {"operator": ">=", "target": 0.02, "color": "red"},
+             {"operator": "!=", "target": 0, "color": "amber"},
+             {"operator": "between_inclusive", "target_left": 0.5, "target_right": 0.6,
+              "color": "green"}]
+
+
+def test_a_big_number_takes_every_table_operator():
+    """Superset builds a big number's rules with the table's getColorFormatters
+    (BigNumberTotal/transformProps.ts 4.1.4 :99, 6.1.0 :121), so every comparator a
+    table rule has colours the number too: compiled, read back, tested and described."""
+    spec = mk(coloured(INCLUSIVE))
+    p = params_for(coloured(INCLUSIVE))
+    assert [cf["operator"] for cf in p["conditional_formatting"]] == ["≤", "≥", "≠", "≤ x ≤"]
+    assert p["conditional_formatting"][3]["targetValueLeft"] == 0.5
+    out = roundtrip(spec)
+    assert out.losses == [], out.losses_json()
+    assert _normalize(load_spec(out.spec))["charts"] == _normalize(spec)["charts"]
+    rules = spec.charts[0].conditional_formatting
+    assert [r.matches(0.02) for r in rules] == [False, True, True, False]
+    assert [r.matches(0.5) for r in rules] == [False, True, True, True]
+    zero = [{"data": [{"Variance": 0}]}]
+    assert _zero_colour_warning(spec.charts[0], zero) is None  # no rule takes 0 ('!= 0' doesn't)
+    at_most = mk(coloured([{"operator": "<=", "target": 0, "color": "red"}]))
+    assert "the red its rules give 0" in _zero_colour_warning(at_most.charts[0], zero)
+    [f] = findings(coloured(INCLUSIVE), rule="narrative.kpi-thresholds")
+    assert ("red at or below -0.02; red at or above 0.02; amber except at 0; "
+            "green from 0.5 to 0.6") in f.detail
+
+
+def test_inclusive_kpi_bands_that_share_a_bound_overlap():
+    touching = [{"operator": "<=", "target": 0.02, "color": "green"},
+                {"operator": ">=", "target": 0.02, "color": "red"}]
+    [f] = findings(coloured(touching, description="0.02"), rule="chart.format-bands")
+    assert f.severity == "warn"
+    apart = [{"operator": "<=", "target": 0.02, "color": "green"},
+             {"operator": ">", "target": 0.02, "color": "red"}]
+    assert findings(coloured(apart, description="0.02"), rule="chart.format-bands") == []
 
 
 # -- the design brain ----------------------------------------------------------------

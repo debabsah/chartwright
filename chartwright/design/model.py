@@ -58,7 +58,10 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "14" = big-number colour rules: chart.format-bands reads them (and no longer counts an
 # '=' band as everything above it), chart.color-contrast (warn) and
 # narrative.kpi-thresholds (info). A new warn rule can newly block a strict gate.
-DESIGN_BRAIN_VERSION = "14"
+# "15" = chart.format-bands reads each colour rule's own range: the new >=, <=, != and
+# between_inclusive operators take their bounds in, and an '=' rule stays one value.
+# Findings change, no rule is added.
+DESIGN_BRAIN_VERSION = "15"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

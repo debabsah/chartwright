@@ -23,6 +23,7 @@ from .spec import (
     BRIDGE_TOTAL,
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
+    FORMAT_RANGE_OPERATORS,
     FUNNEL_LABEL_TYPES,
     HEATMAP_DEFAULT_SCHEME,
     OPENING_KEY_GAP,
@@ -138,10 +139,14 @@ def _metric_payload(metric: str, slug: str, chart_name: str) -> str | dict:
     }
 
 
-# Spec operator -> Superset's Comparator value. A range is '< x <' in every
-# supported release (types.ts at 4.1.4/5.0.0/6.1.0); the literal "between"
-# matches no comparator, and getColorFormatters' default case colours nothing.
-FORMAT_OPERATOR = {"<": "<", ">": ">", "=": "=", "between": "< x <"}
+# Spec operator -> Superset's Comparator value (superset-ui-chart-controls types.ts:
+# 4.1.4 :434-446, 6.1.0 :456-467). A range is '< x <' in every supported release; the
+# literal "between" matches no comparator, and getColorFormatters' default case colours
+# nothing. Each one has its case in getColorFunction at every release (getColorFormatters.ts
+# '≥' 4.1.4/5.0.0 :113, 6.0.0 :122, 6.1.0 :141; '≤ x ≤' :153, :162, :191) and its entry
+# in the rule popover (FormattingPopoverContent.tsx:55-60 at 4.1.4, constants.ts:26-31 at 6.1.0).
+FORMAT_OPERATOR = {"<": "<", ">": ">", "=": "=", ">=": "≥", "<=": "≤", "!=": "≠",
+                   "between": "< x <", "between_inclusive": "≤ x ≤"}
 
 
 def _band_payload(rule, column: str) -> dict:
@@ -149,12 +154,13 @@ def _band_payload(rule, column: str) -> dict:
         "column": column,
         "colorScheme": rule.paint_hex(),
         "operator": FORMAT_OPERATOR[rule.operator],
-        # A rule is a solid band. Left unset, Superset fades '<' / '>' / range
-        # colours by distance from the threshold (getColorFormatters.getOpacity);
-        # useGradient is honoured from 6.x and ignored by 4.1.4/5.0.0.
+        # A rule is a solid band. Left unset, Superset fades every colour but '='s by
+        # distance from the threshold (getColorFormatters.getOpacity); useGradient is read
+        # from 6.1.0 (getColorFormatters.ts:273-276) and ignored by 4.1.4, 5.0.0 and 6.0.0,
+        # which fade regardless (versions.GATED_FIELDS warns).
         "useGradient": False,
     }
-    if rule.operator == "between":
+    if rule.operator in FORMAT_RANGE_OPERATORS:
         out["targetValueLeft"] = rule.target_left
         out["targetValueRight"] = rule.target_right
     else:
@@ -178,7 +184,8 @@ def _format_rule_payload(rule) -> dict:
         out["objectFormatting"] = "TEXT_COLOR"
     if rule.apply_to:
         # The 6.1 table's "apply to": another column's key, or the whole row
-        # (TableChart.tsx reads columnFormatting; ObjectFormattingEnum.ENTIRE_ROW).
+        # (TableChart.tsx:984-1007 at 6.1.0 reads columnFormatting; ObjectFormattingEnum.ENTIRE_ROW).
+        # Older tables paint only rule.column's own cells (TableChart.tsx:763 at 4.1.4).
         out["columnFormatting"] = "ENTIRE_ROW" if rule.apply_to == "row" else rule.apply_to
     return out
 

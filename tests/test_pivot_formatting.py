@@ -136,7 +136,10 @@ def test_decompile_roundtrip_helpers():
     assert _format_to_spec({"column": "% of Goal", "colorScheme": "rgba(0,0,0,1)",
                             "operator": "<", "targetValue": 1.0}) is None
     assert _format_to_spec({"column": "% of Goal", "colorScheme": "#ACE1C4",
-                            "operator": "≤", "targetValue": 1.0}) is None
+                            "operator": "≤", "targetValue": 1.0})["operator"] == "<="
+    # a half-open range has no spec operator
+    assert _format_to_spec({"column": "% of Goal", "colorScheme": "#ACE1C4", "operator": "≤ x <",
+                            "targetValueLeft": 1.0, "targetValueRight": 2.0}) is None
 
 
 def test_full_roundtrip_compile_then_decompile():

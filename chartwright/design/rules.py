@@ -21,6 +21,7 @@ from ..spec import (
     DEFAULT_HEIGHT,
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
+    FORMAT_RANGE_OPERATORS,
     FORMAT_TEXT_HEX,
     SUPERSET_COLOR_SCHEMES,
     WATERFALL_DEFAULT_HEX,
@@ -1043,6 +1044,29 @@ def pivot_columns(ctx: RuleContext):
             )
 
 
+def _rule_ranges(r) -> list[tuple[float, bool, float, bool]]:
+    """The values a colour rule colours, as (low, low included, high, high included)
+    intervals: "=" is one point, "!=" everything either side of it."""
+    inf = float("inf")
+    if r.operator in FORMAT_RANGE_OPERATORS:
+        closed = r.operator == "between_inclusive"
+        return [(r.target_left, closed, r.target_right, closed)]
+    t = r.target
+    return {"<": [(-inf, False, t, False)], "<=": [(-inf, False, t, True)],
+            ">": [(t, False, inf, False)], ">=": [(t, True, inf, False)],
+            "=": [(t, True, t, True)],
+            "!=": [(-inf, False, t, False), (t, False, inf, False)]}[r.operator]
+
+
+def _overlap(a, b) -> bool:
+    """Whether two such intervals share a value; a shared bound counts only when both
+    take it in (>= 80 and <= 80 share 80, > 80 and <= 80 share nothing)."""
+    (a0, ai, a1, aj), (b0, bi, b1, bj) = a, b
+    lo, lo_in = (a0, ai) if a0 > b0 else (b0, bi) if b0 > a0 else (a0, ai and bi)
+    hi, hi_in = (a1, aj) if a1 < b1 else (b1, bj) if b1 < a1 else (a1, aj and bj)
+    return lo < hi or (lo == hi and lo_in and hi_in)
+
+
 @rule("chart.format-bands", "warn", "conditional-formatting bands must tell one coherent story per metric",
       since="2", severities=("warn", "info"))
 def format_bands(ctx: RuleContext):
@@ -1052,20 +1076,14 @@ def format_bands(ctx: RuleContext):
         kpi = c.type == "big_number_total"
         by_metric: dict[str, list] = {}
         for r in c.conditional_formatting:
-            # Superset's bands are open ('<', '>', '< x <'); '=' is the one point.
-            lo, hi = ((r.target_left, r.target_right) if r.operator == "between"
-                      else (float("-inf"), r.target) if r.operator == "<"
-                      else (r.target, r.target) if r.operator == "="
-                      else (r.target, float("inf")))
             # compared by the shade painted, so "green" and its own hex agree
             by_metric.setdefault(c.metric if kpi else r.metric, []).append(
-                (lo, hi, r.color, r.paint_hex()))
+                (_rule_ranges(r), r.color, r.paint_hex()))
         for metric, bands in by_metric.items():
             for i in range(len(bands)):
                 for j in range(i + 1, len(bands)):
-                    (a0, a1, ca, ha), (b0, b1, cb, hb) = bands[i], bands[j]
-                    meet = (a0 == a1 == b0 == b1) or (a0 < b1 and b0 < a1)
-                    if meet and ha != hb:
+                    (ra, ca, ha), (rb, cb, hb) = bands[i], bands[j]
+                    if ha != hb and any(_overlap(a, b) for a in ra for b in rb):
                         # Superset paints a big number with the last rule that matches.
                         detail = (f"{ca} and {cb} bands overlap (the number takes the later "
                                   f"rule's colour where they meet, not one the value earns)"
@@ -1081,7 +1099,7 @@ def format_bands(ctx: RuleContext):
             if len(bands) == 1 and not kpi:
                 yield Finding(
                     "chart.format-bands", "info", c.name, ctx.where(c.name),
-                    f"metric {metric!r} has a single {bands[0][2]} band: one color is "
+                    f"metric {metric!r} has a single {bands[0][1]} band: one color is "
                     f"decoration, not a signal; band the full green/amber/red story "
                     f"or drop it",
                 )
@@ -1524,9 +1542,13 @@ def _threshold(v: float) -> str:
 
 
 def _band_text(r) -> str:
-    if r.operator == "between":
-        return f"{r.color} between {_threshold(r.target_left)} and {_threshold(r.target_right)}"
-    return f"{r.color} {({'<': 'below', '>': 'above', '=': 'at'})[r.operator]} {_threshold(r.target)}"
+    if r.operator in FORMAT_RANGE_OPERATORS:
+        how = "between" if r.operator == "between" else "from"
+        join = "and" if r.operator == "between" else "to"
+        return f"{r.color} {how} {_threshold(r.target_left)} {join} {_threshold(r.target_right)}"
+    word = {"<": "below", ">": "above", "=": "at", "<=": "at or below", ">=": "at or above",
+            "!=": "except at"}[r.operator]
+    return f"{r.color} {word} {_threshold(r.target)}"
 
 
 @rule("narrative.kpi-thresholds", "info",

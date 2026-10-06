@@ -593,6 +593,12 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Country Movers", {"color_pn": True}),
     ("Country Movers", {"show_cell_bars": True}),
     ("Sales Pivot", {"transposePivot": False}),
+    # a colour rule's '≤' changed to '<' in the UI
+    ("Sales Pivot", {"conditional_formatting": [
+        {"column": "COUNT(*)", "colorScheme": "#EFA1AA", "operator": "<", "targetValue": 5,
+         "useGradient": False},
+        {"column": "COUNT(*)", "colorScheme": "#ACE1C4", "operator": "≥", "targetValue": 20,
+         "useGradient": False}]}),
     ("Line by Deal Size", {"show_percentage": True}),
     ("Countries by Deal Size", {"x_axis_sort": "name"}),
     ("Lines by Quantity", {"x_axis_sort": "SUM(sales)"}),
