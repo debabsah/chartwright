@@ -15,7 +15,9 @@ Each Superset dashboard is defined by a spec file listing its charts, filters, l
 | Rebuild your dashboards on a new Superset version from the same specs | Checking and repairing charts by hand when an upgrade leaves them blank in the editor ([#32725](https://github.com/apache/superset/discussions/32725)) | [SUPERSET-VERSIONS.md](docs/SUPERSET-VERSIONS.md) |
 | Create dashboards from code without reverse-engineering Superset's JSON | Working out the undocumented layout JSON, `position_json` ([#32970](https://github.com/apache/superset/discussions/32970)) | [DASHBOARDS-FROM-CODE.md](docs/DASHBOARDS-FROM-CODE.md) |
 
-> [VISUAL: The dashboard the example spec below builds: Revenue by Month, one line per region, on the left two-thirds; Revenue and Orders stacked on the right; the Order date filter in the filter bar. Format: screenshot, light and dark variants. Caption: "Built from orders.json below with `chartwright apply`."]
+![The Sundown dashboard, scrolling through its Overview, Evening ramp, Storage and Supply tabs, then About](docs/images/sundown.webp)
+
+*Sundown, a six-tab dashboard built from [one spec](examples/sundown/sundown.json) with `chartwright apply`.*
 
 ## Install
 
