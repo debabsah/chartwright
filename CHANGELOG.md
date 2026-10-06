@@ -5,7 +5,18 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ## Unreleased
 
+### Upgrading
+
+- The design brain is version 8. `advise` now flags a table whose height can't show every row its `row_limit` allows, as the smoke check after `apply` does when the data fills it; before, it passed a table that showed half. A `--design strict` or `advise --strict` gate can newly fail on such a table. To keep the old threshold for tables that rarely reach their `row_limit`, set `table_visible_ratio: 0.5` in `design.yaml` or a standards file.
+
 ### Fixed
+
+- `advise` and the smoke check after `apply` now ask the same height question of tables and pivots, so they no longer disagree:
+  - a table: advise names the height smoke names once the data fills `row_limit` (a 25-row table at 13 units now gets "raise height to ~21" from both);
+  - a pivot: `size.pivot-window` no longer reads `row_limit` as the pivot's rows. `row_limit` caps the query's records, which are rows times columns, so a 5-row cause by month pivot was told it showed "~0 of 1000 rows" and to grow to 331 units. Offline, the rule now checks only what the spec fixes (its header rows, totals row and first row) and says so; `advise --profile` counts each row dimension's values and gives the height smoke gives;
+  - messages name what takes the room: the card frame, each header row, the totals row and room for a horizontal scrollbar.
+- Height estimates count what a pivot draws in every layout: a transposed pivot is sized by its column dimension, metrics laid out as rows multiply its rows, `row_subtotals` adds its subtotal rows, and a pivot with no row dimension is its totals row. A table's `show_totals` row now takes a row of height too, in the checks and in the page size `advise --fix` fills.
+- The smoke check queries a table or pivot without a `row_limit` for as many rows as the chart does (10,000 for a pivot, 1,000 for a table), so a large pivot's height check counts all its rows.
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 

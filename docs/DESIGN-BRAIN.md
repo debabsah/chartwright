@@ -1,8 +1,9 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 7** (4 added `narrative.color-scheme`; 5 the
+> **Status: SHIPPED, design brain 8** (4 added `narrative.color-scheme`; 5 the
 > design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
-> a null record after an edit, and `default.stale-record`). This page is both the design and the
+> a null record after an edit, and `default.stale-record`; 8 one height question
+> for tables and pivots, §15.42). This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -232,7 +233,7 @@ minus Superset chrome is ≈ 22 units).
 | `kpi_height` | 5 | 4 | 3 |
 | `min_axis_height` | 8 | 6 | 5 |
 | `max_filter_selects` | 5 | 6 | 7 |
-| `table_visible_ratio` (min visible/row_limit) | 0.5 | 0.5 | 0.5 |
+| `table_visible_ratio` (min visible/row_limit) | 1 | 1 | 1 |
 | `vbar_max_categories` | 6 | 8 | 8 |
 | `pie_max_slices` | 5 | 7 | 7 |
 | `series_max` (lines per timeseries) | 5 | 10 | 8 |
@@ -360,9 +361,9 @@ fails when it drifts.
 | `size.kpi-height` | warn | ✔ | - | 1 | big numbers read best at 2-6 units |
 | `size.min-width` | warn/error | - | - | 2 | below 3/12 width a chart is unreadable; KPIs need 2/12 |
 | `size.pie-geometry` | warn | ✔ | - | 1 | pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds |
-| `size.pivot-window` | warn | ✔ | - | 2 | a pivot's height should show a meaningful share of its row_limit |
+| `size.pivot-window` | warn | ✔ | - | 2 | a pivot's height must hold its header rows, totals row and the body rows its spec fixes (advise --profile counts the rest) |
 | `size.row-harmony` | warn | ✔ | - | 1 | charts sharing a row should share a height (Superset sizes the row to its tallest child) |
-| `size.table-window` | warn | ✔ | - | 1 | a table's height should show a meaningful share of its row_limit |
+| `size.table-window` | warn | ✔ | - | 1 | a table's height should show every row its row_limit allows, or one whole page |
 | `standard.classification` | error | - | - | 6 | the dashboard's classification is one the standard lists |
 | `standard.content-locked` | error | - | - | 6 | content a standard locks is in the spec as the standard has it (standards apply writes it; a change goes through the standard's file) |
 | `standard.content-released` | info | - | - | 6 | content a standard has that the author took over (edited or removed): the author's now, and standards apply leaves it alone |
@@ -515,12 +516,19 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   Smoke now compares the rows its query already fetched against the
   configured height and warns on every apply (`~9 leaf rows (~433px) but
   height=8 (320px)`); the data-aware `size.grid-fit` rule catches the same
-  class pre-apply for single-dimension grids. All of it, meaning smoke,
+  class pre-apply from probed row counts (exact for one row dimension, a lower
+  bound for more). All of it, meaning smoke,
   `size.grid-fit`, `size.table-window`, `size.pivot-window`, and the
-  page-length and search-box fills, reads ONE grid model (`grid_header`,
-  `grid_units_for_rows` and `grid_rows_visible` in `chartwright/spec.py`,
-  measured in §17), so the offline critic, the data-aware critic, the fills and
-  the apply-time warning cannot give one chart different verdicts.
+  page-length and search-box fills, reads ONE grid model (`grid_fit`,
+  `grid_header`, `grid_units_for_rows` and `grid_rows_visible` in
+  `chartwright/spec.py`, measured in §17), and asks it one question: does every
+  body row the chart draws fit? They differ only in where the row count comes
+  from: the rows the query returned (smoke), a probe (`size.grid-fit`), the
+  row_limit ceiling (`size.table-window`), or what the spec alone fixes
+  (`size.pivot-window`). A pivot's rows are its distinct row keys
+  (`pivot_rows`), never its records, so the offline critic, the data-aware
+  critic, the fills and the apply-time warning cannot give one chart different
+  verdicts (§15.42).
 - **Chart identity:** no rule may ever autofix a chart `name`: names seed
   uuid5 identity; a rename is a delete+create on the live instance.
 - **`plan`/golden tests:** advise is pure spec-side analysis; compiled bytes
@@ -1049,6 +1057,49 @@ onwards):
     spec, so nothing shows as drift. `standards check --superset-version`
     previews the holding offline.
 
+Recorded in brain 8 (the airline showcase's height findings):
+
+42. **One height question for tables and pivots, everywhere.** The model was
+    shared since §15.11, but the question was not, and the showcase build hit
+    all three gaps on Superset 6.1.0:
+    - `size.table-window` passed a table when half its row_limit showed
+      (`table_visible_ratio` 0.5, §15.12), while smoke warns when any row the
+      query returned hides. A 25-row table at 13 units passed advise, then
+      smoke asked for ~22. The ratio is now 1 for every audience, and the
+      rule's target is every row whatever the ratio, so advise gives the
+      number smoke gives once the data fills row_limit. It stays a knob for
+      tables that rarely reach their row_limit. This tightens §15.12 rather
+      than reversing it: hidden rows are the defect both rules exist for.
+    - `size.pivot-window` read row_limit as the pivot's rows. row_limit caps
+      the query's records, which are rows x columns, so a 5-cause by month
+      pivot with row_limit 1000 was told it showed "~0 of 1000 rows" and to
+      grow to 331 units. A pivot draws a row per distinct row key
+      (`pivot_rows`, from PivotData in 6.1.0's react-pivottable). Offline the
+      rule now checks only what the spec fixes: the card frame, the header
+      rows, the totals row and the first body row, and it reports without a
+      fix, because a height that still hides rows would only move the warning
+      to smoke. It fixes a pivot whose rows the spec fixes outright (no row
+      dimension). Under `--profile`, `size.grid-fit` counts each row
+      dimension with the bounded probes of §8 and owns the chart, and
+      `size.table-window` likewise leaves a probed table to it, so one advise
+      run never gives one chart two height targets.
+    - Smoke's own pivot estimate was already right after §17 (a 5-row pivot
+      by month with a totals row needs 9 units, and it says so). The "5.7
+      header units" the old message printed was the card frame (2.55), three
+      header rows (1.98), the totals row (0.72) and the scrollbar allowance
+      (0.45); 6.1.0's styles give the same body row as the measurement (12 px
+      text at line-height 1.4, 4 px padding each side and a 1 px rule:
+      25.8 px). Messages now name those parts.
+
+    The pivot's structure comes from 6.1.0's source, not new measurements:
+    `transpose` swaps the dimensions; metrics laid out as rows multiply the
+    rows; `row_subtotals` adds a row per distinct key prefix; a pivot without
+    row dimensions draws only its totals row. Smoke counted `rows` for all of
+    them, so a transposed pivot was sized by the wrong dimension. A table's
+    `show_totals` Summary row now counts as one body row, and smoke queries a
+    table or pivot with the compiler's row_limit default, not 1,000, so it
+    sees every row the chart draws.
+
 ## 16. Design defaults (fills)
 
 Some display fields have one sensible value the spec can work out on its
@@ -1346,10 +1397,14 @@ two dates. Superset's `Last year` spans 365 days and still takes the fill.
 - Other viewports and themes. The constants are pixel sizes, so a
   deployment with a larger font or denser theme needs its own measurement.
 - Windows scrollbars. The 17 px allowance comes from the platform default,
-  not from a rendered measurement.
-- Pivot subtotal rows (`row_subtotals`), transposed pivots, metrics laid out
-  as rows, and wrapped header text. They draw extra rows the model does not
-  count.
+  not from a rendered measurement. 6.1.0 styles the pivot's own scrollbar at
+  8 px (`PivotTableChart.tsx`), so the allowance is generous there.
+- Pivot subtotal rows (`row_subtotals`), transposed pivots and metrics laid
+  out as rows. The model counts their rows and header rows from 6.1.0's
+  source (§15.42) at the measured row heights, which were not checked on a
+  rendered chart.
+- A table's Summary row (`show_totals`), counted as one body row from 6.1.0's
+  source, and wrapped header text, which the model does not count.
 - Wide raw tables that scroll sideways. The model reserves no scrollbar room
   for tables.
 - Vertical bars at 5/12, and labels longer than six characters.

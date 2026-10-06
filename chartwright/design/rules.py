@@ -22,11 +22,16 @@ from ..spec import (
     DEFAULT_TIME_GRAIN,
     SUPERSET_COLOR_SCHEMES,
     HeaderBlock,
+    PIVOT_METRIC,
     _ColorSchemeMixin,
-    grid_header,
+    grid_fit,
     grid_rows_visible,
     grid_units_for_rows,
+    pivot_axes,
+    pivot_frame,
+    pivot_rows_from_counts,
     row_items,
+    table_page,
     without_superset_defaults,
 )
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
@@ -142,12 +147,64 @@ def heatmap_geometry(ctx: RuleContext):
             )
 
 
-def _table_page(c) -> int | None:
-    """Rows on one page of a paged table (page_length > 0), never more than row_limit;
-    None when every row is on one page."""
-    if not getattr(c, "page_length", None):
+_PROBE_CAP = 60  # distinct values a grid probe counts before it saturates
+
+
+def _row_dims(c) -> list[str]:
+    """The dimensions a table's or pivot's body rows are keyed on: a pivot's row
+    attributes less the metric names (spec.pivot_axes), an aggregate table's groupby."""
+    if c.type == "pivot_table":
+        return [a for a in pivot_axes(c)[0] if a != PIVOT_METRIC]
+    return list(c.groupby or []) if not c.columns else []
+
+
+def _counted(c, dims: list[str]) -> str:
+    """What a grid's row count counts, for a finding: the dimensions, and the metrics
+    when a pivot lays them out as rows."""
+    what = " x ".join(repr(d) for d in dims)
+    if c.type == "pivot_table" and len(c.metrics) > 1 and PIVOT_METRIC in pivot_axes(c)[0]:
+        what = f"{what} x {len(c.metrics)} metrics" if what else f"{len(c.metrics)} metrics"
+    return what
+
+
+def _probed_rows(ctx: RuleContext, c) -> tuple[int, int, bool] | None:
+    """(leaf rows, subtotal rows, exact) a table or pivot draws, from one bounded
+    distinct count per row dimension (advise --profile; the probes are cached). None
+    offline, when a probe fails, or for a chart a per-column count can't size (a raw
+    table, a grid with no row dimension). Exact with one dimension that didn't saturate
+    the probe; otherwise a lower bound. size.grid-fit reports it; size.table-window and
+    size.pivot-window leave a chart it sizes to that rule, so one advise run never
+    gives a chart two height targets."""
+    dims = _row_dims(c) if c.type in ("table", "pivot_table") else []
+    if ctx.prober is None or not dims or (ds := ctx.dataset_for(c)) is None:
         return None
-    return min(c.page_length, c.row_limit) if c.row_limit else c.page_length
+    # row_limit caps the records, so the distinct row keys too (a pivot's records are
+    # rows x columns, never fewer than its rows).
+    cap = c.row_limit or DEFAULT_ROW_LIMIT[c.type]
+    probe_cap = min(cap, _PROBE_CAP)
+    counts, saturated = {}, False
+    for d in dims:
+        n = ctx.prober.count_up_to(ds, d, probe_cap)
+        if n is None:
+            return None
+        saturated |= n > probe_cap and probe_cap < cap
+        counts[d] = min(n, cap)
+    if c.type == "pivot_table":
+        leaf, subtotals, exact = pivot_rows_from_counts(c, counts)
+    else:
+        leaf, subtotals, exact = min(max(counts.values()), cap), 0, len(dims) == 1
+    return leaf, subtotals, exact and not saturated
+
+
+def _pivot_overhead(c) -> str:
+    """What a pivot draws besides its body rows, in words (spec.pivot_frame)."""
+    header_rows, hscroll, totals = pivot_frame(c)
+    parts = ["the card frame", f"{header_rows} header row" + ("s" if header_rows != 1 else "")]
+    if totals:
+        parts.append("its totals row")
+    if hscroll:
+        parts.append("room for a horizontal scrollbar")
+    return ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
 def _brain_page(ctx: RuleContext, c) -> bool:
@@ -160,37 +217,42 @@ def _brain_page(ctx: RuleContext, c) -> bool:
     return ctx.brain_owns(c, "page_length")
 
 
-@rule("size.table-window", "warn", "a table's height should show a meaningful share of its row_limit",
-      fixable=True)
+@rule("size.table-window", "warn", "a table's height should show every row its row_limit allows, "
+      "or one whole page", fixable=True)
 def table_window(ctx: RuleContext):
     for c in ctx.spec.charts:
         if c.type != "table" or (c.row_limit is None and not c.page_length):
             continue
+        if _probed_rows(ctx, c) is not None:
+            continue  # size.grid-fit sizes it by its real row count
         h = ctx.height(c.name)
-        # Same grid model as size.grid-fit, the fills and apply-time smoke (spec.py):
-        # offline this can only reason about row_limit (the ceiling), where grid-fit
-        # probes the real count, but all of them measure a table the same way. The
-        # header counts the search bar, the page-size bar and the pager the chart draws.
-        header, row = grid_header(c, c.row_limit)
+        # The question smoke asks after apply, of the most rows the table can render:
+        # row_limit (the ceiling, which a top-N or raw table reaches), or one page. Same
+        # grid_fit as size.grid-fit, the fills and smoke (spec.py); the header counts
+        # the search bar, the page-size bar, the pager and the Summary row it draws.
+        held, header, row = grid_fit(c, c.row_limit)
         visible = grid_rows_visible(h, header, row)
         # Whole rows, rounded down: rounding 6.67 up once told a 6-row page it showed
         # ~7 rows while asking for more height (the pager was what didn't fit).
         fits = f"table at {h:g} units fits {math.floor(visible)} full rows"
-        page = _table_page(c)
+        page = table_page(c)
         if page is not None:
             # A paged table shows one page at a time, plus its page controls: the whole
             # page should fit, but rows beyond it are a click away, not a scroll.
             want = page
             shown = f"{fits} beside its page controls, short of its {page}-row page"
         else:
+            # table_visible_ratio is 1 by default: the target is every row either way,
+            # so advise never passes a height smoke then flags when the data fills it.
             want = ctx.params.table_visible_ratio * c.row_limit
-            shown = f"{fits} of its {c.row_limit}"
+            shown = (f"{fits} of its {c.row_limit}; the rest hide behind an inner scrollbar "
+                     f"once the data fills row_limit")
         if visible < want:
             brain = page is not None and _brain_page(ctx, c)
-            target = grid_units_for_rows(want, header, row)
+            target = grid_units_for_rows(held, header, row)
             yield Finding(
                 "size.table-window", "warn", c.name, ctx.where(c.name),
-                f"{shown} (a scroll dungeon); "
+                f"{shown}; "
                 + ("the page is a design default: advise --fix refits it to the panel"
                    if brain else
                    f"raise height to ~{math.ceil(target)} or "
@@ -219,72 +281,89 @@ def hbar_window(ctx: RuleContext):
         )
 
 
-@rule("size.pivot-window", "warn", "a pivot's height should show a meaningful share of its row_limit",
-      fixable=True, since="2")
+@rule("size.pivot-window", "warn", "a pivot's height must hold its header rows, totals row and the "
+      "body rows its spec fixes (advise --profile counts the rest)", fixable=True, since="2")
 def pivot_window(ctx: RuleContext):
+    """A pivot draws a body row per distinct row key, never per record: row_limit caps
+    the records (rows x columns), so it says nothing about the rows on screen. Offline
+    the spec fixes only a floor: a row per metric laid out as rows, at least one value
+    per row dimension, and no body row at all without row attributes (spec.pivot_rows).
+    The count beyond it is size.grid-fit's, from probes, and smoke's, from the data."""
     for c in ctx.spec.charts:
-        if c.type != "pivot_table" or c.row_limit is None:
-            continue
+        if c.type != "pivot_table" or _probed_rows(ctx, c) is not None:
+            continue  # a probed pivot is size.grid-fit's: it knows the real row count
+        dims = _row_dims(c)
+        leaf, subtotals, _ = pivot_rows_from_counts(c, dict.fromkeys(dims, 1))
+        held, header, row = grid_fit(c, leaf + subtotals)
+        needed = grid_units_for_rows(held, header, row)
         h = ctx.height(c.name)
-        # Header rows per column dimension, the horizontal-scrollbar allowance and the
-        # pinned totals row: the shared grid model (spec.py), the one smoke reads.
-        header, row = grid_header(c)
-        visible = grid_rows_visible(h, header, row)
-        want = ctx.params.table_visible_ratio * c.row_limit
-        if visible < want:
-            target = grid_units_for_rows(want, header, row)
+        if needed <= h:
+            continue
+        frame = f"{_pivot_overhead(c)} ({round(header, 2):g} units)"
+        if not dims:
+            # Exact: without a row dimension the spec fixes every row the pivot draws.
             yield Finding(
                 "size.pivot-window", "warn", c.name, ctx.where(c.name),
-                f"pivot shows ~{math.floor(visible)} of {c.row_limit} rows at {h:g} units "
-                f"({header:g} header units); raise height to "
-                f"~{math.ceil(target)} or lower row_limit",
-                fix=ctx.fix_height(c, math.ceil(target)) if target <= 20 else None,
+                f"pivot at {h:g} units: " + (f"its {held} rows beside " if held else "")
+                + f"{frame} need ~{math.ceil(needed)} units; raise height to ~{math.ceil(needed)}",
+                fix=ctx.fix_height(c, math.ceil(needed)) if needed <= 20 else None,
                 height_driven=True,
             )
+            continue
+        # A floor only, so no fix: one that still hides rows would only move the warning
+        # to smoke. The count that sizes the pivot comes from --profile or the data.
+        first = "the first row" if held == 1 else f"the first {held} rows"
+        per = " x ".join(repr(d) for d in dims) + " value" + (
+            " and metric" if len(c.metrics) > 1 and PIVOT_METRIC in pivot_axes(c)[0] else "")
+        yield Finding(
+            "size.pivot-window", "warn", c.name, ctx.where(c.name),
+            f"pivot at {h:g} units holds {math.floor(grid_rows_visible(h, header, row))} "
+            f"full rows beside {frame}; with a row per {per} it needs "
+            f"~{math.ceil(needed)} units for {first} and {row:g} for each more: "
+            f"advise --profile counts them",
+            height_driven=True,
+        )
 
 
 @rule("size.grid-fit", "warn", "table/pivot heights must fit their data-driven row counts (they grow after authoring)",
       fixable=True, data_aware=True, since="2")
-def grid_fit(ctx: RuleContext):
+def grid_fit_rule(ctx: RuleContext):
     """Pre-apply half of issue #1 (the apply-time half lives in smoke): probe
     the actual dimension cardinality and check the configured height fits.
-    Honest scope: single row-dimension pivots and single-groupby aggregate
-    tables -- multi-dim leaf counts aren't knowable from per-column probes."""
+    Exact for one row dimension (a single-groupby aggregate table, a pivot with one
+    row dimension, its metrics laid out as rows or not); with more, per-column probes
+    give only a lower bound (the largest count), reported without a fix."""
     if ctx.prober is None:
         return
     for c in ctx.spec.charts:
-        if c.type == "pivot_table" and len(c.rows) == 1:
-            dim = c.rows[0]
-        elif c.type == "table" and (c.groupby or []) and len(c.groupby) == 1 and not c.columns:
-            dim = c.groupby[0]
-        else:
+        probed = _probed_rows(ctx, c)
+        if probed is None:
             continue
-        ds = ctx.dataset_for(c)
-        if ds is None:
-            continue
-        cap = c.row_limit or 60
-        n = ctx.prober.count_up_to(ds, dim, min(cap, 60))
-        if n is None:
-            continue
-        n = min(n, cap)
-        # Shared grid model (chartwright/spec.py), same numbers smoke uses: the
-        # header counts the controls, pager, header rows and totals the chart draws.
-        header, row = grid_header(c, n)
-        page = _table_page(c) if c.type == "table" else None
-        if page is not None:
-            n = min(n, page)  # one page (its pager is in the header), not every row
-        needed = math.ceil(grid_units_for_rows(n, header, row))
+        leaf, subtotals, exact = probed
+        # Shared grid model (chartwright/spec.py), the grid_fit smoke calls: the header
+        # counts the controls, pager, header rows and totals the chart draws, and a
+        # paged table holds one page (its pager is in the header), not every row.
+        held, header, row = grid_fit(c, leaf + subtotals)
+        needed = math.ceil(grid_units_for_rows(held, header, row))
         h = ctx.height(c.name)
         if needed <= h:
             continue
         # A brain-filled page follows the height: report, but leave the fix to the fill.
-        brain = page is not None and _brain_page(ctx, c)
+        brain = c.type == "table" and table_page(c) is not None and _brain_page(ctx, c)
+        totals = pivot_frame(c)[2] if c.type == "pivot_table" else c.show_totals
+        about = "~" if exact else "at least "
+        paged = held != leaf + subtotals  # more rows than a page: the page is exact
         yield Finding(
             "size.grid-fit", "warn", c.name, ctx.where(c.name),
-            f"{dim!r} yields ~{n} rendered rows needing ~{needed} units; height {h:g} "
-            f"hides the tail behind an inner scrollbar -- and row counts grow with the "
-            f"data, so this only gets worse",
-            fix=ctx.fix_height(c, needed) if needed <= 20 and not brain else None,
+            f"{_counted(c, _row_dims(c))} yields {about}{leaf} rendered rows"
+            + (f", {subtotals} subtotal rows" if subtotals else "")
+            + (" and a totals row" if totals else "")
+            + (f"; its {held}-row page needs ~{needed} units" if paged
+               else f" needing {about}{needed} units")
+            + f"; height {h:g} hides the tail behind an inner scrollbar -- and row counts "
+            f"grow with the data, so this only gets worse",
+            fix=ctx.fix_height(c, needed) if (exact or paged) and needed <= 20 and not brain
+            else None,
             height_driven=True,
         )
 

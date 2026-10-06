@@ -285,8 +285,11 @@ def test_page_fill_never_ratchets_table_window(row_limit, height):
 
 
 def test_fills_wait_for_geometry_repairs():
-    """A page computed from the pre-repair height would go stale the same run."""
-    data = mk([raw_table(row_limit=20, height=5)])
+    """A page computed from the pre-repair height would go stale the same run. The repair
+    is row-harmony's: size.table-window raises a table only to show every row, which
+    for 40 rows is past a sane height, so it leaves this table to the page fill."""
+    data = mk([raw_table(row_limit=40, height=5), line(height=10)],
+              layout={"rows": [["T", "L"]]})
     fixed, rep = fix(data)
     kinds = [e["kind"] for e in rep.fixed]
     assert kinds.index("fill") > kinds.index("repair")
@@ -755,7 +758,7 @@ def test_explain_shows_every_governed_field_and_its_source(monkeypatch, tmp_path
     code, out = _cli(["explain", str(spec), "--json", "--chart", "A"], monkeypatch, tmp_path, capsys)
     assert code == 0 and json.loads(out)["charts"][0]["chart"] == "A"
     code, out = _cli(["explain", str(spec)], monkeypatch, tmp_path, capsys)
-    assert code == 0 and out.startswith("Design defaults (design brain 7")
+    assert code == 0 and out.startswith("Design defaults (design brain 8")
     code, out = _cli(["explain", str(spec), "--chart", "Z"], monkeypatch, tmp_path, capsys)
     assert code == 1 and "unknown_chart" in out
 

@@ -80,7 +80,9 @@ def test_every_rule_carries_a_known_since_version():
     assert all(r.since in known for r in RULES.values()), {
         r.id: r.since for r in RULES.values() if r.since not in known}
     assert any(r.since == "2" for r in RULES.values())
-    assert any(r.since == DESIGN_BRAIN_VERSION for r in RULES.values())
+    # A version adds rules or changes what existing ones say ("8" only changed the
+    # table and pivot height rules), so the newest `since` may trail the constant.
+    assert any(r.since == "7" for r in RULES.values())
 
 
 def test_golden_dogfood_example_advises_clean():

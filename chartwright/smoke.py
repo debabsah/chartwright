@@ -19,7 +19,8 @@ from dataclasses import dataclass
 from .client import SupersetClient
 from .compiler import _metric_payload, mixed_time_axis, time_binding
 from .resolver import Resolution
-from .spec import DashboardSpec, grid_header, grid_units_for_rows
+from .spec import (DEFAULT_ROW_LIMIT, DashboardSpec, grid_fit, grid_units_for_rows, pivot_frame,
+                   pivot_rows)
 
 
 def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
@@ -36,29 +37,32 @@ def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
     if not data:
         return None
     if chart.type == "pivot_table":
-        if not chart.rows:
-            return None  # columns-only pivot: a single metric band, height-safe
-        leaf = len({tuple(r.get(d) for d in chart.rows) for r in data})
-        header, row = grid_header(chart)
-        what = f"pivot renders ~{leaf} leaf rows" + (" and its totals row" if chart.column_totals else "")
+        # The rows the pivot draws, not the records the query returned (rows x columns).
+        leaf, subtotals = pivot_rows(chart, data)
+        rows = leaf + subtotals
+        what = ("pivot renders only its totals row" if not rows else  # no row attribute
+                f"pivot renders ~{leaf} leaf rows"
+                + (f", {subtotals} subtotal rows" if subtotals else "")
+                + (" and its totals row" if pivot_frame(chart)[2] else ""))
+        remedy = "filter it to fewer rows"  # row_limit counts records, not pivot rows
     else:
-        leaf = len(data)  # already capped by the query's row_limit
-        header, row = grid_header(chart, leaf)
-        what = f"table renders ~{leaf} rows"
-        if chart.page_length and leaf > chart.page_length:
-            # A paged table renders one page and its page controls (size.table-window's model).
-            leaf = chart.page_length
-            what = f"table renders a {chart.page_length}-row page and its pager"
+        rows = len(data)  # already capped by the query's row_limit
+        what = f"table renders ~{rows} rows" + (" and its totals row" if chart.show_totals else "")
+        remedy = "cap row_limit"
+    held, header, row = grid_fit(chart, rows)
+    if held != rows:
+        # A paged table renders one page and its page controls (size.table-window's model).
+        what = f"table renders a {held}-row page and its pager"
     height = spec.resolved_height(chart.name)
-    # Shared grid model (chartwright/spec.py): the design critic's
-    # size.grid-fit and size.table-window read the same numbers, so pre-apply
-    # advice and this post-apply warning can never contradict each other.
-    needed = grid_units_for_rows(leaf, header, row)
+    # Shared grid model (chartwright/spec.py): the design critic's size.grid-fit,
+    # size.pivot-window and size.table-window ask grid_fit the same question, so
+    # pre-apply advice and this post-apply warning can never contradict each other.
+    needed = grid_units_for_rows(held, header, row)
     if needed <= height:
         return None
     return (f"{what} (~{needed * 40:.0f}px) but height={height:g} ({height * 40:.0f}px): "
             f"rows will hide behind an inner scrollbar; raise height to "
-            f"~{math.ceil(needed)} units or cap row_limit")
+            f"~{math.ceil(needed)} units or {remedy}")
 
 
 @dataclass
@@ -117,11 +121,16 @@ def _time_axis(column: str, grain: str | None) -> dict:
 
 def _query_for(chart, spec: DashboardSpec) -> dict:
     slug = spec.dashboard.slug
+    # A table or pivot asks for the rows its compiled chart asks for (the compiler's
+    # default when row_limit is unset), so the height fit counts every row it draws: a
+    # 1,000-record cap misses leaf rows of a pivot riding its 10,000 default.
+    grid = chart.type in ("table", "pivot_table")
     q: dict = {
         "filters": _filters_payload(chart),
         "extras": {"time_grain_sqla": getattr(chart, "time_grain", None) or "P1D"},
         "time_range": "No filter",
-        "row_limit": getattr(chart, "row_limit", None) or 1000,
+        "row_limit": getattr(chart, "row_limit", None) or (
+            DEFAULT_ROW_LIMIT[chart.type] if grid else 1000),
         "columns": [],
         "metrics": [],
         "orderby": [],

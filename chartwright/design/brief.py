@@ -44,7 +44,9 @@ def render_brief(audience: str, overlay: Overlay | None = None) -> str:
         f"- Vertical bars: <= {p.vbar_max_categories} categories, then flip horizontal; an ordered axis "
         f"(hours, ranks) stays vertical with category_sort and x_label_every. Pies: <= {p.pie_max_slices} slices.",
         f"- Timeseries: <= {p.series_max} grouped series (series_limit keeps the top N). Tables: height should "
-        f"show >= {p.table_visible_ratio:.0%} of row_limit (~0.8 units/row), or one page with page_length.",
+        f"show {'every row' if p.table_visible_ratio >= 1 else f'>= {p.table_visible_ratio:.0%}'} of "
+        f"row_limit (~0.75 units/row + 2.5), or one page with page_length. Pivots: a row per distinct "
+        f"row-dimension value (~0.65 units/row + ~4 to 6 for headers and totals), never per row_limit.",
         "- Charts sharing a row share a height; Superset sizes the row to its tallest child.",
     ]
     if p.recommended_heights:
