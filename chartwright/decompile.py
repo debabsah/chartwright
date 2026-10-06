@@ -19,14 +19,15 @@ import yaml
 
 from .compiler import (
     BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
-    HEATMAP_X_SORT, HEATMAP_Y_SORT, LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER,
-    STACK_VALUES, VIZ_TYPE, WHISKER_OPTIONS, bridge_totals_sql, parse_steps_order_sql,
+    HEATMAP_X_SORT, HEATMAP_Y_SORT, LEGEND_TYPES, METRIC_OPTION_PREFIX, ROW_UNITS_PER_SPEC_UNIT,
+    SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE, WHISKER_OPTIONS, bridge_totals_sql, parse_steps_order_sql,
+    spec_units,
 )
 from .spec import (
     ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX,
     FUNNEL_LABEL_TYPES, HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, SUPERSET_DEFAULTS,
     TICK_LAYOUTS, TREND_DEFAULT_HEX, WATERFALL_DEFAULT_HEX, FilterOp, LabelType, PivotAggregate,
-    SequentialScheme, metric_label, row_items,
+    SequentialScheme, metric_label, parse_metric, row_items,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
@@ -652,10 +653,23 @@ def _metric_to_spec(m, losses: list[Loss], chart: str) -> str | None:
             if agg in ADHOC_AGGREGATES and col:
                 if m.get("hasCustomLabel") and m.get("label"):
                     return f"{agg}({col}) AS {m['label']}"
+                # The label is the series name Superset shows; compile stores the spec's
+                # own spelling there (`SUM( sales )`), so that spelling reads back.
+                spelled = m.get("label")
+                parsed = parse_metric(spelled) if isinstance(spelled, str) else None
+                if parsed and parsed.get("sql") is None and not parsed["label"] \
+                        and (parsed["aggregate"], parsed["column"]) == (agg, col):
+                    return spelled
                 return f"{agg}({col})"
         if m.get("expressionType") == "SQL":
             sql = (m.get("sqlExpression") or "").strip()
             match = re.fullmatch(r"(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\(\s*(\*|\w+)\s*\)", sql, re.I)
+            if match and str(m.get("optionName") or "").startswith(METRIC_OPTION_PREFIX):
+                # The tool's own metric. It writes an aggregate as SQL only for `AGG(*)`, in
+                # exactly that spelling (compile _metric_payload); any other was the spec's
+                # `SQL(MAX(col)) AS Label` and reads back as written, so `plan` matches it.
+                # One built in the UI still reads as the simpler AGG(col).
+                match = match if sql in {f"{a}(*)" for a in ADHOC_AGGREGATES} else None
             if match:
                 base = f"{match.group(1).upper()}({match.group(2)})"
                 if m.get("hasCustomLabel") and m.get("label"):
@@ -774,7 +788,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
             # which the spec can't tell offline; date_format would force it on a number too.
             losses.append(Loss(name, f"time_format {fmt!r} without Force date format not "
                                      f"preserved; set date_format to keep it"))
-        if p.get("y_axis_format") and "date_format" not in out:
+        if p.get("y_axis_format") not in (None, "", "SMART_NUMBER") and "date_format" not in out:
             out["number_format"] = p["y_axis_format"]
     elif spec_type == "big_number_trend":
         m = metric_one(p.get("metric"))
@@ -786,7 +800,7 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         out["time_column"] = x
         if p.get("time_grain_sqla"):
             out["time_grain"] = p["time_grain_sqla"]
-        if p.get("y_axis_format"):
+        if p.get("y_axis_format") not in (None, "", "SMART_NUMBER"):
             out["number_format"] = p["y_axis_format"]
         lag = _number(p.get("compare_lag"))
         if isinstance(lag, int) and lag >= 1:
@@ -1970,10 +1984,16 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
         if geo.get("width"):
             c["width"] = max(1, min(12, int(geo["width"])))
         if geo.get("height"):
-            h = max(1, round(int(geo["height"]) / ROW_UNITS_PER_SPEC_UNIT))
-            c["height"] = h
-            if int(geo["height"]) != h * ROW_UNITS_PER_SPEC_UNIT:
-                losses.append(Loss(name, f"height {geo['height']} rounded to {h * ROW_UNITS_PER_SPEC_UNIT} row units"))
+            # Exact, in fifths: a chart's height is whole grid rows (8 px), so 23 rows read
+            # back as 4.6, as compile, absorb and a text block's height have it. Rounding to
+            # whole units made every fifth-unit height a change `plan` reported after apply.
+            rows = int(geo["height"])
+            c["height"] = spec_units(max(rows, ROW_UNITS_PER_SPEC_UNIT))
+            if rows < ROW_UNITS_PER_SPEC_UNIT:
+                # The spec's floor is one unit, Superset's own resize floor (GRID_MIN_ROW_UNITS
+                # = 5, dashboard/util/constants.ts:42 at 4.1.4, 5.0.0 and 6.1.0).
+                losses.append(Loss(name, f"height {geo['height']} row units raised to "
+                                         f"{ROW_UNITS_PER_SPEC_UNIT}, the spec's minimum"))
         if geo.get("display_name"):
             c["display_name"] = geo["display_name"]
 

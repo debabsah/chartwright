@@ -50,6 +50,20 @@ ZIP_DATE_TIME = (2026, 1, 1, 0, 0, 0)
 # ponytail: 1 spec grid unit -> 5 superset row units (1 row unit ~ 8px).
 # Calibration knob; validated against rendered dashboards.
 ROW_UNITS_PER_SPEC_UNIT = 5
+
+
+def grid_rows(height: float) -> int:
+    """Spec height units (40 px) -> the whole Superset grid rows (8 px) compile writes."""
+    return int(round(height * ROW_UNITS_PER_SPEC_UNIT))
+
+
+def spec_units(rows: int) -> float | int:
+    """Superset grid rows -> spec height units, exactly: a whole unit stays an int, any
+    other is a fifth (one decimal), so grid_rows(spec_units(n)) == n."""
+    units = rows / ROW_UNITS_PER_SPEC_UNIT
+    return int(units) if units.is_integer() else round(units, 1)
+
+
 FOOTER_PREFIX = "sdc-footer-"  # layout.footer rows compile to ROW-sdc-footer-<n>; decompile keys on it
 HEADER_PREFIX = "sdc-header-"  # layout.header rows compile to ROW-sdc-header-<n>; decompile keys on it
 
@@ -82,11 +96,19 @@ def _yaml(data: dict) -> bytes:
     return yaml.safe_dump(data, sort_keys=True, default_flow_style=False, allow_unicode=True).encode()
 
 
+# Every ad-hoc metric the compiler writes carries this optionName prefix; Superset's
+# metric popover names its own metric_<random>_<random> and keeps a stored one
+# (src/explore/components/controls/MetricControl/AdhocMetric.js:84-88 at 4.1.4 and
+# 5.0.0, AdhocMetric.ts:122-126 at 6.1.0), so decompile can tell the tool's metrics
+# from ones built in the UI.
+METRIC_OPTION_PREFIX = "metric_sdc_"
+
+
 def _metric_payload(metric: str, slug: str, chart_name: str) -> str | dict:
     adhoc = parse_metric(metric)
     if adhoc is None:
         return metric
-    option = "metric_sdc_" + uuid.uuid5(ids.NAMESPACE, f"{slug}/chart/{chart_name}/metric/{metric}").hex[:12]
+    option = METRIC_OPTION_PREFIX + uuid.uuid5(ids.NAMESPACE, f"{slug}/chart/{chart_name}/metric/{metric}").hex[:12]
     label = adhoc["label"] or metric
     if adhoc.get("sql") is not None:
         # Custom SQL (the metric popover's "Custom SQL" tab), in every release.
@@ -1010,7 +1032,7 @@ def _chart_meta(spec: DashboardSpec, name: str, cuuid, width: int, height: float
         "uuid": str(cuuid),
         "sliceName": name,
         "width": width,
-        "height": int(round(height * ROW_UNITS_PER_SPEC_UNIT)),
+        "height": grid_rows(height),
         # Placeholder the importer requires and remaps via uuid.
         "chartId": 100000 + counter[0],
     }
@@ -1051,7 +1073,7 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
                     "meta": {
                         "code": item.markdown,
                         "width": spec.resolved_item_width(item),
-                        "height": int(round((item.height or 4) * ROW_UNITS_PER_SPEC_UNIT)),
+                        "height": grid_rows(item.height or 4),
                     },
                 }
                 continue

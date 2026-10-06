@@ -133,6 +133,14 @@ running the tool against real instances of all three releases.
   (`dashboard/components/gridComponents/Header.jsx:105` at 4.1.4 and 5.0.0,
   `Header/Header.tsx:149` at 6.1.0). Verified live on 4.1.4, 5.0.0 and 6.1.0:
   such a sketch imports, renders, decompiles without a loss and plans clean.
+- **Heights are whole grid rows of 8 px.** A chart or text block stores its
+  height as a count of grid rows; one spec unit is 5 of them, so a height in
+  fifths (4.6 = 23 rows, as `absorb` writes after a resize in the UI) is
+  exact, and decompile reads 23 rows back as 4.6. A height between fifths
+  compiles to the nearest whole row, so `plan` compares heights on that grid.
+  Superset won't resize a chart below 5 rows (`GRID_MIN_ROW_UNITS`,
+  `src/dashboard/util/constants.ts:42`, all three releases), the spec's
+  floor of 1 unit; decompile reads a shorter stored height as 1 and says so.
 - **The server normalizes what it stores and accepts dangling references.**
   Omitted settings are filled with defaults on write (4.1.4
   `superset/daos/dashboard.py:258-265`), and filter scopes pointing at
@@ -379,11 +387,15 @@ running the tool against real instances of all three releases.
   "scroll"`, a pie's `label_type: "key_percent"`, a funnel's `"key"`, a
   treemap's `"key_value"`, `marker_size: 6`, `opacity: 0.2` (a mixed
   query's area too), the teal `trend_color` `#007A87`, a heatmap's
-  `superset_seq_1`, or a dashboard's `refresh_frequency: 0` and
-  `filter_bar_orientation: "vertical"`) changes nothing Superset draws. The
-  same holds for the two orders the tool always wrote, a heatmap's `x_order:
-  "a_to_z"` and `y_order: "z_to_a"`, and for a trendline's
-  `rolling_min_periods` equal to its `rolling_periods`. The spec keeps the value as written, so an author's
+  `superset_seq_1`, any chart's `time_range: "No filter"`,
+  `number_format: "SMART_NUMBER"` (and the mixed chart's
+  `number_format_secondary`), `x_label_format: "smart_date"` and
+  `x_label_rotation: 0`, a table's `date_format: "smart_date"`, or a
+  dashboard's `refresh_frequency: 0` and `filter_bar_orientation:
+  "vertical"`) changes nothing Superset draws. The same holds for the two
+  orders the tool always wrote, a heatmap's `x_order: "a_to_z"` and
+  `y_order: "z_to_a"`, and for a trendline's `rolling_min_periods` equal to
+  its `rolling_periods`. The spec keeps the value as written, so an author's
   choice survives validation; `compile` builds the same bundle as for the
   omitted field, and `plan` reads the two as equal. A decompiled spec leaves
   Superset's defaults out, since the stored chart can't say which one the
@@ -643,6 +655,18 @@ running the tool against real instances of all three releases.
   way. Custom SQL in a spec runs with the profile's rights during apply's
   data check, which queries each chart once through `/api/v1/chart/data`
   signed in as that profile.
+- **An aggregate reads back as it was written.** `MAX(col) AS Label` is
+  stored as a column aggregate, which Superset quotes as a column, and
+  `SQL(MAX(col)) AS Label` as SQL, run as written; the two can differ on a
+  database with case-sensitive names, so they stay two spellings. Every
+  metric the tool writes has an `optionName` starting `metric_sdc_`, and
+  Superset's metric popover names its own `metric_<random>_<random>` and
+  keeps a stored one (`src/explore/components/controls/MetricControl/`
+  `AdhocMetric.js:84-88` at 4.1.4 and 5.0.0, `AdhocMetric.ts:122-126` at
+  6.1.0). So decompile reads the tool's SQL aggregate back as `SQL(MAX(col))
+  AS Label`, and custom SQL typed in the UI as the simpler `MAX(col) AS
+  Label`. Spellings stored alike apart from that key (`COUNT(*) AS N` and
+  `SQL(COUNT(*)) AS N`, extra spaces around `AS`) compare equal in `plan`.
 
 ## Differences the tool absorbs
 

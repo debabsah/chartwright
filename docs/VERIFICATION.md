@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1882 tests, 72 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1899 tests, 72 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -65,9 +65,12 @@ collects, the same "generated, not hand-maintained" rule the rule table in
 - **Lossless round-trips** (`test_decompile.py`): decompiling a compiled
   spec reproduces that spec exactly, across the full surface (18 charts
   covering all 17 chart types, chart filters, the native filter bar,
-  markdown, tabs), and stays stable under a second round-trip. Decompiling
-  a real 25-chart export that uses unsupported chart types names every
-  loss; nothing drops silently.
+  markdown, tabs), and stays stable under a second round-trip. The same
+  spec written in every spelling compile stores alike (fifth-unit heights,
+  `SQL(MAX(col)) AS Label` metrics in every metric field, Superset's own
+  defaults written out, a named colour's hex) decompiles with no loss and
+  `plan` finds nothing to change. Decompiling a real 25-chart export that
+  uses unsupported chart types names every loss; nothing drops silently.
 - **Randomized round-trips** (`test_property_roundtrip.py`): a seeded
   random editor mutates a spec while keeping it valid (the same generator
   the live soak uses) through 20 seeds and 6 steps each; compile then
@@ -234,10 +237,15 @@ the offline display and dashboard controls fixtures pointed at Superset's
 example data. Each apply is followed by a per-chart data check: each
 chart's query, over the chart's own time range, must return HTTP 200 and
 rows; an empty chart is a named
-warning, never a silent pass. Finally a second apply of the same spec,
+warning, never a silent pass. Then a second apply of the same spec,
 asserting that every chart keeps its id. Id stability matters because
 dashboard metadata references charts by id: changing ids is what turns a
-stale browser tab into a writer that corrupts filter scopes.
+stale browser tab into a writer that corrupts filter scopes. Finally
+`plan`, which must find nothing to change: everything the spec wrote reads
+back from the live dashboard as the same spec. The display-controls spec
+writes fifth-unit heights and aggregates as custom SQL (`SQL(COUNT(*)) AS
+Orders`, in a series limit, a table's sort and both mixed-chart queries)
+so that holds for them on every release.
 
 A waterfall bridge needs rows for its opening, steps and closing, which no
 example dataset has, so `tools/ci_live_waterfall.py` makes one, a virtual
@@ -256,7 +264,9 @@ plain waterfalls apply with `plan` clean.
 The loop users actually live in, run to exhaustion. Each cycle applies one
 seeded random edit within the supported surface (add, remove, or rename
 charts; retitle; add, remove, or rescope filters; regenerate the layout;
-switch between rows and tabs) and then asserts, against the live instance:
+switch between rows and tabs; set a fifth-unit height; respell a chart's
+metrics as `SQL(AGG(col)) AS Label` with Superset's defaults written out)
+and then asserts, against the live instance:
 
 1. `apply` completes, including link verification and the per-chart data
    check;

@@ -589,6 +589,17 @@ EXPLICIT_DEFAULTS = [
     ({"name": "K", "type": "big_number_trend", "dataset": DS, "metric": "COUNT(*)",
       "time_column": "ts", "rolling_type": "sum", "rolling_periods": 12},
      "rolling_min_periods", 12),
+    (LINE, "time_range", "No filter"),
+    (LINE, "number_format", "SMART_NUMBER"),
+    (LINE, "x_label_format", "smart_date"),
+    (LINE, "x_label_rotation", 0),
+    (PIE, "number_format", "SMART_NUMBER"),
+    ({"name": "N", "type": "big_number_total", "dataset": DS, "metric": "COUNT(*)"},
+     "number_format", "SMART_NUMBER"),
+    ({"name": "T", "type": "table", "dataset": DS, "groupby": ["g"], "metrics": ["COUNT(*)"]},
+     "date_format", "smart_date"),
+    ({"name": "M", "type": "mixed", "dataset": DS, "x_column": "ts", "a": {"metrics": ["SUM(x)"]},
+      "b": {"metrics": ["SUM(y)"]}}, "number_format_secondary", "SMART_NUMBER"),
 ]
 
 
