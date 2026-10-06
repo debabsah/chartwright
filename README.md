@@ -15,7 +15,7 @@ Each Superset dashboard is defined by a spec file listing its charts, filters, l
 | Rebuild your dashboards on a new Superset version from the same specs | Checking and repairing charts by hand when an upgrade leaves them blank in the editor ([#32725](https://github.com/apache/superset/discussions/32725)) | [SUPERSET-VERSIONS.md](docs/SUPERSET-VERSIONS.md) |
 | Create dashboards from code without reverse-engineering Superset's JSON | Working out the undocumented layout JSON, `position_json` ([#32970](https://github.com/apache/superset/discussions/32970)) | [DASHBOARDS-FROM-CODE.md](docs/DASHBOARDS-FROM-CODE.md) |
 
-![The Sundown dashboard, scrolling through its Overview, Evening ramp, Storage and Supply tabs, then About, then its Overview in five other palettes](docs/images/sundown.webp)
+![The Sundown dashboard's Overview in five palettes, then the dashboard scrolling through its Overview, Evening ramp, Storage and Supply tabs, then About](docs/images/sundown.webp)
 
 *Sundown, a six-tab dashboard built from [one spec](examples/sundown/sundown.json) with `chartwright apply`.*
 
