@@ -1,8 +1,10 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 7** (4 added `narrative.color-scheme`; 5 the
+> **Status: SHIPPED, design brain 14** (4 added `narrative.color-scheme`; 5 the
 > design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
-> a null record after an edit, and `default.stale-record`). This page is both the design and the
+> a null record after an edit, and `default.stale-record`; 14 the big-number colour
+> rules: `chart.format-bands` on a KPI, `chart.color-contrast` and
+> `narrative.kpi-thresholds`). This page is both the design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -294,7 +296,9 @@ several offline rules additionally sharpen or stand down when probes are
 available (noted in their text). `since` is the design-brain version that
 introduced the rule: "2" the post-review batch
 (docs/DESIGN-BRAIN-V2.md), "3" the review burn-down (§15.11 onward), "4"
-the colour-scheme check, "5" the design defaults (§16).
+the colour-scheme check, "5" the design defaults (§16), "14" the big-number
+colour rules (a colour that reads on the white card, and a KPI that says what
+its colours mean).
 
 The table below is GENERATED from the registry by
 `tools/gen_rule_table.py --write`; do not hand-edit it. `tests/test_docs.py`
@@ -304,6 +308,7 @@ fails when it drifts.
 
 | id | sev | fix | data | since | rule |
 |---|---|---|---|---|---|
+| `chart.color-contrast` | warn | - | - | 14 | a colour painted as text or a line reads on the white card: 3:1 for a big number or a trendline, 4.5:1 for table and pivot text (WCAG AA) |
 | `chart.dupe` | info | - | - | 1 | two charts answering the identical question is redundancy |
 | `chart.format-bands` | warn/info | - | - | 2 | conditional-formatting bands must tell one coherent story per metric |
 | `chart.funnel-stages` | warn | - | ⚡ | 1 | funnels need 3-8 ordered stages |
@@ -352,6 +357,7 @@ fails when it drifts.
 | `narrative.color-scheme` | warn | - | - | 4 | a colour scheme Superset doesn't ship draws the default palette unless your deployment registers it |
 | `narrative.filtered-title` | info | - | - | 1 | a filtered chart's title should say what it shows |
 | `narrative.format-consistency` | info | - | - | 2 | one measure, one number format |
+| `narrative.kpi-thresholds` | info | - | - | 14 | a KPI coloured by status states its thresholds in its subtitle or description (colour alone can't say what red means) |
 | `narrative.title-style` | info | - | - | 1 | chart titles should share one casing style |
 | `size.axis-min-height` | warn | ✔ | - | 1 | axis charts below the audience minimum height flatten and drop labels |
 | `size.grid-fit` | warn | ✔ | ⚡ | 2 | table/pivot heights must fit their data-driven row counts (they grow after authoring) |
@@ -733,6 +739,23 @@ reversible and none is load-bearing enough to block on:
       `standards verify-visible` opens the deployed dashboard in a headless
       browser and fails when a locked line is hidden. The browser is an
       optional extra, never a dependency.
+18. **Big-number colour rules** (2026-10-05, design brain 14):
+    - **Overlapping KPI bands warn; a lone KPI band doesn't.** Superset paints the
+      number with the last matching rule, so where bands overlap the colour depends
+      on rule order, as on a pivot (`chart.format-bands`). One red band outside a
+      tolerance is exception highlighting (IBCS), not decoration, so the lone-band
+      nudge stays on pivots.
+    - **`narrative.kpi-thresholds` is info.** Whether a subtitle or description
+      "states" a threshold is read from the numbers in it ('2%' is 2 and 0.02,
+      '1.2M' is 1.2 and 1,200,000), a heuristic, so it stays a nudge (decision 11).
+    - **`chart.color-contrast` is warn.** A contrast ratio is exact: 3:1 for a big
+      number or a trendline (large text and graphics), 4.5:1 for table and pivot
+      text, against the white card of Superset's default theme. A dark theme can
+      fail colours the rule passes; the brain can't see the theme.
+    - **A value of exactly 0 is a smoke warning, not a spec error.** 4.1.4 to 6.1.0
+      never colour 0 (`BigNumberViz.tsx`), but Superset's development branch
+      (read 2026-10-05) does, so refusing an `= 0` rule would block a later
+      release. Apply's data check names it when the number is 0.
 
 ## 15. Implementation deviations (recorded, not silent)
 

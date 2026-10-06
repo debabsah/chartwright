@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from .client import SupersetClient
 from .compiler import _metric_payload, mixed_time_axis, time_binding
 from .resolver import Resolution
-from .spec import DashboardSpec, grid_header, grid_units_for_rows
+from .spec import DashboardSpec, grid_header, grid_units_for_rows, metric_label
 
 
 def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
@@ -59,6 +59,24 @@ def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
     return (f"{what} (~{needed * 40:.0f}px) but height={height:g} ({height * 40:.0f}px): "
             f"rows will hide behind an inner scrollbar; raise height to "
             f"~{math.ceil(needed)} units or cap row_limit")
+
+
+def _zero_colour_warning(chart, result: list) -> str | None:
+    """A big number at exactly 0 under a colour rule that takes 0. Superset colours the
+    number only when it is truthy (BigNumberViz.tsx `bigNumber ? getColorFromValue(...)
+    : false`, 4.1.4 :144, 5.0.0 :145, 6.1.0 :216), so the rule's colour never shows and
+    the number keeps the default text colour. Smoke already holds the value."""
+    if chart.type != "big_number_total" or not chart.conditional_formatting:
+        return None
+    data = (result[0].get("data") or []) if result else []
+    value = data[0].get(metric_label(chart.metric)) if data and isinstance(data[0], dict) else None
+    if isinstance(value, bool) or value != 0:
+        return None
+    taken = [r for r in chart.conditional_formatting if r.matches(0)]
+    if not taken:
+        return None
+    return (f"the number is 0, which Superset never colours, so it shows in the default "
+            f"colour, not the {taken[-1].color} its rules give 0")
 
 
 @dataclass
@@ -208,7 +226,7 @@ def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: Supe
         return SmokeResult(chart.name, False, False, f"unparseable chart/data response: {e}")
     if rows == 0:
         return SmokeResult(chart.name, True, True, "query succeeded but returned 0 rows")
-    fit = _fit_warning(chart, spec, result)
+    fit = _fit_warning(chart, spec, result) or _zero_colour_warning(chart, result)
     if fit:
         return SmokeResult(chart.name, True, True, f"{rows} rows; {fit}")
     return SmokeResult(chart.name, True, False, f"{rows} rows")

@@ -26,7 +26,10 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "7" = fills keep a null record when the author edits one (an edit later deleted stays
 # deleted), and default.stale-record: a fixable finding for a renamed or removed chart's
 # design.filled entry, which now validates. Both change what `--fix` writes.
-DESIGN_BRAIN_VERSION = "7"
+# "14" = big-number colour rules: chart.format-bands reads them (and no longer counts an
+# '=' band as everything above it), chart.color-contrast (warn) and
+# narrative.kpi-thresholds (info). A new warn rule can newly block a strict gate.
+DESIGN_BRAIN_VERSION = "14"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

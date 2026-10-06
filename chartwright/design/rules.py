@@ -20,15 +20,19 @@ from datetime import date
 from ..spec import (
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
+    FORMAT_TEXT_HEX,
     SUPERSET_COLOR_SCHEMES,
     HeaderBlock,
     _ColorSchemeMixin,
     grid_header,
     grid_rows_visible,
     grid_units_for_rows,
+    hex_to_rgb,
     row_items,
+    set_value,
     without_superset_defaults,
 )
+from ..visible import contrast
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 
 # -- size: minimum readable geometry ------------------------------------------
@@ -721,32 +725,78 @@ def pivot_columns(ctx: RuleContext):
       since="2", severities=("warn", "info"))
 def format_bands(ctx: RuleContext):
     for c in ctx.spec.charts:
-        if c.type != "pivot_table" or not c.conditional_formatting:
+        if c.type not in ("pivot_table", "big_number_total") or not c.conditional_formatting:
             continue
+        kpi = c.type == "big_number_total"
         by_metric: dict[str, list] = {}
         for r in c.conditional_formatting:
+            # Superset's bands are open ('<', '>', '< x <'); '=' is the one point.
             lo, hi = ((r.target_left, r.target_right) if r.operator == "between"
                       else (float("-inf"), r.target) if r.operator == "<"
+                      else (r.target, r.target) if r.operator == "="
                       else (r.target, float("inf")))
             # compared by the shade painted, so "green" and its own hex agree
-            by_metric.setdefault(r.metric, []).append((lo, hi, r.color, r.paint_hex()))
+            by_metric.setdefault(c.metric if kpi else r.metric, []).append(
+                (lo, hi, r.color, r.paint_hex()))
         for metric, bands in by_metric.items():
             for i in range(len(bands)):
                 for j in range(i + 1, len(bands)):
                     (a0, a1, ca, ha), (b0, b1, cb, hb) = bands[i], bands[j]
-                    if a0 < b1 and b0 < a1 and ha != hb:
+                    meet = (a0 == a1 == b0 == b1) or (a0 < b1 and b0 < a1)
+                    if meet and ha != hb:
+                        # Superset paints a big number with the last rule that matches.
+                        detail = (f"{ca} and {cb} bands overlap (the number takes the later "
+                                  f"rule's colour where they meet, not one the value earns)"
+                                  if kpi else
+                                  f"metric {metric!r}: {ca} and {cb} bands overlap "
+                                  f"(cell color depends on rule order, not the value)")
                         yield Finding(
                             "chart.format-bands", "warn", c.name, ctx.where(c.name),
-                            f"metric {metric!r}: {ca} and {cb} bands overlap "
-                            f"(cell color depends on rule order, not the value); "
-                            f"make the ranges disjoint",
+                            f"{detail}; make the ranges disjoint",
                         )
-            if len(bands) == 1:
+            # A KPI coloured only where it needs attention (red outside a tolerance) is
+            # exception highlighting, not decoration: a lone band is a signal there.
+            if len(bands) == 1 and not kpi:
                 yield Finding(
                     "chart.format-bands", "info", c.name, ctx.where(c.name),
                     f"metric {metric!r} has a single {bands[0][2]} band: one color is "
                     f"decoration, not a signal; band the full green/amber/red story "
                     f"or drop it",
+                )
+
+
+# WCAG 2 AA minimums: large text and graphics (a big number, a trendline: 1.4.3 and
+# 1.4.11) need 3:1, body text (a table or pivot cell's text) 4.5:1. Measured against
+# the white chart card of Superset's default theme.
+_LARGE_CONTRAST, _TEXT_CONTRAST = 3.0, 4.5
+_CARD = (255, 255, 255)
+
+
+@rule("chart.color-contrast", "warn",
+      "a colour painted as text or a line reads on the white card: 3:1 for a big number or "
+      "a trendline, 4.5:1 for table and pivot text (WCAG AA)", since="14")
+def color_contrast(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        painted: list[tuple[str, str, float]] = []  # (what, hex painted, minimum ratio)
+        if c.type == "big_number_total":
+            painted = [(f"its {r.color} rule", r.paint_hex(), _LARGE_CONTRAST)
+                       for r in c.conditional_formatting]
+        elif c.type == "big_number_trend" and set_value(c, "trend_color"):
+            painted = [("trend_color", FORMAT_TEXT_HEX.get(c.trend_color, c.trend_color),
+                        _LARGE_CONTRAST)]
+        elif c.type in ("table", "pivot_table"):
+            painted = [(f"its {r.color} text rule on {r.metric!r}", r.paint_hex(), _TEXT_CONTRAST)
+                       for r in c.conditional_formatting if r.paint == "text"]
+        seen: set[str] = set()
+        for what, hexed, need in painted:
+            rgb = hex_to_rgb(hexed)
+            ratio = contrast((rgb["r"], rgb["g"], rgb["b"]), _CARD)
+            if ratio < need and hexed not in seen:
+                seen.add(hexed)
+                yield Finding(
+                    "chart.color-contrast", "warn", c.name, ctx.where(c.name),
+                    f"{what} paints {hexed}, {ratio:.1f}:1 on the white card, below {need:g}:1: "
+                    f"too pale to read; use a darker shade (green, amber and red pass)",
                 )
 
 
@@ -1049,6 +1099,58 @@ def big_number_format(ctx: RuleContext):
             yield Finding(
                 "narrative.big-number-format", "info", c.name, ctx.where(c.name),
                 "no number_format: raw float precision on a hero number; ',.0f' or '.3s' read better",
+            )
+
+
+# A number as a text writes it: digits with thousands commas, and a %, k, M or B after.
+_STATED_NUMBER = re.compile(r"(\d[\d,]*(?:\.\d+)?|\.\d+)\s*(%|[kKmMbB](?![A-Za-z]))?")
+_SCALE = {"k": 1e3, "m": 1e6, "b": 1e9}
+
+
+def _numbers_stated(text: str) -> set[float]:
+    """Every number a text states, as written and as what it stands for: '2%' is 2 and
+    0.02, '1.2M' is 1.2 and 1,200,000. Signs are dropped: '+/-2%' states -2% and 2%."""
+    out: set[float] = set()
+    for digits, unit in _STATED_NUMBER.findall(text):
+        try:
+            n = float(digits.replace(",", ""))
+        except ValueError:
+            continue
+        out.add(n)
+        if unit:
+            out.add(n / 100 if unit == "%" else n * _SCALE[unit.lower()])
+    return out
+
+
+def _threshold(v: float) -> str:
+    return f"{v:,.12g}"  # 10,000,000 and 0.02, never 1e+07
+
+
+def _band_text(r) -> str:
+    if r.operator == "between":
+        return f"{r.color} between {_threshold(r.target_left)} and {_threshold(r.target_right)}"
+    return f"{r.color} {({'<': 'below', '>': 'above', '=': 'at'})[r.operator]} {_threshold(r.target)}"
+
+
+@rule("narrative.kpi-thresholds", "info",
+      "a KPI coloured by status states its thresholds in its subtitle or description "
+      "(colour alone can't say what red means)", since="14")
+def kpi_thresholds(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type != "big_number_total" or not c.conditional_formatting:
+            continue
+        stated = _numbers_stated(" ".join(t for t in (c.subtitle, c.description) if t))
+        thresholds = {abs(t) for r in c.conditional_formatting
+                      for t in (r.target, r.target_left, r.target_right) if t is not None}
+        missing = sorted(t for t in thresholds
+                         if not any(math.isclose(t, n, rel_tol=1e-9, abs_tol=1e-12) for n in stated))
+        if missing:
+            yield Finding(
+                "narrative.kpi-thresholds", "info", c.name, ctx.where(c.name),
+                f"colours its number ({'; '.join(_band_text(r) for r in c.conditional_formatting)}) "
+                f"but neither its subtitle nor its description states "
+                f"{', '.join(_threshold(t) for t in missing)}; say there what each colour means, "
+                f"so viewers can read it without guessing",
             )
 
 

@@ -5,11 +5,31 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ## Unreleased
 
+### Upgrading
+
+- A spec with `conditional_formatting` on a big number is refused by chartwright 0.5.0 and earlier (`extra_forbidden`); upgrade CI before committing one.
+- The design brain is version 14. Its new warn rule, `chart.color-contrast`, can fail `advise --strict` and `--design strict` on a spec that passed before: a colour rule painting text or a trendline too pale to read.
+
+### Added
+
+- `conditional_formatting` on `big_number_total`: colour the number by its value, such as a balance-closure KPI in red outside ±2% and green inside (`[{"operator": "<", "target": -0.02, "color": "red"}, {"operator": ">", "target": 0.02, "color": "red"}]`). The rules take the operators, thresholds and colours of table and pivot rules; a named colour takes its darker text shade, since the number is text. Superset 4.1.4, 5.0.0 and 6.1.0 all colour it, so no release is refused or warned. Decompile reads the rules back, and `plan` reports a rule changed in Superset.
+  - When several rules match, the last one's colour wins, as in Superset.
+  - `apply_to`, `paint` and a `metric` other than the chart's own are refused on a big number's rule, and so is `conditional_formatting` on `big_number_trend`, which Superset can't colour (its `trend_color` colours the line).
+  - Superset never colours a value of exactly 0; apply's data check warns when a coloured big number is 0 and a rule would have coloured it.
+- Design brain 14:
+  - `chart.color-contrast` (warn): a colour too pale to read on the white card, below 3:1 for a big number's rule or a trendline and below 4.5:1 for a table or pivot text rule.
+  - `narrative.kpi-thresholds` (info): a coloured big number whose subtitle and description don't state its thresholds.
+  - `chart.format-bands` checks a big number's rules for overlapping bands. A single band on a big number is fine: colouring only the exceptions is enough.
+
 ### Fixed
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 
 - `standards apply` no longer adds a header or footer row that the body already holds at its edge (the last rows for a footer, the first for a header). A dashboard built in the UI has no header or footer, so `decompile` and `adopt` read its legal line as a body row, and the standard's footer was then added below it, showing it twice. `--claim` moves such a row into the header or footer and records it; `explain` and the apply summary name it.
+
+- `chart.format-bands` read an `=` rule as covering every value above its target, so a pivot with `= 1` in red and `> 5` in green was reported as overlapping bands.
+
+- `decompile` (and so `adopt`) no longer reports colour rules kept on a trendline KPI that was switched from a Big Number in Superset as a loss: the trendline never draws them.
 
 ## 0.5.0 (2026-10-04)
 

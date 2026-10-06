@@ -369,11 +369,110 @@ class Annotation(BaseModel):
         return self
 
 
+class _ColourBand(BaseModel):
+    """One solid colour band: the colour Superset paints while a value meets the
+    operator and its threshold(s). Table, pivot and big-number rules share it
+    (FormatRule, BigNumberFormatRule); each says what the band tests and paints."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric: str | None = None
+    operator: Literal["<", ">", "=", "between"]
+    target: float | None = Field(default=None, description="Threshold for <, > or =")
+    target_left: float | None = Field(default=None, description="Lower bound for 'between'")
+    target_right: float | None = Field(default=None, description="Upper bound for 'between'")
+    color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = Field(
+        description="green, amber or red (Superset's own picker colours; text paint uses a darker "
+                    "shade of each), or any #RRGGBB, used as written for cell and text",
+    )
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _colour(cls, v):
+        if not isinstance(v, str):
+            raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
+        if v in FORMAT_COLOR_HEX:
+            return v
+        if HEX_COLOUR_RE.fullmatch(v):
+            return v.upper()
+        raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
+
+    @model_validator(mode="after")
+    def _target_shape(self) -> "_ColourBand":
+        if self.operator == "between":
+            if self.target is not None or self.target_left is None or self.target_right is None:
+                raise ValueError("'between' needs target_left + target_right (and no target)")
+        elif self.target is None or self.target_left is not None or self.target_right is not None:
+            raise ValueError(f"operator {self.operator!r} needs target (and no target_left/right)")
+        return self
+
+    def matches(self, value: float) -> bool:
+        """Whether Superset's comparator takes `value`: '<', '>', '=' and the open range
+        '< x <' (getColorFormatters.ts getColorFunction, 4.1.4, 5.0.0 and 6.1.0)."""
+        if self.operator == "between":
+            return self.target_left < value < self.target_right
+        return {"<": value < self.target, ">": value > self.target, "=": value == self.target}[self.operator]
+
+
+class BigNumberFormatRule(_ColourBand):
+    """One colour band on a big number: Superset colours the number itself, solid,
+    while its value meets the rule (BigNumberViz.tsx at 4.1.4, 5.0.0 and 6.1.0). The
+    number is text, so a name takes its darker text shade. When several rules match,
+    the last one's colour wins; a value of exactly 0 is never coloured."""
+
+    metric: str | None = Field(
+        default=None,
+        description="Leave it out: a big number's rules test its one value. If given, it "
+                    "must be the chart's metric label",
+    )
+    color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = Field(
+        description="green, amber or red (the darker text shades, which read on white), or "
+                    "any #RRGGBB, used as written",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _number_only(cls, data):
+        if isinstance(data, dict):
+            if "apply_to" in data:
+                raise ValueError("apply_to is table-only: a big number's rule colours the number itself")
+            if "paint" in data:
+                raise ValueError("paint is for table and pivot cells: a big number's rule colours "
+                                 "the number, so a named colour takes its text shade")
+        return data
+
+    def paint_hex(self) -> str:
+        """The colour Superset paints the number: a name's text shade, or the hex as written."""
+        return FORMAT_TEXT_HEX.get(self.color, self.color)
+
+
 class BigNumberChart(_ChartBase):
     type: Literal["big_number_total"]
     metric: str
     subtitle: str | None = None
     number_format: str | None = Field(default=None, description="d3 format string, e.g. ',.0f'")
+    conditional_formatting: list[BigNumberFormatRule] = Field(
+        default_factory=list,
+        description="Colour the number by its value, e.g. red outside a tolerance: "
+                    "[{\"operator\": \"<\", \"target\": -0.02, \"color\": \"red\"}, "
+                    "{\"operator\": \">\", \"target\": 0.02, \"color\": \"red\"}]. Rules are "
+                    "solid; when several match, the last one wins. Say what the colours mean "
+                    "(the thresholds) in subtitle or description.",
+    )
+
+    @model_validator(mode="after")
+    def _rules(self) -> "BigNumberChart":
+        label = metric_label(self.metric)
+        for rule in self.conditional_formatting:
+            if rule.metric is None:
+                continue
+            if rule.metric != label:
+                raise ValueError(
+                    f"chart {self.name!r}: conditional_formatting metric {rule.metric!r} is not "
+                    f"the chart's metric label {label!r}; leave metric out (a big number's "
+                    "rules test its one value)")
+            rule.metric = None  # it can only name the chart's own metric; decompile reads it as omitted
+        return self
 
 
 class BigNumberTrendChart(_ChartBase):
@@ -402,6 +501,18 @@ class BigNumberTrendChart(_ChartBase):
         description="Colour of the trendline: green, amber or red (the text shades colour "
                     "rules use) or any #RRGGBB; Superset's default is teal #007A87",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_colour_rules(cls, data):
+        # BigNumberWithTrendline declares no conditional_formatting control and its
+        # transformProps passes no colour rules, at 4.1.4, 5.0.0 and 6.1.0.
+        if isinstance(data, dict) and "conditional_formatting" in data:
+            raise ValueError(
+                f"chart {data.get('name')!r}: big_number_trend takes no conditional_formatting: "
+                "Superset colours the number only on big_number_total (trend_color colours "
+                "the trendline)")
+        return data
 
     @field_validator("trend_color", mode="before")
     @classmethod
@@ -667,24 +778,14 @@ class PieChart(_Legend, _ChartBase, _ColorSchemeMixin):
         return self
 
 
-class FormatRule(BaseModel):
+class FormatRule(_ColourBand):
     """One solid colour band on one metric: green / amber / red, or any
     #RRGGBB. A pivot colours a cell by its OWN value only, so band a
     normalized metric (e.g. a %-of-goal ratio) when thresholds differ per
     row. A table can read one column and paint another (apply_to): colour a
     number by a status column beside it."""
 
-    model_config = ConfigDict(extra="forbid")
-
     metric: str = Field(description="Display label of the metric (table: or column) whose value is tested")
-    operator: Literal["<", ">", "=", "between"]
-    target: float | None = Field(default=None, description="Threshold for <, > or =")
-    target_left: float | None = Field(default=None, description="Lower bound for 'between'")
-    target_right: float | None = Field(default=None, description="Upper bound for 'between'")
-    color: Literal["green", "amber", "red"] | Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] = Field(
-        description="green, amber or red (Superset's own picker colours; text paint uses a darker "
-                    "shade of each), or any #RRGGBB, used as written for cell and text",
-    )
     apply_to: str | None = Field(
         default=None,
         description="Table only: the label of the column to paint, or \"row\"; default the metric's own cells",
@@ -692,31 +793,11 @@ class FormatRule(BaseModel):
     paint: Literal["cell", "text"] = Field(
         default="cell", description="Paint the cell background (default) or the text, e.g. an arrow")
 
-    @field_validator("color", mode="before")
-    @classmethod
-    def _colour(cls, v):
-        if not isinstance(v, str):
-            raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
-        if v in FORMAT_COLOR_HEX:
-            return v
-        if HEX_COLOUR_RE.fullmatch(v):
-            return v.upper()
-        raise ValueError(f"color must be green, amber, red or #RRGGBB, got {v!r}")
-
     def paint_hex(self) -> str:
         """The colour Superset paints: a name's shade for this paint, or the hex as written."""
         if self.color in FORMAT_COLOR_HEX:
             return (FORMAT_TEXT_HEX if self.paint == "text" else FORMAT_COLOR_HEX)[self.color]
         return self.color
-
-    @model_validator(mode="after")
-    def _target_shape(self) -> "FormatRule":
-        if self.operator == "between":
-            if self.target is not None or self.target_left is None or self.target_right is None:
-                raise ValueError("'between' needs target_left + target_right (and no target)")
-        elif self.target is None or self.target_left is not None or self.target_right is not None:
-            raise ValueError(f"operator {self.operator!r} needs target (and no target_left/right)")
-        return self
 
 
 class TableChart(_ChartBase):

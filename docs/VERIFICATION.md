@@ -35,7 +35,7 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1564 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1601 tests, 68 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
@@ -89,6 +89,15 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   the shape Superset saves, compiles to the earlier output when omitted,
   decompiles back, shows up in `plan` when changed live, and names a bad
   value.
+- **Big-number colour rules** (`test_big_number_formatting.py`): rules compile
+  to the shape the Big Number panel stores, with the metric's label as the
+  column and the text shades for named colours, and nothing when omitted;
+  every supported release takes them; table-only options, a foreign metric
+  and rules on a trendline are refused; they decompile back with no drift, a
+  theme token or an unsupported operator is a named loss, and rules left on a
+  trendline are none; smoke warns when the number is 0 and a rule would have
+  coloured it; the critic's overlap, contrast and stated-threshold checks fire
+  where they should and nowhere else.
 - **Release-specific fields** (`test_superset_version.py`): with the
   instance's answer mocked, `check`, `apply` and `plan` refuse tags before
   6.0.0 and chart timestamps before 6.1.0 ahead of any write, warn for the
@@ -217,7 +226,7 @@ filter bar with two value pickers and a time range, plus markdown and tabs.
 second-writer and fault-injection runs.) The same check then runs on two
 more specs, `tests/fixtures/live_display_controls.json` (every chart display
 control: legends, axis titles and bounds, stacking, labels, table and pivot
-options) and `tests/fixtures/live_dashboard_controls.json` (dashboard
+options, a big number's colour rules) and `tests/fixtures/live_dashboard_controls.json` (dashboard
 settings and owners, colour schemes, goal lines, a header and footer
 outside the tabs, header rows inside them, cascading and
 pre-filtered native filters, time grain and time column filters). They are

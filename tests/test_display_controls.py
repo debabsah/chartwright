@@ -127,6 +127,14 @@ def _display_params() -> dict[str, dict]:
                      "subtitle": "Booked revenue", "time_range": "Last year",
                      "color_picker": {"r": 0, "g": 87, "b": 184, "a": 1}}),
     ("Orders This Quarter", {"time_range": "Last quarter"}),
+    ("Average Price", {"y_axis_format": "$,.2f", "conditional_formatting": [
+        {"column": "Avg Price", "colorScheme": "#B3261E", "operator": "<", "targetValue": 80.0,
+         "useGradient": False},
+        {"column": "Avg Price", "colorScheme": "#B26B00", "operator": "< x <",
+         "targetValueLeft": 80.0, "targetValueRight": 90.0, "useGradient": False},
+        {"column": "Avg Price", "colorScheme": "#1B7F3B", "operator": ">", "targetValue": 90.0,
+         "useGradient": False},
+    ]}),
     ("Revenue and Orders", {
         "show_value": True, "stack": True, "only_total": False, "limit": 2, "order_desc": False,
         "show_valueB": True, "limit_b": 3, "x_axis_title": "Month", "y_axis_title": "Revenue",
@@ -395,6 +403,9 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Line by Deal Size", {"show_percentage": True}),
     ("Revenue KPI", {"compare_lag": 3}),
     ("Orders This Quarter", {"time_range": "Last month"}),
+    ("Average Price", {"conditional_formatting": []}),
+    ("Average Price", {"conditional_formatting": [
+        {"column": "Avg Price", "colorScheme": "#B3261E", "operator": "<", "targetValue": 75}]}),
     ("Revenue and Orders", {"limit_b": 9}),
 ])
 def test_plan_reports_a_display_change_made_in_the_ui(chart, change, monkeypatch):
