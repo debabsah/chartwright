@@ -65,7 +65,9 @@
         "COUNT(*) AS Trips"
       ],
       "time_column": "pickup_time",
-      "time_grain": "P1D"
+      "time_grain": "P1D",
+      "x_axis_title": "Day",
+      "y_axis_title": "Trips"
     },
     {
       "name": "Daily Revenue",
@@ -79,7 +81,9 @@
         "SUM(total_amount) AS Revenue"
       ],
       "time_column": "pickup_time",
-      "time_grain": "P1D"
+      "time_grain": "P1D",
+      "x_axis_title": "Day",
+      "y_axis_title": "Revenue, USD"
     },
     {
       "name": "Demand by Hour and Weekday",
@@ -118,7 +122,9 @@
       "metrics": [
         "COUNT(*) AS Trips"
       ],
-      "row_limit": 8
+      "row_limit": 8,
+      "x_axis_title": "Pickup borough",
+      "y_axis_title": "Trips"
     },
     {
       "name": "Top 10 Pickup Zones",
@@ -133,7 +139,9 @@
         "COUNT(*) AS Trips"
       ],
       "orientation": "horizontal",
-      "row_limit": 10
+      "row_limit": 10,
+      "x_axis_title": "Pickup zone",
+      "y_axis_title": "Trips"
     },
     {
       "name": "Trip Distance Distribution (trips up to 20 mi)",
@@ -151,7 +159,9 @@
           "op": "<=",
           "value": 20
         }
-      ]
+      ],
+      "x_axis_title": "Trip distance, miles",
+      "y_axis_title": "Trips"
     }
   ],
   "filters": [

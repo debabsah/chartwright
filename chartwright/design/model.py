@@ -36,7 +36,7 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # ordered by value alone; default.date-tile fills date_format on a big number of a date
 # column (data-aware), and a big number shown as a date gets no number format from
 # narrative.big-number-format, default.count-format or a standard.
-# "9" = the waterfall: chart.waterfall-additive and chart.waterfall-steps (warn) can
+# Also "9", the waterfall: chart.waterfall-additive and chart.waterfall-steps (warn) can
 # newly block a strict gate, chart.waterfall-order, chart.waterfall-colors and
 # chart.waterfall-axis-titles are new findings, and default.value-labels and
 # default.count-format now fill a waterfall's show_value and number_format. The box
@@ -65,7 +65,9 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # when the dashboard's CSS or theme sets text below its floor, so a strict gate can newly
 # block, and kpi-text raises a big number's height until its value and subtitle reach
 # theirs, which changes what `--fix` writes.
-DESIGN_BRAIN_VERSION = "16"
+# "17" = chart.axis-titles and layout.thin-subtabs (info), and default.value-labels now
+# labels grouped bars too, which changes what `--fix` writes.
+DESIGN_BRAIN_VERSION = "17"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

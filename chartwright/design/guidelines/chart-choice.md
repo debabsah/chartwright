@@ -34,6 +34,8 @@
   `category_sort: "asc"`. An ordered axis such as hours stays vertical: add
   `x_label_every`; on a heatmap it is a step (6 on hours reads 0, 6, 12, 18).
   A heatmap's `y_order: "a_to_z"` puts the first label on top (a cohort triangle).
+- Title every axis: `y_axis_title` the measure and unit ("GW"), `x_axis_title`
+  the dimension ("Month"). Bars carry `show_value` (`only_total` on a stack).
 - A rolling KPI (`rolling_type`): name its window ("Revenue, trailing 12 months"),
   give a range holding it plus `compare_lag`, and set `y_axis_truncate`.
 - A table whose rows all show takes no `page_length` or `search_box`; a

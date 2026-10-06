@@ -786,18 +786,35 @@ def _y_title_layout(p: dict) -> None:
     p["y_axis_title_position"] = "Top"
 
 
+# A horizontal bar's titles. transformProps lays them out for a vertical chart, then swaps the
+# axes and the bottom and left padding (Timeseries/transformProps.ts 4.1.4 and 5.0.0 :530-531,
+# 6.1.0 :993-994). So x_axis_title names the category axis, drawn rotated left of the bars at
+# nameGap from the axis line, through the column of category labels; y_axis_title names the
+# value axis along the bottom. Placed 'Top' (nameLocation 'end', :526 and :973), the value
+# title lands past the axis's right end and is cut off; 'Left' centres it under the axis, and
+# getPadding's left offset becomes the bottom one (Timeseries/transformers.ts getPadding).
+HBAR_CATEGORY_TITLE_GAP = 64  # clears category labels of about 8 characters at 12 px
+HBAR_VALUE_TITLE_GAP = 30     # clears the value labels under the axis
+
+
 def _y_axis_params(chart, p: dict) -> None:
     """Axis titles, bounds, truncation and log scale: titleControls (sections/chartTitle.tsx)
     and the panels' Y Axis section, at 4.1.4, 5.0.0 and 6.1.0. transformProps passes
     y_axis_bounds to ECharts as the axis min and max, so a bound applies on every release."""
+    horizontal = getattr(chart, "orientation", None) == "horizontal"
     if chart.x_axis_title:
         p["x_axis_title"] = chart.x_axis_title
         # Clear of the tick labels; rotated labels hang lower. 0 (6.1.0's default margin)
         # draws the title over the labels.
-        p["x_axis_title_margin"] = 50 if chart.x_label_rotation else 30
+        p["x_axis_title_margin"] = (HBAR_CATEGORY_TITLE_GAP if horizontal
+                                    else 50 if chart.x_label_rotation else 30)
     if chart.y_axis_title:
         p["y_axis_title"] = chart.y_axis_title
-        _y_title_layout(p)
+        if horizontal:
+            p["y_axis_title_margin"] = HBAR_VALUE_TITLE_GAP
+            p["y_axis_title_position"] = "Left"
+        else:
+            _y_title_layout(p)
     if chart.y_axis_min is not None or chart.y_axis_max is not None:
         p["y_axis_bounds"] = [chart.y_axis_min, chart.y_axis_max]
     if chart.y_axis_truncate:

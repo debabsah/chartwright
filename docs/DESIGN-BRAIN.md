@@ -11,7 +11,8 @@
 > rules: `chart.format-bands` on a KPI, `chart.color-contrast` and
 > `narrative.kpi-thresholds`; 15 `chart.format-bands` reading each colour rule's own
 > range, so `>=`, `<=`, `!=` and `between_inclusive` take their bounds in; 16 the type
-> floors of the `readability.*` rules, §17 "Type sizes"). This page is both the
+> floors of the `readability.*` rules, §17 "Type sizes"; 17 `chart.axis-titles`,
+> `layout.thin-subtabs`, and value labels on grouped bars). This page is both the
 > design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
@@ -326,6 +327,7 @@ fails when it drifts.
 
 | id | sev | fix | data | since | rule |
 |---|---|---|---|---|---|
+| `chart.axis-titles` | info | - | - | 17 | axis charts name their axes: the measure and unit, and the dimension |
 | `chart.box-plot-groups` | warn | - | - | 9 | past ~20 boxes each thins to a sliver and the labels drop |
 | `chart.box-plot-observations` | warn | - | - | 9 | a box needs many observations: distribute across a finer grain than the groups |
 | `chart.color-contrast` | warn | - | - | 14 | a colour painted as text or a line reads on the white card: 3:1 for a big number or a trendline, 4.5:1 for table and pivot text (WCAG AA) |
@@ -364,7 +366,7 @@ fails when it drifts.
 | `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows that outgrow its panel, and so page, gets a search box; one whose rows all show gets none (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
 | `default.stale-record` | info | ✔ | - | 7 | design.filled names only charts and fields the spec has |
-| `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical, and a waterfall's steps) or tall enough to space the labels (horizontal) |
+| `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars (row_limit x metrics for grouped bars), on a panel >= 6/12 wide (vertical, and a waterfall's steps) or tall enough to space the labels (horizontal) |
 | `default.x-label-format` | info | ✔ | - | 5 | a time axis labels its points in its grain's own format ('Sep 2026' by month); day and week labels only over a year or less |
 | `filters.count` | warn | - | - | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
 | `filters.duplicate-column` | info | - | - | 2 | two filters on the same column fight each other |
@@ -381,6 +383,7 @@ fails when it drifts.
 | `layout.row-fill` | warn/info | - | - | 1 | a row should fill the 12-column grid |
 | `layout.section-headers` | info | - | - | 1 | large flat dashboards need section headers (header rows or markdown) |
 | `layout.tab-balance` | info | - | - | 1 | tabs should carry comparable weight |
+| `layout.thin-subtabs` | info | - | - | 17 | a sub-tab holding 2 charts or fewer reads better as a section of one page |
 | `narrative.big-number-format` | info | - | - | 1 | hero numbers deserve a number format |
 | `narrative.color-scheme` | warn | - | - | 4 | a colour scheme Superset doesn't ship draws the default palette unless your deployment registers it |
 | `narrative.filtered-title` | info | - | - | 1 | a filtered chart's title should say what it shows |

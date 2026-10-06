@@ -14,6 +14,12 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Added
 
+- `advise` asks every axis chart to name its axes (design brain 17). `chart.axis-titles` notes a chart with no `y_axis_title` (the measure and its unit) or no `x_axis_title` (the dimension); Superset draws neither unless the chart sets it, and a screenshot or export can't show a tooltip. The heatmap, which has no title setting, and the waterfall, whose steps name themselves, are left out. The brief now tells authors to title every axis.
+
+- `layout.thin-subtabs` notes a sub-tab holding two charts or fewer besides its KPIs: readers click for little, and the sub-tabs read better as sections of one page under header rows.
+
+- The value-label design default now covers grouped bars: a bar chart with several metrics side by side gets `show_value` when its bars (rows times metrics) fit the same 12-bar and spacing limits as a single series. Stacked metrics and grouped series stay unlabelled.
+
 - `advise` checks that each markdown block is tall enough for its text (`size.markdown-fit`). Superset cuts the rest off inside the block: macOS shows no scrollbar there, so a screenshot shows the text stopping mid-line. The check estimates the text's height from its headings, paragraphs, lists, tables, quotes, code and line breaks, the block's width and the dashboard's own CSS, in a window 1440 px wide, measured against what 4.1.4, 5.0.0 and 6.1.0 draw. A wider window wraps fewer lines, so a height that fits there fits wider too.
   - It warns when letters are cut off on every release and says by how much ("it needs ~16 units at 12/12 in a 1440 px wide window, has 15"); `--fix` raises the block to a height that shows every line on every release, Windows scrollbars included.
   - A block whose last line or padding only reaches the edge gets an info: it scrolls a few px, and Windows draws a scrollbar in it. That covers short strips: a line of text needs 1.6 units, a `##` heading 2.2.
@@ -33,6 +39,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
 - `chartwright advise` checks type sizes against floors for reading a dashboard on a laptop (design brain 16): `readability.table-text` (table and pivot cells 14 px, their headers 12 px, rows 24 px tall), `readability.chart-text` (axis labels and legends 12 px, chart titles 14 px) and `readability.kpi-text` (a big number's value 24 px, its subtitle or comparison 12 px). Text Superset draws smaller by default, such as its 12 px table cells, is an info naming the CSS selector or theme token to set; text the dashboard's own CSS or theme sets smaller is a warn, so `--design strict` can newly block. Superset sizes a big number's text by the card's height, so `advise --fix` raises such a card, and the cards beside it, to the height where its text reads: a card with a subtitle to 5 units, a trendline card with a comparison to 6. The floors are design parameters (`min_cell_text_px` and four more) that `design.yaml` and a standard can tune or lock. `check` and `advise --profile` read a named theme's tokens and ECharts overrides.
 
 ### Fixed
+
+- A horizontal bar chart's axis titles now sit where they belong. Superset lays the titles out for a vertical chart and then swaps the axes, so the value-axis title ran past the right end of the bottom axis and was cut off, and the category title sat on top of the category labels. The value title is now centred under the bottom axis, and the category title clears labels of about 8 characters.
 
 - `advise` and the smoke check after `apply` now ask the same height question of tables and pivots, so they no longer disagree:
   - a table: advise names the height smoke names once the data fills `row_limit` (a 25-row table at 13 units now gets "raise height to ~21" from both);

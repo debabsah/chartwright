@@ -84,6 +84,22 @@ def _chart(name: str) -> dict:
     return next(c for c in DISPLAY["charts"] if c["name"] == name)
 
 
+@pytest.mark.parametrize("orientation, expected", [
+    # Superset swaps a horizontal bar's axes after laying out its titles (Timeseries/
+    # transformProps.ts 4.1.4 and 5.0.0 :530-531, 6.1.0 :993-994): the x title names the
+    # category axis on the left, through its labels; 'Left' puts the value title under the
+    # bottom axis, where 'Top' would push it past the axis's right end.
+    ("horizontal", {"x_axis_title_margin": 64, "y_axis_title_margin": 30, "y_axis_title_position": "Left"}),
+    ("vertical", {"x_axis_title_margin": 30, "y_axis_title_margin": 15, "y_axis_title_position": "Top"}),
+])
+def test_bar_axis_titles_follow_orientation(orientation, expected):
+    bar = {"name": "Ranked", "type": "bar", "dataset": DS, "x_column": "region", "metrics": ["SUM(sales)"],
+           "orientation": orientation, "x_axis_title": "Region", "y_axis_title": "Sales"}
+    params = _params(_spec(bar))["Ranked"]
+    assert {k: params[k] for k in expected} == expected
+    assert (params["x_axis_title"], params["y_axis_title"]) == ("Region", "Sales")
+
+
 @functools.cache
 def _display_params() -> dict[str, dict]:
     return _params(load_spec(DISPLAY))
