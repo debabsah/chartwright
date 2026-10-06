@@ -194,3 +194,66 @@ def test_big_number_decompile_reads_ui_sizes_and_names_the_rest():
     # a trendline's comparison size is no field: a changed one is a named setting
     result = _decompile(_spec([TREND]), _edit_chart("Orders trend", subheader_font_size=0.3))
     assert any("subheader_font_size=0.3" in loss.what for loss in result.losses), result.losses_json()
+
+
+# -- axis-title spacing ----------------------------------------------------------------
+
+def test_unset_title_spacing_is_the_tools_own():
+    titled = {**LINE, "x_axis_title": "Month", "y_axis_title": "USD"}
+    p = _params(_spec([titled]))["Revenue"]
+    assert (p["x_axis_title_margin"], p["y_axis_title_margin"], p["y_axis_title_position"]) == (30, 15, "Top")
+
+
+def test_title_spacing_wins_and_round_trips(monkeypatch):
+    """titleControls (sections/chartTitle.tsx:41-101 at 6.1.0, the same keys at 4.1.4 and
+    5.0.0): x_axis_title_margin, y_axis_title_margin and y_axis_title_position."""
+    titled = {**LINE, "x_axis_title": "Month", "x_axis_title_margin": 15, "y_axis_title": "USD",
+              "y_axis_title_margin": 45, "y_axis_title_position": "Left"}
+    mixed = {**MIXED, "y_axis_title_secondary": "Minutes", "y_axis_title_margin": 45,
+             "y_axis_title_position": "Left"}
+    spec = _spec([titled, mixed])
+    p = _params(spec)
+    assert (p["Revenue"]["x_axis_title_margin"], p["Revenue"]["y_axis_title_margin"],
+            p["Revenue"]["y_axis_title_position"]) == (15, 45, "Left")
+    pm = p[MIXED["name"]]
+    assert (pm["yAxisTitleSecondary"], pm["y_axis_title_margin"], pm["y_axis_title_position"]) == (
+        "Minutes", 45, "Left")
+    _round_trips(spec)
+    _contract_clean({"echarts_timeseries_line": set(p["Revenue"]), "mixed_timeseries": set(pm)})
+    plan = _plan(spec, _spec([{**titled, "y_axis_title_position": "Top"}, mixed]), monkeypatch)
+    assert plan["charts_changed"] == ["Revenue"]
+
+
+def test_written_tool_spacing_builds_and_plans_as_unset(monkeypatch):
+    titled = {**LINE, "x_axis_title": "Month", "y_axis_title": "USD"}
+    written = _spec([{**titled, "x_axis_title_margin": 30, "y_axis_title_margin": 15,
+                      "y_axis_title_position": "Top"}])
+    assert _compiled(written) == _compiled(_spec([titled]))
+    assert _plan(written, _spec([titled]), monkeypatch)["clean"]
+    bar = {"name": "By region", "type": "bar", "dataset": DS, "x_column": "region",
+           "metrics": ["SUM(revenue)"], "orientation": "horizontal", "y_axis_title": "USD"}
+    assert _plan(_spec([{**bar, "y_axis_title_position": "Left"}]), _spec([bar]), monkeypatch)["clean"]
+
+
+def test_title_spacing_needs_its_title():
+    for extra in ({"x_axis_title_margin": 20}, {"y_axis_title_margin": 20},
+                  {"y_axis_title_position": "Left"}):
+        with pytest.raises(ValidationError, match="needs"):
+            _spec([{**LINE, **extra}])
+    with pytest.raises(ValidationError):
+        _spec([{**LINE, "y_axis_title": "USD", "y_axis_title_position": "Right"}])
+
+
+def test_ui_title_spacing_reads_back_beside_its_title():
+    spec = _spec([{**LINE, "y_axis_title": "USD"}])
+    result = _decompile(spec, _edit_chart("Revenue", y_axis_title_position="Left", y_axis_title_margin=15))
+    assert result.losses == [], result.losses_json()
+    back = result.spec["charts"][0]
+    assert back["y_axis_title_position"] == "Left" and "y_axis_title_margin" not in back
+    # without a title they do nothing, and read as nothing
+    result = _decompile(_spec([LINE]), _edit_chart("Revenue", x_axis_title_margin=50,
+                                                   y_axis_title_position="Left"))
+    assert result.losses == [], result.losses_json()
+    assert not {"x_axis_title_margin", "y_axis_title_position"} & set(result.spec["charts"][0])
+    result = _decompile(spec, _edit_chart("Revenue", y_axis_title_margin="wide"))
+    assert [loss.what for loss in result.losses] == ["y_axis_title_margin 'wide' not representable; dropped"]

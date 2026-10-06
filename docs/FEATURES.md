@@ -34,7 +34,7 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - On Superset 6.1+, each band is one solid colour, a rule can colour the text instead of the cell, and a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it. Older releases fade each band toward its threshold and fill only the cell that was tested; on those, `check`, `apply` and `plan` warn for each such rule, naming what that release draws instead.
     - A fixed ascending table sort, d3 number and date formats, and on Superset 6.0+ hidden table columns.
 - **Chart Options**: Set the common options of Superset's chart panels in the spec; an option changed in the UI shows up in `plan`.
-    - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own.
+    - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own. A title can sit along its axis (`y_axis_title_position: "Left"`) at the gap you set (`y_axis_title_margin`).
     - Values written on bars and points, stacked series, 100% stacks, and the top N series of a breakdown.
     - Legends hidden, or placed at the bottom, left or right.
     - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value; stacked or grouped bars ranked by their total; or bars ranked by another metric, drawn or not, so two charts share one order.

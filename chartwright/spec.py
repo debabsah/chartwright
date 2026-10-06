@@ -744,6 +744,18 @@ class _AxisChart(_ChartBase):
     x_axis_title: str | None = Field(default=None, description="Title under the x axis")
     y_axis_title: str | None = Field(
         default=None, description="Title above the value axis, e.g. its unit")
+    x_axis_title_margin: int | None = Field(
+        default=None, ge=0,
+        description="Pixels between the x axis and its title; omit for a gap that clears the "
+                    "labels (30, 50 under rotated labels)")
+    y_axis_title_margin: int | None = Field(
+        default=None, ge=0,
+        description="Pixels between the value axis and its title; omit for 15 (30 on a "
+                    "horizontal bar), e.g. 45 for a title along the axis that clears its labels")
+    y_axis_title_position: Literal["Left", "Top"] | None = Field(
+        default=None,
+        description="Top (above the axis, the default here) or Left (along it, turned on its side; "
+                    "the default on a horizontal bar)")
     y_axis_min: float | None = Field(
         default=None,
         description="Bottom of the value axis. Superset hands the bound to the chart as the "
@@ -791,6 +803,19 @@ class _AxisChart(_ChartBase):
         dupes = sorted({n for n in names if names.count(n) > 1})
         if dupes:
             raise ValueError(f"chart {self.name!r}: duplicate annotation names {dupes} (each is a series id)")
+        return self
+
+    @model_validator(mode="after")
+    def _title_spacing(self) -> "_AxisChart":
+        # Superset reads a title's margin and position only beside the title
+        # (Timeseries/transformProps.ts:737-740 at 6.1.0); a mixed chart's secondary
+        # title takes the same two.
+        if self.x_axis_title_margin is not None and not self.x_axis_title:
+            raise ValueError(f"chart {self.name!r}: x_axis_title_margin needs x_axis_title")
+        y_titled = self.y_axis_title or getattr(self, "y_axis_title_secondary", None)
+        for key in ("y_axis_title_margin", "y_axis_title_position"):
+            if getattr(self, key) is not None and not y_titled:
+                raise ValueError(f"chart {self.name!r}: {key} needs y_axis_title")
         return self
 
     def _check_y_axis(self) -> None:

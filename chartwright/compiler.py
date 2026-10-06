@@ -515,7 +515,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         _y_axis_params(chart, p)
         if chart.y_axis_title_secondary:
             p["yAxisTitleSecondary"] = chart.y_axis_title_secondary
-            _y_title_layout(p)
+            _y_title_layout(p, chart)  # one margin and position for both value axes
         if chart.y_axis_min_secondary is not None or chart.y_axis_max_secondary is not None:
             p["y_axis_bounds_secondary"] = [chart.y_axis_min_secondary, chart.y_axis_max_secondary]
         if chart.y_axis_log_secondary:
@@ -785,11 +785,14 @@ def _series_limit_params(series, p: dict, suffix: str, metric) -> None:
         p[f"order_desc{suffix}"] = False
 
 
-def _y_title_layout(p: dict) -> None:
+def _y_title_layout(p: dict, chart=None, auto: dict | None = None) -> None:
     # Title above the axis, 15 px clear of it: Superset's own default for a bar's y
-    # title at 6.1.0. Without a margin, 6.1.0 reserves no room for the title.
-    p["y_axis_title_margin"] = 15
-    p["y_axis_title_position"] = "Top"
+    # title at 6.1.0. Without a margin, 6.1.0 reserves no room for the title. An axis
+    # chart's own y_axis_title_margin / y_axis_title_position win.
+    auto = auto or axis_title_defaults(horizontal=False, rotated=False)
+    for key in ("y_axis_title_margin", "y_axis_title_position"):
+        own = getattr(chart, key, None)
+        p[key] = auto[key] if own is None else own
 
 
 # A horizontal bar's titles. transformProps lays them out for a vertical chart, then swaps the
@@ -803,24 +806,31 @@ HBAR_CATEGORY_TITLE_GAP = 64  # clears category labels of about 8 characters at 
 HBAR_VALUE_TITLE_GAP = 30     # clears the value labels under the axis
 
 
+def axis_title_defaults(horizontal: bool, rotated: bool) -> dict:
+    """The title spacing written for an axis chart that sets none of its own. The x title
+    clears the tick labels (rotated labels hang lower; 0, 6.1.0's default margin, draws
+    the title over them); a horizontal bar's titles are laid out as above. Decompile reads
+    a stored value that differs back as the chart's own."""
+    if horizontal:
+        return {"x_axis_title_margin": HBAR_CATEGORY_TITLE_GAP,
+                "y_axis_title_margin": HBAR_VALUE_TITLE_GAP, "y_axis_title_position": "Left"}
+    return {"x_axis_title_margin": 50 if rotated else 30,
+            "y_axis_title_margin": 15, "y_axis_title_position": "Top"}
+
+
 def _y_axis_params(chart, p: dict) -> None:
     """Axis titles, bounds, truncation and log scale: titleControls (sections/chartTitle.tsx)
     and the panels' Y Axis section, at 4.1.4, 5.0.0 and 6.1.0. transformProps passes
     y_axis_bounds to ECharts as the axis min and max, so a bound applies on every release."""
-    horizontal = getattr(chart, "orientation", None) == "horizontal"
+    auto = axis_title_defaults(getattr(chart, "orientation", None) == "horizontal",
+                               bool(chart.x_label_rotation))
     if chart.x_axis_title:
         p["x_axis_title"] = chart.x_axis_title
-        # Clear of the tick labels; rotated labels hang lower. 0 (6.1.0's default margin)
-        # draws the title over the labels.
-        p["x_axis_title_margin"] = (HBAR_CATEGORY_TITLE_GAP if horizontal
-                                    else 50 if chart.x_label_rotation else 30)
+        p["x_axis_title_margin"] = (auto["x_axis_title_margin"] if chart.x_axis_title_margin is None
+                                    else chart.x_axis_title_margin)
     if chart.y_axis_title:
         p["y_axis_title"] = chart.y_axis_title
-        if horizontal:
-            p["y_axis_title_margin"] = HBAR_VALUE_TITLE_GAP
-            p["y_axis_title_position"] = "Left"
-        else:
-            _y_title_layout(p)
+        _y_title_layout(p, chart, auto)
     if chart.y_axis_min is not None or chart.y_axis_max is not None:
         p["y_axis_bounds"] = [chart.y_axis_min, chart.y_axis_max]
     if chart.y_axis_truncate:

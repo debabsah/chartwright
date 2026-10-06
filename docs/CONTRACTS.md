@@ -461,7 +461,15 @@ running the tool against real instances of all three releases.
   spec's defaults match it: `only_total` and a heatmap's `show_percentage`
   default to true, and the tool writes them only as false. Axis titles get an
   explicit margin, because 6.1.0's default x-title margin is 0, which draws
-  the title over the tick labels.
+  the title over the tick labels. An axis chart can set its own
+  `x_axis_title_margin`, `y_axis_title_margin` and `y_axis_title_position`
+  (`Left` or `Top`), the titleControls keys (`sections/chartTitle.tsx:41-101`
+  at 6.1.0, the same names at 4.1.4 and 5.0.0); each needs its title, which
+  is the only place Superset reads it (`Timeseries/transformProps.ts:737-740`),
+  and a mixed chart's secondary title shares the y pair. Unset, the tool's
+  spacing applies, and written, that same spacing compares equal in `plan`.
+  Decompile reads a stored value that differs from the tool's spacing back as
+  the chart's own, Superset's `Left` included.
 - **A written Superset default draws the same chart as an omitted field.**
   Writing Superset's own value (`legend_position: "top"`, `legend_type:
   "scroll"`, a pie's `label_type: "key_percent"`, a funnel's `"key"`, a

@@ -21,7 +21,7 @@ from .compiler import (
     BACKGROUND, BAR_SWITCH_KEYS, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX,
     FORMAT_OPERATOR, HEADER_PREFIX, HEADER_SIZE, HEATMAP_X_SORT, HEATMAP_Y_SORT, LEGEND_TYPES,
     METRIC_OPTION_PREFIX, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER, STACK_VALUES, VIZ_TYPE,
-    WHISKER_OPTIONS, bridge_totals_sql, parse_steps_order_sql, spec_units,
+    WHISKER_OPTIONS, axis_title_defaults, bridge_totals_sql, parse_steps_order_sql, spec_units,
 )
 from .spec import (
     ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX,
@@ -294,7 +294,31 @@ def _axis_to_spec(p: dict, out: dict, losses: list, name: str, spec_type: str) -
         _set_bounds(p, "y_axis_bounds_secondary", out, "_secondary",
                     bool(p.get("logAxisSecondary")), losses, name)
         read |= {"yAxisTitleSecondary", "logAxisSecondary", "y_axis_bounds_secondary"}
-    return read
+    return read | _title_spacing_to_spec(p, out, losses, name)
+
+
+def _title_spacing_to_spec(p: dict, out: dict, losses: list, name: str) -> set[str]:
+    """A title's margin and position, stored beside the title, back as the chart's own when
+    they differ from what compile writes for it unset (axis_title_defaults). Without its
+    title they do nothing, so they read as nothing (Timeseries/transformProps.ts:737-740)."""
+    auto = axis_title_defaults(out.get("orientation") == "horizontal", bool(out.get("x_label_rotation")))
+    y_titled = "y_axis_title" in out or "y_axis_title_secondary" in out
+    for key, titled in (("x_axis_title_margin", "x_axis_title" in out),
+                        ("y_axis_title_margin", y_titled), ("y_axis_title_position", y_titled)):
+        value = p.get(key)
+        if not titled or value in (None, "") or value == auto[key]:
+            continue
+        if key == "y_axis_title_position":
+            ok = value in ("Left", "Top")
+        else:
+            value = _number(value)
+            ok = isinstance(value, int) and value >= 0
+        if ok:
+            if value != auto[key]:
+                out[key] = value
+        else:
+            losses.append(Loss(name, f"{key} {p[key]!r} not representable; dropped"))
+    return {"x_axis_title_margin", "y_axis_title_margin", "y_axis_title_position"}
 
 
 def _legend_to_spec(p: dict, out: dict, spec_type: str) -> set[str]:

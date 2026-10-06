@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 import yaml
 
 from .client import SupersetClient
-from .compiler import _metric_payload, compile_bundle, filter_id, grid_rows, spec_units
+from .compiler import (_metric_payload, axis_title_defaults, compile_bundle, filter_id, grid_rows,
+                       spec_units)
 from .decompile import _metric_to_spec, decompile_live
 from .spec import (
     BAR_SWITCHES, DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, FORMAT_COLOR_HEX,
@@ -190,6 +191,13 @@ def _normalize(spec: DashboardSpec) -> dict:
         for field in NAMED_COLOUR_FIELDS:
             if chart.get(field):
                 chart[field] = named_hex(chart[field])
+        if "x_label_rotation" in type(model).model_fields:
+            # Title spacing compile writes anyway reads back as unset (decompile).
+            auto = axis_title_defaults(chart.get("orientation") == "horizontal",
+                                       bool(chart.get("x_label_rotation")))
+            for key, value in auto.items():
+                if chart.get(key) == value:
+                    del chart[key]
         if chart["type"] == "table":
             # An empty list compiles as the omitted one, which is how decompile reads it.
             for key in ("metrics", "groupby"):
