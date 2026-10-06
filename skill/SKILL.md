@@ -38,11 +38,9 @@ approximate it with a different mechanism.
 1. `CW schema`: read the contract. Surface: 17 chart types (big numbers,
    timeseries line/bar/area/scatter, categorical bar, pie/donut, table,
    pivot_table, heatmap, histogram, funnel, treemap, mixed: bars, lines or
-   filled areas on two axes), metrics as saved names, `AGG(col) [AS Label]` or
-   pivot_table, heatmap, histogram, funnel, treemap, mixed: bars + a line on
-   two axes, waterfall: a bridge whose `opening`, `steps` and `closing` keep
-   its order on 6.1+, box_plot: a distribution per group), metrics as saved names, `AGG(col) [AS Label]` or
-   `SQL(expression) AS Label`, per-chart `filters` (WHERE: column/op/value
+   filled areas on two axes, waterfall: a bridge whose `opening`, `steps` and
+   `closing` keep its order on 6.1+, box_plot: a distribution per group),
+   metrics as saved names, `AGG(col) [AS Label]` or `SQL(expression) AS Label`, per-chart `filters` (WHERE: column/op/value
    or `sql`), goal lines (`annotations`) on line/bar/area/scatter/mixed,
    dashboard-level `filters` (select, time_range, numeric range, time_grain
    and time_column native filter bar; `dependencies` for cascading; `charts`
@@ -64,6 +62,12 @@ approximate it with a different mechanism.
    spec's `design.audience`. Brain OFF (user said "no design opinions" /
    "exactly as I specify"): skip the brief, skip step 6, and pass
    `--design off` to check and apply.
+   The brief marks two style choices "recommended": titles that name the
+   measure, unit and window (no typed takeaways, which go stale), and colour by
+   role (status green/amber/red beside a ▲▼ or a word). They are offers, not
+   rules: before you write the spec, recommend them to the user in a line each
+   and follow their answer. A style the user asks for wins; if they don't
+   answer, use the recommendation and say so in your reply.
 3. Write the spec to the specs dir (absolute path). Slug lowercase-kebab;
    chart names unique. When the user names the team the dashboard is for and
    the repo has a `standards/` folder, write that team's standard in

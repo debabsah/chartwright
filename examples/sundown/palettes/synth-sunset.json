@@ -1,0 +1,75 @@
+{
+ "about": "Synthwave sunset, on theme for Sundown: deep violet shell, hot-pink accent, electric violet and orange.",
+ "masthead": "#2B1055",
+ "accent": "#FF2E88",
+ "on_masthead": "#D9C8F5",
+ "ground": "#F7F4FC",
+ "tile": "#FFFFFF",
+ "border": "#ECE6F7",
+ "rule": "#DDD3F0",
+ "grid": "#F0EBF8",
+ "head_bg": "#F1ECFA",
+ "ref": "#9A8FB5",
+ "ink": "#1E1433",
+ "sec": "#5B5172",
+ "this": "#7B2FF7",
+ "prior": "#CDB4FF",
+ "second": "#D97500",
+ "up": "#FF2E88",
+ "down": "#7B2FF7",
+ "total": "#8A82A0",
+ "cellbar": "rgba(255,46,136,0.18)",
+ "heatmap": "schemeRdPu",
+ "status": {
+  "good": [
+   "#16674A",
+   "#C4EEDD",
+   "#E6F8F0",
+   "#14B37D"
+  ],
+  "watch": [
+   "#874500",
+   "#FFDDB3",
+   "#FFF3E3",
+   "#F28300"
+  ],
+  "proven": [
+   "#5F2E00",
+   "#FFC27A",
+   "#FFF3E3",
+   "#D46A00"
+  ],
+  "act": [
+   "#A1142F",
+   "#FFCDD6",
+   "#FFEDF0",
+   "#E5294B"
+  ]
+ },
+ "proven_rise": "#A04E00",
+ "rising": "#D97500",
+ "region": {
+  "California": "#7B2FF7",
+  "Texas": "#FF8A00",
+  "Southwest": "#14B37D",
+  "Other regions": "#CFC8DD",
+  "Northwest": "#00B4D8",
+  "Florida": "#FF2E88"
+ },
+ "fuel": {
+  "Solar": "#FFB400",
+  "Wind": "#00B4D8",
+  "Gas": "#FF6B6B",
+  "Coal": "#2B1055",
+  "Nuclear": "#FF2E88",
+  "Hydro": "#3A86FF",
+  "Battery": "#7B2FF7",
+  "Battery charging": "#CDB4FF",
+  "Net imports": "#CFC8DD",
+  "Exports": "#ECE6F7",
+  "Other": "#B3A9C9",
+  "Coal, nuclear, hydro": "#2B1055"
+ },
+ "battery_prior": "#CDB4FF",
+ "name": "Synth Sunset"
+}

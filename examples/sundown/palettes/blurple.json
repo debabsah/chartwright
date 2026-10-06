@@ -1,0 +1,75 @@
+{
+ "about": "Deep navy chrome, a blurple accent, cyan and coral highlights.",
+ "masthead": "#0A2540",
+ "accent": "#635BFF",
+ "on_masthead": "#ADBDCC",
+ "ground": "#F6F9FC",
+ "tile": "#FFFFFF",
+ "border": "#E3E8EE",
+ "rule": "#D5DBE1",
+ "grid": "#EDF1F5",
+ "head_bg": "#F0F3F7",
+ "ref": "#8792A2",
+ "ink": "#0A2540",
+ "sec": "#425466",
+ "this": "#635BFF",
+ "prior": "#C1BDFF",
+ "second": "#0096C7",
+ "up": "#E86B57",
+ "down": "#0096C7",
+ "total": "#8792A2",
+ "cellbar": "rgba(99,91,255,0.18)",
+ "heatmap": "schemePuBu",
+ "status": {
+  "good": [
+   "#0B6B3A",
+   "#CBF4D9",
+   "#EBFBF0",
+   "#1EA672"
+  ],
+  "watch": [
+   "#8A4B00",
+   "#FCE3C3",
+   "#FFF4E6",
+   "#E5850B"
+  ],
+  "proven": [
+   "#683800",
+   "#F9C98A",
+   "#FFF4E6",
+   "#C4751A"
+  ],
+  "act": [
+   "#A41C3A",
+   "#FFD3DB",
+   "#FFEEF1",
+   "#DF1B41"
+  ]
+ },
+ "proven_rise": "#9A4A00",
+ "rising": "#D97E0A",
+ "region": {
+  "California": "#635BFF",
+  "Texas": "#F5A623",
+  "Southwest": "#1EA672",
+  "Other regions": "#C1C9D2",
+  "Northwest": "#00B2E3",
+  "Florida": "#FF5996"
+ },
+ "fuel": {
+  "Solar": "#FFBB00",
+  "Wind": "#00B2E3",
+  "Gas": "#FF7A45",
+  "Coal": "#425466",
+  "Nuclear": "#A960EE",
+  "Hydro": "#0073E6",
+  "Battery": "#635BFF",
+  "Battery charging": "#C1BDFF",
+  "Net imports": "#ADBDCC",
+  "Exports": "#E3E8EE",
+  "Other": "#C8B8A6",
+  "Coal, nuclear, hydro": "#425466"
+ },
+ "battery_prior": "#C1BDFF",
+ "name": "Blurple"
+}

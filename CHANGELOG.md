@@ -3,40 +3,118 @@
 Notable changes per release. Versions follow [semantic versioning](https://semver.org);
 while the major version is 0, minor bumps may include breaking changes and say so here.
 
-## Unreleased
+## 0.6.0 (2026-10-05)
 
-### Upgrading
+Bridge two totals with a waterfall and show a spread with a box plot, colour a KPI by its value, put cell bars on chosen table columns, and head the sections of a sketch. `advise` now checks axis titles, readable type, markdown that fits its block and sub-tabs too thin to earn a click, and `plan` is clean straight after `apply`.
 
-- The design brain is version 8. `advise` now flags a table whose height can't show every row its `row_limit` allows, as the smoke check after `apply` does when the data fills it; before, it passed a table that showed half. A `--design strict` or `advise --strict` gate can newly fail on such a table. To keep the old threshold for tables that rarely reach their `row_limit`, set `table_visible_ratio: 0.5` in `design.yaml` or a standards file.
-- The design brain is version 11. `advise` now warns when a markdown block's text runs past the block's bottom edge (`size.markdown-fit`), so a `--design strict` or `advise --strict` gate can newly fail on such a block; `advise --fix` raises it. `layout.markdown-height` now fixes a one-line block to the height its line takes, 1.6 units for a line of text up to 2.4 for a `#` heading, instead of 2.
-- A spec with `conditional_formatting` on a big number is refused by chartwright 0.5.0 and earlier (`extra_forbidden`); upgrade CI before committing one.
-- The design brain is version 14. Its new warn rule, `chart.color-contrast`, can fail `advise --strict` and `--design strict` on a spec that passed before: a colour rule painting text or a trendline too pale to read.
+### Upgrading from 0.5
+
+- A spec that uses a field new in 0.6 is refused by chartwright 0.5 (`extra_forbidden` or `literal_error`); upgrade CI before committing one. The new fields:
+  - the `waterfall` and `box_plot` chart types;
+  - a mixed chart's `kind: "area"`;
+  - a trendline's `rolling_type` and `y_axis_truncate`;
+  - a big number's `date_format` and `conditional_formatting`;
+  - a heatmap's `x_order`, `y_order`, `x_label_every`, `y_label_every` and `left_margin`;
+  - a bar's `sort_by`;
+  - a table's `cell_bars` as a list of labels, and its `color_by_sign` and `absolute_bars`;
+  - the colour-rule operators `>=`, `<=`, `!=` and `between_inclusive`;
+  - header and markdown blocks in a sketch.
+- The design brain goes from version 7 to 17. New warn-level findings can make `--design strict` or `advise --strict` fail on a spec that passed before:
+  - a table whose height can't show every row its `row_limit` allows (before, a table that showed half passed). To keep the old threshold for tables that rarely fill their `row_limit`, set `table_visible_ratio: 0.5` in `design.yaml` or a standards file;
+  - markdown text cut off by its block (`size.markdown-fit`);
+  - a colour rule or trendline too pale to read (`chart.color-contrast`);
+  - a rolling trendline whose time range can't hold its window (`data.rolling-window-span`);
+  - a waterfall whose steps don't add up or run past about 12 (`chart.waterfall-additive`, `chart.waterfall-steps`);
+  - a box plot with too few observations per box or more than about 20 boxes (`chart.box-plot-observations`, `chart.box-plot-groups`);
+  - table or chart text that the dashboard's own CSS or theme sets below the readable floor (`readability.table-text`, `readability.chart-text`).
+- `advise --fix` writes more design defaults, so review the diff after its first run:
+  - `compare_suffix` between trailing windows;
+  - `date_format` on a big number of a date column;
+  - `left_margin` on every heatmap;
+  - values on grouped bars and on a waterfall's steps;
+  - the height a big number needs for readable text;
+  - a one-line markdown block's own height.
+
+  It also removes a search box it filled on a table whose rows all show.
 
 ### Added
 
-- `advise` asks every axis chart to name its axes (design brain 17). `chart.axis-titles` notes a chart with no `y_axis_title` (the measure and its unit) or no `x_axis_title` (the dimension); Superset draws neither unless the chart sets it, and a screenshot or export can't show a tooltip. The heatmap, which has no title setting, and the waterfall, whose steps name themselves, are left out. The brief now tells authors to title every axis.
+- `examples/sundown/`, the dashboard in the README: a six-tab grid-siting dashboard on EIA-930 and EIA-860M data. It ships with its spec, the script that writes it, seven colour palettes and the Superset theme it names. A test builds the spec in every palette and compiles it.
 
-- `layout.thin-subtabs` notes a sub-tab holding two charts or fewer besides its KPIs: readers click for little, and the sub-tabs read better as sections of one page under header rows.
+- `advise` asks every axis chart to name its axes. `chart.axis-titles` notes a chart with no `y_axis_title` (the measure and its unit) or no `x_axis_title` (the dimension); Superset draws neither unless the chart sets it, and a screenshot or export can't show a tooltip. The heatmap, which has no title setting, and the waterfall, whose steps name themselves, are left out. The brief now tells authors to title every axis.
 
-- The value-label design default now covers grouped bars: a bar chart with several metrics side by side gets `show_value` when its bars (rows times metrics) fit the same 12-bar and spacing limits as a single series. Stacked metrics and grouped series stay unlabelled.
+- A waterfall chart (`"type": "waterfall"`, Superset's Waterfall): steps that add up to a running total, such as a bridge from last year's revenue through each driver to this year's. Compiled, decompiled, compared by `plan` and checked by `apply` on 4.1.4, 5.0.0 and 6.1.0.
+  - `x_column` holds the steps (or a time column, one bar per `time_grain` period), `metric` the one measure they add, and `groupby` an optional breakdown per x value.
+  - `increase_color`, `decrease_color` and `total_color` take green, amber, red or any `#RRGGBB`, and replace Superset's stock green, red and grey on every release. `show_value`, `show_legend`, `number_format`, axis titles, `x_label_rotation` (0, 45 or 90) and `x_label_format` set the rest.
+  - On Superset 6.1.0 or later, `steps` lists a bridge's values in its own order and `closing` names the row that closes it, drawn last as the running total in the total colour: `"steps": ["FY2025", "Price", "Volume"], "closing": "FY2026"`. The first step rises from zero; `"opening": "FY2025"` draws the opening row as a total too, on a dashboard whose theme keeps zero on the value axis (`{"echartsOptionsOverridesByChartType": {"waterfall": {"yAxis": {"scale": false}}}}` in its JSON), which `check` and `apply` verify (`waterfall_opening_axis`). Older releases draw a running total after every step, so `check`, `apply` and `plan` refuse `steps` there. `total_label`, `increase_label` and `decrease_label` name the bars on 6.1.0 and warn before it.
+  - `apply`'s data check says when a bridge's opening, step or closing has no row, a value isn't in `steps`, or the closing row doesn't equal the steps added up (Superset draws the sum either way).
+
+- A waterfall gets `chart.waterfall-additive` (warn: `AVG`, `MIN`, `MAX` or `COUNT_DISTINCT` steps don't add up), `chart.waterfall-steps` (warn: past ~12 bars), `chart.waterfall-order` (info: a categorical waterfall without `steps` reads A to Z), `chart.waterfall-colors` (info for Superset's stock colours, whose green is 2.2:1 against the panel; warn for a colour under 3:1) and `chart.waterfall-axis-titles` (info: Superset puts the titles over wide or rotated tick labels). `advise --fix` fills a waterfall's `show_value` when it has at most 12 bars, and `number_format` `,.0f` on a count. A box plot gets `chart.box-plot-observations` (warn: grouped by a period at that period's grain, each box holds a few observations) and `chart.box-plot-groups` (warn, with `--profile`: past ~20 boxes). `chart.ordinal-order` reads a box plot's groups, and with `--profile` stands down for a column the dataset reports numeric or temporal. The brief's chart-choice guide says when a waterfall is the right form, and when a box plot beats a line of P50 and P90.
+
+- A box plot (`"type": "box_plot"`, Superset's Box Plot): a measure's distribution in each group, its median, quartiles, whiskers and outliers, such as the daily sales of each month. Compiled, decompiled, compared by `plan` and checked by `apply` on 4.1.4, 5.0.0 and 6.1.0.
+  - `distribute_across` holds the columns whose rows are the observations (a time column at `time_grain`, e.g. a day each), `groupby` the columns that get a box each, `metrics` the measure.
+  - `whiskers` is `"tukey"` (Superset's default), `"min_max"` (no outliers) or two percentiles such as `[5, 95]`, which every release takes.
+  - `number_format`, `x_label_format`, axis titles, `x_label_rotation` and `color_scheme` set the rest; `row_limit` is a Superset 6.0.0 control, and warns before it, where a dashboard's query still stops at it but Explore leaves it out.
+  - `apply`'s data check says when the observations reach the row limit (10,000 unset on Superset 6.x), so the boxes miss some.
+
+- A sketch can hold section headers and notes. A legend letter stands for a chart's name as before, or for a header (`{"header": "Monthly sales", "size": "large"}`) or a markdown block (`{"markdown": "Source: the ledger", "height": 1.6}`), drawn like a chart. A header is one line: drawn across the whole sketch it titles the band below it, as a header row does in `rows`; drawn above or below charts it sits in their column, and alone in a narrower slot it gets a column of its own. A markdown block takes its drawn width and height, or its own `height` in fifths of a unit. `decompile` (and so `adopt` and `plan`) reads headers and text blocks in a section of stacked charts back into its sketch, where it used to flatten the columns. Specs without blocks compile to the same bytes. See [the layout guide](docs/LAYOUT-GUIDE.md#section-headers-and-notes).
+
+- Filled areas on a mixed chart: `"kind": "area"` on query `a` or `b`, with `opacity` for the fill (0 to 1; Superset's default is 0.2). A line draws over an area whichever query holds it, and at opacity 1 the area's edge disappears into its fill, so solar output under a net-load line reads as one solid shape; give it a light colour with `label_colors`. `decompile` reads Superset's "Area chart" box back as `kind: "area"`.
+
+- A rolling window on a trendline KPI: `rolling_type` (`sum`, `mean`, `std`, or `cumsum` for a running total) with `rolling_periods`, the window in time-grain steps. At P1M, `"rolling_type": "sum", "rolling_periods": 12` shows a trailing-12-month total, and `compare_lag: 12` compares it with the 12 months before. Every point is a whole window; set `rolling_min_periods` to also draw the partial windows of the first steps.
+    - `advise` warns when the chart's time range, or a defaulted dashboard time filter it loads with, is too short to hold the window and the comparison (`data.rolling-window-span`), and apply's data check warns from the time buckets the chart really has.
+
+- `conditional_formatting` on `big_number_total`: colour the number by its value, such as a balance-closure KPI in red outside ±2% and green inside (`[{"operator": "<", "target": -0.02, "color": "red"}, {"operator": ">", "target": 0.02, "color": "red"}]`). The rules take the operators, thresholds and colours of table and pivot rules; a named colour takes its darker text shade, since the number is text. Superset 4.1.4, 5.0.0 and 6.1.0 all colour it, so no release is refused or warned. Decompile reads the rules back, and `plan` reports a rule changed in Superset.
+  - When several rules match, the last one's colour wins, as in Superset.
+  - `apply_to`, `paint` and a `metric` other than the chart's own are refused on a big number's rule, and so is `conditional_formatting` on `big_number_trend`, which Superset can't colour (its `trend_color` colours the line).
+  - Superset never colours a value of exactly 0; apply's data check warns when a coloured big number is 0 and a rule would have coloured it.
+
+- A big number shown as a date: `"date_format": "%a %-d %b %Y"` on a `big_number_total` shows `MAX(updated_at)` as "Sat 3 Oct 2026", for a tile that says how fresh the data is. It works on a date or timestamp metric and on a number of epoch milliseconds, and replaces `number_format`. With column types (`advise --profile`), `advise --fix` fills it on a big number of a date column's `MIN` or `MAX`, which Superset shows by default as its day alone ("Tue 31").
+
+- A trendline KPI fitted to its values: `"y_axis_truncate": true` draws the trendline from its lowest value to its highest instead of up from zero, so a trailing-12-month total that moves a few percent shows the movement rather than a flat line over a solid block. `decompile` reads Superset's unticked "Start y-axis at 0" back as it.
+
+- Table cell bars per column. `cell_bars` takes a list of labels as well as true or false: `"cell_bars": ["Revenue", "Change"]` draws bars on those columns only. `color_by_sign` colours bars by sign, green above zero and red below (Superset 6.0+; 4.1.4 and 5.0.0 colour only the negative bars, red), for the whole table or the labels listed, so a change shows its sign while revenue bars stay neutral; `"color_by_sign": false` turns off the sign colours Superset draws by default. `absolute_bars` sizes bars by absolute value from the cell's left edge (Superset's "Align +/-"), so a rise and a fall of the same size draw the same bar. Each compiles to Superset's own table-wide and per-column settings; `decompile` reads any mix of them back as Superset draws it, and `plan` reports a change made in the UI. chartwright 0.5.0 and earlier refuse a spec that uses them.
+
+- Colour rules on tables, pivots and big numbers take `>=`, `<=`, `!=` and `between_inclusive` (a range with its bounds taken in), besides `<`, `>`, `=` and `between`. Every supported release has these comparators, so they draw the same everywhere. `decompile` reads them back from rules made in Superset, where before they were dropped as losses.
+
+- `sort_by` on a categorical bar ranks it by something other than its first metric, largest first, on every supported release. `"total"` ranks stacked or grouped bars by their sum. Before, Superset drew several series in name order: two stacked metrics on 4.1.4 and 5.0.0, and a grouped bar on every release. A metric (`"sort_by": "SUM(revenue)"`) ranks by its value and orders the query too, so a `row_limit` keeps the top bars by it; it need not be drawn, so two charts can share one order. `advise` warns when a `row_limit` cuts a bar ranked by `"total"`, since the query is still ordered by the first metric.
+
+- A threshold on a horizontal bar: `annotations` there now say what Superset draws, a line standing upright at its value (a 1.0x threshold, a 4-hour limit), seen on every supported release, and the live CI fixture builds one.
+
+- Heatmap axes: `x_label_every` and `y_label_every` label every Nth column or row, counted from the first, so an hour axis with `"x_label_every": 6` reads 0, 6, 12, 18 instead of Superset's uneven automatic spacing. `left_margin` leaves room, in px, left of the row labels. Every supported release takes all three; `decompile` reads them back and `plan` reports a change made in the UI.
+
+- Heatmap axis order: `x_order` (left to right) and `y_order` (top to bottom), each `a_to_z`, `z_to_a`, `value_asc` or `value_desc`. `"y_order": "a_to_z"` puts the first label on top, such as a cohort triangle's oldest cohort; omitted, the labels keep running A to Z from the bottom up. On Superset 6.1.0 a value order ranks each label by its total; older releases order by the cells, so `check` warns there. `decompile` reads the order back.
+
+- Apply's data check names the values a chart's `IN` filter lists that return no rows, on a column the chart groups or draws by: a line chart that lists four zones where two have data now says which two it draws nothing for. A series limit that drops values on purpose, or a time column, is left alone.
+
+- New design brain rules for big numbers:
+  - `chart.color-contrast` (warn): a colour too pale to read on the white card, below 3:1 for a big number's rule or a trendline and below 4.5:1 for a table or pivot text rule.
+  - `narrative.kpi-thresholds` (info): a coloured big number whose subtitle and description don't state its thresholds.
+  - `chart.format-bands` checks a big number's rules for overlapping bands. A single band on a big number is fine: colouring only the exceptions is enough.
+
+- `chartwright advise` checks type sizes against floors for reading a dashboard on a laptop: `readability.table-text` (table and pivot cells 14 px, their headers 12 px, rows 24 px tall), `readability.chart-text` (axis labels and legends 12 px, chart titles 14 px) and `readability.kpi-text` (a big number's value 24 px, its subtitle or comparison 12 px). Text Superset draws smaller by default, such as its 12 px table cells, is an info naming the CSS selector or theme token to set; text the dashboard's own CSS or theme sets smaller is a warn, so `--design strict` can newly block. Superset sizes a big number's text by the card's height, so `advise --fix` raises such a card, and the cards beside it, to the height where its text reads: a card with a subtitle to 5 units, a trendline card with a comparison to 6. The floors are design parameters (`min_cell_text_px` and four more) that `design.yaml` and a standard can tune or lock. `check` and `advise --profile` read a named theme's tokens and ECharts overrides.
 
 - `advise` checks that each markdown block is tall enough for its text (`size.markdown-fit`). Superset cuts the rest off inside the block: macOS shows no scrollbar there, so a screenshot shows the text stopping mid-line. The check estimates the text's height from its headings, paragraphs, lists, tables, quotes, code and line breaks, the block's width and the dashboard's own CSS, in a window 1440 px wide, measured against what 4.1.4, 5.0.0 and 6.1.0 draw. A wider window wraps fewer lines, so a height that fits there fits wider too.
   - It warns when letters are cut off on every release and says by how much ("it needs ~16 units at 12/12 in a 1440 px wide window, has 15"); `--fix` raises the block to a height that shows every line on every release, Windows scrollbars included.
   - A block whose last line or padding only reaches the edge gets an info: it scrolls a few px, and Windows draws a scrollbar in it. That covers short strips: a line of text needs 1.6 units, a `##` heading 2.2.
   - It reads the text sizes and spacing a dashboard's CSS gives its markdown: font sizes, line heights, weights, letter and word spacing, margins, padding and borders set on `.dashboard-markdown` elements, `h4 + p` and `p:last-child` rules included, in cascade order over Superset's own. CSS that could change a block's height in a way it doesn't read (another font family, attribute selectors and pseudo-elements, `@media` rules) is named in the finding, as is a theme.
   - It checks blocks in layout rows, tabs and sub-tabs, and header and footer rows, and allows for the filter bar, which narrows the page on a dashboard with native filters. A header or footer row a standard owns is reported, never resized, and a block holding an image gets no fix, since its height is unknown.
-- `conditional_formatting` on `big_number_total`: colour the number by its value, such as a balance-closure KPI in red outside ±2% and green inside (`[{"operator": "<", "target": -0.02, "color": "red"}, {"operator": ">", "target": 0.02, "color": "red"}]`). The rules take the operators, thresholds and colours of table and pivot rules; a named colour takes its darker text shade, since the number is text. Superset 4.1.4, 5.0.0 and 6.1.0 all colour it, so no release is refused or warned. Decompile reads the rules back, and `plan` reports a rule changed in Superset.
-  - When several rules match, the last one's colour wins, as in Superset.
-  - `apply_to`, `paint` and a `metric` other than the chart's own are refused on a big number's rule, and so is `conditional_formatting` on `big_number_trend`, which Superset can't colour (its `trend_color` colours the line).
-  - Superset never colours a value of exactly 0; apply's data check warns when a coloured big number is 0 and a rule would have coloured it.
-- Design brain 14:
-  - `chart.color-contrast` (warn): a colour too pale to read on the white card, below 3:1 for a big number's rule or a trendline and below 4.5:1 for a table or pivot text rule.
-  - `narrative.kpi-thresholds` (info): a coloured big number whose subtitle and description don't state its thresholds.
-  - `chart.format-bands` checks a big number's rules for overlapping bands. A single band on a big number is fine: colouring only the exceptions is enough.
-- Table cell bars per column. `cell_bars` takes a list of labels as well as true or false: `"cell_bars": ["Revenue", "Change"]` draws bars on those columns only. `color_by_sign` colours bars by sign, green above zero and red below (Superset 6.0+; 4.1.4 and 5.0.0 colour only the negative bars, red), for the whole table or the labels listed, so a change shows its sign while revenue bars stay neutral; `"color_by_sign": false` turns off the sign colours Superset draws by default. `absolute_bars` sizes bars by absolute value from the cell's left edge (Superset's "Align +/-"), so a rise and a fall of the same size draw the same bar. Each compiles to Superset's own table-wide and per-column settings; `decompile` reads any mix of them back as Superset draws it, and `plan` reports a change made in the UI. chartwright 0.5.0 and earlier refuse a spec that uses them.
+
+- `layout.thin-subtabs` notes a sub-tab holding two charts or fewer besides its KPIs: readers click for little, and the sub-tabs read better as sections of one page under header rows.
+
+- The value-label design default now covers grouped bars: a bar chart with several metrics side by side gets `show_value` when its bars (rows times metrics) fit the same 12-bar and spacing limits as a single series. Stacked metrics and grouped series stay unlabelled.
+
 - `check`, `apply` and `plan` warn when a table asks for cell bars beside colour rules on Superset before 6.1.0, which draws no cell bar on a table with any colour rule.
-- Colour rules on tables, pivots and big numbers take `>=`, `<=`, `!=` and `between_inclusive` (a range with its bounds taken in), besides `<`, `>`, `=` and `between`. Every supported release has these comparators, so they draw the same everywhere. `decompile` reads them back from rules made in Superset, where before they were dropped as losses.
-- `chartwright advise` checks type sizes against floors for reading a dashboard on a laptop (design brain 16): `readability.table-text` (table and pivot cells 14 px, their headers 12 px, rows 24 px tall), `readability.chart-text` (axis labels and legends 12 px, chart titles 14 px) and `readability.kpi-text` (a big number's value 24 px, its subtitle or comparison 12 px). Text Superset draws smaller by default, such as its 12 px table cells, is an info naming the CSS selector or theme token to set; text the dashboard's own CSS or theme sets smaller is a warn, so `--design strict` can newly block. Superset sizes a big number's text by the card's height, so `advise --fix` raises such a card, and the cards beside it, to the height where its text reads: a card with a subtitle to 5 units, a trendline card with a comparison to 6. The floors are design parameters (`min_cell_text_px` and four more) that `design.yaml` and a standard can tune or lock. `check` and `advise --profile` read a named theme's tokens and ECharts overrides.
+
+### Changed
+
+- The brief recommends titles that name the measure, unit and window, with a number in a title only when the spec computes it from data, instead of a typed takeaway such as "Orders fell 12%", which goes stale at the next refresh. It also recommends colour by role in place of "Superset's default palette": an accent for the chrome, this period against last as a hue and its tint, and status in green, amber and red beside an arrow or a word. The skill offers both to the user as recommendations before writing a spec, and a style the user asks for wins.
+
+- Documented: no supported release gives one line of a mixed chart its own width or dash. The plugin has no such control and its transform passes none, and 6.1's ECharts Options replace the series list whole. Set a ghost line apart by colour with `dashboard.label_colors`, or draw a fixed level as an annotation.
+
+- `advise --fix` fills `left_margin: 16` on every heatmap (`default.heatmap-label-room`). On Superset 6.1.0 a heatmap's longest row label lost its first letters at the card's edge, and a theme can't reach the heatmap there. Write `left_margin` yourself, or ignore the rule for a chart, to keep your own value.
+
+- The design brain adds no page-size picker, pager or search box to a table whose rows all show in its panel. `advise --fix` now fills a search box only on a raw table that pages, where the box sits in the bar the page-size picker already draws, and removes one it filled on a table whose rows all show. `advise` names a `page_length` or `search_box` you wrote on such a table (`size.table-chrome`, info), since Superset draws a page-size picker for any page size, even over one page; set `page_length` to 0 or leave it out to show every row with no picker.
 
 ### Fixed
 
@@ -46,88 +124,43 @@ while the major version is 0, minor bumps may include breaking changes and say s
   - a table: advise names the height smoke names once the data fills `row_limit` (a 25-row table at 13 units now gets "raise height to ~21" from both);
   - a pivot: `size.pivot-window` no longer reads `row_limit` as the pivot's rows. `row_limit` caps the query's records, which are rows times columns, so a 5-row cause by month pivot was told it showed "~0 of 1000 rows" and to grow to 331 units. Offline, the rule now checks only what the spec fixes (its header rows, totals row and first row) and says so; `advise --profile` counts each row dimension's values and gives the height smoke gives;
   - messages name what takes the room: the card frame, each header row, the totals row and room for a horizontal scrollbar.
+
 - Height estimates count what a pivot draws in every layout: a transposed pivot is sized by its column dimension, metrics laid out as rows multiply its rows, `row_subtotals` adds its subtotal rows, and a pivot with no row dimension is its totals row. A table's `show_totals` row now takes a row of height too, in the checks and in the page size `advise --fix` fills.
+
 - The smoke check queries a table or pivot without a `row_limit` for as many rows as the chart does (10,000 for a pivot, 1,000 for a table), so a large pivot's height check counts all its rows.
+
 - `apply`'s data check queries each chart the way the dashboard does when it loads: with the default of every native filter in the chart's scope. Before, it queried every chart unfiltered, so a table holding one set of rows per value of a required filter counted every set; the check then asked for more height on charts that fit, and could name a chart empty, or not, wrongly. As in Superset, a filter's default reaches a chart only when the chart is in the filter's scope and the chart's dataset has a column of that name.
   - Applied: a select's default values, or with `default_to_first` its first value, which the check reads with the query Superset's filter sends (its pre-filter and the defaults of the filters it depends on included); a range's bounds; a time range, on the chart's time axis or main time column; a time grain, on the chart's time axis.
   - Each chart's result names the defaults it ran with (`with the dashboard's filter defaults: Carrier = All carriers`), and lists them under `filter_defaults` in the apply report, present only when there are some. A default the check can't apply is named as not applied: a time column filter's, or a first value it could not read.
   - A chart the dashboard shows empty on load, such as one under a default time range the data doesn't reach, is now named empty.
+
 - `decompile` (and so `adopt`) no longer reports the values an untouched table stores as settings it can't carry: HTML rendered, columns fixed in place, paging in the browser, no percentage metrics, and bars coloured by sign. A table saved in Superset reads back without a loss; each of these is still named when changed.
+
 - `check`, `apply` and `plan` (and the MCP tools) warn when a table or pivot uses something its Superset release draws differently. Before, the dashboard came out different from the spec with no word. On 4.1.4, 5.0.0 and 6.0.0:
   - a table rule's `apply_to` paints the rule's own column instead;
   - `paint: "text"` fills the cell with the dark text shade instead, under the cell's own dark text, so the value is hard to read;
   - each band fades by the value's distance from its threshold instead of one solid colour (an `=` rule stays solid);
   - a dark `color` fill keeps the cell's dark text, where 6.1 turns it white.
 
-  On 4.1.4 and 5.0.0, a table's `hidden` columns show. Each warning says what that release draws.
 - `decompile` names a colour rule that Superset 6.1 fades by distance (its rule editor turns the gradient on by default). The spec paints a rule one solid colour, so the next apply changes how it looks.
-- The design brain is version 15: `chart.format-bands` reads the bounds of the new operators, so `>= 80` and `<= 80` share 80 and `> 80` and `<= 80` share nothing.
-### Added
 
-- A sketch can hold section headers and notes. A legend letter stands for a chart's name as before, or for a header (`{"header": "Monthly sales", "size": "large"}`) or a markdown block (`{"markdown": "Source: the ledger", "height": 1.6}`), drawn like a chart. A header is one line: drawn across the whole sketch it titles the band below it, as a header row does in `rows`; drawn above or below charts it sits in their column, and alone in a narrower slot it gets a column of its own. A markdown block takes its drawn width and height, or its own `height` in fifths of a unit. `decompile` (and so `adopt` and `plan`) reads headers and text blocks in a section of stacked charts back into its sketch, where it used to flatten the columns. Specs without blocks compile to the same bytes. See [the layout guide](docs/LAYOUT-GUIDE.md#section-headers-and-notes).
-
-### Fixed
+- `chart.format-bands` reads the bounds of the new operators, so `>= 80` and `<= 80` share 80 and `> 80` and `<= 80` share nothing.
 
 - `decompile` (and so `adopt`) reads columns of stacked charts side by side, such as two columns of two charts each, back as one row of columns. Before, the sketch it drew for them split into one row per level of the stacks, so a copy laid them out as rows.
-### Added
-
-- A waterfall chart (`"type": "waterfall"`, Superset's Waterfall): steps that add up to a running total, such as a bridge from last year's revenue through each driver to this year's. Compiled, decompiled, compared by `plan` and checked by `apply` on 4.1.4, 5.0.0 and 6.1.0.
-  - `x_column` holds the steps (or a time column, one bar per `time_grain` period), `metric` the one measure they add, and `groupby` an optional breakdown per x value.
-  - `increase_color`, `decrease_color` and `total_color` take green, amber, red or any `#RRGGBB`, and replace Superset's stock green, red and grey on every release. `show_value`, `show_legend`, `number_format`, axis titles, `x_label_rotation` (0, 45 or 90) and `x_label_format` set the rest.
-  - On Superset 6.1.0 or later, `steps` lists a bridge's values in its own order and `closing` names the row that closes it, drawn last as the running total in the total colour: `"steps": ["FY2025", "Price", "Volume"], "closing": "FY2026"`. The first step rises from zero; `"opening": "FY2025"` draws the opening row as a total too, on a dashboard whose theme keeps zero on the value axis (`{"echartsOptionsOverridesByChartType": {"waterfall": {"yAxis": {"scale": false}}}}` in its JSON), which `check` and `apply` verify (`waterfall_opening_axis`). Older releases draw a running total after every step, so `check`, `apply` and `plan` refuse `steps` there. `total_label`, `increase_label` and `decrease_label` name the bars on 6.1.0 and warn before it.
-  - `apply`'s data check says when a bridge's opening, step or closing has no row, a value isn't in `steps`, or the closing row doesn't equal the steps added up (Superset draws the sum either way).
-- A box plot (`"type": "box_plot"`, Superset's Box Plot): a measure's distribution in each group, its median, quartiles, whiskers and outliers, such as the daily sales of each month. Compiled, decompiled, compared by `plan` and checked by `apply` on 4.1.4, 5.0.0 and 6.1.0.
-  - `distribute_across` holds the columns whose rows are the observations (a time column at `time_grain`, e.g. a day each), `groupby` the columns that get a box each, `metrics` the measure.
-  - `whiskers` is `"tukey"` (Superset's default), `"min_max"` (no outliers) or two percentiles such as `[5, 95]`, which every release takes.
-  - `number_format`, `x_label_format`, axis titles, `x_label_rotation` and `color_scheme` set the rest; `row_limit` is a Superset 6.0.0 control, and warns before it, where a dashboard's query still stops at it but Explore leaves it out.
-  - `apply`'s data check says when the observations reach the row limit (10,000 unset on Superset 6.x), so the boxes miss some.
-- The design brain is version 9. A waterfall gets `chart.waterfall-additive` (warn: `AVG`, `MIN`, `MAX` or `COUNT_DISTINCT` steps don't add up), `chart.waterfall-steps` (warn: past ~12 bars), `chart.waterfall-order` (info: a categorical waterfall without `steps` reads A to Z), `chart.waterfall-colors` (info for Superset's stock colours, whose green is 2.2:1 against the panel; warn for a colour under 3:1) and `chart.waterfall-axis-titles` (info: Superset puts the titles over wide or rotated tick labels). `advise --fix` fills a waterfall's `show_value` when it has at most 12 bars, and `number_format` `,.0f` on a count. A box plot gets `chart.box-plot-observations` (warn: grouped by a period at that period's grain, each box holds a few observations) and `chart.box-plot-groups` (warn, with `--profile`: past ~20 boxes). `chart.ordinal-order` reads a box plot's groups, and with `--profile` stands down for a column the dataset reports numeric or temporal. The brief's chart-choice guide says when a waterfall is the right form, and when a box plot beats a line of P50 and P90.
-- `tools/extract_panel_contract.py` extracts the waterfall's and the box plot's options for the params contract from their control panels at each release; `tools/ci_live_waterfall.py` builds a bridge on a virtual dataset in CI.
-
-### Fixed
 
 - `decompile` reads Superset's stored defaults for data zoom and the series limit (`zoomable` false on time-axis and mixed charts, no `series_limit` on a pivot) as unset; before, `params not preserved` named them on charts saved in Explore. A zoomable chart or a series limit is still named.
+
 - `plan` reads a `trend_color` written as the hex of a named shade (`#1B7F3B` for green) as equal to the dashboard, which decompile reads back as the name; before, the chart showed as changed after every apply. The waterfall's colours compare the same way.
+
 - `plan` is clean straight after `apply` for a chart height in fifths of a unit and for an aggregate written as custom SQL. A height of 4.6 (as `absorb` writes after a resize in the UI) read back rounded to 5, and `SQL(MAX(col)) AS Label` read back as `MAX(col) AS Label`, so every such chart showed as changed after each apply. `decompile` now reads both back as written; custom SQL typed in Superset's metric popover still reads back as `MAX(col) AS Label`. An aggregate written with spaces (`SUM( qty )`, which is also the label Superset shows) reads back as written too, so a table's settings keyed by that label (number format, header, alignment, a rule painting it) are no longer dropped.
 
 - `plan` reads alike the spellings `apply` stores alike, so none of them shows as a change after apply: Superset's own defaults written out (`"time_range": "No filter"`, `"number_format": "SMART_NUMBER"`, `"x_label_format": "smart_date"`, `"x_label_rotation": 0`, a table's `"date_format": "smart_date"`), `COUNT(*) AS N` and `SQL(COUNT(*)) AS N`, a named colour's hex (`"#1B7F3B"` for a green trendline, `"#ACE1C4"` for a green colour rule on a table or pivot), a height between fifths, an empty `metrics` or `groupby` list on a table, a filter's pre-filter time range of `"No filter"`, and blank text. `decompile` leaves a big number's `SMART_NUMBER` format out, as it does on every other chart.
+
 - `plan` compares a table's `hidden` labels as a set. Decompile reads them back in the order Superset stores them, not the spec's, so a table hiding two or more columns showed as changed after every apply.
 
-### Added
-
-- `sort_by` on a categorical bar ranks it by something other than its first metric, largest first, on every supported release. `"total"` ranks stacked or grouped bars by their sum. Before, Superset drew several series in name order: two stacked metrics on 4.1.4 and 5.0.0, and a grouped bar on every release. A metric (`"sort_by": "SUM(revenue)"`) ranks by its value and orders the query too, so a `row_limit` keeps the top bars by it; it need not be drawn, so two charts can share one order. `advise` warns when a `row_limit` cuts a bar ranked by `"total"`, since the query is still ordered by the first metric.
-- A threshold on a horizontal bar: `annotations` there now say what Superset draws, a line standing upright at its value (a 1.0x threshold, a 4-hour limit), seen on every supported release, and the live CI fixture builds one.
-- Heatmap axes: `x_label_every` and `y_label_every` label every Nth column or row, counted from the first, so an hour axis with `"x_label_every": 6` reads 0, 6, 12, 18 instead of Superset's uneven automatic spacing. `left_margin` leaves room, in px, left of the row labels. Every supported release takes all three; `decompile` reads them back and `plan` reports a change made in the UI.
-
-### Changed
-
-- Documented: no supported release gives one line of a mixed chart its own width or dash. The plugin has no such control and its transform passes none, and 6.1's ECharts Options replace the series list whole. Set a ghost line apart by colour with `dashboard.label_colors`, or draw a fixed level as an annotation.
-- Design brain 12: `advise --fix` fills `left_margin: 16` on every heatmap (`default.heatmap-label-room`). On Superset 6.1.0 a heatmap's longest row label lost its first letters at the card's edge, and a theme can't reach the heatmap there. Write `left_margin` yourself, or ignore the rule for a chart, to keep your own value.
-
-### Fixed
-
 - `decompile` names a bar ranked by its series' minimum, maximum or average, or ranked smallest first; before, apply quietly put the largest-first ranking back.
+
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
-### Upgrading from 0.5
-
-- A spec with a mixed chart's `kind: "area"`, a trendline's `rolling_type` or `y_axis_truncate`, a big number's `date_format` or a heatmap's `x_order` or `y_order` is refused by chartwright 0.5.0 and earlier (`literal_error` or `extra_forbidden`); upgrade CI before committing one.
-- The design brain is version 10. `data.rolling-window-span` is a new warn-level rule, so `--design strict` can newly block a rolling trendline KPI whose time range can't hold its window. `advise --fix` fills `compare_suffix` as "vs prior 12 months" where a 12-step rolling window compares with the 12 steps before, and, with column types (`--profile`), `date_format` on a big number of a date column. It also removes a search box it filled on a table whose rows all show (below), so a spec it fixed before shows that change in its diff.
-
-### Added
-
-- Filled areas on a mixed chart: `"kind": "area"` on query `a` or `b`, with `opacity` for the fill (0 to 1; Superset's default is 0.2). A line draws over an area whichever query holds it, and at opacity 1 the area's edge disappears into its fill, so solar output under a net-load line reads as one solid shape; give it a light colour with `label_colors`. `decompile` reads Superset's "Area chart" box back as `kind: "area"`.
-- A rolling window on a trendline KPI: `rolling_type` (`sum`, `mean`, `std`, or `cumsum` for a running total) with `rolling_periods`, the window in time-grain steps. At P1M, `"rolling_type": "sum", "rolling_periods": 12` shows a trailing-12-month total, and `compare_lag: 12` compares it with the 12 months before. Every point is a whole window; set `rolling_min_periods` to also draw the partial windows of the first steps.
-    - `advise` warns when the chart's time range, or a defaulted dashboard time filter it loads with, is too short to hold the window and the comparison (`data.rolling-window-span`), and apply's data check warns from the time buckets the chart really has.
-- A big number shown as a date: `"date_format": "%a %-d %b %Y"` on a `big_number_total` shows `MAX(updated_at)` as "Sat 3 Oct 2026", for a tile that says how fresh the data is. It works on a date or timestamp metric and on a number of epoch milliseconds, and replaces `number_format`. With column types (`advise --profile`), `advise --fix` fills it on a big number of a date column's `MIN` or `MAX`, which Superset shows by default as its day alone ("Tue 31").
-- Heatmap axis order: `x_order` (left to right) and `y_order` (top to bottom), each `a_to_z`, `z_to_a`, `value_asc` or `value_desc`. `"y_order": "a_to_z"` puts the first label on top, such as a cohort triangle's oldest cohort; omitted, the labels keep running A to Z from the bottom up. On Superset 6.1.0 a value order ranks each label by its total; older releases order by the cells, so `check` warns there. `decompile` reads the order back.
-- A trendline KPI fitted to its values: `"y_axis_truncate": true` draws the trendline from its lowest value to its highest instead of up from zero, so a trailing-12-month total that moves a few percent shows the movement rather than a flat line over a solid block. `decompile` reads Superset's unticked "Start y-axis at 0" back as it.
-- Apply's data check names the values a chart's `IN` filter lists that return no rows, on a column the chart groups or draws by: a line chart that lists four zones where two have data now says which two it draws nothing for. A series limit that drops values on purpose, or a time column, is left alone.
-
-### Changed
-
-- The design brain adds no page-size picker, pager or search box to a table whose rows all show in its panel. `advise --fix` now fills a search box only on a raw table that pages, where the box sits in the bar the page-size picker already draws, and removes one it filled on a table whose rows all show. `advise` names a `page_length` or `search_box` you wrote on such a table (`size.table-chrome`, info), since Superset draws a page-size picker for any page size, even over one page; set `page_length` to 0 or leave it out to show every row with no picker.
-
-### Fixed
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 
