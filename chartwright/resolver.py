@@ -77,6 +77,9 @@ class Resolution:
     # the spec names no theme.
     theme_id: int | None = None
     theme_uuid: str | None = None
+    # Its json_data, parsed: the tokens and ECharts overrides the readability rules read
+    # (design/readability.py). None when the spec names no theme or the JSON won't parse.
+    theme_json: dict | None = None
 
     @property
     def ok(self) -> bool:
@@ -175,6 +178,7 @@ def _resolve_theme(name: str, client: SupersetClient, res: Resolution) -> None:
     found = [t for t in themes if t.get("theme_name") == name]
     if len(found) == 1:
         res.theme_id, res.theme_uuid = found[0]["id"], str(found[0].get("uuid"))
+        res.theme_json = _theme_json(found[0].get("json_data"))
         return
     names = sorted({str(t.get("theme_name")) for t in themes if t.get("theme_name")})
     if found:
@@ -190,6 +194,20 @@ def _resolve_theme(name: str, client: SupersetClient, res: Resolution) -> None:
         "theme_not_found", None, "theme",
         f"no theme named {name!r} on this instance{hint} Themes: "
         f"{', '.join(names) if names else 'none'}", near))
+
+
+def _theme_json(raw) -> dict | None:
+    """A theme's json_data: a JSON string on the REST API (ThemeRestApi list_columns,
+    themes/api.py:110-120 at 6.0.0 and 6.1.0), parsed; None when it isn't an object."""
+    import json
+
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else None
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def _check_where(filters, where: str, ds: "ResolvedDataset", res: "Resolution", what: str) -> None:

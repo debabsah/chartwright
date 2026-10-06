@@ -26,7 +26,11 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # "7" = fills keep a null record when the author edits one (an edit later deleted stays
 # deleted), and default.stale-record: a fixable finding for a renamed or removed chart's
 # design.filled entry, which now validates. Both change what `--fix` writes.
-DESIGN_BRAIN_VERSION = "7"
+# "13" = the readability.* family (sec.17, "Type sizes"; "8" to "12" are other branches'):
+# table-text and chart-text warn when the dashboard's CSS or theme sets text below its
+# floor, so a strict gate can newly block, and kpi-text raises a big number's height
+# until its value and subtitle reach theirs, which changes what `--fix` writes.
+DESIGN_BRAIN_VERSION = "13"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}

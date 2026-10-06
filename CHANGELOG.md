@@ -5,6 +5,10 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ## Unreleased
 
+### Added
+
+- `chartwright advise` checks type sizes against floors for reading a dashboard on a laptop (design brain 13): `readability.table-text` (table and pivot cells 14 px, their headers 12 px, rows 24 px tall), `readability.chart-text` (axis labels and legends 12 px, chart titles 14 px) and `readability.kpi-text` (a big number's value 24 px, its subtitle or comparison 12 px). Text Superset draws smaller by default, such as its 12 px table cells, is an info naming the CSS selector or theme token to set; text the dashboard's own CSS or theme sets smaller is a warn, so `--design strict` can newly block. Superset sizes a big number's text by the card's height, so `advise --fix` raises such a card, and the cards beside it, to the height where its text reads: a card with a subtitle to 5 units, a trendline card with a comparison to 6. The floors are design parameters (`min_cell_text_px` and four more) that `design.yaml` and a standard can tune or lock. `check` and `advise --profile` read a named theme's tokens and ECharts overrides.
+
 ### Fixed
 
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.

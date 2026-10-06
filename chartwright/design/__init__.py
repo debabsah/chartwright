@@ -392,3 +392,4 @@ def gate_block(advice: dict) -> str | None:
 from . import rules  # noqa: E402,F401
 from . import defaults  # noqa: E402,F401
 from . import standard_rules  # noqa: E402,F401
+from . import readability  # noqa: E402,F401

@@ -35,11 +35,12 @@ injection.
 
 | Layer | Proves | Where it runs |
 |---|---|---|
-| Offline suite (1564 tests, 67 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
+| Offline suite (1615 tests, 68 modules) | Contract, determinism, round-trips, credentials | every PR and push to main, Linux + Windows, mcp 1 and 2 |
 | Chart-option contract | Every emitted chart option is declared by each version's plugin source | every PR and push to main |
 | Live guarantee check | Three specs applied (every chart type, every display control, every dashboard and filter control), per-chart data check, ids stable across re-apply | every PR and push to main, all 3 versions |
 | Standards content round trip | `standards apply` writes an org footer, a team header and two CSS blocks into a spec; it applies, `plan` stays clean, decompile reads the CSS markers and every managed row back, `--claim` rebuilds the record, re-apply stays clean | every PR and push to main, all 3 versions |
 | Locked text visible | `standards verify-visible` in headless Chromium: the standards fixture's locked footer shows, and the same dashboard with near-white footer CSS is caught. Installing the browser may fail without failing the job (the check is then skipped); once installed, a failing check fails it | every PR and push to main, all 3 versions |
+| Type sizes | Headless Chromium measures the type sizes Superset draws (table and pivot cells, titles, ECharts labels, big numbers at heights 2 to 10, and cells under a dashboard's CSS); they must match what the readability rules model. Runs once the browser installs, as above | every PR and push to main, all 3 versions |
 | Lifecycle soak | 500 randomized edit cycles with invariants held | 500 cycles on 6.1.0 and 4.1.4 before release; 25 cycles per version on every PR and push to main |
 | Second-writer scenarios | Stale-tab overwrites detected by `plan`, repaired by `apply` | every PR and push to main, all 3 versions |
 | Fault injection | A typed failure at every stage boundary; complete restore | every PR and push to main, all 3 versions |
@@ -100,9 +101,21 @@ collects, the same "generated, not hand-maintained" rule the rule table in
   specs; fix-loop convergence, idempotence, and the no-fractional-heights
   invariant; a seeded advise-never-raises fuzz; the chart-type taxonomy
   contract; design.yaml trust-boundary validation; the golden dogfood
-  (the shipped example raises nothing but pending design defaults, and
-  nothing at all once `--fix` writes them); calibration grouping, decay,
+  (the shipped example raises nothing but pending design defaults and the
+  KPI heights `readability.kpi-text` raises, and nothing at all once `--fix`
+  writes them); calibration grouping, decay,
   and overlay round-trips.
+- **Readable type** (`test_readability.py`): each `readability.*` rule is an
+  info where Superset's default is under its floor and a warn where the
+  dashboard's CSS or theme sets text under it, and names the selector or token
+  to set; the CSS reader applies a declaration only where it beats Superset's
+  own rule on that release, and names what it can't place; antd's font scale,
+  the compact algorithm included; a theme's ECharts overrides on 6.1 and not
+  6.0; big numbers raised to the height their text needs, one band at one
+  height, the fix loop converging under `size.kpi-height`. The model is held to
+  what headless Chromium measured on 4.1.4, 5.0.0 and 6.1.0 for six
+  stylesheets and big numbers at heights 2 to 10
+  (`fixtures/readability/measurements.json`).
 - **Design defaults** (`test_design_defaults.py`): each `default.*` fill
   fires where its conditions hold and nowhere else, never touches a field
   the author wrote (a written Superset default included), keeps its own
@@ -352,6 +365,8 @@ pip install -e ".[visual]" && playwright install chromium
 python tools/ci_live_visible.py --base-url http://localhost:8098     # locked text visible
 python tools/ci_live_saved_queries.py --base-url http://localhost:8098   # saved queries, CSV export
 python tools/record_visible_measurements.py --base-url http://localhost:8098   # refresh the fixture
+python tools/record_readability_measurements.py --check --base-url http://localhost:8098   # type sizes
+python tools/record_readability_measurements.py --base-url http://localhost:8098   # refresh that fixture
 python tools/soak.py       --base-url http://localhost:8098 --cycles 500 --seed 1
 python tools/adversary.py  --base-url http://localhost:8098
 python tools/faultline.py  --base-url http://localhost:8098

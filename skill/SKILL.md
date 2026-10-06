@@ -151,7 +151,9 @@ approximate it with a different mechanism.
 ## Sketch heights (while drawing)
 
 Each sketch line adds `line` height units (default `line: 2`, one unit =
-40 px). KPI rows: 2 sketch lines. Axis charts (timeseries, bar, heatmap,
+40 px). KPI rows: 2 sketch lines, 3 when a big number has a subtitle or a
+trendline compares periods (Superset sizes their text by height, and `CW advise
+--fix` raises a band that draws it too small). Axis charts (timeseries, bar, heatmap,
 histogram): 4-5 lines; fewer renders flattened with labels dropped.
 Pie/donut: 4+ lines and >= 5 of 12 width. The brief carries the full sizing
 table; `CW advise` checks the result.
