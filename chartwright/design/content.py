@@ -70,7 +70,7 @@ _UNIT_AGGREGATES = {"Sum", "Average", "Median", "Minimum", "Maximum", "First", "
 NUMBER_FORMAT_TYPES = frozenset({
     "big_number_total", "big_number_trend", "timeseries_line", "timeseries_bar",
     "timeseries_area", "timeseries_scatter", "bar", "pie", "pivot_table", "heatmap", "funnel",
-    "treemap"})
+    "treemap", "waterfall", "box_plot"})
 
 _MARK = re.compile(r"/\* cw:(std|end) ([A-Za-z0-9][A-Za-z0-9_-]*)(?: ([0-9a-f]{12}))? \*/")
 

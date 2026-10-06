@@ -21,6 +21,7 @@ from ..spec import (
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
     SUPERSET_COLOR_SCHEMES,
+    WATERFALL_DEFAULT_HEX,
     HeaderBlock,
     PIVOT_METRIC,
     _ColorSchemeMixin,
@@ -32,8 +33,12 @@ from ..spec import (
     pivot_rows_from_counts,
     row_items,
     table_page,
+    hex_to_rgb,
+    parse_metric,
+    set_value,
     without_superset_defaults,
 )
+from ..visible import contrast
 from .model import AXIS_TYPES, KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 
 # -- size: minimum readable geometry ------------------------------------------
@@ -728,6 +733,204 @@ def funnel_stages(ctx: RuleContext):
             )
 
 
+# -- chart: waterfalls ---------------------------------------------------------------
+
+# Aggregates whose values don't add: a running total of them means nothing (two
+# averages don't make the average of both; distinct counts overlap).
+_NON_ADDITIVE = ("AVG", "MIN", "MAX", "COUNT_DISTINCT")
+WATERFALL_MAX_STEPS = 12
+# A chart card's background in Superset's light theme, and the contrast WCAG 2.1 asks of
+# a graphic against what is next to it (1.4.11 Non-text Contrast).
+PANEL_RGB = (255, 255, 255)
+GRAPHIC_CONTRAST = 3.0
+_BAR_COLOURS = ("increase_color", "decrease_color", "total_color")
+
+
+def _on_panel(hex_colour: str) -> float:
+    rgb = hex_to_rgb(hex_colour)
+    return contrast((rgb["r"], rgb["g"], rgb["b"]), PANEL_RGB)
+
+
+@rule("chart.waterfall-additive", "warn",
+      "a waterfall's steps must add up: SUM or COUNT of one measure, never AVG, MIN, MAX or "
+      "COUNT_DISTINCT", since="9")
+def waterfall_additive(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type != "waterfall":
+            continue
+        agg = (parse_metric(c.metric) or {}).get("aggregate")
+        if agg in _NON_ADDITIVE:
+            yield Finding(
+                "chart.waterfall-additive", "warn", c.name, ctx.where(c.name),
+                f"metric {c.metric!r}: a waterfall adds every step to a running total and "
+                f"draws that as the closing, and {agg} values don't add up; chart a SUM or "
+                f"COUNT of the change, or show the {agg} as plain bars",
+            )
+
+
+@rule("chart.waterfall-order", "info",
+      "a bridge reads in its own order, and Superset draws a waterfall's steps A to Z "
+      "unless steps orders them", since="9")
+def waterfall_order(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type != "waterfall" or c.steps is not None or c.time_grain:
+            continue
+        ds = ctx.dataset_for(c)
+        if ds is not None and (ds.is_temporal(c.x_column) or ds.column_types.get(c.x_column) == 0):
+            continue  # periods or numbers: their own order is the reading order
+        yield Finding(
+            "chart.waterfall-order", "info", c.name, ctx.where(c.name),
+            f"the steps of {c.x_column!r} draw A to Z, then Superset's total; for a bridge, "
+            f"list them in steps, opening first, and name the closing row in closing "
+            f"(Superset 6.1.0 or later)",
+        )
+
+
+@rule("chart.waterfall-colors", "info",
+      "a waterfall's rising, falling and total bars take colours set for the dashboard, "
+      "each at least 3:1 against the panel", since="9", severities=("info", "warn"))
+def waterfall_colors(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type != "waterfall":
+            continue
+        low = [(f, c.colour_hex(f)) for f in _BAR_COLOURS
+               if set_value(c, f) is not None and _on_panel(c.colour_hex(f)) < GRAPHIC_CONTRAST]
+        for field, hexed in low:
+            yield Finding(
+                "chart.waterfall-colors", "warn", c.name, ctx.where(c.name),
+                f"{field} {hexed} is {_on_panel(hexed):.1f}:1 against the white panel, under "
+                f"the {GRAPHIC_CONTRAST:g}:1 WCAG asks of a graphic; darken it",
+            )
+        stock = [f for f in _BAR_COLOURS if set_value(c, f) is None]
+        if stock:
+            faint = [f"{f} {WATERFALL_DEFAULT_HEX[f]} ({_on_panel(WATERFALL_DEFAULT_HEX[f]):.1f}:1)"
+                     for f in stock if _on_panel(WATERFALL_DEFAULT_HEX[f]) < GRAPHIC_CONTRAST]
+            yield Finding(
+                "chart.waterfall-colors", "info", c.name, ctx.where(c.name),
+                f"{', '.join(stock)} {'is' if len(stock) == 1 else 'are'} Superset's stock "
+                + (f"colour; {', '.join(faint)} falls under the {GRAPHIC_CONTRAST:g}:1 a graphic "
+                   f"needs against the white panel. " if faint else "colour. ")
+                + "Set all three: green and red (the text shades, "
+                  f"{_on_panel('#1B7F3B'):.1f}:1 and {_on_panel('#B3261E'):.1f}:1) or your "
+                  "palette's, and a neutral total that reads as a total",
+            )
+
+
+@rule("chart.waterfall-axis-titles", "info",
+      "a waterfall's axis titles sit where Superset puts them, over wide tick labels",
+      since="9")
+def waterfall_axis_titles(ctx: RuleContext):
+    # Waterfall/transformProps.ts, all three releases (6.1.0 :445-464): both titles sit
+    # mid-axis with no nameGap (ECharts' 15 px) and a 16 or 20 px pad, and the panel has
+    # no margin control for either. Seen on 6.1.0: '$3.00M' under the y title.
+    for c in ctx.spec.charts:
+        if c.type != "waterfall":
+            continue
+        if c.y_axis_title:
+            yield Finding(
+                "chart.waterfall-axis-titles", "info", c.name, ctx.where(c.name),
+                f"y_axis_title {c.y_axis_title!r}: Superset draws a waterfall's y-axis title "
+                f"about 40 px left of the axis, inside the column of tick labels, with no "
+                f"margin to set, so a label wider than about five characters ('$4.72M') can "
+                f"run through it; name the unit in the chart's title or its number_format",
+            )
+        if c.x_axis_title and c.x_label_rotation in (45, 90):
+            yield Finding(
+                "chart.waterfall-axis-titles", "info", c.name, ctx.where(c.name),
+                f"x_axis_title {c.x_axis_title!r} with labels rotated {c.x_label_rotation} "
+                f"degrees: the rotated labels hang over the title, which Superset keeps about "
+                f"30 px under the axis; drop the title or the rotation",
+            )
+
+
+@rule("chart.waterfall-steps", "warn",
+      f"a waterfall past ~{WATERFALL_MAX_STEPS} steps stops reading as a bridge", since="9")
+def waterfall_steps(ctx: RuleContext):
+    # Offline it counts a bridge's own steps; with a live resolution (advise --profile) it
+    # probes the values of an x column that steps doesn't order, as vbar-categories does.
+    for c in ctx.spec.charts:
+        if c.type != "waterfall" or c.groupby:
+            continue
+        if c.steps is not None:
+            n = len(c.steps)
+            if n > WATERFALL_MAX_STEPS:
+                yield Finding(
+                    "chart.waterfall-steps", "warn", c.name, ctx.where(c.name),
+                    f"{n} steps between the opening and the closing; past ~"
+                    f"{WATERFALL_MAX_STEPS} the bars thin and their labels drop: fold the "
+                    f"small ones into one 'Other' row",
+                )
+            continue
+        if ctx.prober is None or c.time_grain:
+            continue
+        if c.row_limit is not None and c.row_limit <= WATERFALL_MAX_STEPS:
+            continue
+        ds = ctx.dataset_for(c)
+        if ds is None or ds.is_temporal(c.x_column):
+            continue
+        if ctx.prober.more_than(ds, c.x_column, WATERFALL_MAX_STEPS):
+            yield Finding(
+                "chart.waterfall-steps", "warn", c.name, ctx.where(c.name),
+                f"{c.x_column!r} has more than {WATERFALL_MAX_STEPS} values, one bar each; past "
+                f"~{WATERFALL_MAX_STEPS} the bars thin and their labels drop: fold the small "
+                f"ones into one 'Other' row or filter",
+            )
+
+
+# -- chart: box plots ------------------------------------------------------------------
+
+BOX_PLOT_MAX_GROUPS = 20
+# Time grains from finest to coarsest, and the period a group column's name says it is.
+# A day column is left out: day of week and day of month read alike by name.
+_GRAIN_RANK = {"PT1S": 0, "PT1M": 0, "PT1H": 0, "P1D": 1, "P1W": 2, "P1M": 3, "P3M": 4, "P1Y": 5}
+_PERIOD_COLUMN = re.compile(r"(?:^|_)(week|month|quarter|qtr|year)(?:_|$|id$|name$)", re.I)
+_PERIOD_RANK = {"week": 2, "month": 3, "quarter": 4, "qtr": 4, "year": 5}
+
+
+@rule("chart.box-plot-observations", "warn",
+      "a box needs many observations: distribute across a finer grain than the groups",
+      since="9")
+def box_plot_observations(ctx: RuleContext):
+    for c in ctx.spec.charts:
+        if c.type != "box_plot" or not c.time_grain:
+            continue
+        grain = _GRAIN_RANK.get("P1W" if "P1W" in c.time_grain else c.time_grain)
+        for col in c.groupby:
+            m = _PERIOD_COLUMN.search(col)
+            if grain is None or not m or grain < _PERIOD_RANK[m.group(1).lower()]:
+                continue
+            yield Finding(
+                "chart.box-plot-observations", "warn", c.name, ctx.where(c.name),
+                f"observations at {c.time_grain} grouped by {col!r}: each box holds one "
+                f"observation per {m.group(1).lower()}, too few for quartiles; distribute "
+                f"across a finer grain, e.g. P1D",
+            )
+            break
+
+
+@rule("chart.box-plot-groups", "warn",
+      f"past ~{BOX_PLOT_MAX_GROUPS} boxes each thins to a sliver and the labels drop",
+      since="9")
+def box_plot_groups(ctx: RuleContext):
+    # Offline the groups are unknown; with a live resolution it probes one group column,
+    # as vbar-categories does.
+    if ctx.prober is None:
+        return
+    for c in ctx.spec.charts:
+        if c.type != "box_plot" or len(c.groupby) != 1:
+            continue
+        ds = ctx.dataset_for(c)
+        if ds is None:
+            continue
+        if ctx.prober.more_than(ds, c.groupby[0], BOX_PLOT_MAX_GROUPS):
+            yield Finding(
+                "chart.box-plot-groups", "warn", c.name, ctx.where(c.name),
+                f"{c.groupby[0]!r} has more than {BOX_PLOT_MAX_GROUPS} values, a box each; "
+                f"group coarser, filter to the groups that matter, or chart the spread per "
+                f"group as a table",
+            )
+
+
 @rule("chart.heatmap-grid", "warn", "a heatmap past ~400 cells is unreadable at any size", data_aware=True)
 def heatmap_grid(ctx: RuleContext):
     if ctx.prober is None:
@@ -843,10 +1046,20 @@ def ordinal_order(ctx: RuleContext):
                     if order not in ("value_asc", "value_desc")]
         if c.type == "pivot_table":
             return [*c.rows, *c.columns]
+        if c.type == "box_plot":
+            return list(c.groupby)  # the boxplot step groups and sorts by them
         return []
+
+    def own_order(c, column) -> bool:
+        # A column the dataset reports numeric or temporal sorts in its own order
+        # (1..12); only names sort alphabetically. Known with a live resolution only.
+        ds = ctx.dataset_for(c)
+        return ds is not None and ds.column_types.get(column) in (0, 2)
 
     for c in ctx.spec.charts:
         hits = [d for d in dims(c) if d and _ORDINAL_RE.search(d)]
+        if c.type != "bar":
+            hits = [d for d in hits if not own_order(c, d)]
         if hits and c.type == "bar" and not c.category_sort:
             # A bar sorts by its first metric unless category_sort is set, so an
             # order-encoded label alone changes nothing.

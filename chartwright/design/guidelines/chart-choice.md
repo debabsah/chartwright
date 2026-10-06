@@ -9,8 +9,10 @@
 | Several measures per item | `table` or `pivot_table`, not grouped bars. Pivots: <= 3 total dimensions; column-dim values x metrics <= ~15 rendered columns |
 | Two dimensions, one measure | `heatmap` (keep the grid under ~400 cells) |
 | Distribution of one column | `histogram`, 20-30 bins; trim long tails with a WHERE filter and say so in the title |
+| A distribution per group | `box_plot`: median, quartiles, whiskers and outliers of many observations each (daily sales by month) |
 | Staged conversion | `funnel`, 3-8 ordered stages |
 | Hierarchical share | `treemap`, at most 2 levels |
+| A bridge between two totals | `waterfall`: the opening, 3-12 steps that add up, the closing; `steps` and `closing` keep its order |
 
 - A `row_limit` on a pie redefines the whole: the shown slices read as 100%,
   so a truncated pie lies about share. Prefer a horizontal bar for top-N; a
@@ -32,13 +34,25 @@
   `x_label_every` so every label shows. A heatmap's y axis reads Z to A from
   the top; `y_order: "a_to_z"` puts the first label on top, as a cohort
   triangle (oldest cohort first) or a weekday grid reads.
-- A rolling KPI (`rolling_type`) shows a trailing window, not the latest
-  period: name the window in its title or subtitle ("Revenue, trailing 12
-  months"), and give it a range that holds the window plus `compare_lag`
-  (24 months for a trailing year against the year before).
-- A paged table (`page_length`) needs room for one page and its pager, not
-  for every row; a timeseries with many groups keeps the top few with
-  `series_limit`.
+- A rolling KPI (`rolling_type`) shows a trailing window: name it ("Revenue,
+  trailing 12 months") and give a range holding the window plus `compare_lag`.
+- A paged table (`page_length`) needs room for one page and its pager; a
+  timeseries with many groups keeps the top few with `series_limit`.
+- A waterfall explains how one total became another (last year to this year,
+  plan to actual) through steps that ADD UP: one SUM or COUNT of the change,
+  never an average or a distinct count. Not for shares (a bar) or trends (a
+  line). Put the opening, each step and the closing in the dataset as rows of
+  one step column; name the ends in `opening` and `closing`, the steps between
+  in `steps` (6.1.0+). An opening total needs a dashboard theme that keeps zero
+  on the axis (see `opening` in the schema); without `opening`, the first step
+  rises from zero. Set the three colours and `show_value`.
+- Show the distribution, not the average, when the spread is the story
+  (delivery times, daily sales, latency): an average hides skew and outliers.
+  A `box_plot` beats a line of P50 and P90 across categories or a few periods,
+  and whenever the outliers matter; keep the line for a trend over many
+  periods. Give each box many observations: `distribute_across` a time column
+  at P1D, `groupby` the month. Superset colours each box by its group: pin one
+  colour to the group labels in `dashboard.label_colors`.
 - One dominant category flattening its siblings is the data talking: note it
   or filter it, don't hide it.
 - Every chart with a time axis should tolerate the dashboard time filter;

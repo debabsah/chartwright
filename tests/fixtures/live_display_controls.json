@@ -241,6 +241,53 @@
       "time_grain": "P1M",
       "a": {"metrics": ["SUM(sales)"], "kind": "area", "opacity": 1},
       "b": {"metrics": ["AVG(price_each)"], "kind": "area", "axis": "secondary", "opacity": 0.4}
+    },
+    {
+      "name": "Yearly Sales Steps",
+      "type": "waterfall",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "x_column": "order_date",
+      "time_grain": "P1Y",
+      "groupby": "deal_size",
+      "metric": "SUM(sales)",
+      "total_label": "All years",
+      "increase_color": "green",
+      "decrease_color": "red",
+      "total_color": "#5B6770",
+      "increase_label": "Gain",
+      "decrease_label": "Loss",
+      "show_value": true,
+      "show_legend": true,
+      "number_format": ",.0f",
+      "x_axis_title": "Year",
+      "y_axis_title": "Sales",
+      "x_label_format": "%Y",
+      "x_label_rotation": 0
+    },
+    {
+      "name": "Daily Sales Spread",
+      "type": "box_plot",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metrics": ["SUM(sales)"],
+      "distribute_across": ["order_date"],
+      "time_grain": "P1D",
+      "groupby": ["deal_size"],
+      "whiskers": [5, 95],
+      "number_format": "$,.0f",
+      "x_axis_title": "Deal size",
+      "y_axis_title": "Daily sales",
+      "x_label_rotation": 45,
+      "row_limit": 5000,
+      "color_scheme": "wavesOfBlue"
+    },
+    {
+      "name": "Order Value Range",
+      "type": "box_plot",
+      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
+      "metrics": ["SUM(sales)"],
+      "distribute_across": ["order_number"],
+      "groupby": ["product_line"],
+      "whiskers": "min_max"
     }
   ],
   "layout": {
@@ -254,7 +301,9 @@
       ["Sales Pivot"],
       ["Line by Deal Size", "Price Spread"],
       ["Revenue and Orders"],
-      ["Sales and Price Areas"]
+      ["Sales and Price Areas"],
+      ["Yearly Sales Steps"],
+      ["Daily Sales Spread", "Order Value Range"]
     ]
   }
 }

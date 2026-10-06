@@ -1,6 +1,6 @@
 ---
 name: superset-dashboard
-description: Build or modify an Apache Superset dashboard from a natural-language request by emitting a typed spec and compiling it with the chartwright CLI (guaranteed-correct import, no freeform dashboard JSON). Covers 15 chart types incl. pivot tables, per-chart WHERE filters, a native dashboard filter bar, markdown blocks, and tabs. Use when the user asks to create, generate, or change a Superset dashboard or chart. Never create Superset dashboards any other way (no raw REST calls, no hand-written import bundles, no UI automation).
+description: Build or modify an Apache Superset dashboard from a natural-language request by emitting a typed spec and compiling it with the chartwright CLI (guaranteed-correct import, no freeform dashboard JSON). Covers 17 chart types incl. pivot tables, waterfall bridges and box plots, per-chart WHERE filters, a native dashboard filter bar, markdown blocks, and tabs. Use when the user asks to create, generate, or change a Superset dashboard or chart. Never create Superset dashboards any other way (no raw REST calls, no hand-written import bundles, no UI automation).
 ---
 
 # Superset dashboard via chartwright
@@ -35,10 +35,13 @@ approximate it with a different mechanism.
 
 ## Procedure
 
-1. `CW schema`: read the contract. Surface: 15 chart types (big numbers,
+1. `CW schema`: read the contract. Surface: 17 chart types (big numbers,
    timeseries line/bar/area/scatter, categorical bar, pie/donut, table,
    pivot_table, heatmap, histogram, funnel, treemap, mixed: bars, lines or
    filled areas on two axes), metrics as saved names, `AGG(col) [AS Label]` or
+   pivot_table, heatmap, histogram, funnel, treemap, mixed: bars + a line on
+   two axes, waterfall: a bridge whose `opening`, `steps` and `closing` keep
+   its order on 6.1+, box_plot: a distribution per group), metrics as saved names, `AGG(col) [AS Label]` or
    `SQL(expression) AS Label`, per-chart `filters` (WHERE: column/op/value
    or `sql`), goal lines (`annotations`) on line/bar/area/scatter/mixed,
    dashboard-level `filters` (select, time_range, numeric range, time_grain

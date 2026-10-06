@@ -36,13 +36,19 @@ from ..spec import DEFAULT_HEIGHT, DashboardSpec, MarkdownBlock, item_rows
 # ordered by value alone; default.date-tile fills date_format on a big number of a date
 # column (data-aware), and a big number shown as a date gets no number format from
 # narrative.big-number-format, default.count-format or a standard.
+# "9" = the waterfall: chart.waterfall-additive and chart.waterfall-steps (warn) can
+# newly block a strict gate, chart.waterfall-order, chart.waterfall-colors and
+# chart.waterfall-axis-titles are new findings, and default.value-labels and
+# default.count-format now fill a waterfall's show_value and number_format. The box
+# plot: chart.box-plot-observations and chart.box-plot-groups (warn), and
+# chart.ordinal-order now reads a box plot's groups.
 DESIGN_BRAIN_VERSION = "9"
 
 KPI_TYPES = {"big_number_total", "big_number_trend"}
 TIMESERIES_TYPES = {"timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter"}
-AXIS_TYPES = TIMESERIES_TYPES | {"bar", "heatmap", "histogram", "mixed"}
+AXIS_TYPES = TIMESERIES_TYPES | {"bar", "heatmap", "histogram", "mixed", "waterfall", "box_plot"}
 # Charts that are neither KPI nor axis-bearing; a contract test asserts the
-# three sets exactly cover CHART_TYPES, so a 15th chart type fails CI until
+# three sets exactly cover CHART_TYPES, so a new chart type fails CI until
 # someone consciously classifies it (and reviews which rules apply).
 STANDALONE_TYPES = {"pie", "table", "pivot_table", "funnel", "treemap"}
 

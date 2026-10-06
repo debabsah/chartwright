@@ -274,7 +274,7 @@ _COUNTS = ("COUNT", "COUNT_DISTINCT")
 # Pivot aggregations that keep a count a whole number.
 _WHOLE_AGGREGATES = {"Sum", "Count", "Count Unique Values", "Minimum", "Maximum", "First", "Last"}
 COUNT_FORMAT_TYPES = (KPI_TYPES | TIMESERIES_TYPES
-                      | {"bar", "pie", "pivot_table", "heatmap", "funnel", "treemap"})
+                      | {"bar", "pie", "pivot_table", "heatmap", "funnel", "treemap", "waterfall"})
 
 
 @_fill("default.count-format", "number_format", COUNT_FORMAT_TYPES,
@@ -404,19 +404,35 @@ HBAR_FRAME_UNITS = 4.5
 HBAR_LABEL_UNITS = 0.4125
 
 
-@_fill("default.value-labels", "show_value", {"bar"},
-       "few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or "
-       "tall enough to space the labels (horizontal)",
+@_fill("default.value-labels", "show_value", {"bar", "waterfall"},
+       "few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical, and "
+       "a waterfall's steps) or tall enough to space the labels (horizontal)",
        superset=False, superset_text="no values on the bars",
        override="write show_value: false")
 def _value_labels(ctx: RuleContext, c):
+    most, min_w = ctx.params.value_label_max_bars, ctx.params.value_label_min_width
+    if c.type == "waterfall":
+        # A bridge is read by its deltas: each step's value is the point of the chart.
+        if c.groupby:
+            return None, "a breakdown per x value, so the number of bars is unknown"
+        if c.steps is not None:
+            n = len(c.steps) + 1 + (c.opening is not None)
+        elif ctx.written(c, "row_limit"):
+            n = c.row_limit + 1
+        else:
+            return None, "neither steps nor row_limit is set, so the number of bars is unknown"
+        if n > most:
+            return None, f"up to {n} bars with the total, more than {most}"
+        w = ctx.width(c.name)
+        if w < min_w:
+            return None, f"{w}/12 wide, narrower than {min_w}/12"
+        return True, f"{n} bars with the total at {w}/12 wide: each step's change reads without the axis"
     if len(c.metrics) != 1 or c.groupby:
         return None, "more than one series, so labels would crowd"
     if c.contribution:
         return None, "contribution plots shares"
     if not ctx.written(c, "row_limit"):
         return None, "row_limit is not set, so the number of bars is unknown"
-    most, min_w = ctx.params.value_label_max_bars, ctx.params.value_label_min_width
     n = c.row_limit
     if n > most:
         return None, f"up to {n} bars, more than {most}"

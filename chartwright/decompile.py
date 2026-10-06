@@ -20,12 +20,13 @@ import yaml
 from .compiler import (
     BACKGROUND, COLUMN_CONFIG_KEYS, CONTRIBUTION_VALUES, FOOTER_PREFIX, HEADER_PREFIX, HEADER_SIZE,
     HEATMAP_X_SORT, HEATMAP_Y_SORT, LEGEND_TYPES, ROW_UNITS_PER_SPEC_UNIT, SDC_BAR_MARKER,
-    STACK_VALUES, VIZ_TYPE,
+    STACK_VALUES, VIZ_TYPE, WHISKER_OPTIONS, bridge_totals_sql, parse_steps_order_sql,
 )
 from .spec import (
-    ADHOC_AGGREGATES, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES,
-    HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, SUPERSET_DEFAULTS, TREND_DEFAULT_HEX,
-    FilterOp, LabelType, PivotAggregate, SequentialScheme, metric_label, row_items,
+    ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX,
+    FUNNEL_LABEL_TYPES, HEATMAP_DEFAULT_SCHEME, HEX_COLOUR_RE, PIVOT_ORDER, SUPERSET_DEFAULTS,
+    TICK_LAYOUTS, TREND_DEFAULT_HEX, WATERFALL_DEFAULT_HEX, FilterOp, LabelType, PivotAggregate,
+    SequentialScheme, metric_label, row_items,
 )
 
 REVERSE_VIZ = {v: k for k, v in VIZ_TYPE.items() if k != "bar"}  # echarts_timeseries_bar -> timeseries_bar
@@ -58,7 +59,8 @@ _IGNORABLE = {
     "left_margin", "show_percentage", "show_values", "value_bounds",
     "xscale_interval", "yscale_interval", "column", "bins", "normalize",
     "show_value", "slice_id", "url_params", "percent_calculation_type",
-    "show_tooltip_labels", "tooltip_label_type", SDC_BAR_MARKER,
+    "show_tooltip_labels", "tooltip_label_type", "show_total", "x_ticks_layout", "zoomable",
+    "series_limit", "series_limit_metric", SDC_BAR_MARKER,
     # A mixed chart's query B twins of the above (createCustomizeSection 'B',
     # createAdvancedAnalyticsSection and createQuerySection '_b', MixedTimeseries
     # controlPanel.tsx at 4.1.4, 5.0.0 and 6.1.0), with the same stored defaults.
@@ -111,6 +113,12 @@ _STORED_DEFAULTS: dict[str, tuple] = {
     "markerSizeB": (6,), "comparison_type_b": ("values",), "truncate_metric_b": (True,),
     "rolling_type_b": (None, "None", ""), "sort_series_typeB": ("sum",),
     "force_timestamp_formatting": (False, None),
+    # Waterfall/controlPanel.tsx: a closing total (show_total, 6.1.0 :134) and Superset's
+    # own tick layout (x_ticks_layout, 4.1.4 :130, 6.1.0 :210).
+    "show_total": (True,), "x_ticks_layout": ("auto",),
+    # sharedControls.tsx: data zoom off (zoomable, 6.1.0 :422) and no series limit
+    # (series_limit and series_limit_metric, the box plot's at all three releases).
+    "zoomable": (False,), "series_limit": (None, "", 0), "series_limit_metric": (None, "", [], {}),
 }
 # A currency format has no default: unset reads as {} or every part empty.
 _UNSET_WHEN_EMPTY = {"currency_format"}
@@ -127,7 +135,7 @@ _STORED_DEFAULT_WHEN = {
 
 # Spec chart types with a color_scheme field (spec._ColorSchemeMixin).
 _COLOR_SCHEME_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "timeseries_scatter",
-                       "bar", "pie", "histogram", "funnel", "treemap", "mixed")
+                       "bar", "pie", "histogram", "funnel", "treemap", "mixed", "box_plot")
 _REVERSE_HEADER_SIZE = {v: k for k, v in HEADER_SIZE.items()}
 _REVERSE_OPACITY = {"opacityLow": "low", "opacityMedium": "medium", "opacityHigh": "high"}
 
@@ -319,18 +327,140 @@ def _rolling_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
         out["rolling_min_periods"] = least
 
 
-def _rgb_to_spec(colour) -> str | None:
-    """A color_picker {r, g, b} as the spec writes it: a named shade, a hex, or None
-    for Superset's own default teal."""
+def _rgb_to_spec(colour, default: str = TREND_DEFAULT_HEX) -> str | None:
+    """A colour picker's {r, g, b} as the spec writes it: a named shade, a hex, or None
+    for Superset's own default (a trendline's teal unless another is given)."""
     if not isinstance(colour, dict):
         return None
     try:
         hexed = "#{:02X}{:02X}{:02X}".format(*(int(colour[k]) for k in "rgb"))
     except (KeyError, TypeError, ValueError):
         return None
-    if hexed == TREND_DEFAULT_HEX:
+    if hexed == default:
         return None
     return {v.upper(): k for k, v in FORMAT_TEXT_HEX.items()}.get(hexed, hexed)
+
+
+_TICK_LAYOUT_SPEC = {v: k for k, v in TICK_LAYOUTS.items()} | {"staggered": 45}  # drawn at 45°
+
+
+def _tick_layout_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
+    # "staggered" is rotated -45 degrees exactly like "45°" (transformProps.ts, waterfall
+    # and box plot, all three releases), so it reads back as 45.
+    layout = p.get("x_ticks_layout")
+    if layout in _TICK_LAYOUT_SPEC:
+        out["x_label_rotation"] = _TICK_LAYOUT_SPEC[layout]
+    elif layout not in (None, "", "auto"):
+        losses.append(Loss(name, f"x_ticks_layout {layout!r} not preserved (auto on re-apply)"))
+
+
+def _waterfall_to_spec(p: dict, out: dict, losses: list, name: str, metric_one) -> set[str] | None:
+    """A waterfall's params into out; the params it read, or None when the chart can't
+    be a spec chart. A bridge's x axis is the steps_order_sql the compiler writes."""
+    m = metric_one(p.get("metric"))
+    x = p.get("x_axis")
+    groupby = [g for g in (p.get("groupby") or []) if isinstance(g, str)]
+    if m is None or not x:
+        losses.append(Loss(name, "waterfall needs metric + x_axis; chart skipped"))
+        return None
+    out["metric"] = m
+    read = {"x_axis_label", "y_axis_label", "increase_color", "decrease_color", "total_color",
+            "increase_label", "decrease_label", "total_label", "show_legend", "x_ticks_layout"}
+    bridge = parse_steps_order_sql(x.get("sqlExpression")) if isinstance(x, dict) else None
+    if bridge is not None:
+        column, steps, closing, opening = bridge
+        raw = p.get("groupby") or []
+        if opening is None:
+            ours = groupby == [column] and p.get("total_label") == closing
+        else:
+            ours = (len(raw) == 1 and isinstance(raw[0], dict) and p.get("total_label") == BRIDGE_TOTAL
+                    and raw[0].get("sqlExpression") == bridge_totals_sql(column, opening, closing))
+        if not ours or p.get("show_total") is not False:
+            losses.append(Loss(name, "waterfall bridge order changed outside the spec (breakdown, "
+                                     "show_total or total_label); chart skipped"))
+            return None
+        out.update({"x_column": column, "steps": steps, "closing": closing})
+        if opening is not None:
+            out["opening"] = opening
+        read.add("show_total")
+    elif isinstance(x, str):
+        out["x_column"] = x
+        if len(groupby) > 1:
+            losses.append(Loss(name, f"multiple breakdowns {groupby}; kept first only"))
+        if groupby:
+            out["groupby"] = groupby[0]
+        if p.get("time_grain_sqla"):
+            out["time_grain"] = p["time_grain_sqla"]
+        if isinstance(p.get("total_label"), str) and p["total_label"].strip():
+            out["total_label"] = p["total_label"]
+    else:
+        losses.append(Loss(name, f"waterfall x axis {x!r} is SQL the spec can't express; chart skipped"))
+        return None
+    for field, stock in WATERFALL_DEFAULT_HEX.items():
+        colour = _rgb_to_spec(p.get(field), stock)
+        if colour:
+            out[field] = colour
+    for field in ("increase_label", "decrease_label"):
+        if isinstance(p.get(field), str) and p[field].strip():
+            out[field] = p[field]
+    if p.get("show_value") is True:
+        out["show_value"] = True
+    if p.get("show_legend") is True:
+        out["show_legend"] = True
+    if p.get("y_axis_format") not in (None, "", "SMART_NUMBER"):
+        out["number_format"] = p["y_axis_format"]
+    for key, field in (("x_axis_label", "x_axis_title"), ("y_axis_label", "y_axis_title")):
+        if isinstance(p.get(key), str) and p[key].strip():
+            out[field] = p[key]
+    _tick_layout_to_spec(p, out, losses, name)
+    if p.get("x_axis_time_format") not in (None, "", "smart_date"):
+        out["x_label_format"] = p["x_axis_time_format"]
+    if p.get("row_limit"):
+        out["row_limit"] = p["row_limit"]
+    return read
+
+
+_WHISKER_SPEC = {v: k for k, v in WHISKER_OPTIONS.items()}
+_PERCENTILES = re.compile(r"^(\d+)/(\d+) percentiles$")  # the boxplot operator's own reading
+
+
+def _box_plot_to_spec(p: dict, out: dict, losses: list, name: str, metric_one) -> set[str] | None:
+    """A box plot's params into out; the params it read, or None when the chart can't be
+    a spec chart (an observation or group the spec can't name: a SQL column)."""
+    ms = [m for m in (metric_one(m) for m in (p.get("metrics") or [])) if m]
+    across, groupby = p.get("columns") or [], p.get("groupby") or []
+    if not ms or not across:
+        losses.append(Loss(name, "box plot needs metrics + distribute across; chart skipped"))
+        return None
+    if not all(isinstance(c, str) for c in [*across, *groupby]):
+        losses.append(Loss(name, "box plot over SQL columns the spec can't express; chart skipped"))
+        return None
+    out.update({"metrics": ms, "distribute_across": list(across)})
+    if groupby:
+        out["groupby"] = list(groupby)
+    whiskers = p.get("whiskerOptions") or "Tukey"
+    percentiles = _PERCENTILES.match(whiskers) if isinstance(whiskers, str) else None
+    if whiskers in _WHISKER_SPEC:
+        if whiskers != "Tukey":
+            out["whiskers"] = _WHISKER_SPEC[whiskers]
+    elif percentiles and int(percentiles.group(1)) < int(percentiles.group(2)) <= 100:
+        out["whiskers"] = [int(percentiles.group(1)), int(percentiles.group(2))]
+    else:
+        losses.append(Loss(name, f"whisker option {whiskers!r} not preserved (Tukey on re-apply)"))
+    if p.get("time_grain_sqla"):
+        out["time_grain"] = p["time_grain_sqla"]
+    if p.get("number_format") not in (None, "", "SMART_NUMBER"):
+        out["number_format"] = p["number_format"]
+    if p.get("date_format") not in (None, "", "smart_date"):
+        out["x_label_format"] = p["date_format"]
+    for key in ("x_axis_title", "y_axis_title"):
+        if isinstance(p.get(key), str) and p[key].strip():
+            out[key] = p[key]
+    _tick_layout_to_spec(p, out, losses, name)
+    if p.get("row_limit"):
+        out["row_limit"] = p["row_limit"]
+    return {"columns", "whiskerOptions", "date_format", "x_axis_title", "y_axis_title",
+            "x_ticks_layout"}
 
 
 def _annotations_to_spec(p: dict, out: dict, losses: list, name: str) -> None:
@@ -995,6 +1125,14 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         if p.get("y_axis_format_secondary") not in (None, "SMART_NUMBER"):
             out["number_format_secondary"] = p["y_axis_format_secondary"]
         keep_row_limit()
+    elif spec_type == "waterfall":
+        waterfall_read = _waterfall_to_spec(p, out, losses, name, metric_one)
+        if waterfall_read is None:
+            return None
+    elif spec_type == "box_plot":
+        box_plot_read = _box_plot_to_spec(p, out, losses, name, metric_one)
+        if box_plot_read is None:
+            return None
 
     mapped_here = {"combineMetric", "conditional_formatting", "rowTotals", "colTotals", "colSubTotals"} if spec_type == "pivot_table" else (
         {"order_by_cols", "timeseries_limit_metric", "series_limit_metric",
@@ -1032,6 +1170,10 @@ def _chart_to_spec(chart_yaml: dict, lookup: DatasetLookup, losses: list[Loss],
         mapped_here = mapped_here | {"show_total"}
     if spec_type == "heatmap":
         mapped_here = mapped_here | {"sort_x_axis", "sort_y_axis"}
+    if spec_type == "waterfall":
+        mapped_here = mapped_here | waterfall_read
+    if spec_type == "box_plot":
+        mapped_here = mapped_here | box_plot_read
     if spec_type in _AXIS_TYPES:
         _x_labels_to_spec(p, out, losses, name)
         mapped_here = mapped_here | _axis_to_spec(p, out, losses, name, spec_type)

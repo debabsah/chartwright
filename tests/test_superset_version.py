@@ -90,6 +90,11 @@ def test_the_registry_gates_the_unsafe_fields_and_warns_for_the_ignored_ones():
         "show_value": ("6.0.0", "warn"),  # on a stacked mixed query: only_total's labels
         "x_order": ("6.1.0", "warn"),  # a heatmap value order: by total from 6.1.0
         "y_order": ("6.1.0", "warn"),
+        "steps": ("6.1.0", "error"),  # a bridge needs show_total: false (6.1.0)
+        "total_label": ("6.1.0", "warn"),
+        "increase_label": ("6.1.0", "warn"),
+        "decrease_label": ("6.1.0", "warn"),
+        "row_limit": ("6.0.0", "warn"),  # a box plot's: the 4.1.4 and 5.0.0 panel has none
     }
     schema = json.dumps(json_schema())
     for g in GATED_FIELDS:

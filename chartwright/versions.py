@@ -157,6 +157,52 @@ GATED_FIELDS: tuple[GatedField, ...] = (
                 "the cells, so a label's place follows its largest or smallest cell, and with "
                 "both axes by value the first axis's direction decides both.",
     ) for field in ("x_order", "y_order")),
+    GatedField(
+        # A bridge in its own order needs show_total: false, or the plugin adds a running
+        # total after every step (seen on 4.1.4); steps always comes with closing.
+        "steps", "6.1.0", "error",
+        "draws a running total after every step of the bridge: its waterfall has no "
+        "show_total control and adds one per x value",
+        "show_total at 6.1.0 Waterfall/controlPanel.tsx:134, read at transformProps.ts:126,148; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0, whose transformer adds a total per x value "
+        "(transformProps.ts:120-124 at 4.1.4)",
+        _charts(lambda c: c.type == "waterfall" and c.steps is not None),
+    ),
+    GatedField(
+        "total_label", "6.1.0", "warn",
+        "names the closing total Total",
+        "total_label at 6.1.0 Waterfall/controlPanel.tsx:159, read at transformProps.ts:201; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0 (TOTAL_MARK, Waterfall/constants.ts:22)",
+        _charts(lambda c: c.type == "waterfall" and c.total_label),
+    ),
+    GatedField(
+        "increase_label", "6.1.0", "warn",
+        "calls a rising step Increase in the legend and tooltip",
+        "increase_label at 6.1.0 Waterfall/controlPanel.tsx:86, read at transformProps.ts:203; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0",
+        _charts(lambda c: c.type == "waterfall" and c.increase_label),
+    ),
+    GatedField(
+        # A dashboard's query takes it on every release (buildQueryObject.ts reads row_limit
+        # from the stored params: seen on a 4.1.4 dashboard); the older panel has no
+        # control for it, so Explore's query leaves it out (seen on 4.1.4 and 5.0.0).
+        "row_limit", "6.0.0", "warn",
+        "has no Row limit on a box plot's panel: the dashboard's query stops at it, but "
+        "the chart opened in Explore queries without it",
+        "row_limit at 6.0.0 BoxPlot/controlPanel.ts:81 (6.1.0 :81); absent at 4.1.4 and 5.0.0, "
+        "where buildQueryObject.ts:117-120 still reads the stored value",
+        _charts(lambda c: c.type == "box_plot" and c.row_limit is not None),
+        warning="row_limit on {where} is a Superset {since} control on a box plot; {runs}, "
+                "and {that} has no Row limit on the box plot's panel: the dashboard's query "
+                "stops at it, but the chart opened in Explore queries without it.",
+    ),
+    GatedField(
+        "decrease_label", "6.1.0", "warn",
+        "calls a falling step Decrease in the legend and tooltip",
+        "decrease_label at 6.1.0 Waterfall/controlPanel.tsx:116, read at transformProps.ts:204; "
+        "absent at 4.1.4, 5.0.0 and 6.0.0",
+        _charts(lambda c: c.type == "waterfall" and c.decrease_label),
+    ),
 )
 
 

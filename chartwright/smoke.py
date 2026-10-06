@@ -21,10 +21,11 @@ import math
 from dataclasses import asdict, dataclass, field
 
 from .client import SupersetClient
-from .compiler import _metric_payload, _num, _range_default_mask, mixed_time_axis, time_binding
+from .compiler import (_metric_payload, _num, _range_default_mask, mixed_time_axis, time_binding,
+                       waterfall_time_axis)
 from .resolver import Resolution
-from .spec import (DEFAULT_ROW_LIMIT, DashboardSpec, grid_fit, grid_units_for_rows, pivot_frame,
-                   pivot_rows)
+from .spec import (DEFAULT_ROW_LIMIT, DashboardSpec, grid_fit, grid_header, grid_units_for_rows,
+                   metric_label, pivot_frame, pivot_rows)
 
 
 def _fit_warning(chart, spec: DashboardSpec, result: list) -> str | None:
@@ -85,6 +86,59 @@ def _window_warning(chart, rows: int) -> str | None:
     return (f"a {least}-step rolling window" + (f" with compare_lag {lag}" if lag else "")
             + f" over {rows} time buckets draws {points} trendline point(s)"
             + (" and no change" if lag else "") + "; widen the chart's time range")
+
+
+def _bridge_warning(chart, result: list) -> str | None:
+    """A bridge (a waterfall with steps) checked against its rows: every step and the
+    closing has one, nothing else does, and the closing reconciles. Superset draws the
+    closing as the running total, not the row's own value, so a closing that doesn't
+    add up still looks right on the chart; this is where it shows."""
+    if chart.type != "waterfall" or chart.steps is None:
+        return None
+    label = metric_label(chart.metric)
+    values: dict[str, float | None] = {}
+    for q in result:
+        for row in q.get("data") or []:
+            key = str(row.get(chart.x_column))
+            value = row.get(label)
+            values[key] = value if isinstance(value, (int, float)) else None
+    out = []
+    if chart.opening is not None and chart.opening not in values:
+        out.append(f"no row for opening {chart.opening!r}, so the bridge starts at zero")
+    missing = [s for s in chart.steps if s not in values]
+    if missing:
+        out.append(f"no rows for steps {missing}")
+    if chart.closing not in values:
+        out.append(f"no row for closing {chart.closing!r}, so Superset draws no closing total")
+    extra = sorted(v for v in values if v not in chart.steps and v not in (chart.closing, chart.opening))
+    if extra:
+        out.append(f"{extra} are not in steps: Superset draws them after the listed steps, A to Z")
+    closing = values.get(chart.closing)
+    steps = [v for k, v in values.items() if k != chart.closing]
+    if closing is not None and all(v is not None for v in steps):
+        added = sum(steps)
+        # A millionth: floating-point sums of a reconciled bridge differ far less, a
+        # closing that doesn't reconcile far more.
+        if not math.isclose(closing, added, rel_tol=1e-6, abs_tol=1e-6):
+            out.append(f"the closing row holds {closing:,.6g} but the steps add to {added:,.6g}: "
+                       f"Superset draws {added:,.6g} as {chart.closing!r}")
+    return "bridge: " + "; ".join(out) if out else None
+
+
+# Superset 6.x fills an unset box plot row limit with the control's default
+# (sharedControls.tsx row_limit, 6.1.0 :236); smoke asks for as many.
+BOX_PLOT_ROWS = 10000
+
+
+def _observations_warning(chart, rows: int) -> str | None:
+    """A box plot's query returns its observations before the boxplot step makes
+    quartiles of them; a query that stops at its row limit leaves some out."""
+    if chart.type != "box_plot" or rows < (chart.row_limit or BOX_PLOT_ROWS):
+        return None
+    where = ("its row_limit" if chart.row_limit else
+             f"{BOX_PLOT_ROWS:,}, where Superset 6.0.0 or later stops an unset row_limit")
+    return (f"the observations reached {where} ({rows:,} rows), so the boxes may leave "
+            f"some out; raise row_limit or coarsen distribute_across")
 
 
 @dataclass
@@ -211,6 +265,39 @@ def _query_for(chart, spec: DashboardSpec) -> dict:
         q["metrics"] = [metric(chart.metric)]
         q["columns"] = list(chart.groupby)
     return _with_where(q, chart)
+
+
+def _waterfall_query(chart, spec: DashboardSpec, ds) -> dict:
+    """One row per step (Waterfall/buildQuery.ts: the x axis, then the breakdown). A
+    bridge is queried by its step column, so its rows can be checked by name."""
+    x = (_time_axis(chart.x_column, chart.time_grain)
+         if chart.time_grain and waterfall_time_axis(chart, ds) else chart.x_column)
+    return _with_where({
+        "filters": _filters_payload(chart.filters),
+        "extras": {"time_grain_sqla": chart.time_grain or "P1D"},
+        "time_range": "No filter",
+        "row_limit": chart.row_limit or 1000,
+        "columns": [x] + ([chart.groupby] if chart.groupby else []),
+        "metrics": [_metric_payload(chart.metric, spec.dashboard.slug, chart.name)],
+        "orderby": [],
+    }, chart)
+
+
+def _box_plot_query(chart, spec: DashboardSpec, ds) -> dict:
+    """The observations, as BoxPlot/buildQuery.ts asks for them before its boxplot
+    step: each time column of distribute_across at the grain, then the groups."""
+    across = [_time_axis(c, chart.time_grain)
+              if chart.time_grain and ds.is_temporal(c) is not False else c
+              for c in chart.distribute_across]
+    return _with_where({
+        "filters": _filters_payload(chart.filters),
+        "extras": {"time_grain_sqla": chart.time_grain or "P1D"},
+        "time_range": "No filter",
+        "row_limit": chart.row_limit or BOX_PLOT_ROWS,
+        "columns": [*across, *chart.groupby],
+        "metrics": [_metric_payload(m, spec.dashboard.slug, chart.name) for m in chart.metrics],
+        "orderby": [],
+    }, chart)
 
 
 def _mixed_queries(chart, spec: DashboardSpec, ds) -> list[dict]:
@@ -444,7 +531,14 @@ def _with_filter_defaults(queries: list[dict], chart, ds,
 def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: SupersetClient,
                 defaults: list[FilterDefault] | None = None) -> SmokeResult:
     ds = resolution.for_chart(chart.dataset)
-    queries = _mixed_queries(chart, spec, ds) if chart.type == "mixed" else [_query_for(chart, spec)]
+    if chart.type == "mixed":
+        queries = _mixed_queries(chart, spec, ds)
+    elif chart.type == "waterfall":
+        queries = [_waterfall_query(chart, spec, ds)]
+    elif chart.type == "box_plot":
+        queries = [_box_plot_query(chart, spec, ds)]
+    else:
+        queries = [_query_for(chart, spec)]
     queries, applied, unapplied = _with_filter_defaults(queries, chart, ds, defaults or [])
     ctx = {
         "datasource": {"id": ds.id, "type": "table"},
@@ -469,7 +563,8 @@ def smoke_chart(chart, spec: DashboardSpec, resolution: Resolution, client: Supe
         return outcome(False, False, f"unparseable chart/data response: {e}")
     if rows == 0:
         return outcome(True, True, f"query succeeded but returned 0 rows{with_defaults}")
-    fit = _fit_warning(chart, spec, result) or _window_warning(chart, rows)
+    fit = (_fit_warning(chart, spec, result) or _bridge_warning(chart, result)
+           or _observations_warning(chart, rows) or _window_warning(chart, rows))
     if fit:
         return outcome(True, True, f"{rows} rows{with_defaults}; {fit}")
     return outcome(True, False, f"{rows} rows{with_defaults}")
