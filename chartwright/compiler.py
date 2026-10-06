@@ -1583,8 +1583,48 @@ def _range_default_mask(f) -> dict | None:
     }
 
 
+def cross_filter_configuration(spec: DashboardSpec, position: dict,
+                               uuid_of: dict[str, str] | None = None) -> dict:
+    """json_metadata.chart_configuration for the charts whose cross-filter scope is not
+    the dashboard's (ChartConfiguration, dashboard/types.ts:87-106 at 6.1.0), keyed by the
+    chart ids in `position`: the bundle's placeholders, which the 6.1.0 importer remaps
+    (commands/dashboard/importers/v1/utils.py:147-190; 4.1.4 and 5.0.0 do not), or the
+    live ids apply writes after import. Charts are found by uuid: the spec's own, or
+    `uuid_of` (name -> uuid) for a decompiled backup. A chart's own id is in its excluded
+    list, as the scoping modal saves it (ScopingModal.tsx:240-246)."""
+    nodes = {n["meta"].get("uuid"): n for n in position.values()
+             if isinstance(n, dict) and n.get("type") == "CHART"}
+    node_of = {c.name: nodes[u] for c in spec.charts
+               if (u := (uuid_of or {}).get(c.name) or str(spec.chart_uuid(c.name))) in nodes}
+    id_of = {name: node["meta"]["chartId"] for name, node in node_of.items()}
+    out: dict = {}
+    for c in spec.charts:
+        scope = c.cross_filter_scope
+        if scope in (None, "global") or c.name not in id_of:
+            continue
+        me = id_of[c.name]
+        if scope == "none":
+            # What the scoping tree saves with nothing ticked (FilterScope/utils.ts:265-270):
+            # no root reaches no chart, one added later included (getChartIdsInFilterScope.ts:75-85).
+            scope_json, in_scope = {"rootPath": [], "excluded": []}, []
+        elif scope == "tab":
+            tabs = [p for p in node_of[c.name].get("parents") or []
+                    if (position.get(p) or {}).get("type") == "TAB"]
+            if not tabs:
+                continue  # moved out of its tab live; plan reports the difference
+            scope_json = {"rootPath": [tabs[-1]], "excluded": [me]}
+            in_scope = [i for n, i in id_of.items()
+                        if n != c.name and tabs[-1] in (node_of[n].get("parents") or [])]
+        else:
+            in_scope = [id_of[n] for n in scope if n in id_of]
+            scope_json = {"rootPath": ["ROOT_ID"], "excluded": sorted(set(id_of.values()) - set(in_scope))}
+        out[str(me)] = {"id": me, "crossFilters": {"scope": scope_json, "chartsInScope": sorted(in_scope)}}
+    return out
+
+
 def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
     d = spec.dashboard
+    position = _position(spec)
     metadata: dict = {
         "color_scheme": d.color_scheme or "",
         "cross_filters_enabled": d.cross_filters,
@@ -1603,6 +1643,9 @@ def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
         metadata["show_chart_timestamps"] = True
     if spec.filters:
         metadata["native_filter_configuration"] = _native_filters(spec, resolution)
+    chart_configuration = cross_filter_configuration(spec, position)
+    if chart_configuration:
+        metadata["chart_configuration"] = chart_configuration
     out = {
         "dashboard_title": d.title,
         "description": d.description,
@@ -1613,7 +1656,7 @@ def _dashboard_yaml(spec: DashboardSpec, resolution: Resolution) -> dict:
         "certification_details": d.certification_details,
         "published": d.published,
         "uuid": str(spec.dashboard_uuid()),
-        "position": _position(spec),
+        "position": position,
         "metadata": metadata,
         "version": "1.0.0",
     }

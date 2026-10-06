@@ -191,6 +191,8 @@ def _normalize(spec: DashboardSpec) -> dict:
         for field in NAMED_COLOUR_FIELDS:
             if chart.get(field):
                 chart[field] = named_hex(chart[field])
+        if isinstance(chart.get("cross_filter_scope"), list):
+            chart["cross_filter_scope"] = sorted(chart["cross_filter_scope"])  # a set of chart names
         if "x_label_rotation" in type(model).model_fields:
             # Title spacing compile writes anyway reads back as unset (decompile).
             auto = axis_title_defaults(chart.get("orientation") == "horizontal",
@@ -335,12 +337,10 @@ def adopted_metadata_resets(live_meta: dict) -> list[tuple[str, str]]:
     """Dashboard json_metadata keys a dashboard built in the UI may set and the import
     replaces with the compiled metadata, which the spec can't express: (key, what the
     first apply does to it). The importer writes json_metadata whole (docs/CONTRACTS.md,
-    "How dashboard settings are stored")."""
+    "How dashboard settings are stored"). Per-chart cross-filter scopes are no longer
+    among them: decompile reads them into each chart's cross_filter_scope, and names a
+    scope it can't carry as a loss."""
     out = []
-    if live_meta.get("chart_configuration"):
-        out.append(("chart_configuration",
-                    "per-chart cross-filter scopes are cleared; cross-filters, when on, reach "
-                    "every chart"))
     gcc = live_meta.get("global_chart_configuration") or {}
     scope = gcc.get("scope") or {}
     if scope.get("excluded") or (scope.get("rootPath") or ["ROOT_ID"]) != ["ROOT_ID"]:

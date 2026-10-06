@@ -26,7 +26,8 @@ from .compiler import (
 from .spec import (
     ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX,
     FORMAT_RANGE_OPERATORS, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES, HEATMAP_DEFAULT_SCHEME,
-    HEX_COLOUR_RE, MARKDOWN_ID_PATTERN, PIVOT_ORDER, SUPERSET_DEFAULTS, TICK_LAYOUTS, TREND_DEFAULT_HEX,
+    HEX_COLOUR_RE, MARKDOWN_ID_PATTERN, NO_CROSS_FILTER_TYPES, PIVOT_ORDER, SUPERSET_DEFAULTS,
+    TICK_LAYOUTS, TREND_DEFAULT_HEX,
     WATERFALL_DEFAULT_HEX, FilterOp, HeaderFontSize, LabelType, PivotAggregate, SequentialScheme,
     SubtitleFontSize, metric_label, parse_metric, row_items,
 )
@@ -1815,6 +1816,44 @@ def _leaf_tabs(layout: dict) -> list[dict]:
     return [leaf for tab in layout.get("tabs") or [] for leaf in (tab.get("tabs") or [tab])]
 
 
+def _cross_filter_scopes_to_spec(metadata: dict, position: dict, charts_by_name: dict,
+                                 chart_uuids: dict[str, str], losses: list) -> None:
+    """chart_configuration (keyed by chart id) -> each chart's cross_filter_scope, by name
+    through the layout's chart ids (a node's uuid, else its sliceName). A chart's own id
+    never counts as in scope; a scope that reaches no chart reads as "none"."""
+    config = {k: v for k, v in (metadata.get("chart_configuration") or {}).items()
+              if (((v or {}).get("crossFilters") or {}).get("scope") or "global") != "global"}
+    if not config:
+        return
+    if not metadata.get("cross_filters_enabled", False):
+        losses.append(Loss("dashboard", "cross-filter scopes not preserved: cross-filtering is off"))
+        return
+    name_by_uuid = {u: n for n, u in chart_uuids.items()}
+    nodes = [n for n in position.values() if isinstance(n, dict) and n.get("type") == "CHART"]
+    name_of = {(n.get("meta") or {}).get("chartId"):
+               name_by_uuid.get(str((n.get("meta") or {}).get("uuid"))) or (n.get("meta") or {}).get("sliceName")
+               for n in nodes}
+    parents_of = {(n.get("meta") or {}).get("chartId"): n.get("parents") or [] for n in nodes}
+    for key, entry in config.items():
+        me = int(key) if str(key).isdigit() else None
+        chart = charts_by_name.get(name_of.get(me))
+        if chart is None:
+            continue  # a chart not on the layout (a dead id) or not decompiled
+        scope = entry["crossFilters"]["scope"]
+        if chart["type"] in NO_CROSS_FILTER_TYPES or not isinstance(scope, dict):
+            losses.append(Loss(chart["name"], f"cross-filter scope not preserved: {scope}"))
+            continue
+        root, excluded = scope.get("rootPath") or [], set(scope.get("excluded") or []) - {me}
+        tabs = [p for p in parents_of[me] if (position.get(p) or {}).get("type") == "TAB"]
+        if tabs and root == [tabs[-1]] and not excluded:
+            chart["cross_filter_scope"] = "tab"
+            continue
+        in_scope = sorted(name for cid, name in name_of.items()
+                          if cid != me and cid not in excluded and name in charts_by_name
+                          and set(parents_of[cid]) & set(root))
+        chart["cross_filter_scope"] = in_scope or "none"
+
+
 def _tab_links_to_spec(layout: dict, position: dict, slug: str) -> None:
     """Links to this dashboard's tabs (/superset/dashboard/<slug>/#<tab id>, as compile
     writes them) back to [words](tab:Title) / (tab:Parent/Child), when the decompiled
@@ -2271,6 +2310,7 @@ def decompile_bundle(zip_bytes: bytes, lookup: DatasetLookup) -> DecompileResult
     ordered = [charts_by_name[n] for n in ordered_names]
 
     _tab_links_to_spec(layout, position, slug)
+    _cross_filter_scopes_to_spec(dash.get("metadata") or {}, position, charts_by_name, chart_uuids, losses)
     label_colors = (dash.get("metadata") or {}).get("label_colors") or {}
     css = dash.get("css") if isinstance(dash.get("css"), str) else ""
     spec = {

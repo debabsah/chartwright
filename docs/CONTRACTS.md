@@ -88,6 +88,27 @@ running the tool against real instances of all three releases.
   Decompile turns links to this dashboard's tabs back into `tab:` form, and
   `plan` compares links by the tab they open, so `tab:Trend` and
   `tab:Sales/Trend` are the same link.
+- **A chart's cross-filter scope lives in the dashboard's
+  `chart_configuration`, keyed by chart id.** 6.1.0 stores `{id, crossFilters:
+  {scope: {rootPath, excluded}, chartsInScope}}` per chart
+  (`superset-frontend/src/dashboard/types.ts:87-106`). `"tab"` roots the scope
+  at the chart's innermost tab; a list roots it at `ROOT_ID` and excludes every
+  other chart; the chart's own id is excluded, as the scoping modal saves it
+  (`nativeFilters/FilterBar/CrossFilters/ScopingModal/ScopingModal.tsx:240-246`).
+  `"none"` is what the scoping tree saves with nothing ticked, an empty root
+  (`FiltersConfigForm/FilterScope/utils.ts:261-270`), which reaches no chart,
+  one added later included (`util/getChartIdsInFilterScope.ts:75-85`). Chart
+  ids don't exist at compile time: the bundle carries the layout's
+  placeholders, which the 6.1.0 importer remaps
+  (`superset/commands/dashboard/importers/v1/utils.py:147-190`) and 4.1.4 and
+  5.0.0 leave alone, so `apply`'s scope stage, and `restore`, rewrite
+  `chart_configuration` from the live layout's ids on every release. Big
+  numbers, heatmaps, histograms and waterfalls declare no
+  `Behavior.InteractiveChart` (their `index.ts` at 4.1.4, 5.0.0 and 6.1.0), so
+  a click on them filters nothing and validation refuses a scope there.
+  Decompile maps ids back to names through the layout, so `plan` reports a
+  scope changed in the UI as a changed chart, and an adopted dashboard keeps
+  the scopes it was built with.
 - **Tags import on 6.0.0 or later, and only with tagging turned on.** The
   dashboard and chart import schemas gain `tags` at 6.0.0
   (`superset/dashboards/schemas.py:502`, `superset/charts/schemas.py:1589`;

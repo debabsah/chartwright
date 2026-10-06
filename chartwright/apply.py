@@ -21,7 +21,7 @@ import yaml
 
 from . import ids
 from .client import SupersetClient, SupersetAPIError
-from .compiler import compile_bundle
+from .compiler import compile_bundle, cross_filter_configuration
 from .resolver import Resolution, resolve
 from .smoke import SmokeResult, smoke
 from .spec import DashboardSpec
@@ -187,6 +187,24 @@ def _apply_filter_scopes(spec: DashboardSpec, client: SupersetClient, dashboard_
     r = client.put_json(f"/api/v1/dashboard/{dashboard_id}", {"json_metadata": json.dumps(new_meta)})
     if r.status_code != 200:
         return [f"scope PUT failed: HTTP {r.status_code} {r.text[:300]}"]
+    return []
+
+
+def _apply_cross_filter_scopes(spec: DashboardSpec, client: SupersetClient, dashboard_id: int,
+                               uuid_of: dict[str, str] | None = None) -> list[str]:
+    """Rewrite chart_configuration with the live chart ids. The bundle carries placeholder
+    ids, which only the 6.1.0 importer remaps, and a chart's live id is known only now."""
+    if all(c.cross_filter_scope in (None, "global") for c in spec.charts):
+        return []  # the import replaced the metadata with the bundle's, which has none
+    detail = client.get(f"/api/v1/dashboard/{dashboard_id}")["result"]
+    metadata = json.loads(detail.get("json_metadata") or "{}")
+    config = cross_filter_configuration(spec, json.loads(detail.get("position_json") or "{}"), uuid_of)
+    if metadata.get("chart_configuration") == config:
+        return []
+    metadata["chart_configuration"] = config
+    r = client.put_json(f"/api/v1/dashboard/{dashboard_id}", {"json_metadata": json.dumps(metadata)})
+    if r.status_code != 200:
+        return [f"cross-filter scope PUT failed: HTTP {r.status_code} {r.text[:300]}"]
     return []
 
 
@@ -527,6 +545,10 @@ def restore_bundle(zip_bytes: bytes, slug: str, client: SupersetClient) -> Apply
             report.warnings.append(f"scopes not reapplied (bundle spec not loadable: {e})")
         else:
             scope_errors = _apply_filter_scopes(spec, client, report.dashboard_id)
+            # The backup's charts by the uuids they have there (an adopted dashboard's are
+            # its own, not the ones derived from the slug).
+            scope_errors += _apply_cross_filter_scopes(spec, client, report.dashboard_id,
+                                                       dec.chart_uuids)
             for e in scope_errors:
                 report.warnings.append(f"scope reapply: {e}")
         if not_restored:
@@ -767,6 +789,7 @@ def apply(spec: DashboardSpec, client: SupersetClient, profile: str = "default",
 
         report.stage = "scope"
         scope_errors = _apply_filter_scopes(spec, client, report.dashboard_id)
+        scope_errors += _apply_cross_filter_scopes(spec, client, report.dashboard_id)
         if scope_errors:
             report.import_detail = "; ".join(scope_errors)
             return report

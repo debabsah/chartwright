@@ -365,6 +365,13 @@ class _ChartBase(BaseModel):
     cache_timeout: int | None = Field(
         default=None, ge=1, description="Seconds Superset caches this chart's query results; omit for the default")
     tags: list[str] | None = Field(default=None, description=TAGS_DESCRIPTION)
+    cross_filter_scope: Literal["global", "tab", "none"] | list[str] | None = Field(
+        default=None,
+        description="Which charts a click on this chart cross-filters: global (every chart, "
+                    "Superset's default), tab (the charts in its own tab or sub-tab), none (no "
+                    "chart, e.g. a summary table), or a list of chart names. Needs "
+                    "dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls "
+                    "emit no cross-filters")
 
     @model_validator(mode="after")
     def _chart_metadata(self) -> "_ChartBase":
@@ -1826,6 +1833,11 @@ CHART_TYPES = (
     "heatmap", "histogram", "funnel", "treemap", "mixed", "waterfall", "box_plot",
 )
 
+# Charts whose plugin declares no Behavior.InteractiveChart, so a click on them filters
+# nothing: BigNumberTotal and BigNumberWithTrendline (DrillToDetail only), Heatmap,
+# Histogram and Waterfall (no behaviors) index.ts at 4.1.4, 5.0.0 and 6.1.0.
+NO_CROSS_FILTER_TYPES = ("big_number_total", "big_number_trend", "heatmap", "histogram", "waterfall")
+
 
 class _FilterBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -2839,6 +2851,30 @@ class DashboardSpec(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _cross_filter_scopes(self) -> "DashboardSpec":
+        names = {c.name for c in self.charts}
+        in_tabs = {x for leaf in self.layout.leaf_tabs()
+                   for x in [*(i for row in item_rows(leaf.rows) for i in row),
+                             *(leaf.legend or {}).values()]
+                   if isinstance(x, str)}
+        for c in self.charts:
+            scope = c.cross_filter_scope
+            if scope in (None, "global"):
+                continue
+            where = f"chart {c.name!r}: cross_filter_scope"
+            if c.type in NO_CROSS_FILTER_TYPES:
+                raise ValueError(f"{where}: a {c.type} chart emits no cross-filters")
+            if not self.dashboard.cross_filters:
+                raise ValueError(f"{where} needs dashboard.cross_filters: true")
+            if scope == "tab" and c.name not in in_tabs:
+                raise ValueError(f"{where} 'tab' needs the chart placed in a tab")
+            if isinstance(scope, list):
+                bad = [n for n in scope if n not in names or n == c.name]
+                if not scope or bad or len(set(scope)) != len(scope):
+                    raise ValueError(f"{where} must list other spec charts, once each: {scope}")
+        return self
+
+    @model_validator(mode="after")
     def _tab_links_resolve(self) -> "DashboardSpec":
         valid = [t.title if s is None else f"{t.title}/{s.title}"
                  for t in self.layout.tabs or [] for s in [None, *(t.tabs or [])]]
@@ -3032,10 +3068,11 @@ SUPERSET_DEFAULTS: dict[str, dict[str, object]] = {
     # Treemap/types.ts:64 (:63 at 6.1.0)). x_label_format: x_axis_time_format's
     # DEFAULT_TIME_FORMAT, smart_date (sharedControls.tsx:320, :341 at 6.1.0;
     # D3Formatting.ts:67, :70 at 5.0.0, :78 at 6.1.0). x_label_rotation: xAxisLabelRotation
-    # 0 (plugin-chart-echarts src/defaults.ts:31).
+    # 0 (plugin-chart-echarts src/defaults.ts:31). cross_filter_scope: a chart with no
+    # chart_configuration entry follows the dashboard's scope (dashboard/types.ts:87-106).
     "chart": {"time_range": "No filter", "number_format": "SMART_NUMBER",
               "number_format_secondary": "SMART_NUMBER", "x_label_format": "smart_date",
-              "x_label_rotation": 0},
+              "x_label_rotation": 0, "cross_filter_scope": "global"},
     # table_timestamp_format: SMART_DATE_ID (plugin-chart-table controlPanel.tsx:394, :413
     # at 5.0.0, :488 at 6.1.0). color_pn defaults true, align_pn false (4.1.4 :523, :509;
     # 5.0.0 :572, :558; 6.1.0 :692, :678), filled in on a dashboard by applyDefaultFormData.

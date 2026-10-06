@@ -406,3 +406,167 @@ def test_links_to_other_dashboards_stay_as_written():
     other = "[elsewhere](/superset/dashboard/other/#TAB-sdc-1)"
     result = _round_trips(_with_links(other))
     assert result.spec["layout"]["footer"][0][0]["markdown"] == other
+
+
+# -- per-chart cross-filter scope ------------------------------------------------------
+
+BAR = {"name": "By region", "type": "bar", "dataset": DS, "x_column": "region", "metrics": ["SUM(revenue)"]}
+
+
+def _tabbed(line_scope="tab", pie_scope=("Top customers",), cross_filters=True):
+    """Sales > (Trend: line + pie, Mix: bar); Customers: table. The line sits in a sub-tab."""
+    charts = [{**LINE, "cross_filter_scope": line_scope},
+              {**PIE, "cross_filter_scope": list(pie_scope) or "global"}, BAR, TABLE]
+    return _spec(charts, dashboard={"cross_filters": cross_filters}, layout=TABBED)
+
+
+TABBED = {"tabs": [
+    {"title": "Sales", "tabs": [{"title": "Trend", "rows": [["Revenue", "By segment"]]},
+                                {"title": "Mix", "rows": [["By region"]]}]},
+    {"title": "Customers", "rows": [["Top customers"]]}]}
+
+
+def _chart_ids(dash: dict) -> dict:
+    return {n["meta"]["sliceName"]: n["meta"]["chartId"] for n in dash["position"].values()
+            if isinstance(n, dict) and n.get("type") == "CHART"}
+
+
+def test_cross_filter_scope_compiles_to_chart_configuration():
+    """ChartConfiguration (dashboard/types.ts:87-106 at 6.1.0): keyed by chart id, scope
+    {rootPath, excluded} or 'global'; a chart's own id is excluded (ScopingModal.tsx:240-246);
+    in-scope charts are those under rootPath and not excluded (util/getChartIdsInFilterScope.ts)."""
+    dash = _dashboard(_tabbed())
+    cid = _chart_ids(dash)
+    trend_tab = next(k for k, n in dash["position"].items()
+                     if isinstance(n, dict) and n.get("type") == "TAB" and n["meta"]["text"] == "Trend")
+    assert dash["metadata"]["chart_configuration"] == {
+        str(cid["Revenue"]): {"id": cid["Revenue"], "crossFilters": {
+            "scope": {"rootPath": [trend_tab], "excluded": [cid["Revenue"]]},  # the innermost tab
+            "chartsInScope": [cid["By segment"]]}},
+        str(cid["By segment"]): {"id": cid["By segment"], "crossFilters": {
+            "scope": {"rootPath": ["ROOT_ID"],
+                      "excluded": sorted([cid["Revenue"], cid["By segment"], cid["By region"]])},
+            "chartsInScope": [cid["Top customers"]]}},
+    }
+    unscoped = _tabbed("global", ())
+    assert "chart_configuration" not in _dashboard(unscoped)["metadata"]
+    # a written "global" builds like an omitted scope
+    omitted = _spec([LINE, PIE, BAR, TABLE], dashboard={"cross_filters": True}, layout=TABBED)
+    assert _compiled(unscoped) == _compiled(omitted)
+
+
+def test_cross_filter_scope_round_trips_and_shows_in_plan(monkeypatch):
+    spec = _tabbed()
+    result = _round_trips(spec)
+    assert [c["cross_filter_scope"] for c in result.spec["charts"] if "cross_filter_scope" in c] == [
+        "tab", ["Top customers"]]
+    p = _plan(spec, _tabbed(pie_scope=("Top customers", "By region")), monkeypatch)
+    assert p["charts_changed"] == ["By segment"]
+    assert _plan(spec, _tabbed(line_scope="global"), monkeypatch)["charts_changed"] == ["Revenue"]
+    reordered = _tabbed(pie_scope=("Top customers", "By region"))
+    assert _plan(reordered, _tabbed(pie_scope=("By region", "Top customers")), monkeypatch)["clean"]
+
+
+def test_cross_filter_scope_none_reaches_no_chart(monkeypatch):
+    """6.1.0's scoping tree saves "nothing ticked" as {rootPath: [], excluded: []}
+    (nativeFilters/FiltersConfigModal/FiltersConfigForm/FilterScope/utils.ts:261-270); no root
+    reaches no chart (util/getChartIdsInFilterScope.ts:75-85). The same at 4.1.4 / 5.0.0."""
+    spec = _tabbed(line_scope="none")
+    dash = _dashboard(spec)
+    cid = _chart_ids(dash)
+    assert dash["metadata"]["chart_configuration"][str(cid["Revenue"])] == {
+        "id": cid["Revenue"], "crossFilters": {"scope": {"rootPath": [], "excluded": []}, "chartsInScope": []}}
+    assert _round_trips(spec).spec["charts"][0]["cross_filter_scope"] == "none"
+    assert _plan(spec, _tabbed(), monkeypatch)["charts_changed"] == ["Revenue"]
+    # a UI scope that excludes every chart reads as "none" too
+    excluded_all = {str(cid["Revenue"]): {"id": cid["Revenue"], "crossFilters": {
+        "scope": {"rootPath": ["ROOT_ID"], "excluded": sorted(cid.values())}, "chartsInScope": []}}}
+    result = _decompile(_tabbed(line_scope="global", pie_scope=()),
+                        _edit_metadata(chart_configuration=excluded_all))
+    assert result.losses == [] and result.spec["charts"][0]["cross_filter_scope"] == "none"
+
+
+def _live_layout(spec, own_uuids=False):
+    """The compiled layout as an import leaves it: live chart ids and, for a dashboard
+    built in the UI, its own chart uuids (returned by name)."""
+    dash = _dashboard(spec)
+    live_ids = {old: 40 + i for i, old in enumerate(sorted(_chart_ids(dash).values()))}
+    position = json.loads(json.dumps(dash["position"]))
+    uuids = {}
+    for n in position.values():
+        if isinstance(n, dict) and n.get("type") == "CHART":
+            n["meta"]["chartId"] = live_ids[n["meta"]["chartId"]]
+            if own_uuids:
+                uuids[n["meta"]["sliceName"]] = f"00000000-0000-0000-0000-{len(uuids):012d}"
+                n["meta"]["uuid"] = uuids[n["meta"]["sliceName"]]
+    return dash, position, uuids
+
+
+class _ScopeClient:
+    def __init__(self, metadata, position):
+        self.metadata, self.position, self.puts = metadata, position, []
+
+    def get(self, path):
+        return {"result": {"json_metadata": json.dumps(self.metadata),
+                           "position_json": json.dumps(self.position)}}
+
+    def put_json(self, path, body):
+        self.puts.append(json.loads(body["json_metadata"]))
+        return type("R", (), {"status_code": 200, "text": ""})()
+
+
+def test_apply_rewrites_chart_configuration_with_live_ids():
+    """The bundle carries placeholder ids; only the 6.1.0 importer remaps them
+    (commands/dashboard/importers/v1/utils.py:147-190), so apply rewrites the config
+    from the live layout's chart ids on every release."""
+    from chartwright.apply import _apply_cross_filter_scopes
+
+    spec = _tabbed()
+    dash, position, _ = _live_layout(spec)
+    client = _ScopeClient(dict(dash["metadata"]), position)  # keyed by placeholders, as 4.1.4 imports it
+    assert _apply_cross_filter_scopes(spec, client, 1) == []
+    config = client.puts[0]["chart_configuration"]
+    ids_by_name = _chart_ids({"position": position})
+    assert sorted(config) == sorted(str(ids_by_name[n]) for n in ("Revenue", "By segment"))
+    assert config[str(ids_by_name["By segment"])]["crossFilters"]["chartsInScope"] == [ids_by_name["Top customers"]]
+    assert client.puts[0]["cross_filters_enabled"] is True  # the rest of the metadata is kept
+    # nothing to write when the live config already matches, or when no chart has a scope
+    client = _ScopeClient({**dash["metadata"], "chart_configuration": config}, position)
+    assert _apply_cross_filter_scopes(spec, client, 1) == [] and client.puts == []
+    assert _apply_cross_filter_scopes(_tabbed("global", ()), client, 1) == [] and client.puts == []
+
+
+def test_restore_finds_the_backups_charts_by_their_own_uuids():
+    """A backup of an adopted dashboard holds the dashboard's own chart uuids, not the ones
+    derived from the slug: restore passes them along (DecompileResult.chart_uuids)."""
+    from chartwright.apply import _apply_cross_filter_scopes
+
+    spec = _tabbed()
+    dash, position, uuids = _live_layout(spec, own_uuids=True)
+    client = _ScopeClient(dict(dash["metadata"]), position)
+    assert _apply_cross_filter_scopes(spec, client, 1) == []
+    assert client.puts[0]["chart_configuration"] == {}  # by the derived uuids, no chart is found
+    client = _ScopeClient(dict(dash["metadata"]), position)
+    assert _apply_cross_filter_scopes(spec, client, 1, uuids) == []
+    assert len(client.puts[0]["chart_configuration"]) == 2
+
+
+def test_cross_filter_scope_validation():
+    with pytest.raises(ValidationError, match="needs dashboard.cross_filters"):
+        _tabbed(cross_filters=False)
+    with pytest.raises(ValidationError, match="needs dashboard.cross_filters"):
+        _tabbed(line_scope="none", cross_filters=False)
+    for kpi_scope in (["Revenue"], "none"):
+        with pytest.raises(ValidationError, match="emits no cross-filters"):
+            _spec([{**KPI, "cross_filter_scope": kpi_scope}, LINE], dashboard={"cross_filters": True})
+    with pytest.raises(ValidationError, match="needs the chart placed in a tab"):
+        _spec([{**LINE, "cross_filter_scope": "tab"}, PIE], dashboard={"cross_filters": True})
+    for bad in (["Revenue"], ["Nope"], [], ["By segment", "By segment"]):
+        with pytest.raises(ValidationError, match="must list other spec charts"):
+            _spec([{**LINE, "cross_filter_scope": bad}, PIE], dashboard={"cross_filters": True})
+
+
+def test_scopes_on_a_dashboard_without_cross_filtering_are_a_named_loss():
+    result = _decompile(_tabbed(), _edit_metadata(cross_filters_enabled=False))
+    assert [loss.what for loss in result.losses] == ["cross-filter scopes not preserved: cross-filtering is off"]
+    assert all("cross_filter_scope" not in c for c in result.spec["charts"])
