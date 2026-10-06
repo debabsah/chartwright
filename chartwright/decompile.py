@@ -26,7 +26,7 @@ from .compiler import (
 from .spec import (
     ADHOC_AGGREGATES, BRIDGE_TOTAL, DEPENDENCY_PARENT_TYPES, FORMAT_COLOR_HEX,
     FORMAT_RANGE_OPERATORS, FORMAT_TEXT_HEX, FUNNEL_LABEL_TYPES, HEATMAP_DEFAULT_SCHEME,
-    HEX_COLOUR_RE, PIVOT_ORDER, SUPERSET_DEFAULTS, TICK_LAYOUTS, TREND_DEFAULT_HEX,
+    HEX_COLOUR_RE, MARKDOWN_ID_PATTERN, PIVOT_ORDER, SUPERSET_DEFAULTS, TICK_LAYOUTS, TREND_DEFAULT_HEX,
     WATERFALL_DEFAULT_HEX, FilterOp, HeaderFontSize, LabelType, PivotAggregate, SequentialScheme,
     SubtitleFontSize, metric_label, parse_metric, row_items,
 )
@@ -1664,6 +1664,16 @@ def _header_to_spec(meta: dict) -> dict | None:
     return header
 
 
+def _markdown_id(component_id: str | None) -> str | None:
+    """A named block's id from its component id (compile writes MARKDOWN-<id>). The tool's
+    unnamed blocks are MARKDOWN-sdc-..., and the UI mints MARKDOWN-<nanoid>, mixed case
+    and '_' (dashboard/util/newComponentFactory.ts:74 at 6.1.0), so neither reads as a name."""
+    m = re.fullmatch(r"MARKDOWN-(.+)", component_id or "")
+    if m and re.fullmatch(MARKDOWN_ID_PATTERN, m.group(1)) and not m.group(1).startswith("sdc-"):
+        return m.group(1)
+    return None
+
+
 def _markdown_height(meta: dict) -> int | float | None:
     """A MARKDOWN node's height in spec units: exact, since text blocks take fifths."""
     if not meta.get("height"):
@@ -1701,6 +1711,8 @@ def _walk_rows(position: dict, children: list[str], kept_names: set[str],
                             losses.append(Loss("layout", f"chart {nm!r} in layout but not decompilable; removed from row"))
                     elif ch.get("type") == "MARKDOWN":
                         block: dict = {"markdown": meta.get("code") or ""}
+                        if _markdown_id(ch_id):
+                            block["id"] = _markdown_id(ch_id)
                         if meta.get("width"):
                             block["width"] = max(1, min(12, int(meta["width"])))
                         if _markdown_height(meta) is not None:
@@ -1829,6 +1841,8 @@ def _sketch_from(position: dict, children: list[str], kept_names: set[str],
             if not (meta.get("code") or "").strip():
                 return None
             block: dict = {"markdown": meta["code"]}
+            if _markdown_id(node.get("id")):
+                block["id"] = _markdown_id(node.get("id"))
             if _markdown_height(meta) is not None:
                 block["height"] = _markdown_height(meta)
             return ("markdown", block)

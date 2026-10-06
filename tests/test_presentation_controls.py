@@ -257,3 +257,73 @@ def test_ui_title_spacing_reads_back_beside_its_title():
     assert not {"x_axis_title_margin", "y_axis_title_position"} & set(result.spec["charts"][0])
     result = _decompile(spec, _edit_chart("Revenue", y_axis_title_margin="wide"))
     assert [loss.what for loss in result.losses] == ["y_axis_title_margin 'wide' not representable; dropped"]
+
+
+# -- named markdown blocks -------------------------------------------------------------
+
+NOTE = {"markdown": "Figures refresh nightly.", "width": 12, "height": 1}
+
+
+def _markdown_nodes(spec) -> dict:
+    return {k: n for k, n in _dashboard(spec)["position"].items()
+            if isinstance(n, dict) and n.get("type") == "MARKDOWN"}
+
+
+def test_named_markdown_block_gets_its_component_id(monkeypatch):
+    """The component id is the block's DOM id: Markdown/Markdown.tsx:418 at 6.1.0
+    (gridComponents/Markdown.jsx:363 at 4.1.4 and 5.0.0), so css can use #MARKDOWN-<id>."""
+    layout = {"rows": [[{**NOTE, "id": "refresh-note"}], ["Orders"], ["Revenue"]],
+              "footer": [[{**NOTE, "markdown": "Owner: analytics", "id": "owner"}], [NOTE]]}
+    css = {"css": "#MARKDOWN-owner { font-size: 12px; }"}
+    spec = _spec(layout=layout, dashboard=css)
+    nodes = _markdown_nodes(spec)
+    assert "MARKDOWN-refresh-note" in nodes and "MARKDOWN-owner" in nodes
+    assert nodes["MARKDOWN-owner"]["meta"]["code"] == "Owner: analytics"
+    assert sum(k.startswith("MARKDOWN-sdc-") for k in nodes) == 1  # the unnamed block's positional id
+    assert nodes["MARKDOWN-owner"]["parents"] == ["ROOT_ID", "GRID_ID", "ROW-sdc-footer-1"]
+    result = _round_trips(spec)
+    assert result.spec["layout"]["rows"][0][0]["id"] == "refresh-note"
+    assert "id" not in result.spec["layout"]["footer"][1][0]
+    renamed = {**layout, "rows": [[{**NOTE, "id": "nightly-note"}], ["Orders"], ["Revenue"]]}
+    assert _plan(spec, _spec(layout=renamed, dashboard=css), monkeypatch)["layout_changed"]
+
+
+def test_named_markdown_block_in_a_sketch(monkeypatch):
+    layout = {"sketch": ["KKKK LLLLLLLL", "nnnnnnnnnnnn"],
+              "legend": {"K": "Orders", "L": "Revenue", "n": {"markdown": NOTE["markdown"], "id": "note"}}}
+    spec = _spec(layout=layout)
+    assert list(_markdown_nodes(spec)) == ["MARKDOWN-note"]
+    _round_trips(spec)
+    assert _plan(spec, spec, monkeypatch)["clean"]
+    unnamed = {**layout, "legend": {**layout["legend"], "n": {"markdown": NOTE["markdown"]}}}
+    assert _plan(spec, _spec(layout=unnamed), monkeypatch)["layout_changed"]
+
+
+def test_named_markdown_block_validation():
+    def rows(*blocks):
+        return {"rows": [list(blocks), ["Orders"], ["Revenue"]]}
+
+    for bad in ("Refresh", "1note", "note_1", "a" * 49):
+        with pytest.raises(ValidationError):
+            _spec(layout=rows({**NOTE, "id": bad}))
+    with pytest.raises(ValidationError, match="'sdc-' prefix is reserved"):
+        _spec(layout=rows({**NOTE, "id": "sdc-note"}))
+    with pytest.raises(ValidationError, match=r"duplicate markdown ids \['note'\]"):
+        _spec(layout={**rows({**NOTE, "id": "note"}), "footer": [[{**NOTE, "id": "note"}]]})
+    with pytest.raises(ValidationError, match=r"duplicate markdown ids \['note'\]"):
+        _spec(layout={"tabs": [{"title": "A", "rows": [[{**NOTE, "id": "note"}], ["Orders"]]},
+                               {"title": "B", "sketch": ["RRRR nnnn"], "legend": {
+                                   "R": "Revenue", "n": {"markdown": "x", "id": "note"}}}]})
+
+
+def test_ui_minted_markdown_ids_are_not_names():
+    """The UI mints `MARKDOWN-${nanoid()}` (dashboard/util/newComponentFactory.ts:74 at 6.1.0):
+    mixed case and '_', which no spec id can be, so such a block decompiles without an id."""
+    spec = _spec(layout={"rows": [[{**NOTE, "id": "refresh-note"}], ["Orders"], ["Revenue"]]})
+    bundle = _compiled(spec)
+    src, out = zipfile.ZipFile(io.BytesIO(bundle)), io.BytesIO()
+    with zipfile.ZipFile(out, "w") as dst:
+        for n in src.namelist():
+            dst.writestr(n, src.read(n).replace(b"MARKDOWN-refresh-note", b"MARKDOWN-V1StGXR8_Z5jdHi6B-myT"))
+    block = decompile_bundle(out.getvalue(), _lookup(spec)).spec["layout"]["rows"][0][0]
+    assert "id" not in block and block["markdown"] == NOTE["markdown"]

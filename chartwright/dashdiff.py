@@ -242,8 +242,9 @@ def _normalize(spec: DashboardSpec) -> dict:
             entry = holder.sketch_block(sc)
             if sc.kind == "header":
                 return {**entry.model_dump(), "width": width}
-            return {"markdown": entry.markdown, "width": width,
-                    "height": holder.sketch_block_height(sc)}
+            block = {"markdown": entry.markdown, "width": width,
+                     "height": holder.sketch_block_height(sc)}
+            return {**block, "id": entry.id} if entry.id else block
 
         rows = []
         for srow in holder.parsed_sketch():

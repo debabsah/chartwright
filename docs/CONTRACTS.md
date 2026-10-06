@@ -62,6 +62,16 @@ running the tool against real instances of all three releases.
   4.1.4/5.0.0, `:187` at 6.1.0). An apply therefore replaces CSS edited in
   the UI with the spec's `css`, or clears it when the spec has none; `plan`
   reports the difference first.
+- **A named markdown block is a CSS target.** Superset renders a layout
+  component's id as its DOM id (`gridComponents/Markdown/Markdown.tsx:418`
+  at 6.1.0, `gridComponents/Markdown.jsx:363` at 4.1.4 and 5.0.0), so a
+  block's `id` compiles to the component id `MARKDOWN-<id>` and the
+  dashboard's `css` can style it as `#MARKDOWN-<id>`. An unnamed block keeps
+  its positional `MARKDOWN-sdc-...` id, whose `sdc-` prefix a name can't
+  take. The UI mints `MARKDOWN-<nanoid>`, mixed case and `_`
+  (`dashboard/util/newComponentFactory.ts:74` at 6.1.0), which decompile
+  never reads as a name; it reads `MARKDOWN-<id>` back as the block's `id`,
+  so `plan` reports a renamed block as a layout change.
 - **Tags import on 6.0.0 or later, and only with tagging turned on.** The
   dashboard and chart import schemas gain `tags` at 6.0.0
   (`superset/dashboards/schemas.py:502`, `superset/charts/schemas.py:1589`;

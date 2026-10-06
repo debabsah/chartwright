@@ -2015,12 +2015,22 @@ DEPENDENCY_PARENT_TYPES = ("select", "range", "time_range")
 DATASET_FILTER_TYPES = ("select", "range", "time_grain", "time_column")
 
 
+# A markdown block's name: its component (and DOM) id is MARKDOWN-<id>.
+MARKDOWN_ID_PATTERN = r"^[a-z][a-z0-9-]{0,47}$"
+
+
 class MarkdownBlock(BaseModel):
-    """A text block in the layout (headers, notes)."""
+    """A text block in the layout (headers, notes). ``id`` names it: the block's
+    component (and DOM) id becomes ``MARKDOWN-<id>``, so the dashboard's ``css`` can
+    style it as ``#MARKDOWN-<id>``."""
 
     model_config = ConfigDict(extra="forbid")
 
     markdown: str = Field(min_length=1)
+    id: str | None = Field(
+        default=None, pattern=MARKDOWN_ID_PATTERN,
+        description="A lowercase slug, unique in the layout, e.g. \"legend\": the block's id "
+                    "is then MARKDOWN-legend, a target for the dashboard's css")
     width: int | None = Field(default=None, ge=1, le=GRID_WIDTH)
     height: int | float | None = Field(
         default=None, ge=0.2, le=100,
@@ -2033,6 +2043,13 @@ class MarkdownBlock(BaseModel):
         if h is not None and abs(h * 5 - round(h * 5)) > 1e-9:
             raise ValueError(f"markdown height {h}: use fifths of a unit (0.2 = one 8 px grid row), e.g. 1.6")
         return h
+
+    @field_validator("id")
+    @classmethod
+    def _not_positional(cls, i: str | None) -> str | None:
+        if i is not None and i.startswith("sdc-"):
+            raise ValueError(f"markdown id {i!r}: the 'sdc-' prefix is reserved for unnamed blocks' ids")
+        return i
 
 
 RowItem = Union[str, MarkdownBlock]
@@ -2622,6 +2639,12 @@ class Layout(_SketchHolder):
             return [self]
         return [t for t in self.leaf_tabs() if t.sketch]
 
+    def markdown_blocks(self) -> list[MarkdownBlock]:
+        """Every markdown block: in rows (header and footer included) and in sketch legends."""
+        in_rows = [item for row in self.all_rows() for item in row if isinstance(item, MarkdownBlock)]
+        return in_rows + [entry for holder in self.sketch_holders()
+                          for entry in (holder.legend or {}).values() if isinstance(entry, MarkdownBlock)]
+
 
 class DashboardSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -2803,6 +2826,14 @@ class DashboardSpec(BaseModel):
                         f"chart {c.name!r}: metric {m!r} looks like a custom-SQL metric but is not "
                         "one; write SQL(<expression>) AS <Label>, e.g. "
                         "\"SQL(100.0 * SUM(a) / NULLIF(SUM(b), 0)) AS Rate\"")
+        return self
+
+    @model_validator(mode="after")
+    def _markdown_ids_unique(self) -> "DashboardSpec":
+        ids = [b.id for b in self.layout.markdown_blocks() if b.id is not None]
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        if dupes:
+            raise ValueError(f"duplicate markdown ids {dupes}: an id names one block in the layout")
         return self
 
     @model_validator(mode="after")

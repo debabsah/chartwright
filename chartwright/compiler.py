@@ -1189,7 +1189,9 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
         child_ids: list[str] = []
         for j, item in enumerate(row):
             if isinstance(item, MarkdownBlock):
-                md_id = f"MARKDOWN-{prefix}{i + 1}-{j + 1}"
+                # The component id is the block's DOM id (Markdown/Markdown.tsx:418 at 6.1.0,
+                # Markdown.jsx:363 at 4.1.4 / 5.0.0), so a named block is a CSS target.
+                md_id = f"MARKDOWN-{item.id or f'{prefix}{i + 1}-{j + 1}'}"
                 child_ids.append(md_id)
                 pos[md_id] = {
                     "type": "MARKDOWN",
@@ -1257,7 +1259,7 @@ def _sketch_block_node(pos, holder, sb, width, node_id, parents) -> str:
     else:
         meta = {"code": entry.markdown, "width": width,
                 "height": int(round(holder.sketch_block_height(sb) * ROW_UNITS_PER_SPEC_UNIT))}
-        node_id = f"MARKDOWN-{node_id}"
+        node_id = f"MARKDOWN-{entry.id or node_id}"  # a named block is a CSS target, as in rows
     pos[node_id] = {"type": "HEADER" if sb.kind == "header" else "MARKDOWN", "id": node_id,
                     "children": [], "parents": parents, "meta": meta}
     return node_id

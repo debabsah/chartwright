@@ -64,7 +64,7 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - Name owners by email on 4.1.4 and 5.0.0, whose API returns usernames only with `FAB_ADD_SECURITY_API` on; usernames work on 6.1.0.
     - The account that applies stays an owner alongside them: Superset adds it on every import, and a non-admin account needs it to import the next version.
     - `plan` reports owners changed in the UI, and `decompile` reads them back.
-- **Dashboard CSS**: `"css"` on the dashboard block holds what you would type into Superset's Edit CSS, so the styling is reviewed and versioned with the rest of the dashboard. CSS changed in the UI is drift that `plan` reports and `apply` replaces.
+- **Dashboard CSS**: `"css"` on the dashboard block holds what you would type into Superset's Edit CSS, so the styling is reviewed and versioned with the rest of the dashboard. CSS changed in the UI is drift that `plan` reports and `apply` replaces. Name a markdown block (`{"markdown": "...", "id": "legend"}`) and the CSS can style that block alone, as `#MARKDOWN-legend`.
 - **Cross-Filtering, Spec-Owned**: `"cross_filters": true` on the dashboard block turns on Superset's click-to-filter (a value clicked in one chart filters every chart whose dataset has that column, across tabs). Off by default; a toggle made in the UI is drift that `plan` reports and `apply` repairs.
 - **No Empty First Load**: New charts open on your full data range, so a narrow default time window never hides everything on the first paint. On a large dataset that full range is a lot to draw, so give the filter bar a time range with a default; `chartwright advise` tells you when a dashboard has nothing bounding its dates.
 
