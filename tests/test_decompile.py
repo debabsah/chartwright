@@ -303,6 +303,8 @@ def test_a_column_beside_a_divider_stays_rows_and_says_so():
     ("histogram_v2", "normalize", True), ("big_number", "show_trend_line", False),
     ("echarts_timeseries_line", "seriesType", "smooth"),
     ("echarts_timeseries_line", "currency_format", {"symbol": "USD", "symbolPosition": "prefix"}),
+    ("table", "allow_render_html", False), ("table", "allow_rearrange_columns", True),
+    ("table", "server_pagination", True), ("table", "percent_metrics", ["SUM(sales)"]),
 ])
 def test_per_chart_settings_changed_in_the_ui_are_named(viz, key, value):
     """The fact-check of the 0.5.0 docs found these dropped with no loss; each is now
@@ -472,3 +474,35 @@ def test_an_off_grid_height_plans_on_the_grid_compile_writes():
     spec = load_spec(data)
     live = decompile_bundle(compile_bundle(spec, stub_resolution(spec)), _stub_lookup_for(spec))
     assert _normalize(load_spec(live.spec)) == _normalize(spec)
+
+
+def test_a_table_saved_in_superset_reads_back_without_losses():
+    """A table saved in Superset stores the panel's untouched values (HTML rendered,
+    fixed columns, client-side paging, no percentage metrics, colour by sign on), which
+    0.5.0 reported as settings it could not carry. A raw table's leftover percentage
+    metrics are never queried, so they are no loss either."""
+    from chartwright.testing import edit_bundle
+
+    blob = (FIXTURES / "featured_charts_export.zip").read_bytes()
+    result = decompile_bundle(blob, lambda u: {"database": "examples", "schema": None, "table": "t"})
+    assert not [l for l in result.losses if l.where == "Table"], result.losses_json()
+
+    spec = load_spec(json.loads((FIXTURES / "kitchen_sink.json").read_text()))
+    stored = {"allow_render_html": True, "allow_rearrange_columns": False,
+              "server_pagination": False, "percent_metrics": [], "color_pn": True,
+              "align_pn": False}
+
+    def untouched(path, doc):
+        if "/charts/" in path and doc.get("viz_type") == "table":
+            doc["params"].update(stored)
+    blob = edit_bundle(compile_bundle(spec, stub_resolution(spec)), untouched)
+    assert not [l for l in decompile_bundle(blob, _stub_lookup_for(spec)).losses
+                if any(k in l.what for k in stored)]
+
+    def leftover(path, doc):
+        if "/charts/" in path and doc.get("viz_type") == "table":
+            doc["params"].update(query_mode="raw", all_columns=["product_line"],
+                                 percent_metrics=["SUM(sales)"])
+    blob = edit_bundle(compile_bundle(spec, stub_resolution(spec)), leftover)
+    assert not [l for l in decompile_bundle(blob, _stub_lookup_for(spec)).losses
+                if "percent_metrics" in l.what]

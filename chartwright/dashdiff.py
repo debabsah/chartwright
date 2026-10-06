@@ -17,13 +17,15 @@ from .client import SupersetClient
 from .compiler import _metric_payload, compile_bundle, filter_id, grid_rows, spec_units
 from .decompile import _metric_to_spec, decompile_live
 from .spec import (
-    DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, FORMAT_COLOR_HEX, FORMAT_TEXT_HEX,
-    DashboardSpec, load_spec, named_hex, row_items, without_superset_defaults,
+    BAR_SWITCHES, DATASET_FILTER_TYPES, DEFAULT_ROW_LIMIT, DEFAULT_TIME_GRAIN, FORMAT_COLOR_HEX,
+    FORMAT_TEXT_HEX, DashboardSpec, load_spec, named_hex, row_items, without_superset_defaults,
 )
 
 # Colour fields that take green, amber or red or a #RRGGBB: a name and its own hex paint
 # the same, and decompile reads that hex back as the name, so plan compares the hex.
 NAMED_COLOUR_FIELDS = ("trend_color", "increase_color", "decrease_color", "total_color")
+# A table's fields that list labels (hidden columns, the cell-bar switches).
+TABLE_LABEL_LISTS = ("hidden", *BAR_SWITCHES)
 
 # Dashboard settings `plan` compares one by one (dashboard_settings_changed).
 DASHBOARD_SETTINGS = (
@@ -172,6 +174,14 @@ def _normalize(spec: DashboardSpec) -> dict:
         chart["height"] = spec_units(grid_rows(spec.resolved_height(chart["name"])))
         if chart["type"] in DEFAULT_ROW_LIMIT:
             chart.setdefault("row_limit", DEFAULT_ROW_LIMIT[chart["type"]])
+        if chart["type"] == "table":
+            # Label lists (hidden, the bar switches) are per-column settings, kept in
+            # column_config by label: their order changes nothing, and decompile reads
+            # them back in column_config's order, not the author's.
+            order = {k: i for i, k in enumerate(model.labels())}
+            for key in TABLE_LABEL_LISTS:
+                if isinstance(chart.get(key), list):
+                    chart[key] = sorted(chart[key], key=lambda k: order.get(k, len(order)))
         if chart["type"] in ("timeseries_line", "timeseries_bar", "timeseries_area",
                              "timeseries_scatter", "big_number_trend"):
             chart.setdefault("time_grain", DEFAULT_TIME_GRAIN)
@@ -183,10 +193,6 @@ def _normalize(spec: DashboardSpec) -> dict:
             for key in ("metrics", "groupby"):
                 if chart.get(key) == []:
                     del chart[key]
-        if chart.get("hidden"):
-            # A set: each label's column_config says only whether it shows, so decompile
-            # reads them back in column_config's order, not the spec's.
-            chart["hidden"] = sorted(chart["hidden"])
         _canonical_metrics(chart)
         _canonical_colours(chart)
         _normalize_tags(chart)

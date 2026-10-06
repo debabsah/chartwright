@@ -14,9 +14,8 @@
 | Hierarchical share | `treemap`, at most 2 levels |
 | A bridge between two totals | `waterfall`: the opening, 3-12 steps that add up, the closing; `steps` and `closing` keep its order |
 
-- A `row_limit` on a pie redefines the whole: the shown slices read as 100%,
-  so a truncated pie lies about share. Prefer a horizontal bar for top-N; a
-  truncated pie's title must say "top N".
+- A `row_limit` on a pie redefines the whole: its slices read as 100%, a lie
+  about share. Prefer a horizontal bar for top-N; else title the pie "top N".
 - Table and pivot height is a DATA-DEPENDENT property, not a one-time layout
   choice: size from expected rows (a table ~0.75 units per row + 2.5, more
   with a search box, pager or totals row; a pivot ~0.65 per distinct

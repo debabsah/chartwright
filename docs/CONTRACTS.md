@@ -308,7 +308,10 @@ running the tool against real instances of all three releases.
   segment on every release, so it raises nothing. A waterfall's
   `total_label`, `increase_label` and `decrease_label` are 6.1.0 controls;
   older releases name the bars Total, Increase and Decrease. A box plot's
-  `row_limit` is a 6.0.0 control (see "A box plot's row limit" below). These come back in
+  `row_limit` is a 6.0.0 control (see "A box plot's row limit" below). A
+  table that asks for cell bars (`cell_bars` true or a list, `color_by_sign`
+  or `absolute_bars`) beside colour rules warns before 6.1.0, the first
+  release to draw both ("Colour rules and cell bars", below). These come back in
   `version_warnings`, and the dashboard still builds.
 - **A field a release reads another way warns too.** Every release takes a
   heatmap's `x_order` and `y_order`, but only 6.1.0 sorts each axis itself
@@ -434,6 +437,39 @@ running the tool against real instances of all three releases.
   panel shows the bounds only while Truncate Y Axis is on; the tool writes
   them without turning truncation on, so the side without a bound still
   includes zero unless the spec sets `y_axis_truncate`.
+- **A table's cell bars are three switches, each set for the whole table and
+  per column.** `show_cell_bars`, `color_pn` and `align_pn` set them for the
+  table; a column's own `showCellBars`, `colorPositiveNegative` and
+  `alignPositiveNegative` in `column_config` win where set
+  (`plugin-chart-table/src/TableChart.tsx`, 4.1.4 `:694-701`, `:718-720`,
+  5.0.0 `:699-706`, `:723-725`, 6.1.0 `:886-893`, `:906`). A bar is drawn on a
+  metric, or on any numeric column of a raw table, never on a dimension
+  (4.1.4 `:721`, 6.1.0 `:910`). Left unset, a dashboard draws bars coloured by
+  sign and not aligned: the panel's defaults are true, true and false
+  (`controlPanel.tsx`, 4.1.4 `:495`, `:523`, `:509`; 5.0.0 `:544`, `:572`,
+  `:558`; 6.1.0 `:664`, `:692`, `:678`), which `applyDefaultFormData` fills in.
+  - Colour by sign colours the bar, never the number (`cellBackground`, 4.1.4
+    and 5.0.0 `:159-168`, 6.1.0 `:202-219`). From 6.0.0 a bar is green above
+    zero and red below, and the theme's grey without it; 4.1.4 and 5.0.0 draw
+    every bar grey and colour only the negative ones red. Verified live: an
+    untouched 6.1.0 table draws its revenue bars green.
+  - Align +/- sizes each bar by its absolute value from the cell's left edge
+    (`cellWidth`, `cellOffset` and `getValueRange`, 6.1.0 `:130-148`,
+    `:180-196`, `:398-410`). Without it, a column with negative values draws
+    them left of a zero line placed by the column's range.
+  - The spec's `cell_bars`, `color_by_sign` and `absolute_bars` take true or
+    false for the whole table, or a list of labels, which turns the table's
+    switch off and each listed column's on. Colour and alignment draw on a
+    bar, so each label they list must have one. `color_by_sign: true` and
+    `absolute_bars: false` are Superset's own values and compile as omitted.
+- **Colour rules and cell bars behave differently by release.** On 4.1.4,
+  5.0.0 and 6.0.0 a table with any colour rule draws no cell bar on a numeric
+  column (`TableChart.tsx`, 4.1.4 `:705-717`, 5.0.0 `:710-722`, 6.0.0
+  `:844-858`). From 6.1.0 the bars stay: a rule that paints a cell's
+  background hides that cell's bar only, and a text colour keeps it (6.1.0
+  `:958-980`, `:1048`). Verified live on all three releases. `check`,
+  `apply` and `plan` warn before 6.1.0 when a spec asks for bars beside
+  colour rules.
 - **A table's page size is `page_length`.** Superset reads
   `server_page_length` only with server pagination on, and `page_length`
   otherwise (`plugin-chart-table/src/transformProps.ts`, 4.1.4 `:631`, 5.0.0

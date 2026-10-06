@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..spec import (DEFAULT_TIME_GRAIN, grid_rows_visible, metric_label, parse_metric,
-                    table_header_units)
+                    set_value, table_header_units)
 from .model import KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 from .rules import _span_days
 
@@ -309,10 +309,15 @@ ID_LIKE = re.compile(r"(?:^|_)(?:id|code|year|zip|zipcode|postcode)$", re.I)
        "a raw table with id, code, year or zip columns draws no cell bars (a bar behind "
        "an identifier reads as an amount)",
        superset=True, superset_text="Superset's bars behind every number",
-       override="write cell_bars: true to keep the bars")
+       override="write cell_bars: true to keep the bars, or list the columns that keep "
+                "them, e.g. cell_bars: [\"amount\"]")
 def _cell_bars(ctx: RuleContext, c):
     if not c.columns:
         return None, "an aggregate table draws bars on its metrics only, never on a dimension"
+    asks = [f for f in ("color_by_sign", "absolute_bars") if set_value(c, f)]
+    if asks:
+        # Both draw on the bars, so false would leave them nothing to draw on.
+        return None, f"{asks[0]} draws on the cell bars, so which columns keep them is yours"
     hits = [col for col in c.columns if ID_LIKE.search(col)]
     ds = ctx.dataset_for(c)
     if ds is not None and ds.column_types:

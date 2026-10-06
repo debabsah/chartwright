@@ -5266,12 +5266,59 @@
               "type": "boolean"
             },
             {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "Bars behind numeric cells (Superset draws them by default; false for ids, years or a column a colour rule already speaks for). `advise --fix` fills false on a raw table with id, code, year or zip columns",
+          "description": "Bars behind numeric cells: true or false for the whole table (Superset draws them by default), or the labels that get them, e.g. [\"Revenue\"], with none elsewhere. An aggregate table draws them on metrics only. Keep them off ids, years and a column a colour rule already speaks for; `advise --fix` fills false on a raw table with id, code, year or zip columns",
           "title": "Cell Bars"
+        },
+        "color_by_sign": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Colour each cell bar by its sign: green above zero and red below (Superset 6.0+; 4.1.4 and 5.0.0 colour only the negative bars, red). On for the whole table by default; false turns it off, and labels, e.g. [\"Change\"], keep it on those columns only, so a magnitude's bars stay neutral. It colours the bar, not the number: each label needs a cell bar (coloured text is a conditional_formatting rule with paint: text)",
+          "title": "Color By Sign"
+        },
+        "absolute_bars": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Size each cell bar by the value's absolute size, from the cell's left edge (Superset's \"Align +/-\"): -20 and +20 draw the same bar, and color_by_sign tells them apart. By default a column with negative values draws them left of a zero line instead. true for the whole table, or labels, e.g. [\"Change\"]; each label needs a cell bar",
+          "title": "Absolute Bars"
         },
         "date_format": {
           "anyOf": [

@@ -43,7 +43,7 @@ NEW_KEYS = {
     "include_search", "rowSubTotals", "transposePivot", "show_values", "show_percentage",
     "number_format", "show_total", "labels_outside", "markerEnabled", "area", "areaB",
     "opacityB", "rolling_periods", "min_periods", "time_format", "force_timestamp_formatting",
-    "xscale_interval", "yscale_interval", "left_margin",
+    "xscale_interval", "yscale_interval", "left_margin", "color_pn", "align_pn",
 }
 
 
@@ -590,6 +590,8 @@ def test_plan_is_clean_when_nothing_changed(monkeypatch):
     ("Share by Line", {"label_type": "key"}),
     ("Top Customers", {"page_length": 50}),
     ("Top Customers", {"column_config": {}}),
+    ("Country Movers", {"color_pn": True}),
+    ("Country Movers", {"show_cell_bars": True}),
     ("Sales Pivot", {"transposePivot": False}),
     ("Line by Deal Size", {"show_percentage": True}),
     ("Countries by Deal Size", {"x_axis_sort": "name"}),
@@ -742,6 +744,7 @@ def test_a_bars_sort_metric_is_resolved_and_queried_by_smoke():
 # -- a written Superset default --------------------------------------------------------
 
 PIE = {"name": "P", "type": "pie", "dataset": DS, "metric": "COUNT(*)", "groupby": "g"}
+TABLE = {"name": "T", "type": "table", "dataset": DS, "metrics": ["SUM(x)"], "groupby": ["g"]}
 EXPLICIT_DEFAULTS = [
     (LINE, "legend_position", "top"),
     (LINE, "legend_type", "scroll"),
@@ -776,6 +779,8 @@ EXPLICIT_DEFAULTS = [
      "date_format", "smart_date"),
     ({"name": "M", "type": "mixed", "dataset": DS, "x_column": "ts", "a": {"metrics": ["SUM(x)"]},
       "b": {"metrics": ["SUM(y)"]}}, "number_format_secondary", "SMART_NUMBER"),
+    (TABLE, "color_by_sign", True),
+    (TABLE, "absolute_bars", False),
 ]
 
 

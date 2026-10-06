@@ -40,6 +40,7 @@ into one. Everything below works from that one file.
     - Filled areas on a mixed chart, such as solar output under a net-load line.
     - A big number shown as a date, such as the latest order date as "Sat 3 Oct 2026".
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
+    - Table cell bars on the columns you name (`"cell_bars": ["Revenue", "Change"]`), coloured by sign on just the change (`"color_by_sign": ["Change"]`) so revenue bars stay neutral, and sized by absolute value where you list them (`"absolute_bars"`), so a rise and a fall of the same size draw the same bar.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
     - Heatmap values and colour scheme, a label on every Nth row or column (hours read 0, 6, 12, 18), and room left of the row labels, which Superset 6.1 otherwise cuts off; what pie, funnel and treemap labels show, and their number format.
     - Heatmap axes in label order, such as a cohort triangle with its oldest cohort on top, or by value.
