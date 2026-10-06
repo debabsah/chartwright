@@ -1,205 +1,91 @@
 # Chartwright
 
-A dashboard compiler for Apache Superset. The `chartwright` command line builds
-a dashboard from a small deterministic file, updates it from that file later,
-and decompiles an existing dashboard back into one. Every dataset, column, and
-metric is checked against your own Superset first. An AI can write the file for
-you, or revise it, from a request in plain words.
+[![PyPI](https://img.shields.io/pypi/v/chartwright)](https://pypi.org/project/chartwright/) [![Python](https://img.shields.io/pypi/pyversions/chartwright)](https://pypi.org/project/chartwright/) [![CI](https://github.com/debabsah/chartwright/actions/workflows/ci.yml/badge.svg)](https://github.com/debabsah/chartwright/actions/workflows/ci.yml) [![Superset](https://img.shields.io/badge/Superset-4.1.4%20%7C%205.0.0%20%7C%206.1.0-1f6fb2)](docs/VERIFICATION.md) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-![An operations dashboard over NYC yellow-taxi data: KPI cards with unit subtitles, daily trend charts, an hour-by-weekday demand heatmap, a payment donut, borough and zone rankings, and a trip-distance histogram, behind a three-filter bar](https://raw.githubusercontent.com/debabsah/chartwright/main/docs/images/nyc-taxi-operations.png)
+Chartwright is a command-line tool that manages Apache Superset dashboards as code: one JSON spec file per dashboard, covering its charts and how each is drawn, its filters, layout, text, colours and styling, and naming the datasets it reads. Chartwright creates or updates the dashboard on your Superset instances from the spec, reports where the live dashboard differs from it, and can generate a spec from a dashboard that already exists. Specs can be written by hand or by an AI agent, and both go through identical validation before anything changes in Superset.
 
-*3.9 million yellow-taxi trips (NYC TLC trip records, May 2026), 11 verified
-charts, three filters, one `chartwright apply`. An AI wrote
-[the spec](https://github.com/debabsah/chartwright/blob/main/examples/nyc_taxi_operations.json) from a one-paragraph request:
-[the request and rebuild steps](https://github.com/debabsah/chartwright/blob/main/examples/README.md).*
+![The Sundown dashboard's Overview in five palettes, then the dashboard scrolling through its Overview, Evening ramp, Storage and Supply tabs, then About](docs/images/sundown.webp)
 
-A dashboard that lives in a file gets the workflow code already has: review it
-in a pull request, rebuild it identically, and bring it back after a bad
-change. `chartwright plan` diffs the file against the live dashboard and exits
-non-zero when they differ, so drift fails a CI check. `chartwright decompile`
-covers the other direction, and lists anything it could not carry over.
+*Sundown: example dashboard built using Chartwright.*
 
-Write the file yourself, or describe the dashboard you want and have an AI
-write it. The same checks run either way. After the build, each chart's query
-runs once (an error fails the build, an empty chart is named), and
-`chartwright advise` reviews the layout for readability.
+| You can | Instead of (Superset up to 6.1.0, [cited to source](docs/CONTRACTS.md)) | How it works |
+|---|---|---|
+| ● [Move dashboards between dev, staging, prod or another instance, including ones built in the UI](docs/MOVE-BETWEEN-INSTANCES.md) | Re-importing dashboard exports in the UI, which update the dashboard but not the charts already in it ([#34879](https://github.com/apache/superset/issues/34879), fixed after 6.1.0, not yet released) | [MOVE-BETWEEN-INSTANCES.md](docs/MOVE-BETWEEN-INSTANCES.md) |
+| ● [Clone any dashboard onto another dataset, team or tenant](docs/CLONE-A-DASHBOARD.md) | Editing exported files, or copying the dashboard and re-pointing each chart at the new dataset by hand ([Stack Overflow](https://stackoverflow.com/q/69179618), [#20090](https://github.com/apache/superset/issues/20090)) | [CLONE-A-DASHBOARD.md](docs/CLONE-A-DASHBOARD.md) |
+| ● [Describe a dashboard, or a change to one chart, to an AI agent and have it built, checked and updated in place, without learning Superset's editor](docs/AI-AGENTS.md) | Learning the chart editor, where tasks can take "hours of searching" ([Hacker News](https://news.ycombinator.com/item?id=39512272)), or Superset's MCP tools, which create a new dashboard on every build and can only add charts to an existing one ([#39864](https://github.com/apache/superset/discussions/39864)) | [AI-AGENTS.md](docs/AI-AGENTS.md) |
+| ● [Lay out rows, columns and tabs by drawing them as text, and keep heights you adjust in Superset](docs/LAYOUT-GUIDE.md) | Nesting columns inside rows in the editor to place a tall chart beside two stacked ones ([2019](https://stackoverflow.com/q/55665527), [2026](https://stackoverflow.com/q/79905463)) | [LAYOUT-GUIDE.md](docs/LAYOUT-GUIDE.md) |
+| ● [Review dashboard changes as a readable diff in a pull request, and check them in CI before they go live](docs/DEPLOY-FROM-GIT.md) | Exports full of instance-specific ids, which don't diff or merge cleanly in git ([#30190](https://github.com/apache/superset/discussions/30190)), and no settled way to deploy dashboards through CI/CD ([Stack Overflow](https://stackoverflow.com/q/79809865), unanswered) | [DEPLOY-FROM-GIT.md](docs/DEPLOY-FROM-GIT.md) |
+| ● [Roll back any change, chart settings included, from a backup saved automatically before every apply](docs/HISTORY-AND-ROLLBACK.md) | Remembering to export before each change, then re-importing, which restores the dashboard but not its charts' settings ([#34879](https://github.com/apache/superset/issues/34879), fixed after 6.1.0, not yet released); re-importing deleted assets can also fail ([#44309](https://github.com/apache/superset/issues/44309)) | [HISTORY-AND-ROLLBACK.md](docs/HISTORY-AND-ROLLBACK.md) |
+| ● [Rebuild your dashboards on a new Superset version from the same specs](docs/SUPERSET-VERSIONS.md) | Checking and repairing charts by hand when an upgrade leaves them blank in the editor ([#32725](https://github.com/apache/superset/discussions/32725)) | [SUPERSET-VERSIONS.md](docs/SUPERSET-VERSIONS.md) |
+| ● [Create dashboards from code without reverse-engineering Superset's JSON](docs/DASHBOARDS-FROM-CODE.md) | Working out the undocumented layout JSON, `position_json` ([#32970](https://github.com/apache/superset/discussions/32970)) | [DASHBOARDS-FROM-CODE.md](docs/DASHBOARDS-FROM-CODE.md) |
 
-## What a spec looks like
-
-The file is called a spec:
-
-```json
-{
-  "spec_version": "1",
-  "dashboard": {"title": "Sales Overview", "slug": "sales-overview"},
-  "charts": [
-    {
-      "name": "Total Sales",
-      "type": "big_number_total",
-      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
-      "metric": "SUM(sales)"
-    },
-    {
-      "name": "Sales Over Time",
-      "type": "timeseries_line",
-      "dataset": {"database": "examples", "table": "cleaned_sales_data"},
-      "metrics": ["SUM(sales)"],
-      "time_column": "order_date"
-    }
-  ],
-  "layout": {"rows": [["Total Sales"], ["Sales Over Time"]]}
-}
-```
-
-`chartwright apply` on this file signs in to your Superset, confirms the
-`cleaned_sales_data` table and the `sales` and `order_date` columns exist,
-builds a KPI card above a line chart, and finishes by running each chart's
-query once. A misspelled column or a missing table is a clear error naming the
-problem, with the closest real names suggested, before anything is created.
-
-## Creating dashboards with AI
-
-The spec is typed, and every reference in it is checked before anything is
-created. Whatever a model proposes has to survive the same verification your
-own specs do.
-
-- **Claude Code skill**: from a clone of this repo, run
-  `python install-skill.py`; the model writes the spec from your request, and
-  the tool verifies and builds it.
-- **MCP server**: `chartwright-mcp` (installed with `pip install "chartwright[mcp]"`)
-  exposes fourteen tools covering the whole lifecycle, usable from any MCP client.
-- **Open contract**: `chartwright schema` prints the spec's JSON Schema, so any LLM or
-  tool can generate valid specs.
-- **Guardrails**: the AI proposes; the tool verifies, using your own Superset
-  login. Verification reads names (datasets, columns, metrics), not rows.
-
-## Quick start
+## Install
 
 ```bash
-pip install chartwright
+pip install chartwright            # Python 3.11 or newer
+
+# OPTIONAL
+pip install "chartwright[mcp]"     # adds the MCP server for AI clients, chartwright-mcp
+pip install "chartwright[visual]"  # for chartwright save-queries (CSV reports on built charts);
+                                   # then run: playwright install chromium
 ```
 
-Python 3.11 or newer; three dependencies; Windows, macOS, and Linux.
+## Try it on your Superset
 
-Create `~/.config/chartwright/profiles.toml` pointing at your Superset:
+A dev or test instance is ideal. Add a profile to `~/.config/chartwright/profiles.toml`; it names the instance and where the password comes from, never the password itself:
 
 ```toml
-[prod]
-base_url = "https://superset.your-company.com"
-username = "your-username"
-password_env = "CHARTWRIGHT_PROD_PASSWORD"
+[dev]  # <profile> identifier
+base_url = "https://superset-dev.example.com"
+username = "chartwright"
+password_env = "SUPERSET_DEV_PASSWORD"
 ```
 
-Point the example spec's `dataset` lines at a table your Superset already
-knows, save it as `sales_overview.json`, then:
+Export the password variable, then:
 
 ```bash
-chartwright check sales_overview.json --profile prod   # read-only: verify every reference
-chartwright apply sales_overview.json --profile prod   # build, import, verify
+# Build and update a dashboard
+chartwright validate spec.json                      # check the spec offline
+chartwright check spec.json --profile <profile>     # find every missing dataset, column or metric
+chartwright plan spec.json --profile <profile>      # show what apply would change
+chartwright apply spec.json --profile <profile>     # build or update the dashboard, then query every chart
+chartwright restore backup.zip --profile <profile>  # roll back to the backup taken before an apply
+
+# Start from a dashboard you already have
+chartwright decompile <slug> --profile <profile> -o spec.json  # a spec for a copy of it
+chartwright adopt <slug> --profile <profile> -o spec.json      # manage it where it is
+chartwright absorb spec.json --profile <profile>               # copy heights set in Superset into the spec
+
+# Design review
+chartwright brief                                             # sizing and layout guidance for writing a spec
+chartwright advise spec.json                                  # review the design; --fix applies the safe fixes
+chartwright explain spec.json                                 # where each filled-in setting came from
+chartwright redesign <slug> --profile <profile> -o spec.json  # decompile, review and fix in one step
+
+# Other
+chartwright schema                                      # the spec's JSON Schema
+chartwright compile spec.json -o bundle.zip             # build the import file offline
+chartwright standards check specs/                      # team standards (also show, assign, apply)
+chartwright save-queries spec.json --profile <profile>  # optional [visual]: makes CSV reports work
+chartwright calibrate                                   # suggest default heights from what absorb copied
 ```
 
-No Superset to point at? Clone this repo: `sandbox/up.sh` boots a disposable
-Superset 6.1.0 with example data on `localhost:8098` (Docker required;
-sign-in is admin/admin), and `tests/fixtures/kitchen_sink.json` applies to it
-as-is.
+`chartwright <command> --help` lists each command's options.
 
-## What you get
+## Requirements and limits
 
-- **Deterministic dashboards**: the same spec always produces the identical
-  dashboard. Diff it in git, review it in a PR.
-- **Verified at every step**: every reference is checked before anything is
-  written, and every chart's query runs once (an error fails the build, an
-  empty chart is named); failures say what went wrong and where.
-- **Dashboards as code, in both directions**: `chartwright decompile` turns any live
-  dashboard into a spec; `chartwright plan` shows what differs between the spec and
-  the live dashboard, ready as a CI gate; `chartwright compile` builds the import
-  bundle offline, no server needed.
-- **Recoverable by default**: every apply backs up the previous state first,
-  and an apply that fails while importing or updating charts restores it
-  automatically. Dashboards Chartwright did not create are never overwritten;
-  to bring a hand-built one under a spec, decompile it and build it at a new
-  slug.
-- **What a spec can express**: 17 chart types, metrics as you write them,
-  per-chart filters, a native filter bar, tabs, markdown notes, a header and
-  footer shown on every tab, and layouts you can draw as ASCII sketches.
-- **Environment promotion**: specs name their data (connection, schema,
-  table), so the same file applies to dev, staging, and production when they
-  share connection names.
+- **Sign-in:** a Superset user with database or LDAP login, or Preset API tokens; Chartwright doesn't sign in through SSO or OAuth. On an instance that uses SSO, ask your admin for an account that has a Superset password. All testing uses the Admin role.
+- **Datasets:** datasets and database connections stay in Superset; create them on each instance first. A spec names each dataset by its database connection and table, so where connection names differ between instances, keep one copy of the spec per instance.
+- **Ownership:** Chartwright changes only dashboards it built or that you adopted, so give each team its own slug prefix. To manage a UI-made dashboard where it is, run `chartwright adopt`; it names every setting the first apply will reset, before you apply.
+- **Edits:** each `apply` writes the spec over the dashboard and undoes edits made in the UI, and takes a chart added there off the dashboard (the chart itself stays in Superset's Charts list); make lasting changes, and add new charts, in the spec. To keep chart heights you set by dragging in Superset, run `chartwright absorb` first; it copies them into the spec.
+- **Status:** version 0.6.0, beta. CI builds on real Superset 4.1.4, 5.0.0 and 6.1.0 on every pull request ([how it's tested](docs/VERIFICATION.md)).
 
-Every capability, with the CLI verb reference: [docs/FEATURES.md](https://github.com/debabsah/chartwright/blob/main/docs/FEATURES.md).
+Every limit, with what to do instead: [Limits](docs/LIMITS.md).
 
-## The design brain
+Every capability and command: [FEATURES.md](docs/FEATURES.md) · How it's tested: [VERIFICATION.md](docs/VERIFICATION.md) · Superset's behaviour, cited to source: [CONTRACTS.md](docs/CONTRACTS.md) · Compared with preset-cli, sup and Terraform: [COMPARISON.md](docs/COMPARISON.md) · Design rules: [DESIGN-BRAIN.md](docs/DESIGN-BRAIN.md)
 
-A spec can import perfectly and still produce a dashboard nobody can read: a
-pie squeezed into two columns, a KPI buried under three tables, a bar chart
-with forty category labels Superset silently drops. The design brain covers
-size and scroll budgets, chart-choice limits, and layout composition. It
-arrives as a brief the AI reads before authoring, and a critic that reviews
-the result:
-
-```bash
-chartwright brief --audience executive        # the guidance, before writing a spec
-chartwright advise spec.json --fix            # the critique, with safe auto-repairs
-chartwright redesign old-dash --profile prod  # audit + repair a live dashboard
-```
-
-You stay in charge of it: suppress any rule for one chart in the spec, tune
-the thresholds per audience or per deployment in `design.yaml`, and feed the
-heights you drag in the UI back into the recommendations with `chartwright
-calibrate`. Pass `--design off` and the output is byte-identical to a build
-that never had it. The full rulebook and architecture:
-[docs/DESIGN-BRAIN.md](https://github.com/debabsah/chartwright/blob/main/docs/DESIGN-BRAIN.md).
-
-## Drawing layouts as text
-
-The spec's `sketch` is the dashboard's shape, drawn with characters that you
-and a model can both write: each letter is a chart, and repeating a sketch
-line makes its charts taller.
-
-```text
-KKKK LLLLLLLL
-.... LLLLLLLL
-```
-
-![A short chart beside one twice as tall](https://raw.githubusercontent.com/debabsah/chartwright/main/docs/images/sketches/taller.svg)
-
-`L` spans both lines, so it renders twice as tall as `K`; the dots keep the
-space under `K` deliberately empty. Every rule, drawn and explained:
-[docs/LAYOUT-GUIDE.md](https://github.com/debabsah/chartwright/blob/main/docs/LAYOUT-GUIDE.md).
-
-## Testing and evidence
-
-Every pull request and every push to main runs the full offline suite on Linux and
-Windows, plus the full pipeline (apply, lifecycle soak, stale-tab adversary,
-fault injection) against real Superset 4.1.4, 5.0.0, and 6.1.0 containers.
-Chart options are checked against Superset's own source for every supported
-version, so a Superset change surfaces here before it reaches your dashboards.
-
-Full evidence: [docs/VERIFICATION.md](https://github.com/debabsah/chartwright/blob/main/docs/VERIFICATION.md).
-
-[docs/CONTRACTS.md](https://github.com/debabsah/chartwright/blob/main/docs/CONTRACTS.md) records how Superset itself behaves: what its
-importer accepts, how dashboard settings are stored, what its chart plugins
-expect. Every behavior is cited to its source line at 4.1.4, 5.0.0, and 6.1.0.
-Release tags are immutable, so any line of it can be checked against a fresh
-checkout of that tag.
-
-## Documentation
-
-- [docs/FEATURES.md](https://github.com/debabsah/chartwright/blob/main/docs/FEATURES.md): every capability, with the CLI verb
-  reference
-- [docs/LAYOUT-GUIDE.md](https://github.com/debabsah/chartwright/blob/main/docs/LAYOUT-GUIDE.md): drawing layouts as text,
-  every rule illustrated
-- [docs/DESIGN-BRAIN.md](https://github.com/debabsah/chartwright/blob/main/docs/DESIGN-BRAIN.md): the design rulebook, every
-  rule and threshold, and how to tune or switch them off
-- [docs/VERIFICATION.md](https://github.com/debabsah/chartwright/blob/main/docs/VERIFICATION.md): what is tested, what it
-  caught, and how to reproduce it
-- [docs/CONTRACTS.md](https://github.com/debabsah/chartwright/blob/main/docs/CONTRACTS.md): how Superset behaves on import,
-  on dashboard storage, and in chart options, cited to its source line at
-  each supported release
-- [docs/COMPARISON.md](https://github.com/debabsah/chartwright/blob/main/docs/COMPARISON.md): what Chartwright, preset-cli,
-  sup, and the Terraform provider each automate, so you can pick by the job
+[Changelog](CHANGELOG.md) · [Stability](docs/STABILITY.md) · [Contributing](CONTRIBUTING.md) · Apache-2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE))
 
 ---
 
-Apache Superset, Superset, and the Superset logo are trademarks of the Apache
-Software Foundation. No endorsement by the ASF is implied.
+Apache Superset and Superset are trademarks of the Apache Software Foundation. No endorsement by the ASF is implied.
