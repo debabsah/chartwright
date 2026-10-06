@@ -23,7 +23,7 @@ from chartwright.spec import load_spec
 from chartwright.testing import stub_resolution
 
 from test_decompile import _stub_lookup_for
-from test_layout_footer import FOOTER, _renamed
+from test_layout_footer import FOOTER, UI_ID, _renamed
 
 FIXTURES = Path(__file__).parent / "fixtures"
 HEADER = [[{"markdown": "**Finance view** · figures are provisional until the 5th", "width": 12,
@@ -125,7 +125,7 @@ def test_any_rows_before_the_tabs_read_as_the_header():
     """A dashboard assembled in Superset's UI (no chartwright ids): rows dragged
     above the tabs are a header, not a reason to flatten the tabs."""
     spec = load_spec(_with_header("kitchen_sink.json"))
-    bundle = _renamed(compile_bundle(spec, stub_resolution(spec)), "sdc-header-", "ui-built-")
+    bundle = _renamed(compile_bundle(spec, stub_resolution(spec)), "sdc-header-", UI_ID)
     result = decompile_bundle(bundle, _stub_lookup_for(spec))
     assert result.spec["layout"]["header"] == HEADER
     assert "tabs" in result.spec["layout"]
@@ -134,7 +134,7 @@ def test_any_rows_before_the_tabs_read_as_the_header():
 
 def test_untabbed_rows_without_the_marker_stay_in_the_body():
     spec = load_spec(_with_header("sales_overview.json"))
-    bundle = _renamed(compile_bundle(spec, stub_resolution(spec)), "sdc-header-", "ui-built-")
+    bundle = _renamed(compile_bundle(spec, stub_resolution(spec)), "sdc-header-", UI_ID)
     layout = decompile_bundle(bundle, _stub_lookup_for(spec)).spec["layout"]
     assert "header" not in layout
     assert layout["rows"][0] == HEADER[0]

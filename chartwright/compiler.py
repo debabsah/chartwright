@@ -1592,7 +1592,7 @@ def cross_filter_configuration(spec: DashboardSpec, position: dict,
     live ids apply writes after import. Charts are found by uuid: the spec's own, or
     `uuid_of` (name -> uuid) for a decompiled backup. A chart's own id is in its excluded
     list, as the scoping modal saves it (ScopingModal.tsx:240-246)."""
-    nodes = {n["meta"].get("uuid"): n for n in position.values()
+    nodes = {(n.get("meta") or {}).get("uuid"): n for n in position.values()
              if isinstance(n, dict) and n.get("type") == "CHART"}
     node_of = {c.name: nodes[u] for c in spec.charts
                if (u := (uuid_of or {}).get(c.name) or str(spec.chart_uuid(c.name))) in nodes}

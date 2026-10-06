@@ -288,6 +288,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "x_axis_title": {
           "anyOf": [
             {
@@ -313,6 +337,51 @@
           "default": null,
           "description": "Title above the value axis, e.g. its unit",
           "title": "Y Axis Title"
+        },
+        "x_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "title": "X Axis Title Margin"
+        },
+        "y_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the value axis and its title; omit for 15 (30 on a horizontal bar), e.g. 45 for a title along the axis that clears its labels",
+          "title": "Y Axis Title Margin"
+        },
+        "y_axis_title_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "Left",
+                "Top"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top (above the axis, the default here) or Left (along it, turned on its side; the default on a horizontal bar)",
+          "title": "Y Axis Title Position"
         },
         "y_axis_min": {
           "anyOf": [
@@ -769,6 +838,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "type": {
           "const": "big_number_total",
           "title": "Type",
@@ -802,6 +895,46 @@
           "default": null,
           "description": "d3 format string, e.g. ',.0f'",
           "title": "Number Format"
+        },
+        "header_font_size": {
+          "anyOf": [
+            {
+              "enum": [
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6
+              ],
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The number's size, a share of the card's height: 0.2, 0.3, 0.4 (Superset's default), 0.5 or 0.6",
+          "title": "Header Font Size"
+        },
+        "subtitle_font_size": {
+          "anyOf": [
+            {
+              "enum": [
+                0.125,
+                0.15,
+                0.2,
+                0.3,
+                0.4
+              ],
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The subtitle's size, a share of the card's height: 0.125, 0.15 (Superset's default), 0.2, 0.3 or 0.4",
+          "title": "Subtitle Font Size"
         },
         "date_format": {
           "anyOf": [
@@ -1080,6 +1213,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "type": {
           "const": "big_number_trend",
           "title": "Type",
@@ -1116,6 +1273,40 @@
           ],
           "default": null,
           "title": "Number Format"
+        },
+        "header_font_size": {
+          "anyOf": [
+            {
+              "enum": [
+                0.2,
+                0.3,
+                0.4,
+                0.5,
+                0.6
+              ],
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The number's size, a share of the card's height: 0.2, 0.3, 0.4 (Superset's default), 0.5 or 0.6",
+          "title": "Header Font Size"
+        },
+        "trend_date_format": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d3 time format for the trendline's dates, in its tooltip (and its x axis on 6.1.0), e.g. \"%b %Y\"; the number itself stays a number",
+          "title": "Trend Date Format"
         },
         "compare_lag": {
           "anyOf": [
@@ -1405,6 +1596,30 @@
           "default": null,
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
+        },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
         },
         "type": {
           "const": "box_plot",
@@ -2288,6 +2503,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "show_legend": {
           "default": true,
           "description": "false hides the legend",
@@ -2587,6 +2826,30 @@
           "default": null,
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
+        },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
         },
         "type": {
           "const": "heatmap",
@@ -2987,6 +3250,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "type": {
           "const": "histogram",
           "title": "Type",
@@ -3304,12 +3591,26 @@
     },
     "MarkdownBlock": {
       "additionalProperties": false,
-      "description": "A text block in the layout (headers, notes).",
+      "description": "A text block in the layout (headers, notes). ``id`` names it: the block's\ncomponent (and DOM) id becomes ``MARKDOWN-<id>``, so the dashboard's ``css`` can\nstyle it as ``#MARKDOWN-<id>``.",
       "properties": {
         "markdown": {
           "minLength": 1,
           "title": "Markdown",
           "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9-]{0,47}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A lowercase slug, unique in the layout, e.g. \"legend\": the block's id is then MARKDOWN-legend, a target for the dashboard's css",
+          "title": "Id"
         },
         "width": {
           "anyOf": [
@@ -3517,6 +3818,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "x_axis_title": {
           "anyOf": [
             {
@@ -3542,6 +3867,51 @@
           "default": null,
           "description": "Title above the value axis, e.g. its unit",
           "title": "Y Axis Title"
+        },
+        "x_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "title": "X Axis Title Margin"
+        },
+        "y_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the value axis and its title; omit for 15 (30 on a horizontal bar), e.g. 45 for a title along the axis that clears its labels",
+          "title": "Y Axis Title Margin"
+        },
+        "y_axis_title_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "Left",
+                "Top"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top (above the axis, the default here) or Left (along it, turned on its side; the default on a horizontal bar)",
+          "title": "Y Axis Title Position"
         },
         "y_axis_min": {
           "anyOf": [
@@ -3791,7 +4161,7 @@
     },
     "MixedSeries": {
       "additionalProperties": false,
-      "description": "One of a mixed chart's two queries: its metrics, drawn as bars, a line or a\nfilled area, on the primary (left) or secondary (right) value axis. No release gives\na query's line a width or dash of its own (docs/CONTRACTS.md). To draw a reference\nseries lighter, such as last year under this year, put it in its own query and give\nit a pale colour with the dashboard's label_colors, or make it an area with a low\nopacity.",
+      "description": "One of a mixed chart's two queries: its metrics, drawn as bars, a line, a\nfilled area or points, on the primary (left) or secondary (right) value axis. No release gives\na query's line a width or dash of its own (docs/CONTRACTS.md). To draw a reference\nseries lighter, such as last year under this year, put it in its own query and give\nit a pale colour with the dashboard's label_colors, or make it an area with a low\nopacity.",
       "properties": {
         "metrics": {
           "items": {
@@ -3803,11 +4173,12 @@
         },
         "kind": {
           "default": "bar",
-          "description": "bar, line, or area: a line with the space under it filled. A line draws over an area whichever query holds it, so an area under a line takes either order",
+          "description": "bar, line, area (a line with the space under it filled), or scatter (a point per value, no line). A line draws over an area whichever query holds it, so an area under a line takes either order",
           "enum": [
             "bar",
             "line",
-            "area"
+            "area",
+            "scatter"
           ],
           "title": "Kind",
           "type": "string"
@@ -4074,6 +4445,30 @@
           "default": null,
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
+        },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
         },
         "show_legend": {
           "default": true,
@@ -4353,6 +4748,30 @@
           "default": null,
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
+        },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
         },
         "type": {
           "const": "pivot_table",
@@ -5163,6 +5582,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "type": {
           "const": "table",
           "title": "Type",
@@ -5786,6 +6229,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "x_axis_title": {
           "anyOf": [
             {
@@ -5811,6 +6278,51 @@
           "default": null,
           "description": "Title above the value axis, e.g. its unit",
           "title": "Y Axis Title"
+        },
+        "x_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "title": "X Axis Title Margin"
+        },
+        "y_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the value axis and its title; omit for 15 (30 on a horizontal bar), e.g. 45 for a title along the axis that clears its labels",
+          "title": "Y Axis Title Margin"
+        },
+        "y_axis_title_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "Left",
+                "Top"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top (above the axis, the default here) or Left (along it, turned on its side; the default on a horizontal bar)",
+          "title": "Y Axis Title Position"
         },
         "y_axis_min": {
           "anyOf": [
@@ -6291,6 +6803,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "x_axis_title": {
           "anyOf": [
             {
@@ -6316,6 +6852,51 @@
           "default": null,
           "description": "Title above the value axis, e.g. its unit",
           "title": "Y Axis Title"
+        },
+        "x_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "title": "X Axis Title Margin"
+        },
+        "y_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the value axis and its title; omit for 15 (30 on a horizontal bar), e.g. 45 for a title along the axis that clears its labels",
+          "title": "Y Axis Title Margin"
+        },
+        "y_axis_title_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "Left",
+                "Top"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top (above the axis, the default here) or Left (along it, turned on its side; the default on a horizontal bar)",
+          "title": "Y Axis Title Position"
         },
         "y_axis_min": {
           "anyOf": [
@@ -6760,6 +7341,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "x_axis_title": {
           "anyOf": [
             {
@@ -6785,6 +7390,51 @@
           "default": null,
           "description": "Title above the value axis, e.g. its unit",
           "title": "Y Axis Title"
+        },
+        "x_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "title": "X Axis Title Margin"
+        },
+        "y_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the value axis and its title; omit for 15 (30 on a horizontal bar), e.g. 45 for a title along the axis that clears its labels",
+          "title": "Y Axis Title Margin"
+        },
+        "y_axis_title_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "Left",
+                "Top"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top (above the axis, the default here) or Left (along it, turned on its side; the default on a horizontal bar)",
+          "title": "Y Axis Title Position"
         },
         "y_axis_min": {
           "anyOf": [
@@ -7271,6 +7921,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "x_axis_title": {
           "anyOf": [
             {
@@ -7296,6 +7970,51 @@
           "default": null,
           "description": "Title above the value axis, e.g. its unit",
           "title": "Y Axis Title"
+        },
+        "x_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the x axis and its title; omit for a gap that clears the labels (30, 50 under rotated labels)",
+          "title": "X Axis Title Margin"
+        },
+        "y_axis_title_margin": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pixels between the value axis and its title; omit for 15 (30 on a horizontal bar), e.g. 45 for a title along the axis that clears its labels",
+          "title": "Y Axis Title Margin"
+        },
+        "y_axis_title_position": {
+          "anyOf": [
+            {
+              "enum": [
+                "Left",
+                "Top"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Top (above the axis, the default here) or Left (along it, turned on its side; the default on a horizontal bar)",
+          "title": "Y Axis Title Position"
         },
         "y_axis_min": {
           "anyOf": [
@@ -7755,6 +8474,30 @@
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
         },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
+        },
         "type": {
           "const": "treemap",
           "title": "Type",
@@ -7975,6 +8718,30 @@
           "default": null,
           "description": "Superset tags, e.g. [\"finance\", \"weekly\"]. Superset 6.0.0 or later, with the TAGGING_SYSTEM feature flag on. 4.1.4 and 5.0.0 can't import a bundle that carries tags, so check, apply and plan refuse the field there before anything is written; 6.0.0 or later without the flag ignores them, so plan keeps reporting them. An apply replaces the object's tags with this list, so [] removes them all, tags added in the UI included; omit the field to leave tags alone, in apply and in plan.",
           "title": "Tags"
+        },
+        "cross_filter_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "global",
+                "tab",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Which charts a click on this chart cross-filters: global (every chart, Superset's default), tab (the charts in its own tab or sub-tab), none (no chart, e.g. a summary table), or a list of chart names. Needs dashboard.cross_filters; big numbers, heatmaps, histograms and waterfalls emit no cross-filters",
+          "title": "Cross Filter Scope"
         },
         "type": {
           "const": "waterfall",
