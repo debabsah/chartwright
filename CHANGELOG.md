@@ -7,6 +7,8 @@ while the major version is 0, minor bumps may include breaking changes and say s
 
 ### Fixed
 
+- A horizontal bar chart's axis titles now sit where they belong. Superset lays the titles out for a vertical chart and then swaps the axes, so the value-axis title ran past the right end of the bottom axis and was cut off, and the category title sat on top of the category labels. The value title is now centred under the bottom axis, and the category title clears labels of about 8 characters.
+
 - `decompile` (and so `adopt`) names more chart settings it can't carry when they differ from Superset's defaults: big-number font sizes and a hidden trendline, a smooth or step line, horizontal bars on a time axis, a pie's radius and hidden labels, a funnel's labels, tooltip and percentage calculation, treemap labels, a heatmap's axis sort, legend, margins, label intervals and value bounds, a histogram's normalize setting, and any chart's currency format. Before, they were dropped without a note.
 
 - `standards apply` no longer adds a header or footer row that the body already holds at its edge (the last rows for a footer, the first for a header). A dashboard built in the UI has no header or footer, so `decompile` and `adopt` read its legal line as a body row, and the standard's footer was then added below it, showing it twice. `--claim` moves such a row into the header or footer and records it; `explain` and the apply summary name it.
