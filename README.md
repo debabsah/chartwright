@@ -41,34 +41,36 @@ username = "chartwright"
 password_env = "SUPERSET_DEV_PASSWORD"
 ```
 
-Export the password variable, change the example below to name one of your Superset datasets (its database connection and table) and its columns, and build it:
+Export the password variable, then:
 
 ```bash
-chartwright validate orders.json                # offline: the fields and the layout
-chartwright apply orders.json --profile dev     # checks every reference, builds, then confirms each chart landed and runs its query
+# Build and update a dashboard
+chartwright validate spec.json                  # check the spec offline
+chartwright check spec.json --profile dev       # find every missing dataset, column or metric
+chartwright plan spec.json --profile dev        # show what apply would change
+chartwright apply spec.json --profile dev       # build or update the dashboard, then query every chart
+chartwright restore backup.zip --profile dev    # roll back to the backup taken before an apply
+
+# Start from a dashboard you already have
+chartwright decompile <slug> --profile dev -o spec.json   # a spec for a copy of it
+chartwright adopt <slug> --profile dev -o spec.json       # manage it where it is
+chartwright absorb spec.json --profile dev                # copy heights set in Superset into the spec
+
+# Design review
+chartwright brief                               # sizing and layout guidance for writing a spec
+chartwright advise spec.json                    # review the design; --fix applies the safe fixes
+chartwright explain spec.json                   # where each filled-in setting came from
+chartwright redesign <slug> --profile dev -o spec.json    # decompile, review and fix in one step
+
+# Other
+chartwright schema                              # the spec's JSON Schema
+chartwright compile spec.json -o bundle.zip     # build the import file offline
+chartwright standards check specs/              # team standards (also show, assign, apply)
+chartwright save-queries spec.json --profile dev  # optional [visual]: makes CSV reports work
+chartwright calibrate                           # suggest default heights from what absorb copied
 ```
 
-```json
-{
-  "spec_version": "1",
-  "dashboard": {"title": "Orders", "slug": "orders"},
-  "charts": [
-    {"name": "Revenue by Month", "type": "timeseries_line", "metrics": ["SUM(amount) AS Revenue"],
-     "groupby": "region", "time_column": "ordered_at", "time_grain": "P1M",
-     "dataset": {"database": "warehouse", "table": "orders"}},
-    {"name": "Revenue", "type": "big_number_total", "metric": "SUM(amount)", "number_format": "$,.0f",
-     "dataset": {"database": "warehouse", "table": "orders"}},
-    {"name": "Orders", "type": "big_number_total", "metric": "COUNT(*)", "number_format": ",.0f",
-     "dataset": {"database": "warehouse", "table": "orders"}}
-  ],
-  "filters": [{"type": "time_range", "name": "Order date", "default": "No filter"}],
-  "layout": {"line": 4, "sketch": ["MMMMMMMM RRRR",
-                                   "MMMMMMMM OOOO"],
-             "legend": {"M": "Revenue by Month", "R": "Revenue", "O": "Orders"}}
-}
-```
-
-The `sketch` draws the layout: a run of the same letter is one chart, and its length sets the chart's width, so Revenue by Month fills two-thirds of the row with Revenue and Orders stacked beside it.
+`chartwright <command> --help` lists each command's options.
 
 ## Requirements and limits
 
