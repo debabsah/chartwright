@@ -14,12 +14,28 @@ Semantics:
 - Each sketch line adds `line_units` spec height units (1 unit = 40 px);
   repeat a line to make its regions taller.
 - Every symbol's cells must form a solid rectangle.
+- A legend symbol names a chart, or stands for a markdown or header block
+  (BlockRef here; the block itself stays in the spec's legend). Blocks are drawn
+  like charts, with one rule of their own: a header is ONE line (Superset sizes it
+  to its text). Superset nests a header in a GRID, TAB or COLUMN, never in a ROW
+  (dashboard/util/isValidChild.ts :75 and :97 at 4.1.4, 5.0.0 and 6.1.0), so a
+  header across the whole sketch is a band of its own (SketchRow.header_band) and
+  any other header sits in a column, stacked or alone.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
+
+
+@dataclass(frozen=True)
+class BlockRef:
+    """A legend entry that is a block, not a chart: its kind, "markdown" or "header".
+    Hashable, so the parse stays memoized; the block itself is read from the legend
+    by its symbol."""
+
+    kind: str
 
 
 @dataclass
@@ -30,14 +46,37 @@ class SketchChart:
 
 
 @dataclass
+class SketchBlock:
+    symbol: str       # the legend key: holder.legend[symbol] is the block
+    kind: str         # "markdown" | "header"
+    width: int        # twelfths
+    height: int       # spec height units, as drawn
+
+
+@dataclass
 class SketchColumn:
     width: int        # twelfths
-    children: list[SketchChart] = field(default_factory=list)
+    children: list[SketchChart | SketchBlock] = field(default_factory=list)
 
 
 @dataclass
 class SketchRow:
-    children: list[SketchChart | SketchColumn] = field(default_factory=list)
+    children: list[SketchChart | SketchBlock | SketchColumn] = field(default_factory=list)
+
+    @property
+    def header_band(self) -> SketchBlock | None:
+        """The header, when this band is one header across the whole sketch: Superset's
+        HEADER between rows, as `{"header": ...}` is in rows."""
+        if len(self.children) == 1:
+            only = self.children[0]
+            if isinstance(only, SketchBlock) and only.kind == "header" and only.width == 12:
+                return only
+        return None
+
+
+def sketch_items(child) -> list:
+    """The charts and blocks of one band slot: a column's stack, or the item itself."""
+    return list(child.children) if isinstance(child, SketchColumn) else [child]
 
 
 HOLE = "."  # reserved: a deliberately empty cell (grid-template-areas prior art)
@@ -65,7 +104,7 @@ def _widths_to_twelfths(cell_counts: list[int], total_cells: int) -> list[int]:
 
 
 @lru_cache(maxsize=64)
-def parse_sketch_cached(lines: tuple[str, ...], legend_items: tuple[tuple[str, str], ...],
+def parse_sketch_cached(lines: tuple[str, ...], legend_items: tuple[tuple[str, str | BlockRef], ...],
                         line_units: int) -> list[SketchRow]:
     """Memoized parse: geometry lookups hit parsed_sketch per chart per rule,
     which measured ~cubic on sketch dashboards before caching. Callers treat
@@ -73,7 +112,8 @@ def parse_sketch_cached(lines: tuple[str, ...], legend_items: tuple[tuple[str, s
     return parse_sketch(list(lines), dict(legend_items), line_units)
 
 
-def parse_sketch(lines: list[str], legend: dict[str, str], line_units: int) -> list[SketchRow]:
+def parse_sketch(lines: list[str], legend: dict[str, str | BlockRef],
+                 line_units: int) -> list[SketchRow]:
     if not lines:
         raise SketchError("sketch is empty")
     grid = [[ch for ch in line if ch != " "] for line in lines]
@@ -106,6 +146,21 @@ def parse_sketch(lines: list[str], legend: dict[str, str], line_units: int) -> l
         if len(cells) != (r1 - r0 + 1) * (c1 - c0 + 1):
             raise SketchError(f"symbol {s!r} does not form a solid rectangle")
         boxes[s] = (r0, r1, c0, c1)
+        if isinstance(legend[s], BlockRef) and legend[s].kind == "header" and r1 != r0:
+            raise SketchError(
+                f"header {s!r} spans {r1 - r0 + 1} lines: a header is one sketch line "
+                "(Superset sizes it to its text)")
+
+    def item(s: str, w: int) -> SketchChart | SketchBlock:
+        r0, r1 = boxes[s][0], boxes[s][1]
+        ref = legend[s]
+        if isinstance(ref, BlockRef):
+            return SketchBlock(s, ref.kind, w, (r1 - r0 + 1) * line_units)
+        return SketchChart(ref, w, (r1 - r0 + 1) * line_units)
+
+    def label(s: str) -> str:
+        ref = legend[s]
+        return f"{ref.kind} {s!r}" if isinstance(ref, BlockRef) else f"chart {ref!r}"
 
     # horizontal bands: cut where no rectangle spans the boundary
     cuts = [0]
@@ -120,7 +175,7 @@ def parse_sketch(lines: list[str], legend: dict[str, str], line_units: int) -> l
         if not band:
             raise SketchError(
                 f"line {b0 + 1} is entirely empty: Superset has no vertical spacer; "
-                "use more lines on neighbors or a markdown block in rows mode"
+                "use more lines on neighbors or draw a markdown block there"
             )
         # vertical slices: group symbols sharing column extents
         slices: dict[tuple[int, int], list[str]] = {}
@@ -165,10 +220,10 @@ def parse_sketch(lines: list[str], legend: dict[str, str], line_units: int) -> l
                 r0, r1 = boxes[s][0], boxes[s][1]
                 if r0 != b0:
                     raise SketchError(
-                        f"empty space above chart {legend[s]!r} (line {b0 + 1}): Superset "
+                        f"empty space above {label(s)} (line {b0 + 1}): Superset "
                         "packs upward; empty cells in a column go at the bottom"
                     )
-                row.children.append(SketchChart(legend[s], w, (r1 - r0 + 1) * line_units))
+                row.children.append(item(s, w))
             else:
                 members.sort(key=lambda s: boxes[s][0])
                 # stacked members must tile downward from the band top with no
@@ -184,7 +239,7 @@ def parse_sketch(lines: list[str], legend: dict[str, str], line_units: int) -> l
                             "empty cells may only end a stack, not interrupt it)"
                         )
                     expect = r1 + 1
-                    col.children.append(SketchChart(legend[s], w, (r1 - r0 + 1) * line_units))
+                    col.children.append(item(s, w))
                 row.children.append(col)
         rows.append(row)
     return rows

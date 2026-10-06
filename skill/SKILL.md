@@ -1,6 +1,6 @@
 ---
 name: superset-dashboard
-description: Build or modify an Apache Superset dashboard from a natural-language request by emitting a typed spec and compiling it with the chartwright CLI (guaranteed-correct import, no freeform dashboard JSON). Covers 15 chart types incl. pivot tables, per-chart WHERE filters, a native dashboard filter bar, markdown blocks, and tabs. Use when the user asks to create, generate, or change a Superset dashboard or chart. Never create Superset dashboards any other way (no raw REST calls, no hand-written import bundles, no UI automation).
+description: Build or modify an Apache Superset dashboard from a natural-language request by emitting a typed spec and compiling it with the chartwright CLI (guaranteed-correct import, no freeform dashboard JSON). Covers 17 chart types incl. pivot tables, waterfall bridges and box plots, per-chart WHERE filters, a native dashboard filter bar, markdown blocks, and tabs. Use when the user asks to create, generate, or change a Superset dashboard or chart. Never create Superset dashboards any other way (no raw REST calls, no hand-written import bundles, no UI automation).
 ---
 
 # Superset dashboard via chartwright
@@ -35,18 +35,21 @@ approximate it with a different mechanism.
 
 ## Procedure
 
-1. `CW schema`: read the contract. Surface: 15 chart types (big numbers,
+1. `CW schema`: read the contract. Surface: 17 chart types (big numbers,
    timeseries line/bar/area/scatter, categorical bar, pie/donut, table,
-   pivot_table, heatmap, histogram, funnel, treemap, mixed: bars + a line on
-   two axes), metrics as saved names, `AGG(col) [AS Label]` or
-   `SQL(expression) AS Label`, per-chart `filters` (WHERE: column/op/value
+   pivot_table, heatmap, histogram, funnel, treemap, mixed: bars, lines or
+   filled areas on two axes, waterfall: a bridge whose `opening`, `steps` and
+   `closing` keep its order on 6.1+, box_plot: a distribution per group),
+   metrics as saved names, `AGG(col) [AS Label]` or `SQL(expression) AS Label`, per-chart `filters` (WHERE: column/op/value
    or `sql`), goal lines (`annotations`) on line/bar/area/scatter/mixed,
    dashboard-level `filters` (select, time_range, numeric range, time_grain
    and time_column native filter bar; `dependencies` for cascading; `charts`
    to scope any of them), dashboard settings (colour scheme, description,
    certification, draft, refresh, `owners` by username or email, the
    email on 4.1.4 and 5.0.0), layout as `rows`, `tabs`, or an
-   ASCII `sketch` with a `legend`, markdown blocks in rows, `{"header": ...}`
+   ASCII `sketch` with a `legend` (a symbol names a chart, or stands for a
+   `{"header": ...}` or `{"markdown": ...}` block drawn in place), markdown
+   blocks in rows, `{"header": ...}`
    and `{"divider": true}` entries between rows, an optional
    `layout.header` and `layout.footer` (rows above and below everything,
    shown on every tab), an optional
@@ -59,6 +62,12 @@ approximate it with a different mechanism.
    spec's `design.audience`. Brain OFF (user said "no design opinions" /
    "exactly as I specify"): skip the brief, skip step 6, and pass
    `--design off` to check and apply.
+   The brief marks two style choices "recommended": titles that name the
+   measure, unit and window (no typed takeaways, which go stale), and colour by
+   role (status green/amber/red beside a ▲▼ or a word). They are offers, not
+   rules: before you write the spec, recommend them to the user in a line each
+   and follow their answer. A style the user asks for wins; if they don't
+   answer, use the recommendation and say so in your reply.
 3. Write the spec to the specs dir (absolute path). Slug lowercase-kebab;
    chart names unique. When the user names the team the dashboard is for and
    the repo has a `standards/` folder, write that team's standard in
@@ -151,9 +160,14 @@ approximate it with a different mechanism.
 ## Sketch heights (while drawing)
 
 Each sketch line adds `line` height units (default `line: 2`, one unit =
-40 px). KPI rows: 2 sketch lines. Axis charts (timeseries, bar, heatmap,
+40 px). KPI rows: 2 sketch lines, 3 when a big number has a subtitle or a
+trendline compares periods (Superset sizes their text by height, and `CW advise
+--fix` raises a band that draws it too small). Axis charts (timeseries, bar, heatmap,
 histogram): 4-5 lines; fewer renders flattened with labels dropped.
-Pie/donut: 4+ lines and >= 5 of 12 width. The brief carries the full sizing
+Pie/donut: 4+ lines and >= 5 of 12 width. A header is one line: across
+the sketch it titles the band below, above a chart it heads that chart's
+column. A markdown note takes the lines drawn for it, or its own `height`
+in fifths (1.6 is a 64 px strip). The brief carries the full sizing
 table; `CW advise` checks the result.
 
 Heights the user polished by hand in the UI come back via

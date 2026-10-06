@@ -22,27 +22,36 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
 
 ## Dashboard Design
 - **Deterministic Dashboards**: The same spec always produces the identical dashboard. Diff it in git, review it in a PR.
-- **15 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, and mixed (bars and a line on two value axes, over time or over categories).
+- **17 Chart Types**: big number, big number with trendline, line, bar, area, scatter, categorical bar, pie/donut, table, pivot table, heatmap, histogram, funnel, treemap, mixed (bars and a line on two value axes, over time or over categories), waterfall (a bridge from one total to the next through the steps that move it), and box plot (a distribution per group: median, quartiles, whiskers and outliers).
 - **Metrics As You Write Them**: Saved Superset metrics, `SUM(col)`-style aggregates, `COUNT(*)`, with inline renames (`MAX(pct_of_goal) AS % of Goal`), and custom SQL for ratios the dataset doesn't define: `SQL(100.0 * SUM(on_time) / NULLIF(COUNT(*), 0)) AS On-time %`. `chartwright check` lists custom SQL as unchecked, and apply's data check runs it.
-- **Filters and Formatting**: Per-chart WHERE conditions (a column test, or custom SQL such as `{"sql": "amount > 0 OR refunded"}`), a native filter bar, and formatting for table and pivot cells.
+- **Filters and Formatting**: Per-chart WHERE conditions (a column test, or custom SQL such as `{"sql": "amount > 0 OR refunded"}`), a native filter bar, and formatting for table and pivot cells, and for big numbers.
     - Filter bar: value pickers, a time range with an optional starting range, numeric sliders, and time grain and time column pickers.
     - Scope any filter to specific charts, the time range included.
     - Cascading filters: a city picker lists only the cities of the region picked (`"dependencies": ["Region"]`).
     - Value pickers can pre-filter their list, sort it by a saved metric, search every value in the database, or exclude what is picked; every filter takes a description, shown as its tooltip.
-    - Solid colour rules on pivot and table cells: green, amber or red (Superset's own picker colours), or any hex colour such as `#0057B8`.
-    - On Superset 6.1+, a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it.
+    - Colour rules on pivot and table cells: green, amber or red (Superset's own picker colours), or any hex colour such as `#0057B8`, for values `<`, `>`, `=`, `>=`, `<=` or `!=` a threshold, or in a range with its bounds left out (`between`) or taken in (`between_inclusive`).
+    - Colour a big number by its value, such as a balance-closure KPI in red outside ±2% and green inside; `chartwright advise` tells you when a colour is too pale to read or the KPI doesn't say what its colours mean.
+    - On Superset 6.1+, each band is one solid colour, a rule can colour the text instead of the cell, and a table rule can read one column and paint another, or the whole row: a number coloured by the status beside it. Older releases fade each band toward its threshold and fill only the cell that was tested; on those, `check`, `apply` and `plan` warn for each such rule, naming what that release draws instead.
     - A fixed ascending table sort, d3 number and date formats, and on Superset 6.0+ hidden table columns.
 - **Chart Options**: Set the common options of Superset's chart panels in the spec; an option changed in the UI shows up in `plan`.
     - Axes: titles, a fixed floor or ceiling, a log scale; a mixed chart's second axis takes its own.
     - Values written on bars and points, stacked series, 100% stacks, and the top N series of a breakdown.
     - Legends hidden, or placed at the bottom, left or right.
-    - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value.
+    - Bars in category order (hours, ranks, `1-Mon` weekdays) instead of by value; stacked or grouped bars ranked by their total; or bars ranked by another metric, drawn or not, so two charts share one order.
     - A time range per chart, such as a "Last 30 days" KPI on a dashboard that shows all time.
     - A trendline KPI's change against an earlier period ("+4% vs last month"), its line colour, and on Superset 6.0+ a subtitle.
+    - A trendline KPI over a rolling window: a trailing-12-month total compared with the 12 months before ("+30% vs prior 12 months"), a 3-month average, or a running total.
+    - A trendline fitted to its values, so a trailing total that moves a few percent shows the movement.
+    - Filled areas on a mixed chart, such as solar output under a net-load line.
+    - A big number shown as a date, such as the latest order date as "Sat 3 Oct 2026".
     - Tables: page size, a totals row, a search box, column alignment and widths, and on Superset 6.0+ header names.
+    - Table cell bars on the columns you name (`"cell_bars": ["Revenue", "Change"]`), coloured by sign on just the change (`"color_by_sign": ["Change"]`) so revenue bars stay neutral, and sized by absolute value where you list them (`"absolute_bars"`), so a rise and a fall of the same size draw the same bar.
     - Pivots: averages and other aggregations, rows sorted by value, row subtotals, rows and columns swapped.
-    - Heatmap values and colour scheme; what pie, funnel and treemap labels show, and their number format.
-- **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend.
+    - Heatmap values and colour scheme, a label on every Nth row or column (hours read 0, 6, 12, 18), and room left of the row labels, which Superset 6.1 otherwise cuts off; what pie, funnel and treemap labels show, and their number format.
+    - Heatmap axes in label order, such as a cohort triangle with its oldest cohort on top, or by value.
+    - Waterfalls: the rising, falling and total bar colours (green, amber, red or any hex), each step's value on its bar, and a breakdown per period. On Superset 6.1+, list a bridge's steps in its own order and name the rows that open and close it, each drawn as a total under its own name (an opening total needs a dashboard theme that keeps zero on the axis; `check` says when it doesn't); on earlier releases the steps draw in label order, closed by a total named Total. `apply`'s data check says when a step or the closing has no row, or the closing doesn't equal the steps added up.
+    - Box plots: the columns whose rows are the observations (a date at a daily grain), the groups that get a box each, and the whiskers: Tukey's, the lowest and highest values, or any two percentiles such as 5 and 95. `apply`'s data check says when the observations reach the row limit, so the boxes miss some.
+- **Goal Lines**: Draw a target or trend line over line, bar, area, scatter and mixed charts with `annotations`: `{"name": "Goal", "value": 80, "style": "dashed"}`, or a formula in x for a trend. On a horizontal bar the line stands upright at its value, such as a 1.0x threshold across a ranked list.
 - **Dashboard and Chart Settings**: Set the dashboard's own settings and each chart's in the spec, so a change made in the UI shows up in `plan`.
     - Dashboard: colour scheme, description, certification badge, draft state, auto-refresh interval, and the filter bar across the top (on 4.1.4 and 5.0.0, with Superset's `HORIZONTAL_FILTER_BAR` flag on).
     - Chart: colour scheme, description (viewers open it from the chart menu), certification badge, cache timeout, and a shorter title shown on the dashboard.
@@ -62,9 +71,10 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
 - **ASCII Layout Design**: Draw the layout straight from the terminal: `"KKKK LLLLLLLL"` is a KPI card beside a wide line chart.
     - Sizes are ratios drawn as text: more letters make a chart wider, more lines of text make it taller.
     - Stack letters vertically for columns; `.` marks deliberate empty space.
+    - Draw section headers and notes too: a legend letter can stand for `{"header": "Monthly sales"}` or `{"markdown": "Source: the ledger"}`. A header drawn across the page titles the band below it; drawn above a chart, it heads that chart's column.
     - An unclear sketch gets a message saying exactly what to fix, never a guess.
     - Every rule drawn and compiled: [the layout guide](LAYOUT-GUIDE.md).
-- **Precise Sizing**: Set exact widths and heights per chart (markdown blocks down to one 8 px grid row: `"height": 1.6` is 64 px), or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
+- **Precise Sizing**: Set exact widths and heights per chart (markdown blocks in 8 px steps from 40 px: `"height": 1.6` is 64 px), or drag a chart taller in the UI and `chartwright absorb` writes the new height back into the spec; widths are a one-line edit in the layout.
 - **Rows, Tabs, and Notes**: Even or custom row splits, titled tabs (with one level of sub-tabs, e.g. a sub-tab per row of a scorecard), section headers and dividers between rows (`{"header": "Revenue", "size": "large"}`, `{"divider": true}`), a white card behind a row, and markdown blocks for notes.
 - **Header and Footer**: `layout.header` rows sit above everything and `layout.footer` rows below it, outside any tab, so a tabbed dashboard shows them above and under every tab: a banner, a data note, a branding strip, a contact line.
     - Adding a header to a dashboard already in use moves nothing else in it.
@@ -72,13 +82,18 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
 ## The Design Brain
 - **Codified BI/UX Practice**: An optional layer holding what Few, Tufte and IBCS teach about reading a dashboard, plus the Superset rendering quirks that break it, on by default and off with one flag ([full reference](DESIGN-BRAIN.md)).
 - **The Brief**: `chartwright brief` prints design guidance for the AI (or you) to read before writing a spec: budgets, chart choice, and composition, tuned to an audience preset (`executive`, `analytical`, or `operational`).
-- **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices); `--chart` looks at one chart.
+- **The Critic**: `chartwright advise` reviews a finished spec: readable minimum sizes, markdown blocks tall enough for their text at the sizes the dashboard's CSS sets, layout composition (KPIs first, fold budgets, row density), chart-choice limits, narrative polish. `--fix` applies the safe geometry subset; `--profile` adds data-aware checks (a time axis on a non-temporal column, a pie hiding 40 slices); `--chart` looks at one chart.
 - **Design Defaults in the Spec**: Leave the small display choices unset and `advise --fix` writes sensible values into the spec, where the diff shows them; `chartwright explain` says where each value came from and how to change it.
     - Monthly time axes labelled `Sep 2026`, counts shown as `12,345`, "vs previous month" after a trendline KPI's change.
-    - Tables that page by what fits their panel, a search box on long raw tables, no cell bars behind id, code, year or zip columns.
+    - Tables that page by what fits their panel, a search box on long raw tables that page, no cell bars behind id, code, year or zip columns. A table whose rows all fit its panel shows just its rows, and `advise` points out a page size or search box you wrote there.
     - No legend on a single series the title already names, values written on a few bars.
     - A field you write is never touched. A filled value is kept up to date as the chart changes until you edit or delete it; then it is yours, and a deleted one stays deleted. To keep Superset's default from the start, add the rule to `design.ignore`.
     - The bundle depends on the spec alone: compile, `plan` and decompile never add a value of their own.
+- **Readable Type**: `advise` checks that every text on the dashboard is large enough to read on a laptop, and names the CSS selector or theme token to set when it isn't ([floors and evidence](DESIGN-BRAIN.md#type-sizes)).
+    - Table and pivot cells at 14 px or more: Superset draws them at 12 px, so `advise` gives you the CSS that enlarges them on every release.
+    - Headers, axis labels and legends at 12 px, chart titles at 14 px, checked against your dashboard CSS and, with `--profile`, your Superset theme's tokens and chart text settings.
+    - Superset sizes a big number's text by the card's height, so `--fix` raises a card until its value and subtitle read, together with the cards beside it.
+    - The floors are design parameters: tune or lock them in `design.yaml` or a standard.
 - **Deliberate Exceptions, Visible**: Suppress any rule per dashboard or per chart in the spec's `design` block; suppressions are reported, never silent.
 - **House Style**: A `design.yaml` overlay on your machine tunes thresholds, disables rules, and appends your guidance to the brief, without forking the rulebook.
     - Strict gates (`advise --strict`, `--design strict`) set it aside, so a gate passes or fails the same on every machine.
@@ -135,7 +150,7 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
     - `chartwright adopt` writes a spec that updates that same dashboard, keeping its address, id and chart ids, so links and embeds keep pointing at it.
     - Before anything changes, adopt lists what the first apply resets because a spec can't hold it, and refuses until you pass `--accept-reset`; `plan` then names each chart whose stored options the first apply rewrites. Charts a spec can't hold come off the dashboard and stay under Charts.
     - `chartwright decompile` turns any dashboard into a spec you build as a copy at a new slug. What it can't carry over is listed, including chart settings changed from Superset's defaults (a rolling sum, a forecast, a legend margin) and filters scoped to some tabs; compare before you retire the original.
-- **Lossless Round-Trips**: Tool-built dashboards with `rows` or `tabs` layouts decompile back with nothing lost; a `sketch` comes back as rows, or as a sketch when it stacks charts beside a taller one, and so does a dashboard built in the UI with stacked charts.
+- **Lossless Round-Trips**: Tool-built dashboards with `rows` or `tabs` layouts decompile back with nothing lost; a `sketch` comes back as rows, or as a sketch when it stacks charts beside a taller one, with its headers and notes, and so does a dashboard built in the UI with stacked charts.
 - **Targeted Edits**: Replace, rename, resize, or remove one chart and re-apply; old charts are cleaned up, never orphaned.
 - **Stable Identity**: Chart ids never change across re-applies, so links, scopes, and open browser tabs stay valid.
 
@@ -155,6 +170,7 @@ Step-by-step guides: [move between instances](MOVE-BETWEEN-INSTANCES.md) ·
 - **Self-Healing Applies**: When an apply fails while preparing, importing or updating charts, the previous state is restored automatically, whatever the error. A failure after that (linkage, filter scopes, chart queries) leaves the new version live, and the report gives the backup to restore.
 - **Stale-Tab Protection**: An old browser tab writing back stale state is detected by `plan` and repaired by `apply`.
 - **Verified at Every Step**: References are checked before anything is written, the finished dashboard is compared chart-by-chart against the spec, and every chart's query is run once: an error fails the apply, and a chart that returns no rows is named. Any failure says what went wrong and where.
+    - The data check also names each value a chart's `IN` filter lists that has no rows, such as the two empty zones of a line chart that lists four.
     - Your spec is held to the instance's Superset release too: a setting the release can't take (tags or a theme on 4.1.4 or 5.0.0, chart timestamps before 6.1) stops the apply before anything is written and names the field to remove; one it would ignore, such as a trendline subtitle before 6.0, comes back as a warning. Offline, `chartwright compile --superset-version 5.0.0` runs the same check.
 - **Ownership Guard**: The tool overwrites only dashboards it created or that you adopted with `chartwright adopt`; to manage any other dashboard, adopt it first.
 

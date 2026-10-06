@@ -2,7 +2,8 @@
 times, with invariants asserted every cycle.
 
 Each cycle mutates the spec within the supported surface (add/remove/rename
-charts, retitle, filter changes, layout regeneration, rows<->tabs) and runs
+charts, retitle, filter changes, layout regeneration, rows<->tabs, fifth-unit
+heights, and spellings apply stores alike, such as SQL(MAX(col)) metrics) and runs
 apply -> plan -> decompile, asserting:
   1. apply reaches stage=done (linkage + smoke included);
   2. surviving charts keep their slice ids (the stale-tab clobber root cause);
@@ -28,6 +29,7 @@ import copy
 import json
 import os
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -44,6 +46,14 @@ from chartwright.decompile import decompile_live
 from chartwright.spec import load_spec
 
 FIXTURE = REPO / "tests" / "fixtures" / "kitchen_sink.json"
+# An ad-hoc aggregate the respell mutation writes as SQL(...) AS label.
+_AGG_METRIC = re.compile(r"(SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX)\((\w+|\*)\)")
+# Chart types with a number_format field (Superset's default for it is SMART_NUMBER).
+_NUMBER_FORMAT_TYPES = {
+    "big_number_total", "big_number_trend", "timeseries_line", "timeseries_bar",
+    "timeseries_area", "timeseries_scatter", "bar", "pie", "pivot_table", "heatmap",
+    "funnel", "treemap", "mixed",
+}
 
 
 class SpecMutator:
@@ -143,8 +153,37 @@ class SpecMutator:
         if "row_limit" in c or self.rng.random() < 0.5:
             c["row_limit"] = self.rng.choice([5, 20, 100])
         else:
-            c["height"] = self.rng.choice([6, 8, 10])
+            # Whole units, and the fifths `absorb` writes (0.2 = one 8 px grid row).
+            c["height"] = self.rng.choice([6, 8, 10, 4.6, 6.4])
         return f"tweak_chart({c['name']})"
+
+    def _respell_chart(self, s):
+        """Write a chart in spellings apply stores alike: an aggregate as
+        SQL(AGG(col)) AS label, a fifth-unit height, Superset's own defaults written
+        out. `plan` must still be clean after apply."""
+        c = self.rng.choice(s["charts"])
+
+        def respell(m):
+            hit = _AGG_METRIC.fullmatch(m) if isinstance(m, str) else None
+            if hit is None:
+                return m
+            agg, col = hit.groups()
+            return f"SQL({m}) AS {agg.lower()} of {'rows' if col == '*' else col}"
+
+        for holder in (c, c.get("a"), c.get("b")):
+            if not holder:
+                continue
+            if "metric" in holder:
+                holder["metric"] = respell(holder["metric"])
+            if holder.get("metrics"):
+                holder["metrics"] = [respell(m) for m in holder["metrics"]]
+        if c["type"] == "table" and c.get("sort_by") and not c.get("columns"):
+            c["sort_by"] = respell(c["sort_by"])
+        c["height"] = self.rng.choice([2.4, 4.6, 6.2])
+        c.setdefault("time_range", "No filter")
+        if c["type"] in _NUMBER_FORMAT_TYPES:
+            c.setdefault("number_format", "SMART_NUMBER")
+        return f"respell_chart({c['name']})"
 
     def _retitle(self, s):
         s["dashboard"]["title"] = f"Soak Command Center v{self.rng.randint(2, 999)}"
@@ -179,8 +218,8 @@ class SpecMutator:
 
     def mutate(self) -> str:
         ops = [self._add_chart, self._remove_chart, self._rename_chart,
-               self._tweak_chart, self._retitle, self._toggle_select_filter,
-               self._toggle_range_filter, self._relayout]
+               self._tweak_chart, self._respell_chart, self._retitle,
+               self._toggle_select_filter, self._toggle_range_filter, self._relayout]
         for _ in range(10):
             candidate = copy.deepcopy(self.spec)
             op = self.rng.choice(ops)

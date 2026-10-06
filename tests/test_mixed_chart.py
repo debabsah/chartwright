@@ -8,7 +8,9 @@ import sys
 import zipfile
 from pathlib import Path
 
+import pytest
 import yaml
+from pydantic import ValidationError
 
 from chartwright.compiler import compile_bundle
 from chartwright.decompile import decompile_bundle
@@ -16,7 +18,7 @@ from chartwright.dashdiff import _normalize
 from chartwright.resolver import Resolution, _check_chart_fields
 from chartwright.smoke import _mixed_queries
 from chartwright.spec import load_spec
-from chartwright.testing import stub_resolution
+from chartwright.testing import edit_bundle, stub_resolution
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 from params_drift import CONTRACT, check  # noqa: E402
@@ -233,3 +235,125 @@ def test_smoke_queries_the_axis_the_chart_draws():
     ds.column_types["category"] = 1  # STRING
     qa, qb = _mixed_queries(spec.charts[0], spec, ds)
     assert qa["columns"] == ["category"] and qb["columns"] == ["category"]
+
+
+# -- an area under a line ------------------------------------------------------------
+
+SOLAR = {
+    "name": "Solar and net load", "type": "mixed", "dataset": DS,
+    "x_column": "month_start", "time_grain": "P1M",
+    "a": {"metrics": ["SUM(solar)"], "kind": "area", "opacity": 1},
+    "b": {"metrics": ["SUM(net_load)"], "kind": "line"},
+}
+
+
+def _decompile(spec, edit=None):
+    bundle = compile_bundle(spec, stub_resolution(spec))
+    if edit is not None:
+        bundle = edit_bundle(bundle, edit)
+    ds = stub_resolution(spec).for_chart(spec.charts[0].dataset)
+    return decompile_bundle(bundle, lambda u: {"database": "examples", "schema": None, "table": "t"}
+                            if u == ds.uuid else None)
+
+
+def _edit(**changes):
+    def edit(path, doc):
+        if "/charts/" in path:
+            doc["params"].update(changes)
+    return edit
+
+
+def test_an_area_is_a_line_series_with_its_area_box_ticked():
+    """MixedTimeseries/controlPanel.tsx createCustomizeSection: seriesType, area and
+    opacity per query (area / areaB, opacity / opacityB) at 4.1.4, 5.0.0 and 6.1.0."""
+    _, p = _params(_spec(SOLAR))["Solar and net load"]
+    assert (p["seriesType"], p["seriesTypeB"]) == ("line", "line")
+    assert p["area"] is True and p["opacity"] == 1
+    assert "areaB" not in p and "opacityB" not in p
+    flipped = {**SOLAR, "a": SOLAR["b"], "b": {"metrics": ["SUM(solar)"], "kind": "area"}}
+    _, q = _params(_spec(flipped))["Solar and net load"]
+    assert q["seriesTypeB"] == "line" and q["areaB"] is True
+    assert "opacityB" not in q and "area" not in q  # Superset's own 0.2 fill, unwritten
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    for version in contract:
+        assert check(version, contract, {"mixed_timeseries": set(p) | set(q)}) == [], version
+
+
+def test_specs_without_an_area_write_no_area_keys():
+    for _, p in _params(_spec(BY_MONTH, BY_CAUSE)).values():
+        assert not {"area", "areaB", "opacity", "opacityB"} & set(p)
+
+
+def test_an_area_round_trips_and_plans_clean():
+    spec = _spec(SOLAR)
+    result = _decompile(spec)
+    assert result.losses == [], result.losses_json()
+    back = result.spec["charts"][0]
+    assert back["a"] == {"metrics": ["SUM(solar)"], "kind": "area", "opacity": 1}
+    assert back["b"] == {"metrics": ["SUM(net_load)"], "kind": "line"}
+    assert _normalize(load_spec(result.spec)) == _normalize(spec)
+
+
+def test_opacity_is_an_areas_fill():
+    for kind in ("bar", "line"):
+        with pytest.raises(ValidationError, match='opacity is an area\'s fill; it needs kind "area"'):
+            _spec({**SOLAR, "b": {"metrics": ["SUM(x)"], "kind": kind, "opacity": 0.5}})
+    with pytest.raises(ValidationError):
+        _spec({**SOLAR, "a": {**SOLAR["a"], "opacity": 1.5}})
+
+
+def test_a_written_default_opacity_builds_and_plans_as_omitted():
+    """0.2 is Superset's own fill opacity: written, it is kept, builds the same bytes as
+    an omitted one, and compares equal in plan (decompile reads both back as omitted)."""
+    omitted = _spec({**SOLAR, "a": {"metrics": ["SUM(solar)"], "kind": "area"}})
+    written = _spec({**SOLAR, "a": {"metrics": ["SUM(solar)"], "kind": "area", "opacity": 0.2}})
+    assert written.charts[0].a.opacity == 0.2
+    assert compile_bundle(written, stub_resolution(written)) == \
+        compile_bundle(omitted, stub_resolution(omitted))
+    assert _normalize(written) == _normalize(omitted)
+    # and on a line, where it fills nothing, it is no error
+    _spec({**SOLAR, "b": {"metrics": ["SUM(x)"], "kind": "line", "opacity": 0.2}})
+
+
+def test_area_settings_that_draw_nothing_are_no_loss():
+    """An area box on a bar series and an opacity without an area draw nothing new."""
+    spec = _spec(BY_MONTH)  # a: bars, b: a line
+    result = _decompile(spec, _edit(area=True, opacity=0.6, opacityB=0.9, areaB=False))
+    assert result.losses == [], result.losses_json()
+    back = result.spec["charts"][0]
+    assert "kind" not in back["a"] and back["b"]["kind"] == "line"
+    assert "opacity" not in back["a"] and "opacity" not in back["b"]
+
+
+def test_a_ui_area_reads_back_with_its_opacity():
+    result = _decompile(_spec(BY_MONTH), _edit(areaB=True, opacityB=0.5))
+    assert result.spec["charts"][0]["b"]["kind"] == "area"
+    assert result.spec["charts"][0]["b"]["opacity"] == 0.5
+    result = _decompile(_spec(BY_MONTH), _edit(areaB=True, opacityB=0.2))
+    assert "opacity" not in result.spec["charts"][0]["b"]
+
+
+def test_a_series_type_reads_as_the_line_superset_draws():
+    """transformSeries draws any seriesType but bar, scatter, smooth and the steps as a
+    straight line, the old echarts_timeseries_* names included (Timeseries/
+    transformers.ts:237-243 at 4.1.4, :306-312 at 6.1.0), so those are no loss."""
+    result = _decompile(_spec(BY_MONTH), _edit(seriesType="echarts_timeseries_bar",
+                                               seriesTypeB="echarts_timeseries_line"))
+    assert result.losses == [], result.losses_json()
+    assert result.spec["charts"][0]["a"]["kind"] == "line"
+    result = _decompile(_spec(BY_MONTH), _edit(seriesTypeB="smooth", areaB=True))
+    assert [loss.what for loss in result.losses] == [
+        "query B series type 'smooth' not preserved (a straight line on re-apply)"]
+    assert result.spec["charts"][0]["b"]["kind"] == "area"
+
+
+def test_query_b_stores_the_same_defaults_as_query_a():
+    """A mixed chart saved in Superset stores query B's defaults beside query A's; they
+    were named as params the spec can't carry."""
+    defaults = dict(markerSizeB=6, comparison_type_b="values", truncate_metric_b=True,
+                    rolling_type_b="None", sort_series_typeB="sum")
+    result = _decompile(_spec(BY_MONTH), _edit(**defaults))
+    assert result.losses == [], result.losses_json()
+    result = _decompile(_spec(BY_MONTH), _edit(markerSizeB=10, rolling_type_b="cumsum"))
+    (loss,) = result.losses
+    assert "markerSizeB=10" in loss.what and "rolling_type_b='cumsum'" in loss.what

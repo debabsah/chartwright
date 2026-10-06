@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import uuid
 import zipfile
 from decimal import Decimal
@@ -19,11 +20,16 @@ import yaml
 from . import ids
 from .resolver import Resolution
 from .spec import (
+    BRIDGE_TOTAL,
     DEFAULT_ROW_LIMIT,
     DEFAULT_TIME_GRAIN,
+    FORMAT_RANGE_OPERATORS,
     FUNNEL_LABEL_TYPES,
     HEATMAP_DEFAULT_SCHEME,
+    OPENING_KEY_GAP,
+    OPENING_OTHER_KEY,
     PIVOT_ORDER,
+    TICK_LAYOUTS,
     DashboardSpec,
     DividerBlock,
     HeaderBlock,
@@ -31,6 +37,9 @@ from .spec import (
     _AxisChart,
     _ColorSchemeMixin,
     _SeriesDisplay,
+    hex_to_rgb,
+    metric_label,
+    named_hex,
     parse_metric,
     row_items,
     without_superset_defaults,
@@ -43,6 +52,20 @@ ZIP_DATE_TIME = (2026, 1, 1, 0, 0, 0)
 # ponytail: 1 spec grid unit -> 5 superset row units (1 row unit ~ 8px).
 # Calibration knob; validated against rendered dashboards.
 ROW_UNITS_PER_SPEC_UNIT = 5
+
+
+def grid_rows(height: float) -> int:
+    """Spec height units (40 px) -> the whole Superset grid rows (8 px) compile writes."""
+    return int(round(height * ROW_UNITS_PER_SPEC_UNIT))
+
+
+def spec_units(rows: int) -> float | int:
+    """Superset grid rows -> spec height units, exactly: a whole unit stays an int, any
+    other is a fifth (one decimal), so grid_rows(spec_units(n)) == n."""
+    units = rows / ROW_UNITS_PER_SPEC_UNIT
+    return int(units) if units.is_integer() else round(units, 1)
+
+
 FOOTER_PREFIX = "sdc-footer-"  # layout.footer rows compile to ROW-sdc-footer-<n>; decompile keys on it
 HEADER_PREFIX = "sdc-header-"  # layout.header rows compile to ROW-sdc-header-<n>; decompile keys on it
 
@@ -62,6 +85,8 @@ VIZ_TYPE = {
     "funnel": "funnel",
     "treemap": "treemap_v2",
     "mixed": "mixed_timeseries",
+    "waterfall": "waterfall",
+    "box_plot": "box_plot",
 }
 # 'bar' and 'timeseries_bar' share a viz_type; the compiler marks categorical
 # bars in params so the decompiler can tell them apart (x column not temporal
@@ -73,11 +98,19 @@ def _yaml(data: dict) -> bytes:
     return yaml.safe_dump(data, sort_keys=True, default_flow_style=False, allow_unicode=True).encode()
 
 
+# Every ad-hoc metric the compiler writes carries this optionName prefix; Superset's
+# metric popover names its own metric_<random>_<random> and keeps a stored one
+# (src/explore/components/controls/MetricControl/AdhocMetric.js:84-88 at 4.1.4 and
+# 5.0.0, AdhocMetric.ts:122-126 at 6.1.0), so decompile can tell the tool's metrics
+# from ones built in the UI.
+METRIC_OPTION_PREFIX = "metric_sdc_"
+
+
 def _metric_payload(metric: str, slug: str, chart_name: str) -> str | dict:
     adhoc = parse_metric(metric)
     if adhoc is None:
         return metric
-    option = "metric_sdc_" + uuid.uuid5(ids.NAMESPACE, f"{slug}/chart/{chart_name}/metric/{metric}").hex[:12]
+    option = METRIC_OPTION_PREFIX + uuid.uuid5(ids.NAMESPACE, f"{slug}/chart/{chart_name}/metric/{metric}").hex[:12]
     label = adhoc["label"] or metric
     if adhoc.get("sql") is not None:
         # Custom SQL (the metric popover's "Custom SQL" tab), in every release.
@@ -106,32 +139,53 @@ def _metric_payload(metric: str, slug: str, chart_name: str) -> str | dict:
     }
 
 
-# Spec operator -> Superset's Comparator value. A range is '< x <' in every
-# supported release (types.ts at 4.1.4/5.0.0/6.1.0); the literal "between"
-# matches no comparator, and getColorFormatters' default case colours nothing.
-FORMAT_OPERATOR = {"<": "<", ">": ">", "=": "=", "between": "< x <"}
+# Spec operator -> Superset's Comparator value (superset-ui-chart-controls types.ts:
+# 4.1.4 :434-446, 6.1.0 :456-467). A range is '< x <' in every supported release; the
+# literal "between" matches no comparator, and getColorFormatters' default case colours
+# nothing. Each one has its case in getColorFunction at every release (getColorFormatters.ts
+# '≥' 4.1.4/5.0.0 :113, 6.0.0 :122, 6.1.0 :141; '≤ x ≤' :153, :162, :191) and its entry
+# in the rule popover (FormattingPopoverContent.tsx:55-60 at 4.1.4, constants.ts:26-31 at 6.1.0).
+FORMAT_OPERATOR = {"<": "<", ">": ">", "=": "=", ">=": "≥", "<=": "≤", "!=": "≠",
+                   "between": "< x <", "between_inclusive": "≤ x ≤"}
 
 
-def _format_rule_payload(rule) -> dict:
+def _band_payload(rule, column: str) -> dict:
     out = {
-        "column": rule.metric,
+        "column": column,
         "colorScheme": rule.paint_hex(),
         "operator": FORMAT_OPERATOR[rule.operator],
-        # A rule is a solid band. Left unset, Superset fades '<' / '>' / range
-        # colours by distance from the threshold (getColorFormatters.getOpacity);
-        # useGradient is honoured from 6.x and ignored by 4.1.4/5.0.0.
+        # A rule is a solid band. Left unset, Superset fades every colour but '='s by
+        # distance from the threshold (getColorFormatters.getOpacity); useGradient is read
+        # from 6.1.0 (getColorFormatters.ts:273-276) and ignored by 4.1.4, 5.0.0 and 6.0.0,
+        # which fade regardless (versions.GATED_FIELDS warns).
         "useGradient": False,
     }
-    if rule.operator == "between":
+    if rule.operator in FORMAT_RANGE_OPERATORS:
         out["targetValueLeft"] = rule.target_left
         out["targetValueRight"] = rule.target_right
     else:
         out["targetValue"] = rule.target
+    return out
+
+
+def _big_number_rule_payload(rule, chart) -> dict:
+    """A big number's rule, as its panel stores it (BigNumberTotal/controlPanel.ts
+    conditional_formatting: 4.1.4 and 5.0.0 :94, 6.1.0 :85). The column is the metric's
+    label, the one numeric column the panel offers; the number is painted from every
+    rule whose column is set (getColorFormatters.ts 4.1.4 and 5.0.0 :199, 6.1.0 :309)
+    and always solid, since the plugin asks for no alpha (BigNumberTotal/transformProps.ts
+    4.1.4 and 5.0.0 :99, 6.1.0 :121)."""
+    return _band_payload(rule, metric_label(chart.metric))
+
+
+def _format_rule_payload(rule) -> dict:
+    out = _band_payload(rule, rule.metric)
     if rule.paint == "text":
         out["objectFormatting"] = "TEXT_COLOR"
     if rule.apply_to:
         # The 6.1 table's "apply to": another column's key, or the whole row
-        # (TableChart.tsx reads columnFormatting; ObjectFormattingEnum.ENTIRE_ROW).
+        # (TableChart.tsx:984-1007 at 6.1.0 reads columnFormatting; ObjectFormattingEnum.ENTIRE_ROW).
+        # Older tables paint only rule.column's own cells (TableChart.tsx:763 at 4.1.4).
         out["columnFormatting"] = "ENTIRE_ROW" if rule.apply_to == "row" else rule.apply_to
     return out
 
@@ -140,18 +194,41 @@ def _format_rule_payload(rule) -> dict:
 # 5.0.0 and 6.1.0; customColumnName from 6.0.0, read at TableChart.tsx:806, :859 at 6.1.0).
 COLUMN_CONFIG_KEYS = {"number_formats": "d3NumberFormat", "column_align": "horizontalAlign",
                       "column_widths": "columnWidth", "column_headers": "customColumnName"}
+# The cell-bar switches (spec.BAR_SWITCHES): the key each column stores (TableColumnConfig,
+# plugin-chart-table/src/types.ts 4.1.4 and 5.0.0 :47-49, 6.1.0 :99-103) and the table-wide
+# control it falls back to (Table controlPanel.tsx, all three releases).
+BAR_SWITCH_KEYS = {"cell_bars": "showCellBars", "color_by_sign": "colorPositiveNegative",
+                   "absolute_bars": "alignPositiveNegative"}
+BAR_SWITCH_PARAMS = {"cell_bars": "show_cell_bars", "color_by_sign": "color_pn",
+                     "absolute_bars": "align_pn"}
 
 
 def _column_config(chart) -> dict:
     """Per-column table display: hidden columns, d3 number formats, alignment, minimum
-    widths and header text, merged per label."""
+    widths, header text and the cell-bar switches a list turns on, merged per label."""
     cfg: dict = {}
     for label in chart.hidden:
         cfg.setdefault(label, {})["visible"] = False
     for field, key in COLUMN_CONFIG_KEYS.items():
         for label, value in getattr(chart, field).items():
             cfg.setdefault(label, {})[key] = value
+    for field, key in BAR_SWITCH_KEYS.items():
+        if isinstance(getattr(chart, field), list):
+            for label in getattr(chart, field):
+                cfg.setdefault(label, {})[key] = True
     return cfg
+
+
+def _bar_switches(chart, p: dict) -> None:
+    """The table-wide half of each cell-bar switch. A list turns the table's off and its
+    columns' on (_column_config). A written Superset default (color_by_sign true,
+    absolute_bars false) arrives unset, so a spec without the switches emits nothing."""
+    for field, key in BAR_SWITCH_PARAMS.items():
+        value = getattr(chart, field)
+        if isinstance(value, bool):
+            p[key] = value
+        elif value is not None and field != "absolute_bars":
+            p[key] = False  # align_pn is off unless written: its list needs no table-wide key
 
 
 def _adhoc_filters(chart) -> list[dict]:
@@ -174,6 +251,19 @@ def _adhoc_filter_list(filters) -> list[dict]:
             "comparator": f.value,
         })
     return out
+
+
+# Heatmap axis order -> sort_x_axis / sort_y_axis (sortAxisChoices, Heatmap/controlPanel.tsx
+# :26-31 at 4.1.4 and 5.0.0, :28-33 at 6.1.0). Both axes are ECharts category axes, whose
+# first label sits at the left and at the BOTTOM (Heatmap/transformProps.ts:227-240 at 4.1.4,
+# :431-447 at 6.1.0, no inverse), so the y order, written top to bottom, is reversed here.
+# 6.1.0 sorts each axis itself (sortAxisValues, transformProps.ts:88-145); before, the axes
+# list labels as the query's ORDER BY returns them (buildQuery.ts:39-48 at 4.1.4, :39-52 at
+# 5.0.0 and 6.0.0), which versions.py warns about for a value order.
+HEATMAP_X_SORT = {"a_to_z": "alpha_asc", "z_to_a": "alpha_desc",
+                  "value_asc": "value_asc", "value_desc": "value_desc"}
+HEATMAP_Y_SORT = {"a_to_z": "alpha_desc", "z_to_a": "alpha_asc",
+                  "value_asc": "value_desc", "value_desc": "value_asc"}
 
 
 def _pin_big_number_fonts(p: dict) -> None:
@@ -209,14 +299,42 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["subheader"] = chart.subtitle
         if chart.number_format:
             p["y_axis_format"] = chart.number_format
+        if chart.date_format:
+            # "Date format" and "Force date format" (BigNumberTotal/controlPanel.ts:66 and
+            # :80 at 4.1.4 and 5.0.0, :57 and :71 at 6.1.0). transformProps formats the number
+            # with the time format when the metric is temporal or a string, or when forced
+            # (transformProps.ts:87-92 at 4.1.4 and 5.0.0, :109-114 at 6.1.0); forced, a
+            # number of epoch milliseconds shows as a date too.
+            p["time_format"] = chart.date_format
+            p["force_timestamp_formatting"] = True
         _pin_big_number_fonts(p)
+        if chart.conditional_formatting:
+            p["conditional_formatting"] = [
+                _big_number_rule_payload(r, chart) for r in chart.conditional_formatting
+            ]
     elif t == "big_number_trend":
         p["metric"] = metric(chart.metric)
         p["x_axis"] = chart.time_column
         p["time_grain_sqla"] = chart.time_grain or DEFAULT_TIME_GRAIN
         p["show_trend_line"] = True
-        p["start_y_axis_at_zero"] = True
-        p["rolling_type"] = "None"
+        # "Start y-axis at 0" (BigNumberWithTrendline/controlPanel.tsx:96 at 4.1.4 and 5.0.0,
+        # :107 at 6.1.0, default true), drawn as the trendline's yAxis scale:
+        # !startYAxisAtZero (transformProps.ts:219 at 4.1.4 and 5.0.0, :326 at 6.1.0), so
+        # false fits the line to its values. Always written, true unless y_axis_truncate.
+        p["start_y_axis_at_zero"] = not chart.y_axis_truncate
+        # The Advanced Analytics rolling window (BigNumberWithTrendline controlPanel.tsx
+        # :179-228 at 4.1.4 and 5.0.0, :252-301 at 6.1.0), applied to the trendline by
+        # rollingWindowOperator in buildQuery, so transformProps reads the number and
+        # compare_lag's point from the rolled series (transformProps.ts:110-128 at 4.1.4
+        # and 5.0.0, :189-210 at 6.1.0). The backend drops the first min_periods - 1 rows
+        # (utils/pandas_postprocessing/rolling.py:99-100, the same at all three tags), so
+        # min_periods = rolling_periods keeps only whole windows; Superset's own 0 draws
+        # the partial windows of the first steps too.
+        p["rolling_type"] = chart.rolling_type or "None"
+        if chart.rolling_periods is not None:
+            p["rolling_periods"] = chart.rolling_periods
+            p["min_periods"] = (chart.rolling_periods if chart.rolling_min_periods is None
+                                else chart.rolling_min_periods)
         if chart.number_format:
             p["y_axis_format"] = chart.number_format
         _pin_big_number_fonts(p)
@@ -301,6 +419,36 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
                     "hasCustomLabel": False,
                 }
                 p["order_desc"] = chart.category_sort == "desc"
+        elif chart.sort_by:
+            # Largest first, as the default ranking: on top of the bottom-up horizontal axis.
+            ascending = chart.orientation == "horizontal"
+            sort_metric = chart.sort_metric()
+            if sort_metric is None:
+                # "total": the plugin sorts the categories by the sum of their series
+                # (SortSeriesType.Sum, utils/series.ts sortRows: 4.1.4 :200-208, 6.1.0
+                # :564-572), reading x_axis_sort from 6.0.0 (Timeseries/transformProps.ts
+                # 6.1.0 :335-336) and x_axis_sort_series at 4.1.4 and 5.0.0 (:243-246,
+                # :246-249). "sum" is no label, so sortOperator.ts adds no sort of its own.
+                p["x_axis_sort"] = "sum"
+                p["x_axis_sort_series"] = "sum"
+                p["x_axis_sort_series_ascending"] = ascending
+            else:
+                # A metric: sortOperator.ts sorts the rows by it (no groupby, all three
+                # releases). As the "Sort query by" metric it also orders the query, so a
+                # row limit keeps the top bars by it (normalizeOrderBy, descending), and
+                # one that is not drawn is queried but never drawn: extractExtraMetrics.ts:35
+                # adds it because its label is x_axis_sort, and extractSeries skips it.
+                payload = metric(sort_metric)
+                p["x_axis_sort"] = payload["label"] if isinstance(payload, dict) else payload
+                p["timeseries_limit_metric"] = payload
+                if chart.several_series():
+                    # Several series at 4.1.4 and 5.0.0: the plugin re-sorts the rows by
+                    # x_axis_sort_series, whose panel default is the category name, unless
+                    # it is unset (isDefined, utils/series.ts extractSeries, 4.1.4
+                    # :296-307, 5.0.0 :302-313). Null keeps sortOperator's order there;
+                    # 6.0.0 dropped the control.
+                    p["x_axis_sort_series"] = None
+            p["x_axis_sort_asc"] = ascending
         else:
             # Rankings read sorted by their measure, not by label order. The
             # horizontal axis renders bottom-up, so ascending puts the largest
@@ -328,8 +476,11 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p[f"groupby{suffix}"] = [series.groupby] if series.groupby else []
             p[f"row_limit{suffix}"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         p["adhoc_filters_b"] = _adhoc_filters(chart)
-        p["seriesType"] = chart.a.kind
-        p["seriesTypeB"] = chart.b.kind
+        # An area is a line series with its "Area chart" box ticked (area / areaB, read
+        # by transformSeries as areaStyle; MixedTimeseries/transformProps.ts:387-390 and
+        # :434-437 at 4.1.4, :466-469 and :540-543 at 6.1.0).
+        p["seriesType"] = SERIES_TYPE[chart.a.kind]
+        p["seriesTypeB"] = SERIES_TYPE[chart.b.kind]
         p["yAxisIndex"] = 0 if chart.a.axis == "primary" else 1
         p["yAxisIndexB"] = 0 if chart.b.axis == "primary" else 1
         p["y_axis_format"] = chart.number_format or "SMART_NUMBER"
@@ -339,6 +490,12 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         # markerEnabled / markerEnabledB (createCustomizeSection, all three releases);
         # emitted only when set, so pre-feature bundles stay byte-identical.
         for suffix, series in (("", chart.a), ("B", chart.b)):
+            if series.kind == "area":
+                p[f"area{suffix}"] = True
+                if series.opacity is not None:
+                    # The fill is opacity x this (transformSeries areaStyle, Timeseries/
+                    # transformers.ts at 4.1.4, 5.0.0 and 6.1.0); the edge line stays opaque.
+                    p[f"opacity{suffix}"] = series.opacity
             if series.markers:
                 p[f"markerEnabled{suffix}"] = True
             if series.show_value:
@@ -408,8 +565,7 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         column_config = _column_config(chart)
         if column_config:
             p["column_config"] = column_config
-        if chart.cell_bars is not None:
-            p["show_cell_bars"] = chart.cell_bars
+        _bar_switches(chart, p)
         if chart.date_format:
             p["table_timestamp_format"] = chart.date_format
     elif t == "pivot_table":
@@ -450,8 +606,8 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
         p["normalize_across"] = chart.normalize_across
         p["legend_type"] = "continuous"
         p["linear_color_scheme"] = chart.color_scheme or HEATMAP_DEFAULT_SCHEME
-        p["sort_x_axis"] = "alpha_asc"
-        p["sort_y_axis"] = "alpha_asc"
+        p["sort_x_axis"] = HEATMAP_X_SORT[chart.x_order or "a_to_z"]
+        p["sort_y_axis"] = HEATMAP_Y_SORT[chart.y_order or "z_to_a"]
         p["show_legend"] = chart.show_legend
         p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT[t]
         # Heatmap controlPanel.tsx, all three releases; emitted only when set.
@@ -461,6 +617,18 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["show_percentage"] = False  # the control's default is true
         if chart.number_format:
             p["y_axis_format"] = chart.number_format  # the cell values' format
+        # xscale_interval / yscale_interval: transformProps hands interval N - 1 to the
+        # category axis, so N labels every Nth value from the first (Heatmap/transformProps.ts
+        # 4.1.4 :231,238, 5.0.0 :234,241, 6.1.0 :436,445). left_margin is the grid's left
+        # edge, labels inside it (containLabel, :166-169, :168-171, :354-357); 'auto' is 0.
+        # On 6.1.0 Heatmap.tsx:25 renders <Echart> without vizType, so a theme's per-type
+        # overrides never reach it and these are the only way to set the axes.
+        if chart.x_label_every is not None:
+            p["xscale_interval"] = chart.x_label_every
+        if chart.y_label_every is not None:
+            p["yscale_interval"] = chart.y_label_every
+        if chart.left_margin is not None:
+            p["left_margin"] = chart.left_margin
     elif t == "histogram":
         p["column"] = chart.column
         p["bins"] = chart.bins
@@ -488,6 +656,10 @@ def _chart_params(chart, spec: DashboardSpec, resolution: Resolution) -> dict:
             p["label_type"] = chart.label_type
         if chart.number_format:
             p["number_format"] = chart.number_format
+    elif t == "waterfall":
+        _waterfall_params(chart, p, metric)
+    elif t == "box_plot":
+        _box_plot_params(chart, p, ds, metric)
 
     if isinstance(chart, _SeriesDisplay):
         _series_display_params(chart, p, metric)
@@ -552,6 +724,8 @@ def time_binding(chart, ds) -> tuple[str, str] | None:
         return ("axis", chart.time_column)
     if chart.type == "mixed" and mixed_time_axis(chart, ds):
         return ("axis", chart.x_column)
+    if chart.type == "waterfall" and waterfall_time_axis(chart, ds):
+        return ("axis", chart.x_column)
     if ds.main_dttm_col:
         return ("granularity", ds.main_dttm_col)
     return None
@@ -612,18 +786,35 @@ def _y_title_layout(p: dict) -> None:
     p["y_axis_title_position"] = "Top"
 
 
+# A horizontal bar's titles. transformProps lays them out for a vertical chart, then swaps the
+# axes and the bottom and left padding (Timeseries/transformProps.ts 4.1.4 and 5.0.0 :530-531,
+# 6.1.0 :993-994). So x_axis_title names the category axis, drawn rotated left of the bars at
+# nameGap from the axis line, through the column of category labels; y_axis_title names the
+# value axis along the bottom. Placed 'Top' (nameLocation 'end', :526 and :973), the value
+# title lands past the axis's right end and is cut off; 'Left' centres it under the axis, and
+# getPadding's left offset becomes the bottom one (Timeseries/transformers.ts getPadding).
+HBAR_CATEGORY_TITLE_GAP = 64  # clears category labels of about 8 characters at 12 px
+HBAR_VALUE_TITLE_GAP = 30     # clears the value labels under the axis
+
+
 def _y_axis_params(chart, p: dict) -> None:
     """Axis titles, bounds, truncation and log scale: titleControls (sections/chartTitle.tsx)
     and the panels' Y Axis section, at 4.1.4, 5.0.0 and 6.1.0. transformProps passes
     y_axis_bounds to ECharts as the axis min and max, so a bound applies on every release."""
+    horizontal = getattr(chart, "orientation", None) == "horizontal"
     if chart.x_axis_title:
         p["x_axis_title"] = chart.x_axis_title
         # Clear of the tick labels; rotated labels hang lower. 0 (6.1.0's default margin)
         # draws the title over the labels.
-        p["x_axis_title_margin"] = 50 if chart.x_label_rotation else 30
+        p["x_axis_title_margin"] = (HBAR_CATEGORY_TITLE_GAP if horizontal
+                                    else 50 if chart.x_label_rotation else 30)
     if chart.y_axis_title:
         p["y_axis_title"] = chart.y_axis_title
-        _y_title_layout(p)
+        if horizontal:
+            p["y_axis_title_margin"] = HBAR_VALUE_TITLE_GAP
+            p["y_axis_title_position"] = "Left"
+        else:
+            _y_title_layout(p)
     if chart.y_axis_min is not None or chart.y_axis_max is not None:
         p["y_axis_bounds"] = [chart.y_axis_min, chart.y_axis_max]
     if chart.y_axis_truncate:
@@ -689,6 +880,197 @@ def mixed_time_axis(chart, ds) -> bool:
     return bool(temporal or (temporal is None and chart.time_grain))
 
 
+def waterfall_time_axis(chart, ds) -> bool:
+    """Whether a waterfall's steps are periods of a time column, by the same test as a
+    mixed chart's. A bridge's own order (steps) is always categorical."""
+    return chart.steps is None and mixed_time_axis(chart, ds)
+
+
+# A bridge in its own order (WaterfallChart.steps) draws its bars in the order of an x
+# axis the compiler writes: a CASE over the step column giving each step a key, the
+# closing row its own name. The plugin groups and sorts the rows by the x axis and then
+# by the Breakdowns column (Waterfall/buildQuery.ts:27-35, orderby every column
+# ascending, all three releases); with the step column as the breakdown, each bar is
+# labelled by its step and the closing row, matched by total_label, is drawn as the
+# running total under its x value: its name (Waterfall/transformProps.ts at 6.1.0,
+# :240-254 and :326-330). show_total: false keeps the plugin from adding a running total
+# after every step (:117-134), a 6.1.0 control: older plugins always add one.
+STEPS_ORDER_LABEL = "Bridge order"
+STEPS_LABEL = "Bridge step"  # an opened bridge's breakdown, apart from the step column's name
+STEPS_OTHER_KEY = "0zzz"  # values steps doesn't list: after every listed step, before the closing
+_PLAIN_COLUMN = re.compile(r"[a-z_][a-z0-9_]*")
+
+
+def _sql_text(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _sql_column(column: str) -> str:
+    # A lowercase identifier as it is; anything else double-quoted (ANSI SQL).
+    return column if _PLAIN_COLUMN.fullmatch(column) else '"' + column.replace('"', '""') + '"'
+
+
+def _step_keys(steps: list[str], opening: str | None) -> tuple[list[str], str]:
+    """Each step's order key and the key of a value steps doesn't list. Without an
+    opening: '0000', '0001', ... and '0zzz', all starting with '0', which sorts before a
+    letter or a digit 1-9 in every common collation (the spec holds closing to that).
+    With one: 'FY2025 000', ... and 'FY2025 9999', after the opening's own name and,
+    as the spec checks (spec.sorts_before), before the closing's."""
+    if opening is None:
+        return [f"0{i:03d}" for i in range(len(steps))], STEPS_OTHER_KEY
+    return ([f"{opening}{OPENING_KEY_GAP}{i:03d}" for i in range(len(steps))],
+            opening + OPENING_OTHER_KEY)
+
+
+def steps_order_sql(column: str, steps: list[str], closing: str, opening: str | None = None) -> str:
+    """The bridge's x axis: a key per step, the opening's and the closing's own names."""
+    keys, other = _step_keys(steps, opening)
+    whens = [f"WHEN {_sql_text(opening)} THEN {_sql_text(opening)}"] if opening is not None else []
+    whens += [f"WHEN {_sql_text(s)} THEN {_sql_text(k)}" for s, k in zip(steps, keys)]
+    whens.append(f"WHEN {_sql_text(closing)} THEN {_sql_text(closing)}")
+    return f"CASE {_sql_column(column)} {' '.join(whens)} ELSE {_sql_text(other)} END"
+
+
+def bridge_totals_sql(column: str, opening: str, closing: str) -> str:
+    """An opened bridge's breakdown: both total rows marked BRIDGE_TOTAL (total_label),
+    each step by its own name."""
+    col = _sql_column(column)
+    return (f"CASE WHEN {col} IN ({_sql_text(opening)}, {_sql_text(closing)}) "
+            f"THEN {_sql_text(BRIDGE_TOTAL)} ELSE {col} END")
+
+
+_SQL_TEXT = r"'(?:[^']|'')*'"
+_SQL_COLUMN = r"[a-z_][a-z0-9_]*|\"(?:[^\"]|\"\")+\""
+_STEPS_SQL = re.compile(
+    rf"CASE (?P<column>{_SQL_COLUMN}) (?P<whens>(?:WHEN {_SQL_TEXT} THEN {_SQL_TEXT} )+)"
+    rf"ELSE (?P<other>{_SQL_TEXT}) END", re.S)
+
+
+def _text(lit: str) -> str:
+    return lit[1:-1].replace("''", "'")
+
+
+def parse_steps_order_sql(sql: str) -> tuple[str, list[str], str, str | None] | None:
+    """(column, steps, closing, opening or None) from an x axis steps_order_sql wrote,
+    or None for any other SQL."""
+    m = _STEPS_SQL.fullmatch(sql or "")
+    if not m:
+        return None
+    pairs = [(_text(a), _text(b)) for a, b in
+             re.findall(rf"WHEN ({_SQL_TEXT}) THEN ({_SQL_TEXT})", m.group("whens"))]
+    if len(pairs) < 2 or pairs[-1][0] != pairs[-1][1]:
+        return None
+    closing = pairs[-1][0]
+    opening = pairs[0][0] if pairs[0][0] == pairs[0][1] and len(pairs) > 2 else None
+    steps = [s for s, _ in pairs[1 if opening is not None else 0:-1]]
+    if (m.group("other"), [k for _, k in pairs[1 if opening is not None else 0:-1]]) != (
+            _sql_text(_step_keys(steps, opening)[1]), _step_keys(steps, opening)[0]):
+        return None
+    column = m.group("column")
+    if column.startswith('"'):
+        column = column[1:-1].replace('""', '"')
+    return column, steps, closing, opening
+
+
+def _waterfall_params(chart, p: dict, metric) -> None:
+    """Waterfall/controlPanel.tsx at 4.1.4, 5.0.0 and 6.1.0; the labels and show_total
+    are 6.1.0 controls. Emitted only when set, but for the query keys."""
+    if chart.steps:
+        p["x_axis"] = {"expressionType": "SQL", "label": STEPS_ORDER_LABEL,
+                       "sqlExpression": steps_order_sql(chart.x_column, chart.steps,
+                                                        chart.closing, chart.opening)}
+        if chart.opening is None:
+            p["groupby"] = [chart.x_column]
+            p["total_label"] = chart.closing
+        else:
+            # Both ends are total rows: a total at the first index adds to the running
+            # total, any later one shows it (transformProps.ts:241-250 at 6.1.0).
+            p["groupby"] = [{"expressionType": "SQL", "label": STEPS_LABEL,
+                             "sqlExpression": bridge_totals_sql(chart.x_column, chart.opening,
+                                                                chart.closing)}]
+            p["total_label"] = BRIDGE_TOTAL
+        p["show_total"] = False
+    else:
+        p["x_axis"] = chart.x_column
+        p["groupby"] = [chart.groupby] if chart.groupby else []
+        if chart.time_grain:
+            # Written as the spec says: the backend buckets a temporal x axis only and
+            # leaves a categorical one as it is (seen on 4.1.4 and 6.1.0).
+            p["time_grain_sqla"] = chart.time_grain
+        if chart.total_label:
+            p["total_label"] = chart.total_label
+    p["metric"] = metric(chart.metric)
+    p["row_limit"] = chart.row_limit or DEFAULT_ROW_LIMIT["waterfall"]
+    # The colour pickers store {r, g, b, a}; transformProps paints rgbToHex(r, g, b).
+    for field in ("increase_color", "decrease_color", "total_color"):
+        if getattr(chart, field):
+            p[field] = hex_to_rgb(named_hex(getattr(chart, field)))
+    for field in ("increase_label", "decrease_label"):
+        if getattr(chart, field):
+            p[field] = getattr(chart, field)
+    if chart.show_value:
+        p["show_value"] = True
+    if chart.show_legend:
+        p["show_legend"] = True  # the control's default is false
+    if chart.number_format:
+        p["y_axis_format"] = chart.number_format
+    if chart.x_axis_title:
+        p["x_axis_label"] = chart.x_axis_title
+    if chart.y_axis_title:
+        p["y_axis_label"] = chart.y_axis_title
+    if chart.x_label_rotation is not None:
+        p["x_ticks_layout"] = TICK_LAYOUTS[chart.x_label_rotation]
+    if chart.x_label_format:
+        p["x_axis_time_format"] = chart.x_label_format
+
+
+# whiskers -> whiskerOptions, the Box Plot panel's choices (BoxPlot/controlPanel.ts, 4.1.4
+# and 5.0.0 :83-99, 6.1.0 :84-102). The select is free-form, and the boxplot operator
+# reads any 'lo/hi percentiles' (operators/boxplotOperator.ts:28, all three releases), so
+# [5, 95] works on 4.1.4 too, whose choices don't list it (seen rendering).
+WHISKER_OPTIONS = {"tukey": "Tukey", "min_max": "Min/max (no outliers)"}
+
+
+def whisker_options(whiskers) -> str:
+    if isinstance(whiskers, list):
+        return f"{whiskers[0]}/{whiskers[1]} percentiles"
+    return WHISKER_OPTIONS[whiskers]
+
+
+def _box_plot_params(chart, p: dict, ds, metric) -> None:
+    """BoxPlot/controlPanel.ts at 4.1.4, 5.0.0 and 6.1.0: the observations are the rows
+    of `columns` (Distribute across), a box per `groupby` value, and the boxplot
+    post-processing turns them into quartiles (BoxPlot/buildQuery.ts:29-57). row_limit
+    is a 6.0.0 control."""
+    p["columns"] = list(chart.distribute_across)
+    p["groupby"] = list(chart.groupby)
+    p["metrics"] = [metric(m) for m in chart.metrics]
+    # Written even as Tukey: without it buildQuery adds no boxplot post-processing.
+    p["whiskerOptions"] = whisker_options(chart.whiskers)
+    if chart.time_grain:
+        # buildQuery buckets a column by the grain only if temporal_columns_lookup marks
+        # it, a control Explore fills from the dataset (BoxPlot/buildQuery.ts:38-50).
+        p["time_grain_sqla"] = chart.time_grain
+        lookup = {c: True for c in chart.distribute_across if ds.is_temporal(c) is not False}
+        if lookup:
+            p["temporal_columns_lookup"] = lookup
+    if chart.row_limit:
+        p["row_limit"] = chart.row_limit
+    if chart.number_format:
+        p["number_format"] = chart.number_format
+    if chart.x_label_format:
+        p["date_format"] = chart.x_label_format
+    if chart.x_label_rotation is not None:
+        p["x_ticks_layout"] = TICK_LAYOUTS[chart.x_label_rotation]
+    # sections.titleControls, as the axis charts write them (_y_axis_params).
+    if chart.x_axis_title:
+        p["x_axis_title"] = chart.x_axis_title
+        p["x_axis_title_margin"] = 50 if chart.x_label_rotation else 30
+    if chart.y_axis_title:
+        p["y_axis_title"] = chart.y_axis_title
+        _y_title_layout(p)
+
+
 def _x_label_params(chart: _AxisChart, p: dict) -> None:
     # Emitted only when set, so pre-feature bundles stay byte-identical.
     # x_axis_time_format and xAxisLabelRotation: every chart panel at 4.1.4, 5.0.0 and 6.1.0.
@@ -718,6 +1100,8 @@ def _x_label_params(chart: _AxisChart, p: dict) -> None:
 
 # Chart types whose 6.1.0 control panel declares echart_options (scatter's does not).
 _ECHART_OPTIONS_TYPES = ("timeseries_line", "timeseries_bar", "timeseries_area", "mixed")
+# A mixed query's kind -> its seriesType (EchartsTimeseriesSeriesType, Timeseries/types.ts).
+SERIES_TYPE = {"bar": "bar", "line": "line", "area": "line"}
 
 
 def _has_bars(chart) -> bool:
@@ -756,7 +1140,7 @@ def _chart_meta(spec: DashboardSpec, name: str, cuuid, width: int, height: float
         "uuid": str(cuuid),
         "sliceName": name,
         "width": width,
-        "height": int(round(height * ROW_UNITS_PER_SPEC_UNIT)),
+        "height": grid_rows(height),
         # Placeholder the importer requires and remaps via uuid.
         "chartId": 100000 + counter[0],
     }
@@ -777,9 +1161,7 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
             # ROW (dashboard/util/isValidChild.ts, all three releases).
             kind = "HEADER" if isinstance(entry, HeaderBlock) else "DIVIDER"
             node_id = f"{kind}-{prefix}{i + 1}"
-            meta = ({"text": entry.header, "headerSize": HEADER_SIZE[entry.size],
-                     "background": BACKGROUND[entry.background]}
-                    if kind == "HEADER" else {})
+            meta = _header_meta(entry) if kind == "HEADER" else {}
             pos[node_id] = {"type": kind, "id": node_id, "children": [], "parents": parents, "meta": meta}
             row_ids.append(node_id)
             continue
@@ -799,7 +1181,7 @@ def _rows_into(pos: dict, rows, spec: DashboardSpec, parents: list[str], prefix:
                     "meta": {
                         "code": item.markdown,
                         "width": spec.resolved_item_width(item),
-                        "height": int(round((item.height or 4) * ROW_UNITS_PER_SPEC_UNIT)),
+                        "height": grid_rows(item.height or 4),
                     },
                 }
                 continue
@@ -842,20 +1224,59 @@ def _sketch_chart_node(pos, spec, sc, width, parents, counter) -> str:
     return chart_id
 
 
-def _sketch_into(pos, parsed_rows, spec, parents: list[str], prefix: str, counter: list[int]) -> list[str]:
-    """Emit ROW / COLUMN / CHART nodes from a parsed sketch (chartwright/sketch.py)."""
-    from .sketch import SketchColumn
+def _header_meta(entry: HeaderBlock) -> dict:
+    return {"text": entry.header, "headerSize": HEADER_SIZE[entry.size],
+            "background": BACKGROUND[entry.background]}
+
+
+def _sketch_block_node(pos, holder, sb, width, node_id, parents) -> str:
+    """Emit one MARKDOWN or HEADER node from a sketch block; a markdown block's own
+    height wins over the drawn one, as a chart's does."""
+    entry = holder.sketch_block(sb)
+    if sb.kind == "header":
+        meta = _header_meta(entry)
+        node_id = f"HEADER-{node_id}"
+    else:
+        meta = {"code": entry.markdown, "width": width,
+                "height": int(round(holder.sketch_block_height(sb) * ROW_UNITS_PER_SPEC_UNIT))}
+        node_id = f"MARKDOWN-{node_id}"
+    pos[node_id] = {"type": "HEADER" if sb.kind == "header" else "MARKDOWN", "id": node_id,
+                    "children": [], "parents": parents, "meta": meta}
+    return node_id
+
+
+def _sketch_into(pos, holder, spec, parents: list[str], prefix: str, counter: list[int]) -> list[str]:
+    """Emit ROW / COLUMN / CHART nodes from a parsed sketch (chartwright/sketch.py), and the
+    MARKDOWN and HEADER nodes of its blocks. A header across the whole sketch is a HEADER
+    between rows, as in rows; any other header sits in a COLUMN, the one place beside a
+    ROW's other children Superset takes a header (dashboard/util/isValidChild.ts :75 and
+    :97 at 4.1.4, 5.0.0 and 6.1.0): its stack's, or one of its own."""
+    from .sketch import SketchBlock, SketchColumn
 
     row_ids: list[str] = []
-    for i, srow in enumerate(parsed_rows):
+    for i, srow in enumerate(holder.parsed_sketch()):
+        band = srow.header_band
+        if band is not None:
+            node_id = f"HEADER-{prefix}{i + 1}"
+            pos[node_id] = {"type": "HEADER", "id": node_id, "children": [], "parents": parents,
+                            "meta": _header_meta(holder.sketch_block(band))}
+            row_ids.append(node_id)
+            continue
         row_id = f"ROW-{prefix}{i + 1}"
         child_ids: list[str] = []
         for j, child in enumerate(srow.children):
-            if isinstance(child, SketchColumn):
-                col_id = f"COLUMN-{prefix}{i + 1}-{j + 1}"
+            slot = f"{prefix}{i + 1}-{j + 1}"
+            if isinstance(child, SketchColumn) or (
+                    isinstance(child, SketchBlock) and child.kind == "header"):
+                col_id = f"COLUMN-{slot}"
+                items = child.children if isinstance(child, SketchColumn) else [child]
+                # A list of its own per node: a shared one is a YAML alias in the bundle.
                 col_children = [
+                    _sketch_block_node(pos, holder, sc, child.width, f"{slot}-{k + 1}",
+                                       [*parents, row_id, col_id])
+                    if isinstance(sc, SketchBlock) else
                     _sketch_chart_node(pos, spec, sc, child.width, [*parents, row_id, col_id], counter)
-                    for sc in child.children
+                    for k, sc in enumerate(items)
                 ]
                 pos[col_id] = {
                     "type": "COLUMN",
@@ -865,6 +1286,9 @@ def _sketch_into(pos, parsed_rows, spec, parents: list[str], prefix: str, counte
                     "meta": {"background": "BACKGROUND_TRANSPARENT", "width": child.width},
                 }
                 child_ids.append(col_id)
+            elif isinstance(child, SketchBlock):
+                child_ids.append(
+                    _sketch_block_node(pos, holder, child, child.width, slot, [*parents, row_id]))
             else:
                 child_ids.append(
                     _sketch_chart_node(pos, spec, child, child.width, [*parents, row_id], counter)
@@ -892,9 +1316,7 @@ def _position(spec: DashboardSpec) -> dict:
     if spec.layout.rows:
         grid_children = _rows_into(pos, spec.layout.rows, spec, ["ROOT_ID", "GRID_ID"], "sdc-", counter)
     elif spec.layout.sketch:
-        grid_children = _sketch_into(
-            pos, spec.layout.parsed_sketch(), spec, ["ROOT_ID", "GRID_ID"], "sdc-", counter
-        )
+        grid_children = _sketch_into(pos, spec.layout, spec, ["ROOT_ID", "GRID_ID"], "sdc-", counter)
     else:
         tabs_id = "TABS-sdc-1"
         tab_ids: list[str] = []
@@ -909,7 +1331,7 @@ def _position(spec: DashboardSpec) -> dict:
 
         def content_into(tab, parents: list[str], prefix: str) -> list[str]:
             into = _sketch_into if tab.sketch else _rows_into
-            return into(pos, tab.parsed_sketch() if tab.sketch else tab.rows, spec, parents, prefix, counter)
+            return into(pos, tab if tab.sketch else tab.rows, spec, parents, prefix, counter)
 
         for k, tab in enumerate(spec.layout.tabs or []):
             tab_id = f"TAB-sdc-{k + 1}"

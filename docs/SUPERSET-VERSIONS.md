@@ -7,10 +7,10 @@ After you upgrade Superset, rebuild each dashboard from the spec you already hav
 Superset's backend doesn't define the settings a chart can have. Each chart type's frontend plugin defines them, and they change between releases: 6.1.0 renamed the big-number subtitle setting, for example. Chartwright deals with that as follows:
 
 - It writes the chart settings each release's plugins declare. The lists come from each plugin's source at 4.1.4, 5.0.0 and 6.1.0 (`tools/contracts/params-contract.json`). A setting only a newer release has is written only where an older release ignores it, and each such case is a named exception in the check below.
-- CI compiles four example specs, which between them use all 15 chart types and the display and dashboard settings, and fails if any setting they produce is missing from a release's list without a named exception (`tools/params_drift.py`).
+- CI compiles four example specs, which between them use all 17 chart types and the display and dashboard settings, and fails if any setting they produce is missing from a release's list without a named exception (`tools/params_drift.py`).
 - `check`, `apply` and `plan` ask the instance for its release, then:
-    - refuse, before writing anything, a field it can't take: `tags` and `theme` before 6.0, `show_chart_timestamps` before 6.1;
-    - warn about a field it ignores: `x_label_every` before 6.1; a trendline's `subtitle`, a table's `column_headers` and `show_value` on a stacked mixed chart before 6.0.
+    - refuse, before writing anything, a field it can't take: `tags` and `theme` before 6.0, `show_chart_timestamps` and a waterfall's `steps` before 6.1;
+    - warn about a field it ignores or draws differently: before 6.0, a trendline's `subtitle`, a table's `column_headers` and `hidden`, `show_value` on a stacked mixed chart, and a box plot's `row_limit`; before 6.1, `x_label_every`, a heatmap's `x_order` and `y_order` by value, a waterfall's labels, cell bars beside colour rules, and four colour-rule effects (the table below).
 - `--superset-version` states the release when the instance doesn't report it, and `chartwright compile --superset-version 5.0.0` runs the same check offline.
 - Each `apply` exports the dataset records from the instance it targets, so the bundle matches that instance.
 
@@ -47,7 +47,7 @@ When `apply` fails after the import and the chart updates, the new version stays
 
 On every pull request and every push to main, CI starts a real container of each release (4.1.4, 5.0.0 and 6.1.0) and runs these against it (`.github/workflows/ci.yml`, [VERIFICATION.md](VERIFICATION.md)):
 
-- **Builds of three specs**: a 16-chart spec with all 15 chart types, two tabs, a text block, WHERE filters on charts, two value pickers and a time range; a spec that sets the charts' display options; and one that sets the dashboard's settings, a header and a footer. Each checks that every chart is linked and queries every chart, then applies the spec again to confirm chart ids don't change.
+- **Builds of four specs**: an 18-chart spec with all 17 chart types, two tabs, a text block, WHERE filters on charts, two value pickers and a time range; a spec that sets the charts' display options, colour rules among them; one that sets the dashboard's settings, a header and a footer; and two waterfall bridges, which 4.1.4 and 5.0.0 must refuse. Each checks that every chart is linked and queries every chart, then applies the spec again to confirm chart ids don't change.
 - **Other live checks**: a chart added in the UI taken off on the next apply, with restores matching their backups; a dashboard adopted in place; standards content written and read back; and, when the browser for them installs, locked text checked on the rendered page and each chart's query saved for reports.
 - **25 cycles of random edits**: charts added, removed and renamed, filters added and removed, layouts switched between rows and tabs. After each cycle, `plan` must come back clean.
 - **Stale-tab overwrites and injected faults**: these use a numeric range filter scoped to named charts.
@@ -56,8 +56,8 @@ These spec fields have offline tests, but no live CI build uses them on any rele
 
 - **Layout:** `sketch` and sub-tabs.
 - **Filters:** a value picker's `default` and `default_to_first`.
-- **Colour:** `conditional_formatting`, `label_colors`, and `cross_filters: true`.
-- **Charts:** table `hidden`, `cell_bars` and `date_format`, and the big-number total's `subtitle`.
+- **Colour:** `label_colors` and `cross_filters: true`.
+- **Charts:** table `hidden`.
 
 ## Differences between releases
 
@@ -72,7 +72,12 @@ These spec fields have offline tests, but no live CI build uses them on any rele
 | `owners` given as usernames | Found by username | Found by username only with Superset's `FAB_ADD_SECURITY_API` setting on; emails work on every release |
 | Table `hidden` | The column is queried but not shown | The column is shown |
 | Table colour rule with `apply_to` or `paint: "text"` | Paints another column, the whole row, or the text | These two settings aren't read, so the rule colours the tested value's own cell (from plugin source; not tested live) |
-| Colour rule with `<`, `>` or `between` | A solid colour | The colour fades with distance from the threshold |
+| Colour rule with any operator but `=` | A solid colour | The colour fades with distance from the threshold |
+| A cell painted a dark colour | White text on it | Dark text, which a colour under 3:1 can make unreadable (`check` warns) |
+| Cell bars beside colour rules on a table | Both drawn, except that a cell a rule fills loses its bar | No cell bars on any numeric column |
+| A waterfall's `steps`, and its `total_label`, `increase_label` and `decrease_label` | The steps in your order, under your labels | `steps` refused before anything is written; the labels have no effect |
+| A box plot's `row_limit` | Caps the rows | No effect, with a warning |
+| A heatmap's `x_order` or `y_order` by value | Ranks each label by its total | No effect, with a warning |
 | `label_colors` | Applied over the colour scheme | Unverified |
 | Big-number `subtitle` | Shown. Chartwright writes the setting's older name, which 6.1.0 still displays | Shown |
 

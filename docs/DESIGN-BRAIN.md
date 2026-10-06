@@ -1,8 +1,19 @@
 # The Design Brain
 
-> **Status: SHIPPED, design brain 7** (4 added `narrative.color-scheme`; 5 the
+> **Status: SHIPPED, design brain 16** (4 added `narrative.color-scheme`; 5 the
 > design defaults of §16; 6 the `standard.*` rules of §18's content; 7 fills keeping
-> a null record after an edit, and `default.stale-record`). This page is both the design and the
+> a null record after an edit, and `default.stale-record`; 8 one height question
+> for tables and pivots, §15.42; 9 rolling trendline windows, date tiles, and the
+> waterfall's and the box plot's rules and fills, §7 "Waterfalls" and "Box plots";
+> 10 no page-size picker, pager or search box on a table whose rows all show, and
+> `size.table-chrome`; 11 `size.markdown-fit`; 12 `default.heatmap-label-room`, and
+> `data.top-n-sort` on a bar ranked by `sort_by: "total"`; 14 the big-number colour
+> rules: `chart.format-bands` on a KPI, `chart.color-contrast` and
+> `narrative.kpi-thresholds`; 15 `chart.format-bands` reading each colour rule's own
+> range, so `>=`, `<=`, `!=` and `between_inclusive` take their bounds in; 16 the type
+> floors of the `readability.*` rules, §17 "Type sizes"; 17 `chart.axis-titles`,
+> `layout.thin-subtabs`, and value labels on grouped bars). This page is both the
+> design and the
 > reference for the implementation in `chartwright/design/`. The decision log
 > at the bottom records every judgment call made without a review gate; §15
 > records where the implementation deliberately deviates from the design
@@ -16,8 +27,9 @@
 >
 > **Rendering verification: partial.** §17 records what was measured on
 > rendered Superset 4.1.4, 5.0.0 and 6.1.0: the table and pivot grid model
-> (row, header, search bar and pager heights) and the value-label and day-label
-> thresholds of the design defaults. The other thresholds still come from the
+> (row, header, search bar and pager heights), the value-label and day-label
+> thresholds of the design defaults, and the type sizes the readability rules
+> judge, big numbers' included. The other thresholds still come from the
 > skill's field notes and BI literature, not from measured pixels: axis
 > heights, pie and heatmap geometry, the horizontal-bar height per bar,
 > vertical-bar category counts, KPI heights and the audience budgets. Treat
@@ -103,6 +115,8 @@ chartwright/design/
   model.py         Finding, AdviceReport, RuleContext, @rule registry, taxonomy
   rules.py         all Tier L rule implementations (split when it outgrows one file)
   defaults.py      the default.* fills (§16): one decision per field, one shared driver
+  readability.py   the readability.* type floors (§17, "Type sizes"): a minimal CSS
+                   reader, theme tokens, and big numbers' text by height
   explain.py       `chartwright explain`: each design-default field's value and source
   presets.py       audience parameter tables + design.yaml overlay
   standards.py     repository standards (§18): load, extends, locks, check, report, apply
@@ -232,7 +246,7 @@ minus Superset chrome is ≈ 22 units).
 | `kpi_height` | 5 | 4 | 3 |
 | `min_axis_height` | 8 | 6 | 5 |
 | `max_filter_selects` | 5 | 6 | 7 |
-| `table_visible_ratio` (min visible/row_limit) | 0.5 | 0.5 | 0.5 |
+| `table_visible_ratio` (min visible/row_limit) | 1 | 1 | 1 |
 | `vbar_max_categories` | 6 | 8 | 8 |
 | `pie_max_slices` | 5 | 7 | 7 |
 | `series_max` (lines per timeseries) | 5 | 10 | 8 |
@@ -241,6 +255,11 @@ minus Superset chrome is ≈ 22 units).
 | `value_label_min_width` (§16, §17) | 6 | 6 | 6 |
 | `page_min_rows` (§16, judgement) | 3 | 3 | 3 |
 | `day_label_max_span_days` (§16) | 365 | 365 | 365 |
+| `min_cell_text_px` (§17, "Type sizes") | 14 | 14 | 14 |
+| `min_label_text_px` (§17) | 12 | 12 | 12 |
+| `min_title_text_px` (§17) | 14 | 14 | 14 |
+| `min_kpi_value_px` (§17) | 24 | 24 | 24 |
+| `min_row_px` (§17) | 24 | 24 | 24 |
 
 Presets are data (`presets.py`), not branches: rules never test the audience
 name, only parameters. Adding an audience is adding a row.
@@ -294,7 +313,11 @@ several offline rules additionally sharpen or stand down when probes are
 available (noted in their text). `since` is the design-brain version that
 introduced the rule: "2" the post-review batch
 (docs/DESIGN-BRAIN-V2.md), "3" the review burn-down (§15.11 onward), "4"
-the colour-scheme check, "5" the design defaults (§16).
+the colour-scheme check, "5" the design defaults (§16), "9" the waterfall and
+the box plot, "14" the big-number colour rules (a colour that reads on the
+white card, and a KPI that says what its colours mean), "16" the type floors
+(§17, "Type sizes"). An `info/warn` rule reports Superset's own default as info
+and what the dashboard itself sets as a warn.
 
 The table below is GENERATED from the registry by
 `tools/gen_rule_table.py --write`; do not hand-edit it. `tests/test_docs.py`
@@ -304,6 +327,10 @@ fails when it drifts.
 
 | id | sev | fix | data | since | rule |
 |---|---|---|---|---|---|
+| `chart.axis-titles` | info | - | - | 17 | axis charts name their axes: the measure and unit, and the dimension |
+| `chart.box-plot-groups` | warn | - | - | 9 | past ~20 boxes each thins to a sliver and the labels drop |
+| `chart.box-plot-observations` | warn | - | - | 9 | a box needs many observations: distribute across a finer grain than the groups |
+| `chart.color-contrast` | warn | - | - | 14 | a colour painted as text or a line reads on the white card: 3:1 for a big number or a trendline, 4.5:1 for table and pivot text (WCAG AA) |
 | `chart.dupe` | info | - | - | 1 | two charts answering the identical question is redundancy |
 | `chart.format-bands` | warn/info | - | - | 2 | conditional-formatting bands must tell one coherent story per metric |
 | `chart.funnel-stages` | warn | - | ⚡ | 1 | funnels need 3-8 ordered stages |
@@ -320,18 +347,26 @@ fails when it drifts.
 | `chart.treemap-vs-bar` | info | - | ⚡ | 2 | a one-level treemap of few categories is a worse bar chart |
 | `chart.trend-grain` | info | - | - | 2 | trend tiles at a fine grain over full history draw thousands of points in a small card |
 | `chart.vbar-categories` | warn | ✔ | - | 1 | vertical bars drop labels past ~8 categories; rank with horizontal bars |
+| `chart.waterfall-additive` | warn | - | - | 9 | a waterfall's steps must add up: SUM or COUNT of one measure, never AVG, MIN, MAX or COUNT_DISTINCT |
+| `chart.waterfall-axis-titles` | info | - | - | 9 | a waterfall's axis titles sit where Superset puts them, over wide tick labels |
+| `chart.waterfall-colors` | info/warn | - | - | 9 | a waterfall's rising, falling and total bars take colours set for the dashboard, each at least 3:1 against the panel |
+| `chart.waterfall-order` | info | - | - | 9 | a bridge reads in its own order, and Superset draws a waterfall's steps A to Z unless steps orders them |
+| `chart.waterfall-steps` | warn | - | - | 9 | a waterfall past ~12 steps stops reading as a bridge |
 | `data.grain-vs-range` | warn | - | - | 1 | the time grain should yield a sane number of points for the range |
+| `data.rolling-window-span` | warn | - | - | 9 | a rolling trendline KPI's time range must hold its window and its comparison |
 | `data.row-limit-intent` | info | - | - | 1 | row limits doing design work should be deliberate, not defaults |
 | `data.top-n-sort` | warn | - | - | 2 | a limit without an order is a sample, not a ranking |
 | `data.unwindowed-history` | warn | - | - | 3 | timeseries charts with no way to bound the window draw ALL history at their grain |
 | `default.cell-bars` | info | ✔ | - | 5 | a raw table with id, code, year or zip columns draws no cell bars (a bar behind an identifier reads as an amount) |
-| `default.compare-suffix` | info | ✔ | - | 5 | a trendline KPI's change says what it compares against ('vs previous month') |
+| `default.compare-suffix` | info | ✔ | - | 5 | a trendline KPI's change says what it compares against ('vs previous month'; 'vs prior 12 months' between trailing windows) |
 | `default.count-format` | info | ✔ | - | 5 | counts read as whole numbers with thousands separators (',.0f') |
+| `default.date-tile` | info | ✔ | - | 9 | a big number of a date column's MIN or MAX reads as a whole date ('Sat 3 Oct 2026'); needs the column's type (--profile) |
+| `default.heatmap-label-room` | info | ✔ | - | 12 | a heatmap keeps 16 px left of its y labels, where Superset 6.1.0 cuts off the longest one's first letters |
 | `default.page-length` | info | ✔ | - | 5 | a table whose row_limit outgrows its panel pages by the rows that fit beside its page controls |
-| `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows gets a search box, when its rows still fit beside it (the 20 is judgement) |
+| `default.search-box` | info | ✔ | - | 5 | a raw table of more than ~20 rows that outgrow its panel, and so page, gets a search box; one whose rows all show gets none (the 20 is judgement) |
 | `default.single-series-legend` | info | ✔ | - | 5 | a single series named by the chart or y-axis title needs no legend |
 | `default.stale-record` | info | ✔ | - | 7 | design.filled names only charts and fields the spec has |
-| `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or tall enough to space the labels (horizontal) |
+| `default.value-labels` | info | ✔ | - | 5 | few bars carry their values: <= 12 bars (row_limit x metrics for grouped bars), on a panel >= 6/12 wide (vertical, and a waterfall's steps) or tall enough to space the labels (horizontal) |
 | `default.x-label-format` | info | ✔ | - | 5 | a time axis labels its points in its grain's own format ('Sep 2026' by month); day and week labels only over a year or less |
 | `filters.count` | warn | - | - | 2 | past ~6 select pickers a filter bar stops being navigable (and each costs a query on load) |
 | `filters.duplicate-column` | info | - | - | 2 | two filters on the same column fight each other |
@@ -348,21 +383,28 @@ fails when it drifts.
 | `layout.row-fill` | warn/info | - | - | 1 | a row should fill the 12-column grid |
 | `layout.section-headers` | info | - | - | 1 | large flat dashboards need section headers (header rows or markdown) |
 | `layout.tab-balance` | info | - | - | 1 | tabs should carry comparable weight |
+| `layout.thin-subtabs` | info | - | - | 17 | a sub-tab holding 2 charts or fewer reads better as a section of one page |
 | `narrative.big-number-format` | info | - | - | 1 | hero numbers deserve a number format |
 | `narrative.color-scheme` | warn | - | - | 4 | a colour scheme Superset doesn't ship draws the default palette unless your deployment registers it |
 | `narrative.filtered-title` | info | - | - | 1 | a filtered chart's title should say what it shows |
 | `narrative.format-consistency` | info | - | - | 2 | one measure, one number format |
+| `narrative.kpi-thresholds` | info | - | - | 14 | a KPI coloured by status states its thresholds in its subtitle or description (colour alone can't say what red means) |
 | `narrative.title-style` | info | - | - | 1 | chart titles should share one casing style |
+| `readability.chart-text` | info/warn | - | - | 16 | axis labels and legends read at >= 12 px and chart titles at >= 14 px (a theme's tokens or ECharts overrides, or dashboard CSS, can set them smaller) |
+| `readability.kpi-text` | info/warn | ✔ | - | 16 | Superset sizes a big number's text by the card's height: the value needs >= 24 px and a subtitle or comparison >= 12 px (5 units with a subtitle, 6 for a trendline KPI's comparison) |
+| `readability.table-text` | info/warn | - | - | 16 | table and pivot cells read at >= 14 px on a laptop, their headers at >= 12 px and rows at >= 24 px (Superset draws cells at 12 px: dashboard.css `.superset-chart-table td, .pivot_table_v_2 td { font-size: 14px; }`) |
 | `size.axis-min-height` | warn | ✔ | - | 1 | axis charts below the audience minimum height flatten and drop labels |
 | `size.grid-fit` | warn | ✔ | ⚡ | 2 | table/pivot heights must fit their data-driven row counts (they grow after authoring) |
 | `size.hbar-window` | warn | ✔ | - | 1 | horizontal bars need ~0.5 units of height per bar |
 | `size.heatmap-geometry` | warn | ✔ | - | 1 | heatmaps need >= 5/12 width (7/12 with many columns) and 6 height |
 | `size.kpi-height` | warn | ✔ | - | 1 | big numbers read best at 2-6 units |
+| `size.markdown-fit` | warn/info | ✔ | - | 11 | a markdown block must be tall enough for its text: Superset cuts off the rest, with no scrollbar on macOS |
 | `size.min-width` | warn/error | - | - | 2 | below 3/12 width a chart is unreadable; KPIs need 2/12 |
 | `size.pie-geometry` | warn | ✔ | - | 1 | pies need >= 5/12 width and 8 height or the ring shrinks and the legend crowds |
-| `size.pivot-window` | warn | ✔ | - | 2 | a pivot's height should show a meaningful share of its row_limit |
+| `size.pivot-window` | warn | ✔ | - | 2 | a pivot's height must hold its header rows, totals row and the body rows its spec fixes (advise --profile counts the rest) |
 | `size.row-harmony` | warn | ✔ | - | 1 | charts sharing a row should share a height (Superset sizes the row to its tallest child) |
-| `size.table-window` | warn | ✔ | - | 1 | a table's height should show a meaningful share of its row_limit |
+| `size.table-chrome` | info | - | - | 10 | a table whose rows all show in its panel draws no page-size picker, pager or search box |
+| `size.table-window` | warn | ✔ | - | 1 | a table's height should show every row its row_limit allows, or one whole page |
 | `standard.classification` | error | - | - | 6 | the dashboard's classification is one the standard lists |
 | `standard.content-locked` | error | - | - | 6 | content a standard locks is in the spec as the standard has it (standards apply writes it; a change goes through the standard's file) |
 | `standard.content-released` | info | - | - | 6 | content a standard has that the author took over (edited or removed): the author's now, and standards apply leaves it alone |
@@ -371,6 +413,66 @@ fails when it drifts.
 | `standard.waiver-expired` | error | - | - | 6 | no waiver naming this dashboard in standards/waivers.yaml has expired (checked by standards check and advise; a deploy warns instead) |
 
 <!-- END rule-table -->
+
+### Waterfalls
+
+A waterfall is a bridge: one total becoming another through steps that add
+up. Five rules hold a spec to that, each from what Superset's Waterfall plugin
+does (`docs/CONTRACTS.md`, "A waterfall"):
+
+- `chart.waterfall-additive` (warn): the plugin adds every step to a running
+  total and draws it as the closing, so an `AVG`, `MIN`, `MAX` or
+  `COUNT_DISTINCT` metric draws a closing that means nothing.
+- `chart.waterfall-order` (info): without `steps`, the plugin orders the bars
+  by the x column, so a categorical bridge reads A to Z. Not for a time column
+  (`time_grain`, or a column the dataset reports temporal) or a numeric one,
+  whose own order is the reading order.
+- `chart.waterfall-colors` (info, or warn per colour): Superset's stock green
+  `#5AC189` is 2.2:1 against the white chart card, under the 3:1 WCAG 2.1
+  (1.4.11) asks of a graphic; the stock red and grey pass. Left stock, any of
+  the three colours is an info finding that names them; a colour the spec
+  sets below 3:1 is a warn. Contrast is the rule's universal part; which
+  colours to use is house style, so it has no fix.
+- `chart.waterfall-steps` (warn): past ~12 bars the step labels drop. Offline
+  it counts `steps`; with `--profile` it probes an unordered x column's values.
+- `chart.waterfall-axis-titles` (info): the plugin puts both axis titles at a
+  fixed distance with no margin control, so a y title can sit under tick labels
+  such as `$3.00M`, and rotated step labels hang over an x title (both seen on
+  4.1.4 and 6.1.0). The unit belongs in the chart's title or number format.
+
+Without `opening`, Superset draws the opening as the first step, rising from
+zero in the increase colour: the plugin's value axis does not hold zero
+(ECharts `scale: true`, no bounds control), and the first bar is what keeps zero
+on it. Drawn as a total row, the opening floats the axis up to the smallest
+total and is cut away (seen on 6.1.0). `opening` draws it as a total anyway,
+on a dashboard whose theme keeps zero on the axis, which `check` verifies on
+the instance; the guideline tells an author both ways.
+
+### Box plots
+
+A box plot shows a distribution per group, which an average hides. Two rules
+hold a spec to a box that means something:
+
+- `chart.box-plot-observations` (warn): a box's quartiles come from its
+  observations, the rows of `distribute_across`. Grouped by a column named as a
+  period (week, month, quarter, year) at that period's grain or coarser, each
+  box holds one observation per period, a month box three over three years.
+  A day column is left out: by name, day of week and day of month look alike.
+- `chart.box-plot-groups` (warn, with `--profile`): past ~20 groups each box
+  thins to a sliver and the labels drop.
+
+`chart.ordinal-order` reads a box plot's groups too: the boxplot step sorts
+them as values, so month names read A to Z. A group column the dataset reports
+numeric or temporal (a month numbered 1 to 12) sorts in its own order, so with
+`--profile` the rule stands down there, for heatmaps and pivots as well.
+
+Superset colours each box by its group label from the colour scheme, a hue
+that encodes nothing; pinning one colour to every group label in
+`dashboard.label_colors` draws the boxes in one (seen on 4.1.4 and 6.1.0). On
+6.1.0 the plugin also shows a "boxplot / outlier" legend no chart option hides;
+a dashboard theme with `{"echartsOptionsOverridesByChartType": {"box_plot":
+{"legend": {"show": false}}}}` hides it (seen on 6.1.0). Both are styling, so
+they are guidance, not rules.
 
 Anything fuzzier than this (reading order beyond KPI-first, grouping
 related metrics, matched granularity across a row, insight-stating titles)
@@ -515,12 +617,19 @@ entirely under `--no-probe`, and never run for `advise` without `--profile`.
   Smoke now compares the rows its query already fetched against the
   configured height and warns on every apply (`~9 leaf rows (~433px) but
   height=8 (320px)`); the data-aware `size.grid-fit` rule catches the same
-  class pre-apply for single-dimension grids. All of it, meaning smoke,
+  class pre-apply from probed row counts (exact for one row dimension, a lower
+  bound for more). All of it, meaning smoke,
   `size.grid-fit`, `size.table-window`, `size.pivot-window`, and the
-  page-length and search-box fills, reads ONE grid model (`grid_header`,
-  `grid_units_for_rows` and `grid_rows_visible` in `chartwright/spec.py`,
-  measured in §17), so the offline critic, the data-aware critic, the fills and
-  the apply-time warning cannot give one chart different verdicts.
+  page-length and search-box fills, reads ONE grid model (`grid_fit`,
+  `grid_header`, `grid_units_for_rows` and `grid_rows_visible` in
+  `chartwright/spec.py`, measured in §17), and asks it one question: does every
+  body row the chart draws fit? They differ only in where the row count comes
+  from: the rows the query returned (smoke), a probe (`size.grid-fit`), the
+  row_limit ceiling (`size.table-window`), or what the spec alone fixes
+  (`size.pivot-window`). A pivot's rows are its distinct row keys
+  (`pivot_rows`), never its records, so the offline critic, the data-aware
+  critic, the fills and the apply-time warning cannot give one chart different
+  verdicts (§15.42).
 - **Chart identity:** no rule may ever autofix a chart `name`: names seed
   uuid5 identity; a rename is a delete+create on the live instance.
 - **`plan`/golden tests:** advise is pure spec-side analysis; compiled bytes
@@ -556,9 +665,11 @@ What actually runs (tests/test_design*.py, test_calibrate.py, test_redesign.py):
   mutations of a mixed-type spec.
 - **Golden dogfood:** `examples/nyc_taxi_operations.json` advises clean at
   `analytical` (its two deliberate exceptions recorded in `design.ignore`)
-  except for the design defaults `--fix` would fill: the file is the spec
-  behind the README screenshot, kept as written, and the test also holds it
-  to zero findings once `--fix` writes them.
+  except for the design defaults `--fix` would fill and, since brain 16, its
+  four KPI cards, whose subtitles draw at 11 px at 4 units (`--fix` raises
+  them to 5): the file is the spec behind the README screenshot, kept as
+  written, and the test also holds it to zero findings once `--fix` writes them.
+- **Readable type** (`test_readability.py`): see §17, "Type sizes".
 - **Design defaults** (`test_design_defaults.py`): see §16.
 - **Contract tests:** the chart-type taxonomy exactly covers `CHART_TYPES`
   (a 15th type fails CI until classified); one sketch parse per holder
@@ -733,6 +844,50 @@ reversible and none is load-bearing enough to block on:
       `standards verify-visible` opens the deployed dashboard in a headless
       browser and fails when a locked line is hidden. The browser is an
       optional extra, never a dependency.
+18. **Big-number colour rules** (2026-10-05, design brain 14):
+    - **Overlapping KPI bands warn; a lone KPI band doesn't.** Superset paints the
+      number with the last matching rule, so where bands overlap the colour depends
+      on rule order, as on a pivot (`chart.format-bands`). One red band outside a
+      tolerance is exception highlighting (IBCS), not decoration, so the lone-band
+      nudge stays on pivots.
+    - **`narrative.kpi-thresholds` is info.** Whether a subtitle or description
+      "states" a threshold is read from the numbers in it ('2%' is 2 and 0.02,
+      '1.2M' is 1.2 and 1,200,000), a heuristic, so it stays a nudge (decision 11).
+    - **`chart.color-contrast` is warn.** A contrast ratio is exact: 3:1 for a big
+      number or a trendline (large text and graphics), 4.5:1 for table and pivot
+      text, against the white card of Superset's default theme. A dark theme can
+      fail colours the rule passes; the brain can't see the theme.
+    - **A value of exactly 0 is a smoke warning, not a spec error.** 4.1.4 to 6.1.0
+      never colour 0 (`BigNumberViz.tsx`), but Superset's development branch
+      (read 2026-10-05) does, so refusing an `= 0` rule would block a later
+      release. Apply's data check names it when the number is 0.
+19. **Readable type is a Brain rule, and CSS is advised, never filled**
+    (2026-10-05; the author approved making readability a rule, since it applies
+    to every dashboard rather than to one house style). §17, "Type sizes":
+    - **Floors from evidence, the same for every audience**: the design systems'
+      type scales and the reading research behind them, measured against what
+      Superset draws. They are parameters, so `design.yaml` and a standard tune
+      or lock them; a wall display read from across a room needs its own.
+    - **Who set the size decides the severity.** The dashboard's own CSS or
+      theme below a floor is a warn; Superset's default below it is an info,
+      since nothing in the spec chose it.
+    - **No fill writes CSS.** A fill would write text Superset's markup has to
+      match on every release (the cascade differs: a rule that reaches the
+      cells at 4.1.4 loses to 6.x's own), into a free-text field that authors
+      and a standard's marked blocks share, with no per-declaration record for
+      §16's ownership rule; and larger text makes rows taller than the grid
+      model the brain's own page fills count. Fonts belong to Superset's theme
+      tokens on 6.x and CSS is the fallback (the theme-as-code decision, which
+      withdrew themes as code), and a dashboard's type is set once, so the
+      finding names the selector or token and the author or the team's standard
+      writes it.
+    - **A big number's text is a height repair.** Superset sizes it by the
+      card's height, so `readability.kpi-text` raises the height (an info with a
+      fix, as `layout.markdown-height`), never past `size.kpi-height`'s 6, and
+      raises the KPIs beside it to the same height: one band, one height.
+    - **The theme is read only where it resolves.** Its tokens and ECharts
+      overrides come from the theme API under `advise --profile` and `check`;
+      offline, a finding says the named theme went unread.
 
 ## 15. Implementation deviations (recorded, not silent)
 
@@ -1049,6 +1204,49 @@ onwards):
     spec, so nothing shows as drift. `standards check --superset-version`
     previews the holding offline.
 
+Recorded in brain 8 (the airline showcase's height findings):
+
+42. **One height question for tables and pivots, everywhere.** The model was
+    shared since §15.11, but the question was not, and the showcase build hit
+    all three gaps on Superset 6.1.0:
+    - `size.table-window` passed a table when half its row_limit showed
+      (`table_visible_ratio` 0.5, §15.12), while smoke warns when any row the
+      query returned hides. A 25-row table at 13 units passed advise, then
+      smoke asked for ~22. The ratio is now 1 for every audience, and the
+      rule's target is every row whatever the ratio, so advise gives the
+      number smoke gives once the data fills row_limit. It stays a knob for
+      tables that rarely reach their row_limit. This tightens §15.12 rather
+      than reversing it: hidden rows are the defect both rules exist for.
+    - `size.pivot-window` read row_limit as the pivot's rows. row_limit caps
+      the query's records, which are rows x columns, so a 5-cause by month
+      pivot with row_limit 1000 was told it showed "~0 of 1000 rows" and to
+      grow to 331 units. A pivot draws a row per distinct row key
+      (`pivot_rows`, from PivotData in 6.1.0's react-pivottable). Offline the
+      rule now checks only what the spec fixes: the card frame, the header
+      rows, the totals row and the first body row, and it reports without a
+      fix, because a height that still hides rows would only move the warning
+      to smoke. It fixes a pivot whose rows the spec fixes outright (no row
+      dimension). Under `--profile`, `size.grid-fit` counts each row
+      dimension with the bounded probes of §8 and owns the chart, and
+      `size.table-window` likewise leaves a probed table to it, so one advise
+      run never gives one chart two height targets.
+    - Smoke's own pivot estimate was already right after §17 (a 5-row pivot
+      by month with a totals row needs 9 units, and it says so). The "5.7
+      header units" the old message printed was the card frame (2.55), three
+      header rows (1.98), the totals row (0.72) and the scrollbar allowance
+      (0.45); 6.1.0's styles give the same body row as the measurement (12 px
+      text at line-height 1.4, 4 px padding each side and a 1 px rule:
+      25.8 px). Messages now name those parts.
+
+    The pivot's structure comes from 6.1.0's source, not new measurements:
+    `transpose` swaps the dimensions; metrics laid out as rows multiply the
+    rows; `row_subtotals` adds a row per distinct key prefix; a pivot without
+    row dimensions draws only its totals row. Smoke counted `rows` for all of
+    them, so a transposed pivot was sized by the wrong dimension. A table's
+    `show_totals` Summary row now counts as one body row, and smoke queries a
+    table or pivot with the compiler's row_limit default, not 1,000, so it
+    sees every row the chart draws.
+
 ## 16. Design defaults (fills)
 
 Some display fields have one sensible value the spec can work out on its
@@ -1070,20 +1268,33 @@ thresholds; those marked judgement are usability choices, not pixel facts.
 | rule | field | fills | only when |
 |---|---|---|---|
 | `default.x-label-format` | `x_label_format` | `%b %Y` at P1M, `%Y` at P1Y, `%d %b` at P1D or P1W | a timeseries chart (line, bar, area, scatter); for day labels, the chart's `time_range` spans at most `day_label_max_span_days` (365), since `%d %b` drops the year, and a 366-day span without a 29 February starts and ends on the same day and month. An omitted grain is read as its P1D default. Not on a categorical bar or a mixed chart, whose x axis may not be time |
-| `default.compare-suffix` | `compare_suffix` | `vs previous month`, `vs 12 months earlier` | a trendline KPI with `compare_lag`, at a grain with a plain name (hour, day, week, month, quarter, year) |
+| `default.compare-suffix` | `compare_suffix` | `vs previous month`, `vs 12 months earlier`; `vs prior 12 months` when a rolling sum, mean or std over 12 steps compares with the 12 before (`rolling_periods` equal to `compare_lag`) | a trendline KPI with `compare_lag`, at a grain with a plain name (hour, day, week, month, quarter, year) |
+| `default.date-tile` | `date_format` | `%a %-d %b %Y` (Sat 3 Oct 2026) | a `big_number_total` whose metric is `MIN` or `MAX` of a column the dataset reports as temporal, so only with column types (`--profile`), and no `number_format` written. Superset's smart date shows such a number as its day alone (`Tue 31`) |
 | `default.count-format` | `number_format` | `,.0f` | every metric the chart shows is `COUNT` or `COUNT_DISTINCT`, on a chart with one `number_format` (not a table or a mixed chart); not with `contribution`, a 100 % stack, or a pivot aggregation that leaves fractions |
-| `default.cell-bars` | `cell_bars` | `false` | a raw-mode table with a column named `id`, `code`, `year`, `zip`, `zipcode` or `postcode` as a whole trailing token (`order_id`, `fiscal_year`; not `uuid` or `zip_count`). With column types (`--profile`), only a numeric one counts. Aggregate tables draw bars on metrics only, so they never need it |
+| `default.cell-bars` | `cell_bars` | `false` | a raw-mode table with a column named `id`, `code`, `year`, `zip`, `zipcode` or `postcode` as a whole trailing token (`order_id`, `fiscal_year`; not `uuid` or `zip_count`). With column types (`--profile`), only a numeric one counts. Aggregate tables draw bars on metrics only, so they never need it. Not while `color_by_sign` or `absolute_bars` asks for bars to draw on: which columns keep them is the author's call, and a list (`cell_bars: ["amount"]`) keeps bars on the measures and off the identifiers |
 | `default.page-length` | `page_length` | the whole rows that fit beside the page-size bar and the pager | a table with an explicit `row_limit` larger than the rows that fit on one page, and a page of at least `page_min_rows` (3, judgement). The one grid model `size.table-window` reads, so the fill can never make that rule ask for more height |
-| `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, judgement), when the bar the box sits in hides no row: a paged table already draws it, and a table on one page must still fit every row beside it |
+| `default.search-box` | `search_box` | `true` | a raw-mode table with an explicit `row_limit` above `search_min_rows` (20, judgement) that outgrows its panel and pages (`page_length` above 0 and below `row_limit`), so the box sits in the bar the page-size picker already draws and hides no row. Never on a table whose rows all show (brain 10; brain 5 to 9 also filled one there when every row still fit beside it) |
 | `default.single-series-legend` | `show_legend` | `false` | a timeseries chart or categorical bar with one metric, no groupby, no series limit, no goal lines and no legend placement written, whose shown title or `y_axis_title` contains the metric's label, and that label is at least 3 characters long. Never a heatmap, whose legend is the colour scale |
-| `default.value-labels` | `show_value` | `true` | a categorical bar with one metric, no groupby, no `contribution`, an explicit `row_limit` of at most `value_label_max_bars` (12). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17) |
+| `default.value-labels` | `show_value` | `true` | a categorical bar with no groupby, no `contribution` and no stacked metrics, an explicit `row_limit`, and at most `value_label_max_bars` (12) bars, counting `row_limit` × metrics for grouped bars (brain 17). A vertical bar also needs a width of at least `value_label_min_width` (6/12); a horizontal bar needs the height to space its labels, 4.5 units plus 0.4125 a bar (§17) |
+| `default.heatmap-label-room` | `left_margin` | `16` | every heatmap (brain 12). With no margin, a heatmap's grid starts at the card's edge, and Superset 6.1.0 draws the longest y label wider than the room the grid gave it, cutting off its first letters: seen live on `Trucks and Buses` (95 px) and `Australian Gift Network, Co` (150 px). 8 px cleared the first and 16 px both; 4.1.4 and 5.0.0 drew them whole and only gain 16 px of space. A theme can't fix it, since 6.1.0 renders the heatmap without its chart type and no per-type override reaches it |
 
 `narrative.big-number-format` stands down where `default.count-format`
 offers the same remedy with a fix: one remedy, one finding.
 
+A table whose rows all show in its panel gets no DataTables chrome from the
+brain: no page-size picker, which any `page_length` above 0 draws even on one
+page (`hasPagination`, `plugin-chart-table/src/DataTable/DataTable.tsx:123` at
+4.1.4 and 5.0.0, `:173` at 6.1.0), no pager and no search box. The two table
+fills read the same grid model, so neither adds one there, and a fill an
+earlier brain left is removed by the next `--fix`. `size.table-chrome` (info,
+no fix) names an author's `page_length` or `search_box` on such a table;
+"rows" there is `row_limit`, the most the table can show, so a table with no
+`row_limit` is left alone.
+
 The decision record's suggestion-only list stays without fills: category
 sort (`chart.ordinal-order` reports ordinal names), y-axis truncation,
-`compare_lag`, series limits (`chart.series-limit` reports them with
+`compare_lag`, a trendline's rolling window (`data.rolling-window-span` reports
+a time range too short for it), series limits (`chart.series-limit` reports them with
 `--profile`), `show_totals` (Superset's totals row sums every group, not
 the rows shown), and number or currency formats guessed from names. The
 brief tells an author to set these only on request.
@@ -1341,21 +1552,289 @@ release, with no overlapping labels. ECharts thins the ticks to fit.
 a 29 February starts and ends on the same day and month, so `%d %b` could name
 two dates. Superset's `Last year` spans 365 days and still takes the fill.
 
+### Markdown blocks
+
+Measured on 2026-10-05 the same way, by `tools/record_markdown_fit.py`, in windows
+1600 and 1440 px wide, on each release:
+
+- 17 texts at 12, 8, 6, 4 and 3 twelfths, and the longest beside the filter bar too;
+- the 14 markdown blocks of a sales-review dashboard under its own CSS (`STYLED` in
+  the tool: a title, section captions with colour keys, a list, notes in sections,
+  a footer);
+- every element's computed style with no CSS, with each property the estimate reads
+  set on each element from `.dashboard-markdown <element>`, and under that
+  dashboard's CSS;
+- in the 1440 px window with Windows-style scrollbars on, each text and block at the
+  height the fix writes and at heights that cut it off.
+
+The fixture is `tests/fixtures/markdown_fit/measurements.json`.
+
+Superset draws a markdown block's text in a holder with 16 px of padding on every
+side. What doesn't fit scrolls inside the holder (`overflow-y: auto`). macOS draws
+no scrollbar there until the reader scrolls, so the text stops mid-line with no
+sign that more follows; Windows draws a scrollbar. A block is never drawn shorter
+than 40 px, so heights under 1 unit draw as 1. A header row, a sub-tab and a footer
+row wrap text exactly as wide as layout rows do.
+
+| | 4.1.4 and 5.0.0 | 6.1.0 |
+|---|---|---|
+| paragraph | 14 px Inter, 22 px lines (1.5715), 8 px below | the same |
+| `#` | 28 px, 39.2 px line (1.4), 12 px above and below | the same |
+| `##` | 21 px, 29.4 px line, 12 px above, 8 below | 20 px, 28 px line |
+| `###` to `#####` | 16 px, 22.4 px line, 8 px above, 4 below | the same |
+| `######` | 12 px, 16.8 px line, 8 px above, 4 below | the same |
+| list | indented 40 px, 9.5 px below | 14 px above and below |
+| table row | 22 px | 24 px, 2 px apart |
+| block quote | 17.5 px text on 27.5 px lines, padded 19 px, 19 px below | 14 px text, inset 40 px each side, 14 px above and below |
+| code block | 18.2 px lines, padded 20 px, 9.5 px below | 22 px lines, 14 px above and below |
+| grid | the window less 64 px; 260 px less beside the filter bar | 228 px less beside it |
+
+So a strip pays 32 px of padding plus its line's margins before its text: a line of
+text needs 62 px (1.6 units), `###` 66 px (1.8), `##` 81.4 px (2.2; 80 px on 6.1.0)
+and `#` 95.2 px (2.4). That is the "about 60 px of chrome" that cut strips under 2
+units off, and `size.markdown-fit` counts it with everything else.
+
+**The dashboard's CSS.** Every `.dashboard-markdown <element>` rule beat Superset's
+own styles on every release: a font size, a line height, margins and padding set on
+each element all took. The exceptions are an h6's font size and the weight of h4 to
+h6, which the markdown component sets inside its own class (`Markdown.jsx:92-104` at
+4.1.4 and 5.0.0, `Markdown/Markdown.tsx:112-124` at 6.1.0); every release kept a
+12 px h6. Superset's line heights are factors (1.4 for headings, 1.5715 for the
+body), so a font size the CSS sets brings its own line height: a 17 px `####`
+draws 23.8 px lines.
+
+The estimate reads the CSS in the spec. It applies rules on `.dashboard-markdown`
+and its elements, with descendant, child and sibling combinators (`h4 + p`) and
+`:first-child` and `:last-child`, in cascade order: `!important`, then specificity,
+then source order, over Superset's own styles. It reads font sizes, line heights,
+weights, letter and word spacing, margins, padding, borders and a table's border
+spacing, in px, em, rem or a percentage. The styles it computed matched every
+element's computed style on every release, with no CSS, with every property set
+on every element, and under the styled dashboard's CSS: 570 elements in all.
+
+What it doesn't read that could size markdown, the finding names: a font family
+other than Inter or a monospace font, attribute selectors and pseudo-elements
+(colour keys drawn by `[itemprop]::before` add 18 px each to a line in the styled
+dashboard), rules inside `@media`, a value in `var()` or `calc()`, the block's own
+padding, and a rule with no class, such as `p { margin: 0 }`, whose order against
+Superset's own element rules the spec can't show.
+
+A line is as tall as the inline text on it needs (CSS 2.1, 10.8). Chromium draws a
+line holding smaller inline text, such as an `<em>` set smaller than its paragraph,
+up to a px taller than that arithmetic gives; the low bound takes the arithmetic,
+the high one a px more.
+
+**The window.** The rule assumes a window 1440 px wide, a common 13-inch laptop's
+screen; its grid is 1376 px wide. A wider window wraps fewer lines, so a height that
+fits there fits in every wider window. The styled dashboard's notes needed 583 to
+626 px in a 1600 px window and 626 to 636 px at 1440.
+
+**The estimate.** `chartwright/design/markdown_fit.py` parses the markdown into the
+elements react-markdown draws, computes each one's style, wraps each line word by
+word with Inter's measured character widths, and stacks the blocks with CSS's
+collapsing margins. At each release's own styles it matched 582 of the 624
+measured heights within 1.5 px. The rest are long texts, where the shared character
+table (the widest of each character at any release; 4.1.4 ships Inter 3, the others
+Inter 4) wraps a line or a few more than a release does, or now and then one fewer.
+Two bounds come out:
+
+- The low bound takes the more compact release, the widest grid and characters 3%
+  narrower. It never exceeded a measured height: of 208 (90 texts and 14 styled
+  blocks in each window) it matched 188 within a px, and undershot the rest by a
+  line or a few, at most 3.5% on the long text at 3/12 beside the filter bar.
+- The high bound takes the taller release, characters 1% wider, and two 17 px
+  scrollbars: the page's own, which narrows the grid on Windows, and one in the
+  block. It never fell short: it matched 170 of the 208 within a px, and at 6/12
+  and wider, without the filter bar, allowed at most 44 px in the 1600 px window
+  and 110 px (5.7%) in the 1440 px one. Narrow blocks of long text cost the most,
+  up to 13% at 3/12.
+
+The second scrollbar is there because of one render. A block that overflows while
+it loads (before its web font arrives, say) draws a scrollbar, and the narrower
+text can need the extra line that keeps it there: on 5.0.0 a two-line text whose
+first line came within 1% of the edge kept a scrollbar and a cut-off third line at
+the height it needed without one. At the height the high bound gives, no block
+scrolled on any release.
+
+`size.markdown-fit` warns when the low bound's text runs 8 px (a grid row) or more
+past the bottom edge, so letters are cut on every release. A block whose last line
+only touches the edge, or whose padding doesn't fit, gets an info: it scrolls a few
+px, and Windows draws a scrollbar in it. A block under half a px over doesn't
+scroll (a scroll height is whole px): the styled dashboard's footer, one 11.5 px
+`#####` line, takes 48.1 px and fits its 48. `--fix` raises the block to the high bound, and
+`layout.markdown-height` shrinks a one-line block to the height its line takes on
+every release instead of a flat 2 units, which cut a `#` heading's padding off.
+
+The estimate covers the releases the spec can go to: a field only 6.0.0 or later
+takes, such as a theme, leaves out 4.1.4 and 5.0.0. Then a horizontal filter bar
+sits across the top, as 6.1.0 draws it; on 4.1.4 and 5.0.0 it needs a feature flag
+and is drawn on the left without it, so there the bar is bounded both ways.
+
+In the 1440 px window, the styled dashboard's blocks at heights that cut them off
+scrolled on every release: the notes 26 to 36 px over at 15 units, the list 21 to
+31 px over at 13, and the captions 8 to 28 px over at 2 to 2.8 units. The rule
+reports each. It calls the notes and two three-line captions cut off, and the rest
+scrolling: only their padding or the edge of their last line is past the bottom,
+or, for the list, letters are cut on some releases only. The footer, exactly full,
+and the title fit, and it leaves them alone.
+
+### Type sizes
+
+Measured on 2026-10-05 on 4.1.4, 5.0.0 and 6.1.0, each with the example data and
+its default theme, in headless Chromium at a 1440 × 900 window (a laptop) and a
+device scale of 1. `tools/record_readability_measurements.py` builds a table, a
+pivot, a big number and a line chart under six stylesheets, and big numbers at
+every height from 2 to 10 units, and reads what the browser computed: each
+cell's font size and each row's height, the chart titles, each big number's
+lines, and the font ECharts set for every label it drew on its canvas (the tool
+wraps the canvas's `fillText`, since no DOM element holds that text). The
+fixture is `tests/fixtures/readability/measurements.json`, which
+`tests/test_readability.py` holds the rules' model to, and the live CI job
+measures again on each release (`--check`).
+
+What Superset draws, with no CSS and no theme:
+
+| text | 4.1.4 and 5.0.0 | 6.1.0 | set by |
+|---|---|---|---|
+| table cells | 12 px; rows 27.8 px | 12 px; rows 29.4 px | `.table-condensed` (`superset.less:178-180`); the table plugin's `table.table-condensed`, `theme.fontSizeSM` (`Styles.tsx:74-77`) |
+| table headers | 12 px, weight 600 | 12 px, weight 500 | the same rules |
+| pivot cells and headers | 12 px; rows 25.8 px | the same | `table.pvtTable` and its header cells (`react-pivottable/Styles`) |
+| axis labels, legends | 12 px, in the browser's own sans-serif | 12 px Inter | zrender's default size; Superset sets none, and 6.1.0 passes the theme's font family |
+| chart titles | 16 px | 16 px | `theme.typography.sizes.l`; `theme.fontSizeLG` (`SliceHeader/index.tsx`) |
+| big numbers | by the card's height (below) | the same | `BigNumberViz` |
+
+The body text of Superset's own pages is 14 px (`@font-size-base`, antd's
+`fontSize`), so its tables are smaller than the page around them. Inter's
+x-height measured 0.546 em on every release.
+
+Big numbers. `BigNumberViz` fits each line into a share of the card's height
+(chartwright pins 0.4 for the value and 0.15 for the line under it), and a
+trendline takes 30% of the card first. The smallest any release drew, on cards
+half the page wide:
+
+| units | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|
+| big number: value | 6 | 18 | 31 | 43 | 57 | 70 | 84 | 97 | 109 |
+| big number: subtitle | 2 | 6 | 11 | 17 | 22 | 26 | 31 | 36 | 41 |
+| trendline: value | 5 | 12 | 22 | 31 | 39 | 50 | 59 | 68 | 76 |
+| trendline: comparison, subtitle | 2 | 4 | 8 | 11 | 14 | 19 | 22 | 26 | 29 |
+
+At the analytical preset's 4 units a trendline card draws "+75.0% vs previous
+month" at 8 px; at the operational preset's 3 units, at 4 px. A narrow card caps
+the size by the text's width as well: a 2/12 card drew the same comparison at
+13 px at any height from 6 units.
+
+**The floors.** WCAG sets no minimum text size (it asks that text resize to 200%,
+1.4.4, and sets contrast, 1.4.3, with "large text" at 18 pt or 14 pt bold), and
+Few's dashboard guidance asks for legible text without a pixel figure. The floors
+come from the type scales design systems use for data, and from reading research:
+
+| text | floor | evidence |
+|---|---|---|
+| table and pivot cells | 14 px | IBM Carbon's data table sets row text in `body-compact-01` and headers in `heading-compact-01`, both 14 px; Material 3's `body-medium` is 14 px; Superset's own body text is 14 px |
+| table headers, axis labels, legends, a big number's subtitle or comparison | 12 px | the smallest size Carbon sets for text a reader must read (`label-01`, `helper-text-01`, `legal-01`); Material's `label-medium` and `body-small`; the size ECharts and Superset already draw |
+| chart titles | 14 px | Carbon's component heading (`heading-compact-01`) and Material's `title-small` |
+| a big number's value | 24 px | WCAG's "large text", 18 pt; Material's `headline-small` |
+| a table or pivot row | 24 px | Carbon's extra-small row, the densest of its five (24 to 64 px) |
+
+Reading distance: Legge and Bigelow ("Does print size matter for reading?",
+Journal of Vision 11(5):8, 2011) put the critical print size, below which reading
+slows, at 0.15° to 0.3° of x-height across readers, 0.2° by consensus, and found
+online news text averaging 0.21° at 40 cm. A 13-inch laptop showing 1440 px
+across 286 mm draws a CSS pixel at 0.2 mm, so Inter's x-height subtends:
+
+| size | at 40 cm | at 50 cm | stays above 0.2° to | stays above 0.15° to |
+|---|---|---|---|---|
+| 11 px | 0.171° | 0.137° | 34 cm | 46 cm |
+| 12 px | 0.187° | 0.149° | 37 cm | 50 cm |
+| 14 px | 0.218° | 0.174° | 44 cm | 58 cm |
+| 16 px | 0.249° | 0.199° | 50 cm | 66 cm |
+
+Text read row by row, as a table's is, wants the consensus size at a laptop's
+distance: 14 px holds it to 44 cm, 12 px only to 37 cm. A label read at a glance
+needs less, but 11 px drops below every reader's critical size past 46 cm, and
+12 px holds the bottom of the range to 50 cm. The floors are the same for every
+audience; a dashboard on a wall, read from across a room, needs its own
+(`design.yaml` or a standard).
+
+Screenshots shown smaller shrink every size with them. A 1440 px capture shown
+900 px wide (the scale of a README) draws 11 px labels at 7 px, 0.109° at 40 cm,
+half the critical size. Capture a README image at the width it is shown, or
+crop it, rather than scaling a whole page down.
+
+**The dashboard's CSS.** What each stylesheet measured shows the cascade the rules
+read:
+
+| CSS | 4.1.4 and 5.0.0 | 6.1.0 |
+|---|---|---|
+| `.superset-chart-table td { font-size: 14px }` | 14 px cells, 30.6 px rows | 14 px cells, 32.6 px rows unwrapped; long text wraps in narrow columns |
+| `.superset-chart-table table { font-size: 15px }` | 15 px: (0,1,1) beats `.table-condensed` (0,1,0) | 12 px: loses to the plugin's `table.table-condensed` in its styled wrapper (0,2,1) |
+| `.table-condensed` or `.superset-chart-table table.table-condensed` (a tie) | the dashboard's CSS wins | the dashboard's CSS wins |
+| `.superset-chart-table { font-size: 16px }` | no effect: the table sets its own size | no effect |
+| `.pivot_table_v_2 td { font-size: 14px }` | 14 px cells, 28.6 px rows | the same |
+| `.pivot_table_v_2 th { font-size: 13px }` | 12 px: the pivot's own header rule (0,2,4) wins | the same |
+| line height and padding on cells | Bootstrap's cell rules (0,1,3) win | a line height takes; the plugin's padding (0,2,2) wins |
+| `.header-title { font-size: 13px }` | 13 px titles | the same |
+| `.subheader-line { font-size: 13px !important }` | 13 px, over the inline size | the same |
+
+A pivot's chart class is `.pivot_table_v_2`, lodash's snake case of
+`pivot_table_v2`; a rule naming `.pivot_table_v2` matches nothing. ECharts draws
+on a canvas, so no CSS reaches an axis label or a legend; a 6.1 theme's
+`echartsOptionsOverrides` does, and 6.0.x ignores it.
+
+What changed:
+
+- `readability.table-text`, `readability.chart-text` and `readability.kpi-text`
+  (design brain 16) read the dashboard's CSS, and the named theme's tokens and
+  ECharts overrides when `advise --profile` or `check` resolved it, and report
+  text under its floor: a warn when the dashboard set it, an info when it is
+  Superset's default. Every dashboard with a table or pivot gets the info for
+  its 12 px cells, naming `.superset-chart-table td, .pivot_table_v_2 td`.
+- `readability.kpi-text` raises a big number to the height its text needs (5
+  units with a subtitle, 6 for a trendline's comparison), with the big numbers
+  beside it, never past `size.kpi-height`'s 6.
+- No fill writes CSS (§14.19).
+
 ### Not measured
 
 - Other viewports and themes. The constants are pixel sizes, so a
   deployment with a larger font or denser theme needs its own measurement.
 - Windows scrollbars. The 17 px allowance comes from the platform default,
-  not from a rendered measurement.
-- Pivot subtotal rows (`row_subtotals`), transposed pivots, metrics laid out
-  as rows, and wrapped header text. They draw extra rows the model does not
-  count.
+  not from a rendered measurement. 6.1.0 styles the pivot's own scrollbar at
+  8 px (`PivotTableChart.tsx`), so the allowance is generous there.
+- Pivot subtotal rows (`row_subtotals`), transposed pivots and metrics laid
+  out as rows. The model counts their rows and header rows from 6.1.0's
+  source (§15.42) at the measured row heights, which were not checked on a
+  rendered chart.
+- A table's Summary row (`show_totals`), counted as one body row from 6.1.0's
+  source, and wrapped header text, which the model does not count.
 - Wide raw tables that scroll sideways. The model reserves no scrollbar room
   for tables.
 - Vertical bars at 5/12, and labels longer than six characters.
 - The other thresholds this page names: axis heights, pie and heatmap
   geometry, the horizontal-bar height per bar in `size.hbar-window`, and
   `vbar_max_categories`.
+- Markdown under a theme, which can change Superset's own text sizes and spacing
+  (the finding names it), CSS the estimate doesn't read (named too), other window
+  widths, or a browser that blocks web fonts and falls back to Helvetica or Arial.
+  Characters outside the measured tables (ASCII, Latin-1, common punctuation and
+  symbols) take a narrow width in the low bound and a wide one in the high: 0.3 and
+  0.8 em, or 0.9 and 1 em for East Asian wide ones. Images and embeds add a height
+  the text can't tell, so a block holding one gets no fix.
+- A theme's type on a rendered dashboard. The sandboxes hold only Superset's
+  system themes, so what a theme's `fontSizeSM`, `fontSizeLG`, compact
+  algorithm and ECharts overrides draw comes from source (antd's font scale,
+  `Theme.tsx`, `Echart.tsx`), not from a measurement.
+- Table heights under larger type. The grid model above counts Superset's
+  12 px rows; 14 px cells draw rows 3% taller on 4.1.4 and 5.0.0 and 11% taller
+  on 6.1.0, and wrap long text in narrow columns, so the table-height rules and
+  the page fill can count a row the panel hides on a dashboard that enlarges
+  its tables: a 14-unit table under 14 px cells, filled with a 12-row page,
+  showed 11 rows on 6.1.0. `readability.table-text` says so when it asks for
+  the change; the fix is the grid model reading the row height
+  `readability._row` computes from the dashboard's CSS.
+- Markdown text. The readability rules don't judge a markdown block's type.
+- Type on a wall display, and in fonts other than Inter.
 
 `search_min_rows` (20) and `page_min_rows` (3) are usability judgement, not
 pixel facts, and stay so. On page sizes, Nielsen recommends that "it's usually

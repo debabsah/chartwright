@@ -15,7 +15,9 @@ Each Superset dashboard is defined by a spec file listing its charts, filters, l
 | Rebuild your dashboards on a new Superset version from the same specs | Checking and repairing charts by hand when an upgrade leaves them blank in the editor ([#32725](https://github.com/apache/superset/discussions/32725)) | [SUPERSET-VERSIONS.md](docs/SUPERSET-VERSIONS.md) |
 | Create dashboards from code without reverse-engineering Superset's JSON | Working out the undocumented layout JSON, `position_json` ([#32970](https://github.com/apache/superset/discussions/32970)) | [DASHBOARDS-FROM-CODE.md](docs/DASHBOARDS-FROM-CODE.md) |
 
-> [VISUAL: The dashboard the example spec below builds: Revenue by Month, one line per region, on the left two-thirds; Revenue and Orders stacked on the right; the Order date filter in the filter bar. Format: screenshot, light and dark variants. Caption: "Built from orders.json below with `chartwright apply`."]
+![Sundown, a grid-siting dashboard: KPI cards with coloured changes over a siting table whose rows are tinted by status](docs/images/sundown-hero.png)
+
+*Sundown, a six-tab dashboard built from [one spec](examples/sundown/sundown.json) with `chartwright apply`. [See every tab](examples/sundown/README.md).*
 
 ## Install
 
@@ -66,13 +68,17 @@ chartwright apply orders.json --profile dev     # checks every reference, builds
 
 The `sketch` draws the layout: a run of the same letter is one chart, and its length sets the chart's width, so Revenue by Month fills two-thirds of the row with Revenue and Orders stacked beside it.
 
+![The Sundown dashboard in five colour palettes, side by side](docs/images/sundown-palettes.png)
+
+*One dashboard in five palettes. Its colours are spec fields (the dashboard CSS, label colours and colour rules), so a new palette is a change to one file that you review like any other. The Superset theme the spec names is created outside Chartwright.*
+
 ## Requirements and limits
 
 - **Sign-in:** a Superset user with database or LDAP login, or Preset API tokens; Chartwright doesn't sign in through SSO or OAuth. On an instance that uses SSO, ask your admin for an account that has a Superset password. All testing uses the Admin role.
 - **Datasets:** datasets and database connections stay in Superset; create them on each instance first. A spec names each dataset by its database connection and table, so where connection names differ between instances, keep one copy of the spec per instance.
 - **Ownership:** Chartwright changes only dashboards it built or that you adopted, so give each team its own slug prefix. To manage a UI-made dashboard where it is, run `chartwright adopt`; it names every setting the first apply will reset, before you apply.
 - **Edits:** each `apply` writes the spec over the dashboard and undoes edits made in the UI, and takes a chart added there off the dashboard (the chart itself stays in Superset's Charts list); make lasting changes, and add new charts, in the spec. To keep chart heights you set by dragging in Superset, run `chartwright absorb` first; it copies them into the spec.
-- **Status:** version 0.5.0, beta. CI builds on real Superset 4.1.4, 5.0.0 and 6.1.0 on every pull request ([how it's tested](docs/VERIFICATION.md)).
+- **Status:** version 0.6.0, beta. CI builds on real Superset 4.1.4, 5.0.0 and 6.1.0 on every pull request ([how it's tested](docs/VERIFICATION.md)).
 
 Every limit, with what to do instead: [Limits](docs/LIMITS.md).
 

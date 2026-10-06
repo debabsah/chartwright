@@ -70,7 +70,7 @@ _UNIT_AGGREGATES = {"Sum", "Average", "Median", "Minimum", "Maximum", "First", "
 NUMBER_FORMAT_TYPES = frozenset({
     "big_number_total", "big_number_trend", "timeseries_line", "timeseries_bar",
     "timeseries_area", "timeseries_scatter", "bar", "pie", "pivot_table", "heatmap", "funnel",
-    "treemap"})
+    "treemap", "waterfall", "box_plot"})
 
 _MARK = re.compile(r"/\* cw:(std|end) ([A-Za-z0-9][A-Za-z0-9_-]*)(?: ([0-9a-f]{12}))? \*/")
 
@@ -387,12 +387,14 @@ def _locked_by(std, slot: str, index: int) -> str | None:
 def chart_number_format(std, chart) -> tuple[str, int] | None:
     """(format, index of the innermost layer it comes from) for a chart, or None: the
     chart must have one number_format, every metric it shows must have the same format
-    in the standard, and it must not plot shares (contribution, a 100 % stack) or a pivot
-    aggregation that changes the unit."""
+    in the standard, and it must not plot shares (contribution, a 100 % stack), a pivot
+    aggregation that changes the unit, or a big number as a date (date_format)."""
     if chart.type not in NUMBER_FORMAT_TYPES:
         return None
     if getattr(chart, "contribution", None) or getattr(chart, "stack", None) == "expand":
         return None
+    if getattr(chart, "date_format", None):
+        return None  # a big number shown as a date takes no number format
     if chart.type == "pivot_table" and chart.aggregate_function not in _UNIT_AGGREGATES:
         return None
     merged: dict[str, tuple[str, int]] = {}

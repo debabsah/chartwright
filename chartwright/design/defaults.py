@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..spec import (DEFAULT_TIME_GRAIN, grid_rows_visible, metric_label, parse_metric,
-                    table_header_units)
+                    set_value, table_header_units)
 from .model import KPI_TYPES, TIMESERIES_TYPES, Finding, RuleContext, rule
 from .rules import _span_days
 
@@ -135,7 +135,7 @@ def _findings(ctx: RuleContext, fill: Fill):
 
 
 def _fill(rule_id: str, field: str, types, doc: str, *, superset, superset_text: str,
-          override: str):
+          override: str, since: str = "5"):
     def deco(decide):
         f = Fill(rule_id, field, frozenset(types), decide, superset, superset_text, override)
         FILLS[rule_id] = f
@@ -143,7 +143,7 @@ def _fill(rule_id: str, field: str, types, doc: str, *, superset, superset_text:
         def fn(ctx: RuleContext):
             yield from _findings(ctx, f)
 
-        rule(rule_id, "info", doc, fixable=True, since="5")(fn)
+        rule(rule_id, "info", doc, fixable=True, since=since)(fn)
         return decide
     return deco
 
@@ -220,7 +220,8 @@ _UNITS = {"PT1H": "hour", "P1D": "day", "P1W": "week", "P1M": "month",
 
 
 @_fill("default.compare-suffix", "compare_suffix", {"big_number_trend"},
-       "a trendline KPI's change says what it compares against ('vs previous month')",
+       "a trendline KPI's change says what it compares against ('vs previous month'; "
+       "'vs prior 12 months' between trailing windows)",
        superset="", superset_text="Superset's bare percentage",
        override="write compare_suffix yourself, e.g. 'vs last month'")
 def _compare_suffix(ctx: RuleContext, c):
@@ -231,8 +232,40 @@ def _compare_suffix(ctx: RuleContext, c):
     if unit is None:
         return None, f"grain {label} has no plain name"
     lag = c.compare_lag
+    if lag > 1 and c.rolling_type in ("sum", "mean", "std") and c.rolling_periods == lag:
+        # Both values are windows of `lag` steps that meet: this one and the one before.
+        return (f"vs prior {lag} {unit}s",
+                f"compare_lag {lag} over a {lag}-step rolling {c.rolling_type} at grain {label}")
     text = f"vs previous {unit}" if lag == 1 else f"vs {lag} {unit}s earlier"
     return text, f"compare_lag {lag} at grain {label}"
+
+
+# A big number of a date, as a freshness tile reads it: "Sat 3 Oct 2026".
+DATE_TILE_FORMAT = "%a %-d %b %Y"
+
+
+@_fill("default.date-tile", "date_format", {"big_number_total"},
+       "a big number of a date column's MIN or MAX reads as a whole date ('Sat 3 Oct "
+       "2026'); needs the column's type (--profile)",
+       superset="smart_date", superset_text="Superset's adaptive date ('Tue 31')",
+       override="write date_format yourself, e.g. '%Y-%m-%d'", since="9")
+def _date_tile(ctx: RuleContext, c):
+    parsed = parse_metric(c.metric) or {}
+    column = parsed.get("column")
+    if parsed.get("aggregate") not in ("MIN", "MAX") or not column or column == "*":
+        return None, "the metric is not MIN or MAX of a column"
+    if ctx.written(c, "number_format"):
+        return None, "number_format is written, so the author reads it as a number"
+    ds = ctx.dataset_for(c)
+    temporal = ds.is_temporal(column) if ds is not None else None
+    if temporal is None:
+        return None, f"{column!r} has no known type (advise --profile reads it)"
+    if not temporal:
+        return None, f"{column!r} is not a date column"
+    # Superset's default (smart_date, and a total has no time grain) shows only the day,
+    # e.g. 'Tue 31', for the latest date (seen on 4.1.4, 5.0.0 and 6.1.0).
+    return DATE_TILE_FORMAT, (f"{parsed['aggregate']}({column}) is a date, which Superset "
+                              f"shows as only its day ('Tue 31')")
 
 
 # -- number formats -------------------------------------------------------------
@@ -241,7 +274,7 @@ _COUNTS = ("COUNT", "COUNT_DISTINCT")
 # Pivot aggregations that keep a count a whole number.
 _WHOLE_AGGREGATES = {"Sum", "Count", "Count Unique Values", "Minimum", "Maximum", "First", "Last"}
 COUNT_FORMAT_TYPES = (KPI_TYPES | TIMESERIES_TYPES
-                      | {"bar", "pie", "pivot_table", "heatmap", "funnel", "treemap"})
+                      | {"bar", "pie", "pivot_table", "heatmap", "funnel", "treemap", "waterfall"})
 
 
 @_fill("default.count-format", "number_format", COUNT_FORMAT_TYPES,
@@ -249,6 +282,8 @@ COUNT_FORMAT_TYPES = (KPI_TYPES | TIMESERIES_TYPES
        superset="SMART_NUMBER", superset_text="Superset's SMART_NUMBER ('12.3k')",
        override="write number_format yourself, e.g. '.3s'")
 def _count_format(ctx: RuleContext, c):
+    if getattr(c, "date_format", None):
+        return None, "date_format shows the number as a date"
     shown = [c.metric] if hasattr(c, "metric") else list(c.metrics)
     other = [m for m in shown if (parse_metric(m) or {}).get("aggregate") not in _COUNTS]
     if other:
@@ -274,10 +309,15 @@ ID_LIKE = re.compile(r"(?:^|_)(?:id|code|year|zip|zipcode|postcode)$", re.I)
        "a raw table with id, code, year or zip columns draws no cell bars (a bar behind "
        "an identifier reads as an amount)",
        superset=True, superset_text="Superset's bars behind every number",
-       override="write cell_bars: true to keep the bars")
+       override="write cell_bars: true to keep the bars, or list the columns that keep "
+                "them, e.g. cell_bars: [\"amount\"]")
 def _cell_bars(ctx: RuleContext, c):
     if not c.columns:
         return None, "an aggregate table draws bars on its metrics only, never on a dimension"
+    asks = [f for f in ("color_by_sign", "absolute_bars") if set_value(c, f)]
+    if asks:
+        # Both draw on the bars, so false would leave them nothing to draw on.
+        return None, f"{asks[0]} draws on the cell bars, so which columns keep them is yours"
     hits = [col for col in c.columns if ID_LIKE.search(col)]
     ds = ctx.dataset_for(c)
     if ds is not None and ds.column_types:
@@ -300,10 +340,12 @@ def _page_length(ctx: RuleContext, c):
     # The one grid model size.table-window reads (spec.py): a page fills the whole rows
     # that fit beside the page-size bar and the pager, so a fill can never make that
     # rule ask for more height.
-    fits = math.floor(grid_rows_visible(h, table_header_units(controls=c.search_box)))
+    fits = math.floor(grid_rows_visible(h, table_header_units(controls=c.search_box,
+                                                              totals=c.show_totals)))
     if c.row_limit <= fits:
         return None, f"all {c.row_limit} rows fit at height {h:g}"
-    page = math.floor(grid_rows_visible(h, table_header_units(controls=True, pager=True)))
+    page = math.floor(grid_rows_visible(h, table_header_units(controls=True, pager=True,
+                                                              totals=c.show_totals)))
     if page < ctx.params.page_min_rows:
         return None, f"height {h:g} fits {page} rows beside a pager, too few to page; raise the height"
     return page, (f"row_limit {c.row_limit} at height {h:g}: {fits} rows fit on one page, "
@@ -311,8 +353,8 @@ def _page_length(ctx: RuleContext, c):
 
 
 @_fill("default.search-box", "search_box", {"table"},
-       "a raw table of more than ~20 rows gets a search box, when its rows still fit "
-       "beside it (the 20 is judgement)",
+       "a raw table of more than ~20 rows that outgrow its panel, and so page, gets a "
+       "search box; one whose rows all show gets none (the 20 is judgement)",
        superset=False, superset_text="no search box",
        override="write search_box: false")
 def _search_box(ctx: RuleContext, c):
@@ -323,16 +365,21 @@ def _search_box(ctx: RuleContext, c):
     n = ctx.params.search_min_rows
     if c.row_limit <= n:
         return None, f"row_limit {c.row_limit} is {n} rows or fewer"
-    if not c.page_length:
-        # A paged table already draws the bar the search box sits in. On one page, the
-        # bar takes room from the rows, and must not push any behind the scrollbar.
-        h = ctx.height(c.name)
-        fits = math.floor(grid_rows_visible(h, table_header_units(controls=True)))
-        if c.row_limit > fits:
-            return None, (f"{c.row_limit} rows on one page at height {h:g}: a search bar "
-                          f"would leave room for {fits}; page the table or raise the height")
-    return True, (f"up to {c.row_limit} raw rows: searching beats scrolling "
-                  f"(the {n}-row threshold is judgement)")
+    h = ctx.height(c.name)
+    # The rows the panel shows with nothing above them. A table that shows every row
+    # takes no DataTables chrome (size.table-chrome): a search bar over rows the reader
+    # already sees only pushes the last ones behind the scrollbar.
+    shown = math.floor(grid_rows_visible(h, table_header_units()))
+    if c.row_limit <= shown:
+        return None, f"all {c.row_limit} rows show at height {h:g}"
+    if not c.page_length or c.page_length >= c.row_limit:
+        # The box sits in the bar a paged table already draws (its page-size picker), so
+        # it costs no row there. A table on one page that outgrows its panel is either
+        # still to be paged (default.page-length) or too short to page.
+        return None, (f"{c.row_limit} rows on one page outgrow height {h:g}; the box comes "
+                      f"with paging")
+    return True, (f"up to {c.row_limit} raw rows over pages of {c.page_length}: searching "
+                  f"beats paging (the {n}-row threshold is judgement)")
 
 
 # -- legends and labels -------------------------------------------------------------
@@ -367,20 +414,42 @@ HBAR_FRAME_UNITS = 4.5
 HBAR_LABEL_UNITS = 0.4125
 
 
-@_fill("default.value-labels", "show_value", {"bar"},
-       "few bars carry their values: <= 12 bars, on a panel >= 6/12 wide (vertical) or "
-       "tall enough to space the labels (horizontal)",
+@_fill("default.value-labels", "show_value", {"bar", "waterfall"},
+       "few bars carry their values: <= 12 bars (row_limit x metrics for grouped bars), on a "
+       "panel >= 6/12 wide (vertical, and a waterfall's steps) or tall enough to space the "
+       "labels (horizontal)",
        superset=False, superset_text="no values on the bars",
        override="write show_value: false")
 def _value_labels(ctx: RuleContext, c):
-    if len(c.metrics) != 1 or c.groupby:
-        return None, "more than one series, so labels would crowd"
+    most, min_w = ctx.params.value_label_max_bars, ctx.params.value_label_min_width
+    if c.type == "waterfall":
+        # A bridge is read by its deltas: each step's value is the point of the chart.
+        if c.groupby:
+            return None, "a breakdown per x value, so the number of bars is unknown"
+        if c.steps is not None:
+            n = len(c.steps) + 1 + (c.opening is not None)
+        elif ctx.written(c, "row_limit"):
+            n = c.row_limit + 1
+        else:
+            return None, "neither steps nor row_limit is set, so the number of bars is unknown"
+        if n > most:
+            return None, f"up to {n} bars with the total, more than {most}"
+        w = ctx.width(c.name)
+        if w < min_w:
+            return None, f"{w}/12 wide, narrower than {min_w}/12"
+        return True, f"{n} bars with the total at {w}/12 wide: each step's change reads without the axis"
+    # Grouped bars (several metrics side by side) label every bar, so they count as
+    # row_limit x metrics; a groupby's series count is unknown, and a stack's labels
+    # land on each segment.
+    if c.groupby:
+        return None, "a series per group value, so the number of bars is unknown"
+    if c.stack and len(c.metrics) > 1:
+        return None, "stacked series, so each segment would carry a label"
     if c.contribution:
         return None, "contribution plots shares"
     if not ctx.written(c, "row_limit"):
         return None, "row_limit is not set, so the number of bars is unknown"
-    most, min_w = ctx.params.value_label_max_bars, ctx.params.value_label_min_width
-    n = c.row_limit
+    n = c.row_limit * len(c.metrics)
     if n > most:
         return None, f"up to {n} bars, more than {most}"
     if c.orientation == "horizontal":
@@ -394,3 +463,25 @@ def _value_labels(ctx: RuleContext, c):
     if w < min_w:
         return None, f"{w}/12 wide, narrower than {min_w}/12"
     return True, f"at most {n} bars at {w}/12 wide: each value reads without the axis"
+
+
+# -- heatmaps -----------------------------------------------------------------------
+
+# A heatmap's y labels sit inside its grid (containLabel), whose left edge is the card's
+# edge while left_margin is Superset's 'auto' (Heatmap/transformProps.ts 6.1.0 :354-357).
+# Seen on 6.1.0: the longest label is drawn wider than the room the grid gave it and
+# loses its first letters there ('rucks and Buses', a 95 px label; 'ustralian Gift
+# Network, Co', 150 px). 8 px cleared the first and 16 px both; 4.1.4 and 5.0.0 drew
+# them whole. Its own spec field is the only way: on 6.1.0 Heatmap.tsx:25 renders
+# <Echart> without vizType, so a theme's per-chart-type overrides never reach it.
+HEATMAP_LABEL_ROOM = 16
+
+
+@_fill("default.heatmap-label-room", "left_margin", {"heatmap"},
+       "a heatmap keeps 16 px left of its y labels, where Superset 6.1.0 cuts off the "
+       "longest one's first letters",
+       superset=None, superset_text="no margin (Superset's 'auto')",
+       override="write left_margin yourself (0 for none)", since="12")
+def _heatmap_label_room(ctx: RuleContext, c):
+    return HEATMAP_LABEL_ROOM, ("Superset 6.1.0 cuts the first letters off the longest y "
+                                "label at the card's edge; 16 px keeps labels up to ~300 px whole")

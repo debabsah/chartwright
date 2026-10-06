@@ -111,6 +111,40 @@ def test_the_schema_file_matches_the_schema_command():
         "regenerate: chartwright schema > schema/dashboard_spec.schema.json")
 
 
+def test_every_layout_guide_example_compiles():
+    """docs/LAYOUT-GUIDE.md says every example on the page compiles as shown: each
+    ```json layout there validates and compiles, its charts stubbed by name."""
+    from chartwright.compiler import compile_bundle
+    from chartwright.spec import load_spec
+    from chartwright.testing import stub_resolution
+
+    guide = (REPO / "docs" / "LAYOUT-GUIDE.md").read_text(encoding="utf-8")
+    blocks = re.findall(r"```json\n(.*?)```", guide, re.S)
+    assert len(blocks) >= 5, "the guide lost its json examples"
+
+    def names(node) -> list[str]:
+        if isinstance(node, str):
+            return [node]
+        if isinstance(node, list):
+            return [n for x in node for n in names(x)]
+        if isinstance(node, dict) and "row" in node:
+            return names(node["row"])
+        return []
+
+    for block in blocks:
+        layout = json.loads("{" + block + "}")["layout"]
+        holders = [layout, *layout.get("tabs", [])]
+        charts = {v for h in holders for v in (h.get("legend") or {}).values() if isinstance(v, str)}
+        charts |= {n for h in holders for key in ("rows", "header", "footer")
+                   for n in names(h.get(key) or [])}
+        spec = load_spec({
+            "spec_version": "1", "dashboard": {"title": "Guide", "slug": "sdc-guide"},
+            "charts": [{"name": n, "type": "big_number_total", "metric": "COUNT(*)",
+                        "dataset": {"database": "examples", "table": "t"}} for n in sorted(charts)],
+            "layout": layout})
+        assert compile_bundle(spec, stub_resolution(spec))
+
+
 def test_package_version_matches_pyproject():
     """__version__ said 0.1.0 while pyproject.toml said 0.2.0."""
     import tomllib
@@ -150,14 +184,16 @@ def test_fixture_slugs_are_distinct_and_carry_a_tool_prefix():
 
 def test_the_live_job_applies_kitchen_sink_and_every_live_fixture():
     """Each Superset version in the live matrix applies the kitchen sink and
-    every tests/fixtures/live_*.json spec through tools/ci_live_check.py."""
+    every tests/fixtures/live_*.json spec through tools/ci_live_check.py, or a live
+    tool of its own that needs more than an apply (ci_live_waterfall.py makes the
+    bridge's dataset first)."""
     import yaml
 
     assert len(LIVE_FIXTURES) >= 2, "expected the live display and dashboard controls fixtures"
     ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
     live = ci["jobs"]["live"]
     assert set(live["strategy"]["matrix"]["superset"]) == {"4.1.4", "5.0.0", "6.1.0"}
-    runs = [s["run"] for s in live["steps"] if "ci_live_check.py" in s.get("run", "")]
+    runs = [s["run"] for s in live["steps"] if re.search(r"tools/ci_live_\w+\.py", s.get("run", ""))]
     wanted = ["tests/fixtures/kitchen_sink.json"] + [
         f"tests/fixtures/{p.name}" for p in LIVE_FIXTURES]
     for fixture in wanted:

@@ -25,11 +25,12 @@ class Params:
     kpi_row_max: int
     kpi_height: int
     min_axis_height: int
-    # Min visible rows / row_limit. 0.5 everywhere: below half, the MAJORITY of
-    # the rows you deliberately asked for sit behind the grid's inner
-    # scrollbar -- the exact defect size.grid-fit and apply-time smoke exist to
-    # catch, so the offline rule must not bless it. Still a knob (deployments
-    # override per audience in design.yaml), just no longer a lenient default.
+    # Min visible rows / row_limit before size.table-window warns on an unpaged table.
+    # 1 everywhere: smoke warns after apply when any row the data fills row_limit
+    # with hides behind the grid's inner scrollbar, so at 0.5 advise passed a
+    # 25-row table at 13 units that smoke then said needed 21. Still a knob
+    # (design.yaml, per audience) for tables that rarely reach their row_limit; the
+    # rule's target height is every row whatever it is set to.
     table_visible_ratio: float
     vbar_max_categories: int
     pie_max_slices: int
@@ -48,6 +49,17 @@ class Params:
     # '%d %b' names a single date only within 365 days: a 366-day span without a
     # 29 February starts and ends on the same day and month.
     day_label_max_span_days: int = 365
+    # Type floors of the readability.* rules, in CSS px at a 1440 px laptop window
+    # (DESIGN-BRAIN.md, "Type sizes": IBM Carbon's and Material's type scales and the
+    # critical print size of reading research). Text read row by row (table and pivot
+    # cells): Carbon's data-table body and Material's body-medium are 14 px.
+    min_cell_text_px: float = 14
+    # Labels read at a glance (table headers, axis labels, legends, a KPI's subtitle):
+    # the smallest size either system sets for text a reader must read, 12 px.
+    min_label_text_px: float = 12
+    min_title_text_px: float = 14      # chart titles: Carbon's and Material's headings
+    min_kpi_value_px: float = 24       # a big number's value: WCAG's large text (18 pt)
+    min_row_px: float = 24             # a table or pivot row: Carbon's densest (extra small)
     # chart type -> height (spec units); calibrate/overlay feed this,
     # size-rule autofixes target it.
     recommended_heights: dict[str, float] = field(default_factory=dict)
@@ -59,15 +71,15 @@ class Params:
 AUDIENCES: dict[str, Params] = {
     "executive": Params("executive", fold_units=22, max_row_charts=3, kpi_row_min=2,
                         kpi_row_max=5, kpi_height=5, min_axis_height=8,
-                        table_visible_ratio=0.5, vbar_max_categories=6,
+                        table_visible_ratio=1.0, vbar_max_categories=6,
                         pie_max_slices=5, series_max=5, max_filter_selects=5),
     "analytical": Params("analytical", fold_units=66, max_row_charts=4, kpi_row_min=2,
                          kpi_row_max=6, kpi_height=4, min_axis_height=6,
-                         table_visible_ratio=0.5, vbar_max_categories=8,
+                         table_visible_ratio=1.0, vbar_max_categories=8,
                          pie_max_slices=7, series_max=10, max_filter_selects=6),
     "operational": Params("operational", fold_units=22, max_row_charts=4, kpi_row_min=2,
                           kpi_row_max=8, kpi_height=3, min_axis_height=5,
-                          table_visible_ratio=0.5, vbar_max_categories=8,
+                          table_visible_ratio=1.0, vbar_max_categories=8,
                           pie_max_slices=7, series_max=8, max_filter_selects=7),
 }
 AUDIENCE_NAMES = tuple(AUDIENCES)

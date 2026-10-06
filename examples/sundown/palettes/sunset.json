@@ -1,0 +1,60 @@
+{
+ "name": "Sunset",
+ "about": "Navy chrome, an Okabe-Ito vermillion accent and a blue period pair; status colours after the Carbon and Atlassian design systems; EIA fuel colours.",
+ "masthead": "#14213D",
+ "accent": "#D55E00",
+ "on_masthead": "#C5CCD9",
+ "ground": "#F3F4F7",
+ "tile": "#FFFFFF",
+ "border": "#E5E8EE",
+ "rule": "#D9DEE6",
+ "grid": "#EEF1F5",
+ "head_bg": "#EEF1F5",
+ "ref": "#9AA3AE",
+ "ink": "#1B1F27",
+ "sec": "#5B6472",
+ "this": "#0072B2",
+ "prior": "#8CC0DC",
+ "second": "#E69F00",
+ "up": "#D55E00",
+ "down": "#0072B2",
+ "total": "#6B7280",
+ "cellbar": "rgba(213, 94, 0, 0.26)",
+ "heatmap": "schemeOranges",
+ "status": {
+  "good": [
+   "#0E6027",
+   "#A7F0BA",
+   "#DEFBE6",
+   "#24A148"
+  ],
+  "watch": [
+   "#9E4C00",
+   "#FCE4A6",
+   "#FFF5DB",
+   "#BD5B00"
+  ],
+  "proven": [
+   "#693200",
+   "#FBD779",
+   "#FFF5DB",
+   "#BD5B00"
+  ],
+  "act": [
+   "#A2191F",
+   "#FFD7D9",
+   "#FFF1F1",
+   "#DA1E28"
+  ]
+ },
+ "proven_rise": "#7A3A00",
+ "rising": "#C7701F",
+ "region": {
+  "California": "#0072B2",
+  "Texas": "#E69F00",
+  "Southwest": "#009E73",
+  "Other regions": "#BAB0AC",
+  "Northwest": "#56B4E9",
+  "Florida": "#CC79A7"
+ }
+}

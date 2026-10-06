@@ -35,7 +35,7 @@ For Claude Desktop or any other MCP client, add the server to the client's confi
 
 ### The Claude Code skill
 
-The repository also ships a Claude Code skill. With it, Claude reads the schema and the design brief, writes only the spec, then runs `validate`, `check`, `advise` and `apply` in order, and edits the spec to change a dashboard later. It runs from a clone:
+The repository also ships a Claude Code skill. With it, Claude reads the schema and the design brief, recommends a style for titles and colour that you can accept or change, writes only the spec, then runs `validate`, `check`, `advise` and `apply` in order, and edits the spec to change a dashboard later. It runs from a clone:
 
 ```bash
 git clone https://github.com/debabsah/chartwright && cd chartwright
@@ -76,7 +76,7 @@ When something fails, a tool returns the same JSON error the CLI prints, so the 
 
 Before writing the spec:
 
-- `design_brief` gives the agent sizing budgets, chart choice and layout rules for an executive, analytical or operational audience.
+- `design_brief` gives the agent sizing budgets, chart choice and layout rules for an executive, analytical or operational audience. It also marks two styles as recommendations, not rules: titles that name the measure, unit and time window, and colour by role (status in green, amber and red beside an arrow or a word).
 - `advise_spec` reviews the spec for readability, such as a pie with too many slices or a chart too short for its axis labels. `fix_spec` applies the safe ones, such as heights and bar orientation, and fills design defaults the spec left unset, such as axis label formats; the agent keeps the spec it returns and edits that. On a `sketch` layout, those fixes write explicit heights that override the drawing; to keep the drawing, edit the sketch lines instead.
 
 Before anything is written to Superset, Chartwright looks up, on the instance, each dataset the spec names and each column and metric its charts and filters use. A dataset is matched by its database connection name, table and schema. The agent gets the full list of missing references in one response, not one at a time. Columns inside a custom SQL metric or filter can't be looked up this way; they come back under `unchecked_sql`. The check also confirms the spec's owners and theme exist and that the instance's Superset release can take every field.

@@ -1,0 +1,75 @@
+{
+ "about": "Desert dusk: plum-brown chrome, terracotta, sage, sand and dusk blue.",
+ "masthead": "#3B1F2B",
+ "accent": "#D4735A",
+ "on_masthead": "#E2CFC9",
+ "ground": "#F7F3EE",
+ "tile": "#FFFDFB",
+ "border": "#ECE4DA",
+ "rule": "#E0D5C8",
+ "grid": "#F0E9E0",
+ "head_bg": "#F1EAE1",
+ "ref": "#A08F80",
+ "ink": "#2E2420",
+ "sec": "#6B5A50",
+ "this": "#3D5A80",
+ "prior": "#A9BCD3",
+ "second": "#D4735A",
+ "up": "#C8553D",
+ "down": "#3D5A80",
+ "total": "#8D7B6E",
+ "cellbar": "rgba(224,122,95,0.22)",
+ "heatmap": "schemeOrRd",
+ "status": {
+  "good": [
+   "#3F5F2A",
+   "#D9E5C8",
+   "#EEF3E6",
+   "#6A8D4E"
+  ],
+  "watch": [
+   "#7E4E0A",
+   "#F3DDB5",
+   "#FAF0DF",
+   "#C99837"
+  ],
+  "proven": [
+   "#5E3500",
+   "#E9C07C",
+   "#FAF0DF",
+   "#B07A2A"
+  ],
+  "act": [
+   "#8E2A1E",
+   "#F2CEC6",
+   "#F9EAE6",
+   "#C8553D"
+  ]
+ },
+ "proven_rise": "#8C4A1E",
+ "rising": "#C58337",
+ "region": {
+  "California": "#3D5A80",
+  "Texas": "#E07A5F",
+  "Southwest": "#81B29A",
+  "Other regions": "#CBBFB3",
+  "Northwest": "#98C1D9",
+  "Florida": "#B56576"
+ },
+ "fuel": {
+  "Solar": "#F2CC8F",
+  "Wind": "#81B29A",
+  "Gas": "#E07A5F",
+  "Coal": "#5C4B43",
+  "Nuclear": "#B56576",
+  "Hydro": "#3D5A80",
+  "Battery": "#6D597A",
+  "Battery charging": "#C5B8CE",
+  "Net imports": "#CBBFB3",
+  "Exports": "#E8DFD5",
+  "Other": "#B3A394",
+  "Coal, nuclear, hydro": "#5C4B43"
+ },
+ "battery_prior": "#C5B8CE",
+ "name": "Desert Dusk"
+}

@@ -1,8 +1,8 @@
 # Layout Sketches
 
-Draw a dashboard's layout as text, right in the spec: each letter is a chart,
-and the drawing's proportions become the dashboard's proportions. Every
-example on this page compiles as shown.
+Draw a dashboard's layout as text, right in the spec: each letter is a chart
+(or a section header, or a note), and the drawing's proportions become the
+dashboard's proportions. Every example on this page compiles as shown.
 
 A sketch is three fields, in the spec's `layout` or inside any tab:
 
@@ -15,7 +15,8 @@ A sketch is three fields, in the spec's `layout` or inside any tab:
 
 - `sketch`: one string per drawn line. Spaces are cosmetic; use them to keep
   the drawing readable.
-- `legend`: maps each symbol to a chart's name from the spec.
+- `legend`: maps each symbol to a chart's name from the spec, or to a header
+  or markdown block ([Section headers and notes](#section-headers-and-notes)).
 - `line` (optional, default 2): the height each drawn line adds. One drawn
   line is about 80 pixels of chart; raise or lower `line` to change that.
 
@@ -116,6 +117,65 @@ LLLLLLLL PPPP
 A KPI row across the top, a tall chart spanning three lines, and a column of
 two charts beside it. In a tabbed dashboard, each tab takes its own sketch.
 
+## Section headers and notes
+
+A legend symbol can also stand for text: a header, or a markdown block. The
+same dashboard, titled, with a header over the trend and two notes:
+
+```text
+TTTTTTTTTTTT
+KKKK MMMM NNNN
+HHHHHHHH SSSS
+LLLLLLLL SSSS
+LLLLLLLL PPPP
+LLLLLLLL CCCC
+FFFFFFFFFFFF
+```
+
+![A title over the KPI cards, a header over the trend, and notes under the sidebar and the page](images/sketches/blocks.svg)
+
+```json
+"layout": {
+  "sketch": [
+    "TTTTTTTTTTTT",
+    "KKKK MMMM NNNN",
+    "HHHHHHHH SSSS",
+    "LLLLLLLL SSSS",
+    "LLLLLLLL PPPP",
+    "LLLLLLLL CCCC",
+    "FFFFFFFFFFFF"
+  ],
+  "legend": {
+    "T": {"header": "Sales at a glance", "size": "large"},
+    "K": "Total Orders", "M": "Total Sales", "N": "Average Order Value",
+    "H": {"header": "Monthly sales"},
+    "L": "Sales Over Time", "S": "Sales by Deal Size", "P": "Top Products",
+    "C": {"markdown": "Top products by revenue"},
+    "F": {"markdown": "Source: the sales ledger, refreshed nightly", "height": 1.6}
+  }
+}
+```
+
+A header takes the fields of a header row (`header`, `size`, `background`)
+and is one line tall: Superset sizes a header to its text, whatever the
+drawing. Drawn across the whole sketch, like `T`, it is a section title
+between bands, exactly as a header row in `rows`. Anywhere else it sits in a
+column, because Superset puts headers between rows or in columns, never
+beside charts in a row: `H` heads the column it shares with the trend. A
+header alone in a slot narrower than the page gets a column of its own.
+
+A markdown block is drawn like a chart: the drawing sets its width and its
+height. An explicit `height`, in fifths of a unit as in rows, wins over the
+drawn one, as a chart's does: `F` is 1.6 units, a 64 px strip, though it is
+drawn one line tall. A `width` is refused, since the drawing already says how
+wide the block is. Blocks follow the chart rules: each is a solid rectangle,
+and dots go only at a row's right edge or a stack's bottom.
+
+`chartwright decompile` reads charts stacked in columns back as a sketch, and
+the section's headers and text blocks come with it. A section with a divider
+stays in rows and flattens its columns, saying so; a header in the divider's
+place keeps them.
+
 ## When a sketch is unclear
 
 An ambiguous sketch is never guessed at: the compile stops with a message
@@ -153,17 +213,32 @@ LLLL ....
 layout: symbol 'L' does not form a solid rectangle
 ```
 
+A header drawn taller than one line:
+
+```text
+HHHHHHHHHHHH
+HHHHHHHHHHHH
+LLLLLLLLLLLL
+```
+
+```
+layout: header 'H' spans 2 lines: a header is one sketch line (Superset sizes
+it to its text)
+```
+
 ## The rules in one place
 
 | Rule | Meaning |
 |---|---|
 | One string per line | Spaces are cosmetic; every line must have the same number of cells once spaces are removed |
-| Every symbol maps to a chart | Each symbol needs a legend entry, and each legend entry must appear in the drawing |
+| Every symbol maps to a chart or a block | Each symbol needs a legend entry (a chart's name, a header or a markdown block), and each legend entry must appear in the drawing |
 | More letters make a chart wider | Letters share the row in proportion, on Superset's 12-column grid |
 | More lines make a chart taller | Each drawn line adds `line` height units (default 2, about 80 pixels) |
 | A chart is a solid rectangle | A symbol's cells must form one unbroken rectangle |
 | A stack becomes a column | Different symbols stacked in the same slot compile to a Superset column |
 | Dots mean deliberately empty | Legal at a row's right edge or a stack's bottom, where Superset can express absence |
+| A header is one line | Across the whole sketch it is a section title between bands; elsewhere it sits in a column |
+| A markdown block is drawn like a chart | The drawing sets its width; its own `height` (fifths of a unit) wins over the drawn one |
 
 Prefer explicit numbers? `layout.rows` with per-chart widths and heights does
 the same job without drawing, and dragging a chart taller in the UI followed
@@ -208,7 +283,11 @@ draws them under whichever tab is open, so one footer serves every tab:
 
 Markdown heights take fifths of a unit, one Superset grid row (8 px) each, so a
 slim strip fits exactly: `1.6` is 64 px. Superset pads a text block 16 px on
-every side, so the block needs its content's height plus 32 px, or it scrolls.
+every side, so the block needs its content's height plus 32 px, or it scrolls,
+and it draws no block under 1 unit (40 px). `chartwright advise` estimates the
+height each block's text takes at its width, in the sizes the dashboard's CSS
+sets, and names a block too short for it (`size.markdown-fit`); `advise --fix`
+raises the block.
 
 A footer row may hold charts as well as markdown; each chart is still placed
 exactly once. Decompile reads any rows below a dashboard's tabs as its footer,

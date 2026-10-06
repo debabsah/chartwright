@@ -233,8 +233,8 @@ def test_a_header_markdown_fix_is_addressed_to_the_header():
     fixed, rep = advise_and_fix(data, overlay=EMPTY)
     addresses = sorted(str(e["md"][0]) for e in rep.fixed if e["rule"] == "layout.markdown-height")
     assert addresses == ["None", "header"]
-    assert fixed["layout"]["header"][0][0]["height"] == 2
-    assert fixed["layout"]["rows"][0][0]["height"] == 2
+    assert fixed["layout"]["header"][0][0]["height"] == 2.2
+    assert fixed["layout"]["rows"][0][0]["height"] == 2.2
     load_spec(fixed)
 
 
